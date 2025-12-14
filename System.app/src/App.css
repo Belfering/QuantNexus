@@ -1,0 +1,410 @@
+.app {
+  min-height: 100vh;
+  background: #f6f8fb;
+  color: #0f172a;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #d8e1ed;
+  background: #ffffff;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tab-btn {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #e0f2fe;
+  border-color: #bae6fd;
+  color: #075985;
+}
+
+.build-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.bot-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.bot-tab-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  padding: 4px 6px 4px 4px;
+  border-radius: 10px;
+}
+
+.bot-tab-wrapper.active {
+  background: #e0f2fe;
+  border-color: #bae6fd;
+  color: #075985;
+}
+
+.bot-tab-btn {
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bot-tab-close {
+  border: none;
+  background: transparent;
+  color: #b91c1c;
+  padding: 0 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.saved-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.saved-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.saved-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #0ea5e9;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #66748d;
+  margin-bottom: 4px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.lede {
+  margin: 6px 0 0;
+  color: #4b5563;
+  font-size: 13px;
+}
+
+.canvas {
+  padding: 18px;
+}
+
+.node-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  display: inline-block;
+  width: max(1000px, fit-content);
+  min-width: 1000px;
+  max-width: 100%;
+}
+
+.node-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.node-title {
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.title-input {
+  font-weight: 800;
+  font-size: 15px;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  width: 180px;
+}
+
+.head-actions {
+  display: flex;
+  gap: 6px;
+  position: relative;
+}
+
+.icon-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.icon-btn.delete {
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+.color-picker {
+  position: relative;
+}
+
+.color-menu {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, 24px);
+  gap: 6px;
+  z-index: 15;
+}
+
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid #d6deeb;
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-swatch.reset {
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.indent {
+  height: 1px;
+}
+
+.indent.with-line {
+  border-left: 1px solid #d2dae8;
+  height: 100%;
+}
+
+.chip {
+  padding: 4px 10px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.chip.tag {
+  background: #e0f2fe;
+  border-color: #bae6fd;
+  color: #075985;
+  font-weight: 700;
+}
+
+.chip.title {
+  background: transparent;
+  border: none;
+  padding-left: 0;
+  font-weight: 800;
+}
+
+.inline-number {
+  width: 54px;
+  padding: 2px 6px;
+  margin: 0 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.alloc-input {
+  width: 56px;
+  margin-right: 6px;
+}
+
+.inline-select {
+  padding: 2px 6px;
+  margin: 0 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  width: auto;
+  display: inline-block;
+}
+
+.placeholder {
+  position: relative;
+}
+
+.placeholder-btn {
+  border: 1px dashed #94a3b8;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.placeholder-btn:hover {
+  background: #f1f5f9;
+}
+
+.menu {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  z-index: 10;
+}
+
+.menu button {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.menu button:hover {
+  background: #e2e8f0;
+}
+
+.slot-body {
+  display: flex;
+  align-items: center;
+}
+
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.add-more {
+  border: 1px dashed #94a3b8;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 6px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.positions {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.position-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+select {
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  font-weight: 700;
+}
