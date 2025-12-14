@@ -26,9 +26,9 @@ ENV/
 *.egg-info/
 
 # Data files
-System.app/ticker-data/data/
-*.parquet
-*.csv
+# System.app/ticker-data/data/
+# *.parquet
+# *.csv
 
 # Logs
 logs/
