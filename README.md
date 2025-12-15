@@ -153,6 +153,13 @@ The backend supports these environment variables:
 - `PYTHON` - Python executable (default: `python`)
 - `PORT` - API server port (default: 8787)
 
+## PRDs
+
+Product Requirements Documents live in `prd/`.
+
+- Name PRDs with a sortable prefix when order matters (example: `prd/001-some-feature.md`).
+- Include `Status` + `Depends on` in the PRD header so ordering isn’t only implied by filenames.
+
 ## Contributing
 
 For detailed development guidelines and architecture information, see [CLAUDE.md](./CLAUDE.md).

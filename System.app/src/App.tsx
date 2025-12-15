@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { CandlestickSeries, ColorType, createChart, type CandlestickData, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts'
 
-type BlockKind = 'basic' | 'function' | 'indicator' | 'position'
+type BlockKind = 'basic' | 'function' | 'indicator' | 'numbered' | 'position'
 type SlotId = 'next' | 'then' | 'else'
 type PositionChoice = string
 type MetricChoice =
@@ -16,6 +16,27 @@ type RankChoice = 'Bottom' | 'Top'
 type ComparatorChoice = 'lt' | 'gt'
 
 type WeightMode = 'equal' | 'defined' | 'inverse' | 'pro' | 'capped'
+
+type ConditionLine = {
+  id: string
+  type: 'if' | 'and' | 'or'
+  window: number
+  metric: MetricChoice
+  comparator: ComparatorChoice
+  ticker: PositionChoice
+  threshold: number
+  expanded?: boolean
+  rightWindow?: number
+  rightMetric?: MetricChoice
+  rightTicker?: PositionChoice
+}
+
+type NumberedQuantifier = 'all' | 'none' | 'exactly' | 'atLeast' | 'atMost'
+
+type NumberedItem = {
+  id: string
+  conditions: ConditionLine[]
+}
 
 const TICKER_DATALIST_ID = 'systemapp-tickers'
 
@@ -88,19 +109,12 @@ type FlowNode = {
   weightingElse?: WeightMode
   bgColor?: string
   collapsed?: boolean
-  conditions?: {
-    id: string
-    type: 'if' | 'and' | 'or'
-    window: number
-    metric: MetricChoice
-    comparator: ComparatorChoice
-    ticker: PositionChoice
-    threshold: number
-    expanded?: boolean
-    rightWindow?: number
-    rightMetric?: MetricChoice
-    rightTicker?: PositionChoice
-  }[]
+  conditions?: ConditionLine[]
+  numbered?: {
+    quantifier: NumberedQuantifier
+    n: number
+    items: NumberedItem[]
+  }
   metric?: MetricChoice
   window?: number
   bottom?: number
@@ -111,6 +125,7 @@ const SLOT_ORDER: Record<BlockKind, SlotId[]> = {
   basic: ['next'],
   function: ['next'],
   indicator: ['then', 'else', 'next'],
+  numbered: ['then', 'else', 'next'],
   position: [],
 }
 
@@ -128,11 +143,20 @@ const createNode = (kind: BlockKind): FlowNode => {
   const base: FlowNode = {
     id: newId(),
     kind,
-    title: kind === 'function' ? 'Sort' : kind === 'indicator' ? 'Indicator' : kind === 'position' ? 'Position' : 'Basic',
+    title:
+      kind === 'function'
+        ? 'Sort'
+        : kind === 'indicator'
+          ? 'Indicator'
+          : kind === 'numbered'
+            ? 'Numbered'
+            : kind === 'position'
+              ? 'Position'
+              : 'Basic',
     children: {},
     weighting: 'equal',
-    weightingThen: kind === 'indicator' ? 'equal' : undefined,
-    weightingElse: kind === 'indicator' ? 'equal' : undefined,
+    weightingThen: kind === 'indicator' || kind === 'numbered' ? 'equal' : undefined,
+    weightingElse: kind === 'indicator' || kind === 'numbered' ? 'equal' : undefined,
     bgColor: undefined,
     conditions:
       kind === 'indicator'
@@ -147,6 +171,33 @@ const createNode = (kind: BlockKind): FlowNode => {
               threshold: 30,
             },
           ]
+        : undefined,
+    numbered:
+      kind === 'numbered'
+        ? {
+            quantifier: 'all',
+            n: 1,
+            items: [
+              {
+                id: newId(),
+                conditions: [
+                  {
+                    id: newId(),
+                    type: 'if',
+                    window: 14,
+                    metric: 'Relative Strength Index',
+                    comparator: 'lt',
+                    ticker: 'SPY',
+                    threshold: 30,
+                    expanded: false,
+                    rightWindow: 14,
+                    rightMetric: 'Relative Strength Index',
+                    rightTicker: 'SPY',
+                  },
+                ],
+              },
+            ],
+          }
         : undefined,
     metric: kind === 'function' ? 'Relative Strength Index' : undefined,
     window: undefined,
@@ -811,7 +862,7 @@ const updateTitle = (node: FlowNode, id: string, title: string): FlowNode => {
 
 const updateWeight = (node: FlowNode, id: string, weighting: WeightMode, branch?: 'then' | 'else'): FlowNode => {
   if (node.id === id) {
-    if (node.kind === 'indicator' && branch) {
+    if ((node.kind === 'indicator' || node.kind === 'numbered') && branch) {
       return branch === 'then' ? { ...node, weightingThen: weighting } : { ...node, weightingElse: weighting }
     }
     return { ...node, weighting }
@@ -928,7 +979,7 @@ const removeSlotEntry = (node: FlowNode, targetId: string, slot: SlotId, index: 
   return { ...node, children }
 }
 
-const addConditionLine = (node: FlowNode, id: string, type: 'and' | 'or'): FlowNode => {
+const addConditionLine = (node: FlowNode, id: string, type: 'and' | 'or', itemId?: string): FlowNode => {
   if (node.id === id && node.kind === 'indicator') {
     const last = node.conditions && node.conditions.length ? node.conditions[node.conditions.length - 1] : null
     const next = [
@@ -949,23 +1000,57 @@ const addConditionLine = (node: FlowNode, id: string, type: 'and' | 'or'): FlowN
     ]
     return { ...node, conditions: next }
   }
-  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
-  SLOT_ORDER[node.kind].forEach((s) => {
-    const arr = node.children[s]
-    children[s] = arr ? arr.map((c) => (c ? addConditionLine(c, id, type) : c)) : arr
-  })
-  return { ...node, children }
-}
-
-const deleteConditionLine = (node: FlowNode, id: string, condId: string): FlowNode => {
-  if (node.id === id && node.kind === 'indicator' && node.conditions) {
-    const keep = node.conditions.filter((c, idx) => idx === 0 || c.id !== condId)
-    return { ...node, conditions: keep.length ? keep : node.conditions }
+  if (node.id === id && node.kind === 'numbered' && node.numbered && itemId) {
+    const nextItems = node.numbered.items.map((item) => {
+      if (item.id !== itemId) return item
+      const last = item.conditions.length ? item.conditions[item.conditions.length - 1] : null
+      return {
+        ...item,
+        conditions: [
+          ...item.conditions,
+          {
+            id: newId(),
+            type,
+            window: last?.window ?? 14,
+            metric: (last?.metric as MetricChoice) ?? 'Relative Strength Index',
+            comparator: last?.comparator ?? 'lt',
+            ticker: last?.ticker ?? 'SPY',
+            threshold: last?.threshold ?? 30,
+            expanded: false,
+            rightWindow: last?.rightWindow ?? 14,
+            rightMetric: (last?.rightMetric as MetricChoice) ?? 'Relative Strength Index',
+            rightTicker: last?.rightTicker ?? 'SPY',
+          },
+        ],
+      }
+    })
+    return { ...node, numbered: { ...node.numbered, items: nextItems } }
   }
   const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
   SLOT_ORDER[node.kind].forEach((s) => {
     const arr = node.children[s]
-    children[s] = arr ? arr.map((c) => (c ? deleteConditionLine(c, id, condId) : c)) : arr
+    children[s] = arr ? arr.map((c) => (c ? addConditionLine(c, id, type, itemId) : c)) : arr
+  })
+  return { ...node, children }
+}
+
+const deleteConditionLine = (node: FlowNode, id: string, condId: string, itemId?: string): FlowNode => {
+  if (node.id === id && node.kind === 'indicator' && node.conditions) {
+    const keep = node.conditions.filter((c, idx) => idx === 0 || c.id !== condId)
+    return { ...node, conditions: keep.length ? keep : node.conditions }
+  }
+  if (node.id === id && node.kind === 'numbered' && node.numbered && itemId) {
+    const nextItems = node.numbered.items.map((item) => {
+      if (item.id !== itemId) return item
+      const keep = item.conditions.filter((c) => c.id !== condId)
+      return { ...item, conditions: keep.length ? keep : item.conditions }
+    })
+    return { ...node, numbered: { ...node.numbered, items: nextItems } }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  SLOT_ORDER[node.kind].forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? deleteConditionLine(c, id, condId, itemId) : c)) : arr
   })
   return { ...node, children }
 }
@@ -985,15 +1070,94 @@ const updateConditionFields = (
     rightMetric?: MetricChoice
     rightTicker?: PositionChoice
   }>,
+  itemId?: string,
 ): FlowNode => {
   if (node.id === id && node.kind === 'indicator' && node.conditions) {
     const next = node.conditions.map((c) => (c.id === condId ? { ...c, ...updates } : c))
     return { ...node, conditions: next }
   }
+  if (node.id === id && node.kind === 'numbered' && node.numbered && itemId) {
+    const nextItems = node.numbered.items.map((item) => {
+      if (item.id !== itemId) return item
+      const next = item.conditions.map((c) => (c.id === condId ? { ...c, ...updates } : c))
+      return { ...item, conditions: next }
+    })
+    return { ...node, numbered: { ...node.numbered, items: nextItems } }
+  }
   const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
   SLOT_ORDER[node.kind].forEach((s) => {
     const arr = node.children[s]
-    children[s] = arr ? arr.map((c) => (c ? updateConditionFields(c, id, condId, updates) : c)) : arr
+    children[s] = arr ? arr.map((c) => (c ? updateConditionFields(c, id, condId, updates, itemId) : c)) : arr
+  })
+  return { ...node, children }
+}
+
+const updateNumberedQuantifier = (node: FlowNode, id: string, quantifier: NumberedQuantifier): FlowNode => {
+  if (node.id === id && node.kind === 'numbered' && node.numbered) {
+    return { ...node, numbered: { ...node.numbered, quantifier } }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  SLOT_ORDER[node.kind].forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? updateNumberedQuantifier(c, id, quantifier) : c)) : arr
+  })
+  return { ...node, children }
+}
+
+const updateNumberedN = (node: FlowNode, id: string, n: number): FlowNode => {
+  if (node.id === id && node.kind === 'numbered' && node.numbered) {
+    const next = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : node.numbered.n
+    return { ...node, numbered: { ...node.numbered, n: next } }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  SLOT_ORDER[node.kind].forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? updateNumberedN(c, id, n) : c)) : arr
+  })
+  return { ...node, children }
+}
+
+const addNumberedItem = (node: FlowNode, id: string): FlowNode => {
+  if (node.id === id && node.kind === 'numbered' && node.numbered) {
+    const lastItem = node.numbered.items.length ? node.numbered.items[node.numbered.items.length - 1] : null
+    const lastCond = lastItem?.conditions?.length ? lastItem.conditions[lastItem.conditions.length - 1] : null
+    const newItem: NumberedItem = {
+      id: newId(),
+      conditions: [
+        {
+          id: newId(),
+          type: 'if',
+          window: lastCond?.window ?? 14,
+          metric: (lastCond?.metric as MetricChoice) ?? 'Relative Strength Index',
+          comparator: lastCond?.comparator ?? 'lt',
+          ticker: lastCond?.ticker ?? 'SPY',
+          threshold: lastCond?.threshold ?? 30,
+          expanded: lastCond?.expanded ?? false,
+          rightWindow: lastCond?.rightWindow ?? 14,
+          rightMetric: (lastCond?.rightMetric as MetricChoice) ?? 'Relative Strength Index',
+          rightTicker: lastCond?.rightTicker ?? 'SPY',
+        },
+      ],
+    }
+    return { ...node, numbered: { ...node.numbered, items: [...node.numbered.items, newItem] } }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  SLOT_ORDER[node.kind].forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? addNumberedItem(c, id) : c)) : arr
+  })
+  return { ...node, children }
+}
+
+const deleteNumberedItem = (node: FlowNode, id: string, itemId: string): FlowNode => {
+  if (node.id === id && node.kind === 'numbered' && node.numbered) {
+    const nextItems = node.numbered.items.filter((item, idx) => idx === 0 || item.id !== itemId)
+    return { ...node, numbered: { ...node.numbered, items: nextItems.length ? nextItems : node.numbered.items } }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  SLOT_ORDER[node.kind].forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? deleteNumberedItem(c, id, itemId) : c)) : arr
   })
   return { ...node, children }
 }
@@ -1015,19 +1179,26 @@ const cloneNode = (node: FlowNode): FlowNode => {
   const cloned: FlowNode = {
     id: newId(),
     kind: node.kind,
-  title: node.title,
-  children: {},
-  positions: node.positions ? [...node.positions] : undefined,
-  weighting: node.weighting,
-  weightingThen: node.weightingThen,
-  weightingElse: node.weightingElse,
-  conditions: node.conditions ? node.conditions.map((c) => ({ ...c })) : undefined,
-  metric: node.metric,
-  window: node.window,
-  bottom: node.bottom,
-  rank: node.rank,
-  bgColor: node.bgColor,
-  collapsed: node.collapsed,
+    title: node.title,
+    children: {},
+    positions: node.positions ? [...node.positions] : undefined,
+    weighting: node.weighting,
+    weightingThen: node.weightingThen,
+    weightingElse: node.weightingElse,
+    conditions: node.conditions ? node.conditions.map((c) => ({ ...c })) : undefined,
+    numbered: node.numbered
+      ? {
+          quantifier: node.numbered.quantifier,
+          n: node.numbered.n,
+          items: node.numbered.items.map((item) => ({ ...item, conditions: item.conditions.map((c) => ({ ...c })) })),
+        }
+      : undefined,
+    metric: node.metric,
+    window: node.window,
+    bottom: node.bottom,
+    rank: node.rank,
+    bgColor: node.bgColor,
+    collapsed: node.collapsed,
   }
   SLOT_ORDER[node.kind].forEach((slot) => {
     const arr = node.children[slot]
@@ -1075,6 +1246,14 @@ const buildLines = (node: FlowNode): LineView[] => {
         { id: `${node.id}-else`, depth: 2, kind: 'text', text: 'Else', tone: 'title' },
         { id: `${node.id}-slot-else`, depth: 3, kind: 'slot', slot: 'else' },
       ]
+    case 'numbered':
+      return [
+        { id: `${node.id}-tag1`, depth: 0, kind: 'text', text: 'Equal Weight', tone: 'tag' },
+        { id: `${node.id}-then`, depth: 2, kind: 'text', text: 'Then', tone: 'title' },
+        { id: `${node.id}-slot-then`, depth: 3, kind: 'slot', slot: 'then' },
+        { id: `${node.id}-else`, depth: 2, kind: 'text', text: 'Else', tone: 'title' },
+        { id: `${node.id}-slot-else`, depth: 3, kind: 'slot', slot: 'else' },
+      ]
     case 'position':
       return [
         { id: `${node.id}-tag1`, depth: 0, kind: 'text', text: 'Equal Weight', tone: 'tag' },
@@ -1098,8 +1277,12 @@ type CardProps = {
   onWeightChange: (id: string, weight: WeightMode, branch?: 'then' | 'else') => void
   onColorChange: (id: string, color?: string) => void
   onToggleCollapse: (id: string, collapsed: boolean) => void
-  onAddCondition: (id: string, type: 'and' | 'or') => void
-  onDeleteCondition: (id: string, condId: string) => void
+  onNumberedQuantifier: (id: string, quantifier: NumberedQuantifier) => void
+  onNumberedN: (id: string, n: number) => void
+  onAddNumberedItem: (id: string) => void
+  onDeleteNumberedItem: (id: string, itemId: string) => void
+  onAddCondition: (id: string, type: 'and' | 'or', itemId?: string) => void
+  onDeleteCondition: (id: string, condId: string, itemId?: string) => void
   onFunctionWindow: (id: string, value: number) => void
   onFunctionBottom: (id: string, value: number) => void
   onFunctionMetric: (id: string, metric: MetricChoice) => void
@@ -1118,6 +1301,7 @@ type CardProps = {
       rightMetric?: MetricChoice
       rightTicker?: PositionChoice
     }>,
+    itemId?: string,
   ) => void
   onAddPosition: (id: string) => void
   onRemovePosition: (id: string, index: number) => void
@@ -1141,6 +1325,10 @@ const NodeCard = ({
   onWeightChange,
   onColorChange,
   onToggleCollapse,
+  onNumberedQuantifier,
+  onNumberedN,
+  onAddNumberedItem,
+  onDeleteNumberedItem,
   onAddCondition,
   onDeleteCondition,
   onFunctionWindow,
@@ -1190,7 +1378,7 @@ const NodeCard = ({
       .map((c, i) => ({ c, i }))
       .filter((entry): entry is { c: FlowNode; i: number } => Boolean(entry.c))
     const slotWeighting =
-      node.kind === 'indicator' && (slot === 'then' || slot === 'else')
+      (node.kind === 'indicator' || node.kind === 'numbered') && (slot === 'then' || slot === 'else')
         ? slot === 'then'
           ? node.weightingThen ?? node.weighting
           : node.weightingElse ?? node.weighting
@@ -1250,6 +1438,14 @@ const NodeCard = ({
                   </button>
                   <button
                     onClick={() => {
+                      onAdd(node.id, slot, 0, 'numbered')
+                      setAddRowOpen(null)
+                    }}
+                  >
+                    Add Numbered
+                  </button>
+                  <button
+                    onClick={() => {
                       onAdd(node.id, slot, 0, 'position')
                       setAddRowOpen(null)
                     }}
@@ -1291,16 +1487,20 @@ const NodeCard = ({
                   onRemoveSlotEntry={onRemoveSlotEntry}
                   onDelete={onDelete}
                   onCopy={onCopy}
-                onPaste={onPaste}
-                onRename={onRename}
-                onWeightChange={onWeightChange}
-                onColorChange={onColorChange}
-                onToggleCollapse={onToggleCollapse}
-                onAddCondition={onAddCondition}
-                onDeleteCondition={onDeleteCondition}
-                onFunctionWindow={onFunctionWindow}
-                onFunctionBottom={onFunctionBottom}
-                onFunctionMetric={onFunctionMetric}
+                  onPaste={onPaste}
+                  onRename={onRename}
+                  onWeightChange={onWeightChange}
+                  onColorChange={onColorChange}
+                  onToggleCollapse={onToggleCollapse}
+                  onNumberedQuantifier={onNumberedQuantifier}
+                  onNumberedN={onNumberedN}
+                  onAddNumberedItem={onAddNumberedItem}
+                  onDeleteNumberedItem={onDeleteNumberedItem}
+                  onAddCondition={onAddCondition}
+                  onDeleteCondition={onDeleteCondition}
+                  onFunctionWindow={onFunctionWindow}
+                  onFunctionBottom={onFunctionBottom}
+                  onFunctionMetric={onFunctionMetric}
                   onFunctionRank={onFunctionRank}
                   onUpdateCondition={onUpdateCondition}
                   onAddPosition={onAddPosition}
@@ -1325,7 +1525,7 @@ const NodeCard = ({
                     (slot === 'then' || slot === 'else' ? 14 : 0) +
                     (node.kind === 'function' && slot === 'next' ? 4 * 14 : 0) +
                     (node.kind === 'basic' && slot === 'next' ? 3 * 14 : 0) +
-                    (node.kind === 'indicator' && (slot === 'then' || slot === 'else') ? 2 * 14 : 0),
+                    ((node.kind === 'indicator' || node.kind === 'numbered') && (slot === 'then' || slot === 'else') ? 2 * 14 : 0),
                 }}
               />
               <div className="add-row">
@@ -1369,6 +1569,14 @@ const NodeCard = ({
                       }}
                     >
                       Add Indicator
+                    </button>
+                    <button
+                      onClick={() => {
+                        onAdd(node.id, slot, originalIndex + 1, 'numbered')
+                        setAddRowOpen(null)
+                      }}
+                    >
+                      Add Numbered
                     </button>
                     <button
                       onClick={() => {
@@ -1467,6 +1675,146 @@ const NodeCard = ({
             +
           </button>
         </div>
+      </div>
+    )
+  }
+
+  const renderConditionRow = (
+    ownerId: string,
+    cond: ConditionLine,
+    idx: number,
+    total: number,
+    itemId?: string,
+    allowDeleteFirst?: boolean,
+  ) => {
+    const prefix = cond.type === 'and' ? 'And if the ' : cond.type === 'or' ? 'Or if the ' : 'If the '
+    const isSingleLineItem = total === 1
+    return (
+      <div className="condition-row" key={cond.id}>
+        <div className="chip">
+          {prefix}
+          {cond.metric === 'Current Price' ? null : (
+            <>
+              <input
+                className="inline-number"
+                type="number"
+                value={cond.window}
+                onChange={(e) => onUpdateCondition(ownerId, cond.id, { window: Number(e.target.value) }, itemId)}
+              />
+              d{' '}
+            </>
+          )}
+          <select
+            className="inline-select"
+            value={cond.metric}
+            onChange={(e) => onUpdateCondition(ownerId, cond.id, { metric: e.target.value as MetricChoice }, itemId)}
+          >
+            <option value="Current Price">Current Price</option>
+            <option value="Simple Moving Average">Simple Moving Average</option>
+            <option value="Exponential Moving Average">Exponential Moving Average</option>
+            <option value="Relative Strength Index">Relative Strength Index</option>
+            <option value="Max Drawdown">Max Drawdown</option>
+            <option value="Standard Deviation">Standard Deviation</option>
+          </select>
+          {' of '}
+          <select
+            className="inline-select"
+            value={cond.ticker}
+            onChange={(e) => onUpdateCondition(ownerId, cond.id, { ticker: e.target.value as PositionChoice }, itemId)}
+          >
+            {[cond.ticker, ...tickerOptions.filter((t) => t !== cond.ticker)].map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>{' '}
+          is{' '}
+          <select
+            className="inline-select"
+            value={cond.comparator}
+            onChange={(e) =>
+              onUpdateCondition(ownerId, cond.id, { comparator: e.target.value as ComparatorChoice }, itemId)
+            }
+          >
+            <option value="lt">Less Than</option>
+            <option value="gt">Greater Than</option>
+          </select>{' '}
+          {cond.expanded ? null : (
+            <input
+              className="inline-number"
+              type="number"
+              value={cond.threshold}
+              onChange={(e) => onUpdateCondition(ownerId, cond.id, { threshold: Number(e.target.value) }, itemId)}
+            />
+          )}
+          {cond.expanded ? (
+            <>
+              {' '}
+              the{' '}
+              {cond.rightMetric === 'Current Price' ? null : (
+                <>
+                  <input
+                    className="inline-number"
+                    type="number"
+                    value={cond.rightWindow ?? 14}
+                    onChange={(e) => onUpdateCondition(ownerId, cond.id, { rightWindow: Number(e.target.value) }, itemId)}
+                  />
+                  d{' '}
+                </>
+              )}
+              <select
+                className="inline-select"
+                value={cond.rightMetric ?? 'Relative Strength Index'}
+                onChange={(e) => onUpdateCondition(ownerId, cond.id, { rightMetric: e.target.value as MetricChoice }, itemId)}
+              >
+                <option value="Current Price">Current Price</option>
+                <option value="Simple Moving Average">Simple Moving Average</option>
+                <option value="Exponential Moving Average">Exponential Moving Average</option>
+                <option value="Relative Strength Index">Relative Strength Index</option>
+                <option value="Max Drawdown">Max Drawdown</option>
+                <option value="Standard Deviation">Standard Deviation</option>
+              </select>{' '}
+              of{' '}
+              <select
+                className="inline-select"
+                value={cond.rightTicker ?? 'SPY'}
+                onChange={(e) =>
+                  onUpdateCondition(ownerId, cond.id, { rightTicker: e.target.value as PositionChoice }, itemId)
+                }
+              >
+                {[cond.rightTicker ?? 'SPY', ...tickerOptions.filter((t) => t !== (cond.rightTicker ?? 'SPY'))].map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>{' '}
+            </>
+          ) : null}
+          <button
+            className="icon-btn inline"
+            onClick={(e) => {
+              e.stopPropagation()
+              onUpdateCondition(ownerId, cond.id, { expanded: !cond.expanded }, itemId)
+            }}
+            title="Flip condition"
+          >
+            ↔
+          </button>
+        </div>
+        {((total > 1 && (idx > 0 || allowDeleteFirst)) || (allowDeleteFirst && isSingleLineItem)) ? (
+          <button
+            className="icon-btn delete inline"
+            onClick={() => {
+              if (allowDeleteFirst && isSingleLineItem && itemId) {
+                onDeleteNumberedItem(ownerId, itemId)
+                return
+              }
+              onDeleteCondition(ownerId, cond.id, itemId)
+            }}
+          >
+            X
+          </button>
+        ) : null}
       </div>
     )
   }
@@ -1622,6 +1970,7 @@ const NodeCard = ({
           <div className="lines">
             {node.kind === 'indicator' ? (
               <>
+                <div className="condition-bubble">
                 {node.conditions?.map((cond, idx) => {
                   const prefix =
                     cond.type === 'and' ? 'And if the ' : cond.type === 'or' ? 'Or if the ' : 'If the '
@@ -1757,6 +2106,7 @@ const NodeCard = ({
                     </div>
                   )
                 })}
+                </div>
                 <div className="line">
                   <div className="indent with-line" style={{ width: 14 }} />
                   <div className="add-row">
@@ -1812,6 +2162,182 @@ const NodeCard = ({
                   </div>
                 </div>
                 {renderSlot('then', 3 * 14)}
+                <div className="line">
+                  <div className="indent with-line" style={{ width: 2 * 14 }} />
+                  <div className="chip title">Else</div>
+                </div>
+                <div className="line">
+                  <div className="indent with-line" style={{ width: 3 * 14 }} />
+                  <div className="weight-wrap">
+                    <button
+                      className="chip tag"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setWeightElseOpen((v) => !v)
+                        setWeightThenOpen(false)
+                        setWeightMainOpen(false)
+                      }}
+                    >
+                      {weightLabel(node.weightingElse ?? node.weighting)}
+                    </button>
+                    {weightElseOpen ? (
+                      <div
+                        className="menu"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                        }}
+                      >
+                        {(['equal', 'defined', 'inverse', 'pro', 'capped'] as WeightMode[]).map((w) => (
+                          <button
+                            key={w}
+                            onClick={() => {
+                              onWeightChange(node.id, w, 'else')
+                              setWeightElseOpen(false)
+                              setWeightThenOpen(false)
+                              setWeightMainOpen(false)
+                            }}
+                          >
+                            {weightLabel(w)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                {renderSlot('else', 3 * 14)}
+              </>
+            ) : node.kind === 'numbered' ? (
+              <>
+                <div className="line">
+                  <div className="indent with-line" style={{ width: 14 }} />
+                  <div className="chip">
+                    If{' '}
+                    <select
+                      className="inline-select"
+                      value={node.numbered?.quantifier ?? 'all'}
+                      onChange={(e) => onNumberedQuantifier(node.id, e.target.value as NumberedQuantifier)}
+                    >
+                      <option value="all">All</option>
+                      <option value="none">None</option>
+                      <option value="exactly">Exactly</option>
+                      <option value="atLeast">At Least</option>
+                      <option value="atMost">At Most</option>
+                    </select>{' '}
+                    {node.numbered?.quantifier === 'exactly' ||
+                    node.numbered?.quantifier === 'atLeast' ||
+                    node.numbered?.quantifier === 'atMost' ? (
+                      <>
+                        <input
+                          className="inline-number"
+                          type="number"
+                          value={node.numbered?.n ?? 1}
+                          onChange={(e) => onNumberedN(node.id, Number(e.target.value))}
+                        />{' '}
+                      </>
+                    ) : null}
+                    of the following conditions are true
+                  </div>
+                </div>
+
+                {(node.numbered?.items ?? []).map((item, idx) => (
+                  <div key={item.id}>
+                    <div className="line">
+                      <div className="indent with-line" style={{ width: 14 }} />
+                      <div className="chip title">Indicator</div>
+                    </div>
+                    <div className="line condition-block">
+                      <div className="indent with-line" style={{ width: 2 * 14 }} />
+                      <div className="condition-bubble">
+                        {item.conditions.map((cond, condIdx) =>
+                          renderConditionRow(node.id, cond, condIdx, item.conditions.length, item.id, idx > 0),
+                        )}
+                      </div>
+                    </div>
+                    <div className="line">
+                      <div className="indent with-line" style={{ width: 2 * 14 }} />
+                      <div className="add-row">
+                        <button
+                          className="add-more"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onAddCondition(node.id, 'and', item.id)
+                          }}
+                        >
+                          And If
+                        </button>
+                        <button
+                          className="add-more"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onAddCondition(node.id, 'or', item.id)
+                          }}
+                        >
+                          Or If
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="line">
+                  <div className="indent with-line" style={{ width: 14 }} />
+                  <div className="add-row">
+                    <button
+                      className="add-more"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onAddNumberedItem(node.id)
+                      }}
+                    >
+                      Add Indicator
+                    </button>
+                  </div>
+                </div>
+
+                <div className="line">
+                  <div className="indent with-line" style={{ width: 2 * 14 }} />
+                  <div className="chip title">Then</div>
+                </div>
+                <div className="line">
+                  <div className="indent with-line" style={{ width: 3 * 14 }} />
+                  <div className="weight-wrap">
+                    <button
+                      className="chip tag"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setWeightThenOpen((v) => !v)
+                        setWeightElseOpen(false)
+                        setWeightMainOpen(false)
+                      }}
+                    >
+                      {weightLabel(node.weightingThen ?? node.weighting)}
+                    </button>
+                    {weightThenOpen ? (
+                      <div
+                        className="menu"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                        }}
+                      >
+                        {(['equal', 'defined', 'inverse', 'pro', 'capped'] as WeightMode[]).map((w) => (
+                          <button
+                            key={w}
+                            onClick={() => {
+                              onWeightChange(node.id, w, 'then')
+                              setWeightThenOpen(false)
+                              setWeightElseOpen(false)
+                              setWeightMainOpen(false)
+                            }}
+                          >
+                            {weightLabel(w)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                {renderSlot('then', 3 * 14)}
+
                 <div className="line">
                   <div className="indent with-line" style={{ width: 2 * 14 }} />
                   <div className="chip title">Else</div>
@@ -2277,16 +2803,48 @@ const handleColorChange = useCallback(
   }, [activeBot, setBots])
 
   const handleAddCondition = useCallback(
-    (id: string, type: 'and' | 'or') => {
-      const next = addConditionLine(current, id, type)
+    (id: string, type: 'and' | 'or', itemId?: string) => {
+      const next = addConditionLine(current, id, type, itemId)
       push(next)
     },
     [current],
   )
 
   const handleDeleteCondition = useCallback(
-    (id: string, condId: string) => {
-      const next = deleteConditionLine(current, id, condId)
+    (id: string, condId: string, itemId?: string) => {
+      const next = deleteConditionLine(current, id, condId, itemId)
+      push(next)
+    },
+    [current],
+  )
+
+  const handleNumberedQuantifier = useCallback(
+    (id: string, quantifier: NumberedQuantifier) => {
+      const next = updateNumberedQuantifier(current, id, quantifier)
+      push(next)
+    },
+    [current],
+  )
+
+  const handleNumberedN = useCallback(
+    (id: string, n: number) => {
+      const next = updateNumberedN(current, id, n)
+      push(next)
+    },
+    [current],
+  )
+
+  const handleAddNumberedItem = useCallback(
+    (id: string) => {
+      const next = addNumberedItem(current, id)
+      push(next)
+    },
+    [current],
+  )
+
+  const handleDeleteNumberedItem = useCallback(
+    (id: string, itemId: string) => {
+      const next = deleteNumberedItem(current, id, itemId)
       push(next)
     },
     [current],
@@ -2408,19 +2966,23 @@ const handleColorChange = useCallback(
             onCopy={handleCopy}
             onPaste={handlePaste}
             onRename={handleRename}
-            onWeightChange={handleWeightChange}
-            onColorChange={handleColorChange}
-            onToggleCollapse={handleToggleCollapse}
-            onAddCondition={handleAddCondition}
-            onDeleteCondition={handleDeleteCondition}
-            onFunctionWindow={handleFunctionWindow}
-            onFunctionBottom={handleFunctionBottom}
-            onFunctionMetric={handleFunctionMetric}
-            onFunctionRank={handleFunctionRank}
-            onUpdateCondition={(id, condId, updates) => {
-              const next = updateConditionFields(current, id, condId, updates)
-              push(next)
-            }}
+             onWeightChange={handleWeightChange}
+             onColorChange={handleColorChange}
+             onToggleCollapse={handleToggleCollapse}
+             onNumberedQuantifier={handleNumberedQuantifier}
+             onNumberedN={handleNumberedN}
+             onAddNumberedItem={handleAddNumberedItem}
+             onDeleteNumberedItem={handleDeleteNumberedItem}
+             onAddCondition={handleAddCondition}
+             onDeleteCondition={handleDeleteCondition}
+             onFunctionWindow={handleFunctionWindow}
+             onFunctionBottom={handleFunctionBottom}
+             onFunctionMetric={handleFunctionMetric}
+             onFunctionRank={handleFunctionRank}
+             onUpdateCondition={(id, condId, updates, itemId) => {
+               const next = updateConditionFields(current, id, condId, updates, itemId)
+               push(next)
+             }}
             onAddPosition={handleAddPos}
             onRemovePosition={handleRemovePos}
             onChoosePosition={handleChoosePos}

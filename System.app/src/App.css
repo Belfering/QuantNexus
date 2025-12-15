@@ -388,6 +388,30 @@ h1 {
   font-weight: 700;
 }
 
+.line.condition-block {
+  align-items: stretch;
+}
+
+.condition-bubble {
+  border: 1px solid #dbe5f2;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.condition-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.condition-row .chip {
+  flex: 1;
+}
+
 .positions {
   margin-top: 8px;
   display: flex;
