@@ -567,6 +567,7 @@ function EquityChart({
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const benchRef = useRef<ISeriesApi<'Line'> | null>(null)
   const overlayRef = useRef<HTMLDivElement | null>(null)
+  const baseLineRef = useRef<any>(null)
   const baseEquityRef = useRef<number>(1)
   const pointsRef = useRef<EquityPoint[]>([])
   const visibleRangeRef = useRef<VisibleRange | undefined>(visibleRange)
@@ -646,7 +647,7 @@ function EquityChart({
 
     const chart = createChart(el, {
       width: Math.floor(innerWidth()),
-      height: 1040,
+      height: 520,
       layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
       grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
       rightPriceScale: { borderColor: '#cbd5e1', mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
@@ -756,6 +757,7 @@ function EquityChart({
       seriesRef.current = null
       benchRef.current = null
       overlayRef.current = null
+      baseLineRef.current = null
     }
   }, [computeWindowStats, formatReturnFromBase, logScale])
 
@@ -764,6 +766,22 @@ function EquityChart({
     const main = sanitizeSeriesPoints(points)
     if (main.length > 0) baseEquityRef.current = main[0].value
     seriesRef.current.setData(main as any)
+    const base = baseEquityRef.current
+    if (Number.isFinite(base) && base > 0) {
+      const existing = baseLineRef.current
+      if (!existing && (seriesRef.current as any).createPriceLine) {
+        baseLineRef.current = (seriesRef.current as any).createPriceLine({
+          price: base,
+          color: '#0f172a',
+          lineWidth: 3,
+          lineStyle: 0,
+          axisLabelVisible: true,
+          title: '0%',
+        })
+      } else if (existing?.applyOptions) {
+        existing.applyOptions({ price: base })
+      }
+    }
     ;(seriesRef.current as any).setMarkers?.(
       (markers || []).slice(0, 80).map((m) => ({
         time: m.time,
@@ -798,7 +816,7 @@ function EquityChart({
       ref={containerRef}
       style={{
         width: '100%',
-        height: 1040,
+        height: 520,
         borderRadius: 14,
         border: '1px solid #cbd5e1',
         overflow: 'hidden',
@@ -4876,17 +4894,19 @@ function BacktesterPanel({
             </div>
 
             <div className="equity-wrap">
-              <div className="chart-presets">
-                <button onClick={() => applyPreset('1m')}>1m</button>
-                <button onClick={() => applyPreset('3m')}>3m</button>
-                <button onClick={() => applyPreset('6m')}>6m</button>
-                <button onClick={() => applyPreset('ytd')}>YTD</button>
-                <button onClick={() => applyPreset('1y')}>1yr</button>
-                <button onClick={() => applyPreset('5y')}>5yr</button>
-                <button onClick={() => applyPreset('max')}>Max</button>
-                <button className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)}>
-                  Log
-                </button>
+              <div className="chart-toolbar">
+                <div className="chart-presets">
+                  <button onClick={() => applyPreset('1m')}>1m</button>
+                  <button onClick={() => applyPreset('3m')}>3m</button>
+                  <button onClick={() => applyPreset('6m')}>6m</button>
+                  <button onClick={() => applyPreset('ytd')}>YTD</button>
+                  <button onClick={() => applyPreset('1y')}>1yr</button>
+                  <button onClick={() => applyPreset('5y')}>5yr</button>
+                  <button onClick={() => applyPreset('max')}>Max</button>
+                  <button className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)}>
+                    Log
+                  </button>
+                </div>
               </div>
               <EquityChart
                 points={result.points}
