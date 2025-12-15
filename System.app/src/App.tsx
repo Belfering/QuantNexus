@@ -2413,9 +2413,7 @@ const NodeCard = ({
               <div
                 className="indent with-line"
                 style={{
-                  width:
-                    depthPx * 1 +
-                    8,
+                  width: (depth + 1) * 14 + 8,
                 }}
               />
               <div className="slot-body">
@@ -2468,9 +2466,7 @@ const NodeCard = ({
                 <div
                   className="indent with-line"
                   style={{
-                    width:
-                      depthPx * 1 +
-                      8,
+                    width: (depth + 1) * 14 + 8,
                   }}
                 />
                 <div className="add-row">
