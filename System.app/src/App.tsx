@@ -1,6 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import './App.css'
-import { AreaSeries, CandlestickSeries, ColorType, LineSeries, createChart, type CandlestickData, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts'
+import {
+  AreaSeries,
+  CandlestickSeries,
+  ColorType,
+  LineSeries,
+  PriceScaleMode,
+  createChart,
+  type CandlestickData,
+  type IChartApi,
+  type ISeriesApi,
+  type UTCTimestamp,
+} from 'lightweight-charts'
 
 type BlockKind = 'basic' | 'function' | 'indicator' | 'numbered' | 'position'
 type SlotId = 'next' | 'then' | 'else'
@@ -489,6 +500,35 @@ type EquityMarker = { time: UTCTimestamp; text: string }
 
 type VisibleRange = { from: UTCTimestamp; to: UTCTimestamp }
 
+const clampVisibleRangeToPoints = (points: EquityPoint[], range: VisibleRange): VisibleRange => {
+  const times = (points || []).map((p) => Number(p.time)).filter(Number.isFinite)
+  if (times.length === 0) return range
+  const minT = times[0]
+  const maxT = times[times.length - 1]
+  let from = Math.max(minT, Math.min(maxT, Number(range.from)))
+  let to = Math.max(minT, Math.min(maxT, Number(range.to)))
+  if (to < from) [from, to] = [to, from]
+
+  // snap to closest existing points so charts stay aligned to bars
+  const snap = (t: number) => {
+    let best = times[0]
+    let bestDist = Math.abs(times[0] - t)
+    // linear scan is OK for daily-sized arrays (<= ~20k); if this grows, switch to binary search
+    for (const x of times) {
+      const d = Math.abs(x - t)
+      if (d < bestDist) {
+        best = x
+        bestDist = d
+      }
+    }
+    return best
+  }
+  from = snap(from)
+  to = snap(to)
+  if (to < from) [from, to] = [to, from]
+  return { from: from as UTCTimestamp, to: to as UTCTimestamp }
+}
+
 const sanitizeSeriesPoints = (points: EquityPoint[], opts?: { clampMin?: number; clampMax?: number }) => {
   const out: EquityPoint[] = []
   let lastTime = -Infinity
@@ -511,20 +551,81 @@ function EquityChart({
   points,
   benchmarkPoints,
   markers,
-  onHoverTime,
   visibleRange,
+  onVisibleRangeChange,
+  logScale,
 }: {
   points: EquityPoint[]
   benchmarkPoints?: EquityPoint[]
   markers: EquityMarker[]
-  onHoverTime?: (t: UTCTimestamp | null) => void
   visibleRange?: VisibleRange
+  onVisibleRangeChange?: (range: VisibleRange) => void
+  logScale?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const benchRef = useRef<ISeriesApi<'Line'> | null>(null)
-  const tooltipRef = useRef<HTMLDivElement | null>(null)
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const baseEquityRef = useRef<number>(1)
+  const pointsRef = useRef<EquityPoint[]>([])
+  const visibleRangeRef = useRef<VisibleRange | undefined>(visibleRange)
+  const onVisibleRangeChangeRef = useRef<((range: VisibleRange) => void) | undefined>(onVisibleRangeChange)
+  const lastEmittedRangeKeyRef = useRef<string>('')
+
+  useEffect(() => {
+    pointsRef.current = points || []
+  }, [points])
+
+  useEffect(() => {
+    visibleRangeRef.current = visibleRange
+  }, [visibleRange])
+
+  useEffect(() => {
+    onVisibleRangeChangeRef.current = onVisibleRangeChange
+  }, [onVisibleRangeChange])
+
+  const formatReturnFromBase = useCallback((equity: number) => {
+    const base = baseEquityRef.current || 1
+    if (!(Number.isFinite(equity) && Number.isFinite(base) && base > 0)) return '—'
+    return `${(((equity / base) - 1) * 100).toFixed(2)}%`
+  }, [])
+
+  const computeWindowStats = useCallback((cursorTime: UTCTimestamp): { cagr: number; maxDD: number } | null => {
+    const pts = pointsRef.current
+    if (!pts || pts.length < 2) return null
+
+    const vr = visibleRangeRef.current
+    const startTime = vr?.from ?? pts[0].time
+    const endTime = cursorTime
+    if (!(Number(startTime) <= Number(endTime))) return null
+
+    let startIdx = 0
+    while (startIdx < pts.length && Number(pts[startIdx].time) < Number(startTime)) startIdx++
+    let endIdx = startIdx
+    while (endIdx < pts.length && Number(pts[endIdx].time) <= Number(endTime)) endIdx++
+    endIdx = Math.max(startIdx, endIdx - 1)
+    if (endIdx <= startIdx) return null
+
+    const startEquity = pts[startIdx].value
+    const endEquity = pts[endIdx].value
+    const periods = Math.max(1, endIdx - startIdx)
+    const cagr = startEquity > 0 && endEquity > 0 ? Math.pow(endEquity / startEquity, 252 / periods) - 1 : 0
+
+    let peak = -Infinity
+    let maxDD = 0
+    for (let i = startIdx; i <= endIdx; i++) {
+      const v = pts[i].value
+      if (!Number.isFinite(v)) continue
+      if (v > peak) peak = v
+      if (peak > 0) {
+        const dd = v / peak - 1
+        if (dd < maxDD) maxDD = dd
+      }
+    }
+
+    return { cagr, maxDD }
+  }, [])
 
   useEffect(() => {
     const el = containerRef.current
@@ -548,48 +649,89 @@ function EquityChart({
       height: 260,
       layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
       grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
-      rightPriceScale: { borderColor: '#cbd5e1' },
+      rightPriceScale: { borderColor: '#cbd5e1', mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
       timeScale: { borderColor: '#cbd5e1', rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
+      handleScale: { mouseWheel: true, pinch: true },
     })
-    const series = chart.addSeries(LineSeries, { color: '#0ea5e9', lineWidth: 2 })
-    const bench = chart.addSeries(LineSeries, { color: '#64748b', lineWidth: 2, lineStyle: 2 })
+    const series = chart.addSeries(LineSeries, {
+      color: '#0ea5e9',
+      lineWidth: 2,
+      priceFormat: { type: 'custom', formatter: (v: number) => formatReturnFromBase(v) },
+      autoscaleInfoProvider: (original: any) => {
+        const o = original()
+        const base = baseEquityRef.current || 1
+        if (!o || !o.priceRange || !(Number.isFinite(base) && base > 0)) return o
+        const { minValue, maxValue } = o.priceRange
+        return {
+          ...o,
+          priceRange: {
+            minValue: Math.min(base, minValue),
+            maxValue: Math.max(base, maxValue),
+          },
+        }
+      },
+    } as any)
+    const bench = chart.addSeries(LineSeries, {
+      color: '#64748b',
+      lineWidth: 2,
+      lineStyle: 2,
+      priceFormat: { type: 'custom', formatter: (v: number) => formatReturnFromBase(v) },
+    } as any)
     chartRef.current = chart
     seriesRef.current = series
     benchRef.current = bench
 
-    const tooltip = document.createElement('div')
-    tooltip.style.position = 'absolute'
-    tooltip.style.display = 'none'
-    tooltip.style.pointerEvents = 'none'
-    tooltip.style.top = '12px'
-    tooltip.style.left = '12px'
-    tooltip.style.padding = '8px 10px'
-    tooltip.style.borderRadius = '10px'
-    tooltip.style.border = '1px solid #cbd5e1'
-    tooltip.style.background = 'rgba(255,255,255,0.95)'
-    tooltip.style.boxShadow = '0 8px 20px rgba(15, 23, 42, 0.12)'
-    tooltip.style.fontWeight = '800'
-    tooltip.style.fontSize = '12px'
-    tooltip.style.color = '#0f172a'
-    el.appendChild(tooltip)
-    tooltipRef.current = tooltip
+    const overlay = document.createElement('div')
+    overlay.style.position = 'absolute'
+    overlay.style.display = 'none'
+    overlay.style.pointerEvents = 'none'
+    overlay.style.top = '12px'
+    overlay.style.left = '12px'
+    overlay.style.padding = '8px 10px'
+    overlay.style.borderRadius = '10px'
+    overlay.style.border = '1px solid #cbd5e1'
+    overlay.style.background = 'rgba(255,255,255,0.95)'
+    overlay.style.boxShadow = '0 8px 20px rgba(15, 23, 42, 0.12)'
+    overlay.style.fontWeight = '800'
+    overlay.style.fontSize = '12px'
+    overlay.style.color = '#0f172a'
+    overlay.style.whiteSpace = 'nowrap'
+    el.appendChild(overlay)
+    overlayRef.current = overlay
 
     chart.subscribeCrosshairMove((param: any) => {
       const time = param?.time
       if (!time || typeof time !== 'number') {
-        tooltip.style.display = 'none'
-        onHoverTime?.(null)
+        overlay.style.display = 'none'
         return
       }
-      const p = param.seriesData?.get(series)
-      const b = param.seriesData?.get(bench)
-      const pv = p?.value ?? p?.close ?? null
-      const bv = b?.value ?? b?.close ?? null
-      tooltip.style.display = 'block'
-      tooltip.innerHTML = `${isoFromUtcSeconds(time)}<br/>Equity: ${pv != null ? Number(pv).toFixed(4) : '—'}${
-        benchmarkPoints && bv != null ? `<br/>Benchmark: ${Number(bv).toFixed(4)}` : ''
-      }`
-      onHoverTime?.(time as UTCTimestamp)
+      const stats = computeWindowStats(time as UTCTimestamp)
+      overlay.style.display = 'block'
+      overlay.innerHTML = `${isoFromUtcSeconds(time)}<br/>Window CAGR: ${stats ? formatPct(stats.cagr) : '—'}<br/>Window MaxDD: ${stats ? formatPct(stats.maxDD) : '—'}`
+
+      const px = Number(param?.point?.x)
+      if (!Number.isFinite(px)) return
+      const container = el.getBoundingClientRect()
+      const ow = overlay.getBoundingClientRect().width || 160
+      const pad = 10
+      let left = px + 12
+      if (left + ow + pad > container.width) left = px - 12 - ow
+      left = Math.max(pad, Math.min(container.width - ow - pad, left))
+      overlay.style.left = `${Math.round(left)}px`
+    })
+
+    const unsubscribeRange = (chart.timeScale() as any).subscribeVisibleTimeRangeChange?.((r: any) => {
+      const cb = onVisibleRangeChangeRef.current
+      if (!cb || !r) return
+      const from = r.from
+      const to = r.to
+      if (typeof from !== 'number' || typeof to !== 'number') return
+      const next = { from: from as UTCTimestamp, to: to as UTCTimestamp }
+      const key = `${Number(next.from)}:${Number(next.to)}`
+      if (key === lastEmittedRangeKeyRef.current) return
+      lastEmittedRangeKeyRef.current = key
+      cb(next)
     })
 
     const ro = new ResizeObserver(() => {
@@ -600,7 +742,12 @@ function EquityChart({
     return () => {
       ro.disconnect()
       try {
-        tooltip.remove()
+        overlay.remove()
+      } catch {
+        // ignore
+      }
+      try {
+        if (typeof unsubscribeRange === 'function') unsubscribeRange()
       } catch {
         // ignore
       }
@@ -608,13 +755,14 @@ function EquityChart({
       chartRef.current = null
       seriesRef.current = null
       benchRef.current = null
-      tooltipRef.current = null
+      overlayRef.current = null
     }
-  }, [])
+  }, [computeWindowStats, formatReturnFromBase, logScale])
 
   useEffect(() => {
     if (!seriesRef.current) return
     const main = sanitizeSeriesPoints(points)
+    if (main.length > 0) baseEquityRef.current = main[0].value
     seriesRef.current.setData(main as any)
     ;(seriesRef.current as any).setMarkers?.(
       (markers || []).slice(0, 80).map((m) => ({
@@ -659,10 +807,24 @@ function EquityChart({
   )
 }
 
-function DrawdownChart({ points, visibleRange }: { points: EquityPoint[]; visibleRange?: VisibleRange }) {
+function DrawdownChart({
+  points,
+  visibleRange,
+  onVisibleRangeChange,
+}: {
+  points: EquityPoint[]
+  visibleRange?: VisibleRange
+  onVisibleRangeChange?: (range: VisibleRange) => void
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Area'> | null>(null)
+  const onVisibleRangeChangeRef = useRef(onVisibleRangeChange)
+  const lastEmittedRangeKeyRef = useRef<string>('')
+
+  useEffect(() => {
+    onVisibleRangeChangeRef.current = onVisibleRangeChange
+  }, [onVisibleRangeChange])
 
   useEffect(() => {
     const el = containerRef.current
@@ -681,11 +843,13 @@ function DrawdownChart({ points, visibleRange }: { points: EquityPoint[]; visibl
 
     const chart = createChart(el, {
       width: Math.floor(innerWidth()),
-      height: 180,
+      height: 260,
       layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
       grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
       rightPriceScale: { borderColor: '#cbd5e1' },
       timeScale: { borderColor: '#cbd5e1', rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
+      handleScale: { mouseWheel: true, pinch: true },
     })
     const series = chart.addSeries(AreaSeries, {
       lineColor: '#ef4444',
@@ -697,6 +861,19 @@ function DrawdownChart({ points, visibleRange }: { points: EquityPoint[]; visibl
     chartRef.current = chart
     seriesRef.current = series
 
+    const unsubscribeRange = (chart.timeScale() as any).subscribeVisibleTimeRangeChange?.((r: any) => {
+      const cb = onVisibleRangeChangeRef.current
+      if (!cb || !r) return
+      const from = r.from
+      const to = r.to
+      if (typeof from !== 'number' || typeof to !== 'number') return
+      const next = { from: from as UTCTimestamp, to: to as UTCTimestamp }
+      const key = `${Number(next.from)}:${Number(next.to)}`
+      if (key === lastEmittedRangeKeyRef.current) return
+      lastEmittedRangeKeyRef.current = key
+      cb(next)
+    })
+
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width: Math.floor(innerWidth()) })
     })
@@ -704,6 +881,11 @@ function DrawdownChart({ points, visibleRange }: { points: EquityPoint[]; visibl
 
     return () => {
       ro.disconnect()
+      try {
+        if (typeof unsubscribeRange === 'function') unsubscribeRange()
+      } catch {
+        // ignore
+      }
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
@@ -732,12 +914,287 @@ function DrawdownChart({ points, visibleRange }: { points: EquityPoint[]; visibl
       ref={containerRef}
       style={{
         width: '100%',
-        height: 180,
+        height: 260,
         borderRadius: 14,
         border: '1px solid #cbd5e1',
         overflow: 'hidden',
       }}
     />
+  )
+}
+
+function RangeNavigator({
+  points,
+  range,
+  onChange,
+}: {
+  points: EquityPoint[]
+  range: VisibleRange
+  onChange: (range: VisibleRange) => void
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  const seriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const windowRef = useRef<HTMLDivElement | null>(null)
+  const shadeLeftRef = useRef<HTMLDivElement | null>(null)
+  const shadeRightRef = useRef<HTMLDivElement | null>(null)
+  const rangeRef = useRef<VisibleRange>(range)
+  const pointsRef = useRef<EquityPoint[]>(points)
+  const onChangeRef = useRef(onChange)
+  const rafRef = useRef<number | null>(null)
+
+  const dragRef = useRef<
+    | null
+    | {
+        kind: 'move' | 'left' | 'right'
+        startClientX: number
+        startFromX: number
+        startToX: number
+        containerLeft: number
+        containerWidth: number
+      }
+  >(null)
+
+  useEffect(() => {
+    rangeRef.current = range
+  }, [range])
+
+  useEffect(() => {
+    pointsRef.current = points || []
+  }, [points])
+
+  useEffect(() => {
+    onChangeRef.current = onChange
+  }, [onChange])
+
+  const syncOverlay = useCallback(() => {
+    const chart = chartRef.current
+    const el = containerRef.current
+    const win = windowRef.current
+    const shadeL = shadeLeftRef.current
+    const shadeR = shadeRightRef.current
+    if (!chart || !el || !win || !shadeL || !shadeR) return
+
+    const rect = el.getBoundingClientRect()
+    const fromX = (chart.timeScale() as any).timeToCoordinate?.(rangeRef.current.from as any)
+    const toX = (chart.timeScale() as any).timeToCoordinate?.(rangeRef.current.to as any)
+    if (!(Number.isFinite(fromX) && Number.isFinite(toX))) return
+
+    const left = Math.max(0, Math.min(rect.width, Math.min(fromX, toX)))
+    const right = Math.max(0, Math.min(rect.width, Math.max(fromX, toX)))
+    const width = Math.max(20, right - left)
+    const clampedRight = Math.min(rect.width, left + width)
+
+    win.style.left = `${Math.round(left)}px`
+    win.style.width = `${Math.round(clampedRight - left)}px`
+
+    shadeL.style.left = '0px'
+    shadeL.style.width = `${Math.round(left)}px`
+
+    shadeR.style.left = `${Math.round(clampedRight)}px`
+    shadeR.style.width = `${Math.round(Math.max(0, rect.width - clampedRight))}px`
+  }, [])
+
+  const scheduleSync = useCallback(() => {
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null
+      syncOverlay()
+    })
+  }, [syncOverlay])
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    el.style.position = 'relative'
+
+    const innerWidth = () => {
+      const { width } = el.getBoundingClientRect()
+      const cs = getComputedStyle(el)
+      const border =
+        parseFloat(cs.borderLeftWidth || '0') +
+        parseFloat(cs.borderRightWidth || '0') +
+        parseFloat(cs.paddingLeft || '0') +
+        parseFloat(cs.paddingRight || '0')
+      return Math.max(0, width - border)
+    }
+
+    const chart = createChart(el, {
+      width: Math.floor(innerWidth()),
+      height: 110,
+      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
+      grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
+      rightPriceScale: { visible: false },
+      leftPriceScale: { visible: false },
+      timeScale: { visible: false, borderColor: '#cbd5e1', fixLeftEdge: true, fixRightEdge: true },
+    } as any)
+    const series = chart.addSeries(LineSeries, { color: '#94a3b8', lineWidth: 1 } as any)
+    chartRef.current = chart
+    seriesRef.current = series
+
+    const ro = new ResizeObserver(() => {
+      chart.applyOptions({ width: Math.floor(innerWidth()) })
+      scheduleSync()
+    })
+    ro.observe(el)
+
+    scheduleSync()
+
+    return () => {
+      ro.disconnect()
+      chart.remove()
+      chartRef.current = null
+      seriesRef.current = null
+    }
+  }, [scheduleSync])
+
+  useEffect(() => {
+    const chart = chartRef.current
+    const series = seriesRef.current
+    if (!chart || !series) return
+    const data = sanitizeSeriesPoints(points)
+    series.setData(data as any)
+    chart.timeScale().fitContent()
+    scheduleSync()
+  }, [points, scheduleSync])
+
+  useEffect(() => {
+    scheduleSync()
+  }, [range, scheduleSync])
+
+  const stopDragging = useCallback(() => {
+    dragRef.current = null
+    window.removeEventListener('pointermove', onPointerMove as any)
+    window.removeEventListener('pointerup', onPointerUp as any)
+  }, [])
+
+  const onPointerMove = useCallback((e: PointerEvent) => {
+    const chart = chartRef.current
+    const el = containerRef.current
+    const drag = dragRef.current
+    if (!chart || !el || !drag) return
+
+    const x = e.clientX
+    const dx = x - drag.startClientX
+    const minWidthPx = 20
+
+    let fromX = drag.startFromX
+    let toX = drag.startToX
+    if (drag.kind === 'move') {
+      fromX += dx
+      toX += dx
+    } else if (drag.kind === 'left') {
+      fromX += dx
+    } else {
+      toX += dx
+    }
+
+    fromX = Math.max(0, Math.min(drag.containerWidth, fromX))
+    toX = Math.max(0, Math.min(drag.containerWidth, toX))
+
+    if (Math.abs(toX - fromX) < minWidthPx) {
+      if (drag.kind === 'left') fromX = toX - minWidthPx
+      else if (drag.kind === 'right') toX = fromX + minWidthPx
+      else toX = fromX + minWidthPx
+      fromX = Math.max(0, Math.min(drag.containerWidth, fromX))
+      toX = Math.max(0, Math.min(drag.containerWidth, toX))
+    }
+
+    const fromT = (chart.timeScale() as any).coordinateToTime?.(fromX)
+    const toT = (chart.timeScale() as any).coordinateToTime?.(toX)
+    if (!(typeof fromT === 'number' && typeof toT === 'number')) return
+
+    const pts = pointsRef.current
+    if (!pts.length) return
+    const next = clampVisibleRangeToPoints(pts, { from: fromT as UTCTimestamp, to: toT as UTCTimestamp })
+    onChangeRef.current(next)
+  }, [])
+
+  const onPointerUp = useCallback(() => {
+    stopDragging()
+  }, [stopDragging])
+
+  useEffect(() => {
+    return () => {
+      stopDragging()
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [stopDragging])
+
+  const beginDrag = useCallback((kind: 'move' | 'left' | 'right', e: ReactPointerEvent<HTMLDivElement>) => {
+    const chart = chartRef.current
+    const el = containerRef.current
+    if (!chart || !el) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    const rect = el.getBoundingClientRect()
+    const fromX = (chart.timeScale() as any).timeToCoordinate?.(rangeRef.current.from as any)
+    const toX = (chart.timeScale() as any).timeToCoordinate?.(rangeRef.current.to as any)
+    if (!(Number.isFinite(fromX) && Number.isFinite(toX))) return
+
+    dragRef.current = {
+      kind,
+      startClientX: e.clientX,
+      startFromX: Number(fromX),
+      startToX: Number(toX),
+      containerLeft: rect.left,
+      containerWidth: rect.width,
+    }
+
+    window.addEventListener('pointermove', onPointerMove as any)
+    window.addEventListener('pointerup', onPointerUp as any, { once: true })
+    scheduleSync()
+  }, [onPointerMove, onPointerUp, scheduleSync])
+
+  const handleBackgroundPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (windowRef.current && windowRef.current.contains(e.target as Node)) return
+      const chart = chartRef.current
+      const el = containerRef.current
+      if (!chart || !el) return
+      const rect = el.getBoundingClientRect()
+      const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left))
+      const clicked = (chart.timeScale() as any).coordinateToTime?.(x)
+      if (typeof clicked !== 'number') return
+
+      const prev = rangeRef.current
+      const half = (Number(prev.to) - Number(prev.from)) / 2
+      const from = (clicked - half) as UTCTimestamp
+      const to = (clicked + half) as UTCTimestamp
+      const pts = pointsRef.current
+      if (!pts.length) return
+      onChangeRef.current(clampVisibleRangeToPoints(pts, { from, to }))
+    },
+    [],
+  )
+
+  return (
+    <div className="navigator-wrap">
+      <div className="navigator-chart-wrap">
+        <div
+          ref={containerRef}
+          className="navigator-chart"
+          style={{
+            width: '100%',
+            height: 110,
+            borderRadius: 14,
+            border: '1px solid #cbd5e1',
+            overflow: 'hidden',
+          }}
+        />
+        <div className="navigator-overlay" onPointerDown={handleBackgroundPointerDown}>
+          <div ref={shadeLeftRef} className="navigator-shade" />
+          <div ref={shadeRightRef} className="navigator-shade" />
+          <div ref={windowRef} className="navigator-window" onPointerDown={(e) => beginDrag('move', e)}>
+            <div className="navigator-handle left" onPointerDown={(e) => beginDrag('left', e)} />
+            <div className="navigator-handle right" onPointerDown={(e) => beginDrag('right', e)} />
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -3217,40 +3674,118 @@ const downloadRebalancesCsv = (result: BacktestResult) => {
   downloadTextFile('rebalances.csv', `${lines.join('\n')}\n`, 'text/csv')
 }
 
-const renderMonthlyHeatmap = (monthly: Array<{ year: number; month: number; value: number }>) => {
-  const years = Array.from(new Set(monthly.map((m) => m.year))).sort((a, b) => a - b)
+const renderMonthlyHeatmap = (
+  monthly: Array<{ year: number; month: number; value: number }>,
+  days: BacktestDayRow[],
+) => {
+  const years = Array.from(
+    new Set(
+      (days || [])
+        .map((d) => new Date(Number(d.time) * 1000).getUTCFullYear())
+        .filter((y) => Number.isFinite(y)),
+    ),
+  ).sort((a, b) => a - b)
+
   const byKey = new Map<string, number>()
   for (const m of monthly) byKey.set(`${m.year}-${m.month}`, m.value)
 
+  const pos = monthly.map((m) => m.value).filter((v) => Number.isFinite(v) && v > 0) as number[]
+  const neg = monthly.map((m) => m.value).filter((v) => Number.isFinite(v) && v < 0) as number[]
+  const maxPos = pos.length ? Math.max(...pos) : 0
+  const minNeg = neg.length ? Math.min(...neg) : 0
+
+  const mix = (a: number, b: number, t: number) => Math.round(a + (b - a) * Math.max(0, Math.min(1, t)))
+  const bgFor = (v: number) => {
+    if (!Number.isFinite(v)) return { background: '#ffffff', color: '#94a3b8' }
+    if (Math.abs(v) < 1e-12) return { background: '#ffffff', color: '#475569' }
+
+    if (v > 0) {
+      const t = maxPos > 0 ? Math.min(1, v / maxPos) : 0
+      const r = mix(255, 22, t)
+      const g = mix(255, 163, t)
+      const b = mix(255, 74, t)
+      return { background: `rgb(${r}, ${g}, ${b})`, color: '#064e3b' }
+    }
+
+    const t = minNeg < 0 ? Math.min(1, v / minNeg) : 0
+    const r = mix(255, 220, t)
+    const g = mix(255, 38, t)
+    const b = mix(255, 38, t)
+    return { background: `rgb(${r}, ${g}, ${b})`, color: '#881337' }
+  }
+
+  const yearStats = new Map<number, { cagr: number; maxDD: number } | null>()
+  for (const y of years) {
+    const rows = (days || []).filter((d) => new Date(Number(d.time) * 1000).getUTCFullYear() === y)
+    if (rows.length < 2) {
+      yearStats.set(y, null)
+      continue
+    }
+    const start = rows[0].equity
+    const end = rows[rows.length - 1].equity
+    const periods = Math.max(1, rows.length - 1)
+    const cagr = start > 0 && end > 0 ? Math.pow(end / start, 252 / periods) - 1 : 0
+    let peak = -Infinity
+    let maxDD = 0
+    for (const r of rows) {
+      const v = r.equity
+      if (!Number.isFinite(v)) continue
+      if (v > peak) peak = v
+      if (peak > 0) {
+        const dd = v / peak - 1
+        if (dd < maxDD) maxDD = dd
+      }
+    }
+    yearStats.set(y, { cagr, maxDD })
+  }
+
   const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   return (
-    <table className="monthly-table">
+    <table className="monthly-table monthly-table-v2">
       <thead>
         <tr>
+          <th className="monthly-title" colSpan={15}>
+            Monthly Returns
+          </th>
+        </tr>
+        <tr>
+          <th className="monthly-group" colSpan={3}>
+            Year
+          </th>
+          <th className="monthly-group" colSpan={12}>
+            Monthly
+          </th>
+        </tr>
+        <tr>
           <th>Year</th>
+          <th>CAGR</th>
+          <th>MaxDD</th>
           {monthLabels.map((m) => (
             <th key={m}>{m}</th>
           ))}
         </tr>
       </thead>
       <tbody>
-        {years.map((y) => (
-          <tr key={y}>
-            <td>{y}</td>
-            {monthLabels.map((_, idx) => {
-              const month = idx + 1
-              const v = byKey.get(`${y}-${month}`)
-              const pct = v == null ? null : v
-              const tone =
-                pct == null ? 'neutral' : pct > 0.03 ? 'pos-3' : pct > 0.01 ? 'pos-2' : pct > 0 ? 'pos-1' : pct < -0.03 ? 'neg-3' : pct < -0.01 ? 'neg-2' : 'neg-1'
-              return (
-                <td key={`${y}-${month}`} className={`month-cell ${tone}`}>
-                  {pct == null ? '' : `${(pct * 100).toFixed(1)}%`}
-                </td>
-              )
-            })}
-          </tr>
-        ))}
+        {years.map((y) => {
+          const ys = yearStats.get(y) ?? null
+          return (
+            <tr key={y}>
+              <td className="year-cell">{y}</td>
+              <td className="year-metric">{ys ? formatPct(ys.cagr) : ''}</td>
+              <td className="year-metric">{ys ? formatPct(ys.maxDD) : ''}</td>
+              {monthLabels.map((_, idx) => {
+                const month = idx + 1
+                const v = byKey.get(`${y}-${month}`)
+                const style = v == null ? { background: '#ffffff', color: '#94a3b8' } : bgFor(v)
+                return (
+                  <td key={`${y}-${month}`} className="month-cell" style={{ background: style.background, color: style.color }}>
+                    {v == null ? '' : `${(v * 100).toFixed(1)}%`}
+                  </td>
+                )
+              })}
+            </tr>
+          )
+        })}
       </tbody>
     </table>
   )
@@ -4074,94 +4609,93 @@ function BacktesterPanel({
   onJumpToError,
 }: BacktesterPanelProps) {
   const [tab, setTab] = useState<'Overview' | 'Allocations' | 'Rebalances' | 'Warnings'>('Overview')
-  const [hoverTime, setHoverTime] = useState<UTCTimestamp | null>(null)
-  const [rangeStartIdx, setRangeStartIdx] = useState<number>(0)
-  const [rangeEndIdx, setRangeEndIdx] = useState<number>(0)
+  const [selectedRange, setSelectedRange] = useState<VisibleRange | null>(null)
+  const [logScale, setLogScale] = useState(false)
   const benchmarkKnown = useMemo(() => {
     const t = normalizeChoice(benchmark)
     if (!t || t === 'Empty') return false
     return tickerOptions.includes(t)
   }, [benchmark, tickerOptions])
 
-  const resultByTime = useMemo(() => {
-    const map = new Map<number, BacktestDayRow>()
-    for (const d of result?.days || []) map.set(Number(d.time), d)
-    return map
-  }, [result])
-
-  const hover = hoverTime != null ? resultByTime.get(Number(hoverTime)) ?? null : null
-
   const points = result?.points || []
   const visibleRange = useMemo<VisibleRange | undefined>(() => {
     if (!points.length) return undefined
-    const start = Math.max(0, Math.min(points.length - 1, Math.floor(rangeStartIdx)))
-    const end = Math.max(0, Math.min(points.length - 1, Math.floor(rangeEndIdx)))
-    const s = Math.min(start, end)
-    const e = Math.max(start, end)
-    if (e <= s) return { from: points[0].time, to: points[points.length - 1].time }
-    return { from: points[s].time, to: points[e].time }
-  }, [points, rangeStartIdx, rangeEndIdx])
+    const full = { from: points[0].time, to: points[points.length - 1].time }
+    const r = selectedRange ?? full
+    return clampVisibleRangeToPoints(points, r)
+  }, [points, selectedRange])
 
   useEffect(() => {
-    if (!points.length) return
-    setRangeStartIdx(0)
-    setRangeEndIdx(points.length - 1)
+    if (!points.length) {
+      setSelectedRange(null)
+      return
+    }
+    setSelectedRange({ from: points[0].time, to: points[points.length - 1].time })
   }, [points.length])
 
   const rangeLabel = useMemo(() => {
-    if (!points.length) return { start: '', end: '' }
-    const s = Math.max(0, Math.min(points.length - 1, Math.floor(rangeStartIdx)))
-    const e = Math.max(0, Math.min(points.length - 1, Math.floor(rangeEndIdx)))
-    const lo = Math.min(s, e)
-    const hi = Math.max(s, e)
-    return { start: isoFromUtcSeconds(points[lo].time), end: isoFromUtcSeconds(points[hi].time) }
-  }, [points, rangeStartIdx, rangeEndIdx])
+    if (!visibleRange) return { start: '', end: '' }
+    return { start: isoFromUtcSeconds(visibleRange.from), end: isoFromUtcSeconds(visibleRange.to) }
+  }, [visibleRange])
 
   const applyPreset = (preset: '1m' | '3m' | '6m' | 'ytd' | '1y' | '5y' | 'max') => {
     if (!points.length) return
-    const lastTime = Number(points[points.length - 1].time) * 1000
-    const endDate = new Date(lastTime)
+    if (preset === 'max') {
+      setSelectedRange({ from: points[0].time, to: points[points.length - 1].time })
+      return
+    }
+
+    const endTime = visibleRange?.to ?? points[points.length - 1].time
+    const endDate = new Date(Number(endTime) * 1000)
     let startDate: Date
     switch (preset) {
       case '1m':
         startDate = new Date(endDate)
-        startDate.setMonth(startDate.getMonth() - 1)
+        startDate.setUTCMonth(startDate.getUTCMonth() - 1)
         break
       case '3m':
         startDate = new Date(endDate)
-        startDate.setMonth(startDate.getMonth() - 3)
+        startDate.setUTCMonth(startDate.getUTCMonth() - 3)
         break
       case '6m':
         startDate = new Date(endDate)
-        startDate.setMonth(startDate.getMonth() - 6)
+        startDate.setUTCMonth(startDate.getUTCMonth() - 6)
         break
       case 'ytd':
-        startDate = new Date(endDate.getFullYear(), 0, 1)
+        startDate = new Date(Date.UTC(endDate.getUTCFullYear(), 0, 1))
         break
       case '1y':
         startDate = new Date(endDate)
-        startDate.setFullYear(startDate.getFullYear() - 1)
+        startDate.setUTCFullYear(startDate.getUTCFullYear() - 1)
         break
       case '5y':
         startDate = new Date(endDate)
-        startDate.setFullYear(startDate.getFullYear() - 5)
+        startDate.setUTCFullYear(startDate.getUTCFullYear() - 5)
         break
-      case 'max':
-        setRangeStartIdx(0)
-        setRangeEndIdx(points.length - 1)
-        return
     }
     const startSec = Math.floor(startDate.getTime() / 1000)
-    let idx = 0
+    let startTime = points[0].time
     for (let i = 0; i < points.length; i++) {
       if (Number(points[i].time) >= startSec) {
-        idx = i
+        startTime = points[i].time
         break
       }
     }
-    setRangeStartIdx(idx)
-    setRangeEndIdx(points.length - 1)
+    setSelectedRange(clampVisibleRangeToPoints(points, { from: startTime, to: endTime }))
   }
+
+  const handleChartVisibleRangeChange = useCallback(
+    (r: VisibleRange) => {
+      if (!points.length) return
+      const next = clampVisibleRangeToPoints(points, r)
+      setSelectedRange((prev) => {
+        if (!prev) return next
+        if (Number(prev.from) === Number(next.from) && Number(prev.to) === Number(next.to)) return prev
+        return next
+      })
+    },
+    [points],
+  )
 
   const allocationSeries = useMemo(() => {
     const days = result?.days || []
@@ -4292,43 +4826,52 @@ function BacktesterPanel({
         {result && tab === 'Overview' ? (
           <>
             <div className="backtester-summary">
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>Date range</div>
-                <div>
+              <div className="stat-card">
+                <div className="stat-label">Date range</div>
+                <div className="stat-value">
                   {result.metrics.startDate} → {result.metrics.endDate}
                 </div>
+                <div className="stat-sub">{result.metrics.days} trading days</div>
               </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>Total return</div>
-                <div>{formatPct(result.metrics.totalReturn)}</div>
+              <div className="stat-card">
+                <div className="stat-label">Total return</div>
+                <div className="stat-value">{formatPct(result.metrics.totalReturn)}</div>
+                <div className="stat-sub">{result.metrics.years.toFixed(2)} yrs</div>
               </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>CAGR</div>
-                <div>{formatPct(result.metrics.cagr)}</div>
+              <div className="stat-card">
+                <div className="stat-label">CAGR</div>
+                <div className="stat-value">{formatPct(result.metrics.cagr)}</div>
+                <div className="stat-sub">Annualized (252)</div>
               </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>Max drawdown</div>
-                <div>{formatPct(result.metrics.maxDrawdown)}</div>
+              <div className="stat-card">
+                <div className="stat-label">Max drawdown</div>
+                <div className="stat-value">{formatPct(result.metrics.maxDrawdown)}</div>
+                <div className="stat-sub">Peak-to-trough</div>
               </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>Sharpe</div>
-                <div>{Number.isFinite(result.metrics.sharpe) ? result.metrics.sharpe.toFixed(2) : '—'}</div>
+              <div className="stat-card">
+                <div className="stat-label">Sharpe</div>
+                <div className="stat-value">{Number.isFinite(result.metrics.sharpe) ? result.metrics.sharpe.toFixed(2) : '—'}</div>
+                <div className="stat-sub">Annualized (252)</div>
               </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>Vol (ann.)</div>
-                <div>{formatPct(result.metrics.vol)}</div>
+              <div className="stat-card">
+                <div className="stat-label">Vol (ann.)</div>
+                <div className="stat-value">{formatPct(result.metrics.vol)}</div>
+                <div className="stat-sub">Std dev × √252</div>
               </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>Win rate</div>
-                <div>{formatPct(result.metrics.winRate)}</div>
+              <div className="stat-card">
+                <div className="stat-label">Win rate</div>
+                <div className="stat-value">{formatPct(result.metrics.winRate)}</div>
+                <div className="stat-sub">Daily</div>
               </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>Avg turnover</div>
-                <div>{formatPct(result.metrics.avgTurnover)}</div>
+              <div className="stat-card">
+                <div className="stat-label">Avg turnover</div>
+                <div className="stat-value">{formatPct(result.metrics.avgTurnover)}</div>
+                <div className="stat-sub">Per day</div>
               </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900 }}>Avg holdings</div>
-                <div>{result.metrics.avgHoldings.toFixed(2)}</div>
+              <div className="stat-card">
+                <div className="stat-label">Avg holdings</div>
+                <div className="stat-value">{result.metrics.avgHoldings.toFixed(2)}</div>
+                <div className="stat-sub">Tickers/day</div>
               </div>
             </div>
 
@@ -4342,76 +4885,36 @@ function BacktesterPanel({
                 <button onClick={() => applyPreset('5y')}>5yr</button>
                 <button onClick={() => applyPreset('max')}>Max</button>
               </div>
+              <div className="chart-toggles">
+                <button className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)}>
+                  Log
+                </button>
+              </div>
               <EquityChart
                 points={result.points}
                 benchmarkPoints={showBenchmark ? result.benchmarkPoints : undefined}
                 markers={result.markers}
-                onHoverTime={setHoverTime}
                 visibleRange={visibleRange}
+                onVisibleRangeChange={handleChartVisibleRangeChange}
+                logScale={logScale}
               />
-              <div className="range-controls">
+            </div>
+
+            <div className="drawdown-wrap">
+              <div className="drawdown-head">
+                <div style={{ fontWeight: 900 }}>Drawdown</div>
                 <div className="range-label">
                   {rangeLabel.start} → {rangeLabel.end}
                 </div>
-                <div className="range-sliders">
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(0, points.length - 1)}
-                    value={Math.max(0, Math.min(points.length - 1, rangeStartIdx))}
-                    onChange={(e) => {
-                      const v = Number(e.target.value)
-                      setRangeStartIdx(v)
-                      if (v >= rangeEndIdx) setRangeEndIdx(Math.min(points.length - 1, v + 1))
-                    }}
-                  />
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(0, points.length - 1)}
-                    value={Math.max(0, Math.min(points.length - 1, rangeEndIdx))}
-                    onChange={(e) => {
-                      const v = Number(e.target.value)
-                      setRangeEndIdx(v)
-                      if (v <= rangeStartIdx) setRangeStartIdx(Math.max(0, v - 1))
-                    }}
-                  />
-                </div>
               </div>
-            </div>
-
-            <div className="backtester-grid2">
-              <div>
-                <div style={{ fontWeight: 900, marginBottom: 6 }}>Drawdown</div>
-                <DrawdownChart points={result.drawdownPoints} visibleRange={visibleRange} />
-              </div>
-              <div className="saved-item">
-                <div style={{ fontWeight: 900, marginBottom: 6 }}>Hover details</div>
-                {hover ? (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <div>
-                      <strong>{hover.date}</strong>
-                    </div>
-                    <div>Equity: {hover.equity.toFixed(4)}</div>
-                    <div>Net return: {formatPct(hover.netReturn)}</div>
-                    <div>Drawdown: {formatPct(hover.drawdown)}</div>
-                    <div>Turnover: {formatPct(hover.turnover)}</div>
-                    <div>Cost: {formatPct(hover.cost)}</div>
-                    <div>
-                      Holdings:{' '}
-                      {hover.holdings.length === 0
-                        ? 'Cash'
-                        : hover.holdings
-                            .slice()
-                            .sort((a, b) => b.weight - a.weight)
-                            .map((h) => `${h.ticker} ${(h.weight * 100).toFixed(1)}%`)
-                            .join(', ')}
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ color: '#475569' }}>Hover the equity curve to see holdings, turnover, and returns.</div>
-                )}
-              </div>
+              <DrawdownChart
+                points={result.drawdownPoints}
+                visibleRange={visibleRange}
+                onVisibleRangeChange={handleChartVisibleRangeChange}
+              />
+              {visibleRange ? (
+                <RangeNavigator points={result.points} range={visibleRange} onChange={handleChartVisibleRangeChange} />
+              ) : null}
             </div>
 
             {result.warnings.length > 0 && (
@@ -4430,15 +4933,13 @@ function BacktesterPanel({
               </div>
             )}
 
-            <div className="saved-item">
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Monthly returns</div>
-              <div className="monthly-heatmap">
-                {renderMonthlyHeatmap(result.monthly)}
-              </div>
-            </div>
           </>
         ) : result && tab === 'Allocations' ? (
           <>
+            <div className="saved-item">
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Monthly returns</div>
+              <div className="monthly-heatmap">{renderMonthlyHeatmap(result.monthly, result.days)}</div>
+            </div>
             <div className="saved-item">
               <div style={{ fontWeight: 900, marginBottom: 6 }}>Allocation over time (top 10 + cash)</div>
               <AllocationChart series={allocationSeries} visibleRange={visibleRange} />
