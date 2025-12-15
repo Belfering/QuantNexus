@@ -127,6 +127,10 @@ Preview the production build:
 npm run preview
 ```
 
+### Authentication (simulated)
+- On launch, an admin login prompt is shown. Valid accounts: user `1` with password `1`, and user `9` with password `9` (per-user data is isolated).
+- Show the current user in the UI (e.g., header badge) and provide a `Logout` button to return to the login prompt.
+
 ## Data Flow
 
 1. Tickers are managed in `ticker-data/tickers.txt`
