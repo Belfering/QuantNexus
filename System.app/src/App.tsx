@@ -3952,6 +3952,10 @@ const collectBacktestInputs = (root: FlowNode): BacktestInputs => {
       maxLookback = Math.max(maxLookback, win || 0)
       const pickN = Math.floor(Number(node.bottom ?? 1))
       if (!(pickN >= 1) || !Number.isFinite(pickN)) addError(node.id, 'bottom', 'Pick count must be >= 1.')
+      const nextChildren = (node.children.next ?? []).filter((c): c is FlowNode => Boolean(c))
+      if (Number.isFinite(pickN) && pickN >= 1 && nextChildren.length < pickN) {
+        addError(node.id, 'bottom', `Pick count is ${pickN} but only ${nextChildren.length} child nodes exist.`)
+      }
     }
 
     // weight-mode-specific validations for the node's active slots
