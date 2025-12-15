@@ -2415,7 +2415,7 @@ const NodeCard = ({
                 style={{
                   width:
                     depthPx * 1 +
-                    14,
+                    8,
                 }}
               />
               <div className="slot-body">
@@ -2469,7 +2469,7 @@ const NodeCard = ({
                 style={{
                   width:
                     depthPx * 1 +
-                    14,
+                    8,
                 }}
               />
               <div className="add-row">
