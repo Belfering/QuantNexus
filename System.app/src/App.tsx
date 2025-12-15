@@ -2465,7 +2465,8 @@ const NodeCard = ({
                     14 +
                     (slot === 'then' || slot === 'else' ? 14 : 0) +
                     (node.kind === 'basic' && slot === 'next' ? 3 * 14 : 0) +
-                    ((node.kind === 'indicator' || node.kind === 'numbered') && (slot === 'then' || slot === 'else') ? 2 * 14 : 0),
+                    ((node.kind === 'indicator' || node.kind === 'numbered') && (slot === 'then' || slot === 'else') ? 2 * 14 : 0) -
+                    (node.kind === 'indicator' && (slot === 'then' || slot === 'else') ? 4 : 0),
                 }}
               />
               <div className="add-row">
