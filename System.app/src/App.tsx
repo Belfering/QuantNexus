@@ -652,8 +652,8 @@ function EquityChart({
       grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
       rightPriceScale: { borderColor: '#cbd5e1', mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
       timeScale: { borderColor: '#cbd5e1', rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
-      handleScale: { mouseWheel: true, pinch: true },
+      handleScroll: false,
+      handleScale: false,
     })
     const series = chart.addSeries(LineSeries, {
       color: '#0ea5e9',
@@ -866,8 +866,8 @@ function DrawdownChart({
       grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
       rightPriceScale: { borderColor: '#cbd5e1' },
       timeScale: { borderColor: '#cbd5e1', rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
-      handleScale: { mouseWheel: true, pinch: true },
+      handleScroll: false,
+      handleScale: false,
     })
     const series = chart.addSeries(AreaSeries, {
       lineColor: '#ef4444',
@@ -1046,6 +1046,8 @@ function RangeNavigator({
       rightPriceScale: { visible: false },
       leftPriceScale: { visible: false },
       timeScale: { visible: false, borderColor: '#cbd5e1', fixLeftEdge: true, fixRightEdge: true },
+      handleScroll: false,
+      handleScale: false,
     } as any)
     const series = chart.addSeries(LineSeries, { color: '#94a3b8', lineWidth: 1 } as any)
     chartRef.current = chart
