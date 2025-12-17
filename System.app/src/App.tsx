@@ -1,19 +1,40 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type PointerEvent as ReactPointerEvent,
+  type SetStateAction,
+} from 'react'
 import './App.css'
 import {
   AreaSeries,
   CandlestickSeries,
   ColorType,
   LineSeries,
+  LineStyle,
   PriceScaleMode,
   createChart,
+  createSeriesMarkers,
+  type AutoscaleInfo,
+  type BusinessDay,
   type CandlestickData,
   type IChartApi,
+  type IPriceLine,
+  type IRange,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type LineData,
+  type MouseEventParams,
+  type SeriesMarker,
+  type Time,
+  type TimeRangeChangeEventHandler,
   type UTCTimestamp,
 } from 'lightweight-charts'
 
-type BlockKind = 'basic' | 'function' | 'indicator' | 'numbered' | 'position'
+type BlockKind = 'basic' | 'function' | 'indicator' | 'numbered' | 'position' | 'call'
 type SlotId = 'next' | 'then' | 'else'
 type PositionChoice = string
 type MetricChoice =
@@ -29,6 +50,7 @@ type ComparatorChoice = 'lt' | 'gt'
 type WeightMode = 'equal' | 'defined' | 'inverse' | 'pro' | 'capped'
 
 type UserId = '1' | '9'
+type ThemeMode = 'light' | 'dark'
 
 type ConditionLine = {
   id: string
@@ -44,6 +66,67 @@ type ConditionLine = {
   rightTicker?: PositionChoice
 }
 
+const normalizeConditionType = (value: unknown, fallback: ConditionLine['type']): ConditionLine['type'] => {
+  if (value === 'if' || value === 'and' || value === 'or') return value
+  const s = String(value || '').trim().toLowerCase()
+  if (!s) return fallback
+  if (s === 'and if' || s === 'andif' || s.startsWith('and')) return 'and'
+  if (s === 'or if' || s === 'orif' || s.startsWith('or')) return 'or'
+  if (s.startsWith('if')) return 'if'
+  if (s.includes('and')) return 'and'
+  if (s.includes('or')) return 'or'
+  if (s.includes('if')) return 'if'
+  return fallback
+}
+
+const normalizeComparatorChoice = (value: unknown): ComparatorChoice => {
+  if (value === 'gt' || value === 'lt') return value
+  const s = String(value || '').trim().toLowerCase()
+  if (!s) return 'lt'
+  if (s === 'greater than' || s === 'greater' || s === 'gt') return 'gt'
+  if (s === 'less than' || s === 'less' || s === 'lt') return 'lt'
+  if (s.includes('greater')) return 'gt'
+  if (s.includes('less')) return 'lt'
+  return 'lt'
+}
+
+const normalizeConditions = (conditions: ConditionLine[] | undefined): ConditionLine[] | undefined => {
+  if (!conditions) return conditions
+  return conditions.map((c, idx) => ({
+    ...c,
+    type: idx === 0 ? 'if' : normalizeConditionType((c as unknown as { type?: unknown })?.type, 'and'),
+    comparator: normalizeComparatorChoice((c as unknown as { comparator?: unknown })?.comparator),
+    threshold: Number.isFinite(Number((c as unknown as { threshold?: unknown })?.threshold))
+      ? Number((c as unknown as { threshold?: unknown })?.threshold)
+      : 0,
+    window: Number.isFinite(Number((c as unknown as { window?: unknown })?.window))
+      ? Math.max(1, Math.floor(Number((c as unknown as { window?: unknown })?.window)))
+      : 14,
+    rightWindow: Number.isFinite(Number((c as unknown as { rightWindow?: unknown })?.rightWindow))
+      ? Math.max(1, Math.floor(Number((c as unknown as { rightWindow?: unknown })?.rightWindow)))
+      : c.rightWindow,
+  }))
+}
+
+const normalizeNodeForBacktest = (node: FlowNode): FlowNode => {
+  const next: FlowNode = {
+    ...node,
+    conditions: normalizeConditions(node.conditions),
+    numbered: node.numbered
+      ? {
+          ...node.numbered,
+          items: node.numbered.items.map((item) => ({ ...item, conditions: normalizeConditions(item.conditions) ?? item.conditions })),
+        }
+      : undefined,
+    children: { ...node.children },
+  }
+  for (const slot of SLOT_ORDER[node.kind]) {
+    const arr = node.children[slot] ?? [null]
+    next.children[slot] = arr.map((c) => (c ? normalizeNodeForBacktest(c) : c))
+  }
+  return next
+}
+
 type NumberedQuantifier = 'all' | 'none' | 'exactly' | 'atLeast' | 'atMost'
 
 type NumberedItem = {
@@ -55,13 +138,35 @@ const TICKER_DATALIST_ID = 'systemapp-tickers'
 
 const CURRENT_USER_KEY = 'systemapp.currentUser'
 const userDataKey = (userId: UserId) => `systemapp.user.${userId}.data.v1`
+const LEGACY_THEME_KEY = 'systemapp.theme'
+
+const loadDeviceThemeMode = (): ThemeMode => {
+  try {
+    return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+const loadInitialThemeMode = (): ThemeMode => {
+  try {
+    const raw = localStorage.getItem(LEGACY_THEME_KEY)
+    if (raw === 'light' || raw === 'dark') return raw
+  } catch {
+    // ignore
+  }
+  return loadDeviceThemeMode()
+}
 
 const newKeyId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 const defaultUiState = (): UserUiState => ({
+  theme: loadInitialThemeMode(),
   analyzeCollapsedByBotId: {},
   analyzeFilterWatchlistId: null,
   communitySelectedWatchlistId: null,
+  communityWatchlistSlot1Id: null,
+  communityWatchlistSlot2Id: null,
 })
 
 const ensureDefaultWatchlist = (watchlists: Watchlist[]): Watchlist[] => {
@@ -78,10 +183,8 @@ const loadUserData = (userId: UserId): UserData => {
     }
     const parsed = JSON.parse(raw) as Partial<UserData>
     const savedBots = Array.isArray(parsed.savedBots)
-      ? (parsed.savedBots as Array<Partial<SavedBot>>).map((b) => ({
-          id: String(b.id || ''),
-          name: String(b.name || 'Untitled'),
-          payload:
+      ? (parsed.savedBots as Array<Partial<SavedBot>>).map((b) => {
+          const rawPayload: FlowNode =
             (b.payload as FlowNode) ??
             ({
               id: `node-${newKeyId()}`,
@@ -90,10 +193,18 @@ const loadUserData = (userId: UserId): UserData => {
               children: { next: [null] },
               weighting: 'equal',
               collapsed: false,
-            } as unknown as FlowNode),
-          visibility: (b.visibility === 'community' ? 'community' : 'private') as BotVisibility,
-          createdAt: Number(b.createdAt || 0) || Date.now(),
-        }))
+            } as unknown as FlowNode)
+          const ensured = ensureSlots(rawPayload)
+          const payload = hasLegacyIdsOrDuplicates(ensured) ? ensureSlots(regenerateIds(ensured)) : ensured
+          return {
+            id: String(b.id || ''),
+            name: String(b.name || 'Untitled'),
+            builderId: (b.builderId === '1' || b.builderId === '9' ? b.builderId : userId) as UserId,
+            payload,
+            visibility: (b.visibility === 'community' ? 'community' : 'private') as BotVisibility,
+            createdAt: Number(b.createdAt || 0) || Date.now(),
+          }
+        })
       : []
     const watchlists = ensureDefaultWatchlist(
       Array.isArray(parsed.watchlists)
@@ -105,10 +216,8 @@ const loadUserData = (userId: UserId): UserData => {
         : [],
     )
     const callChains = Array.isArray((parsed as Partial<UserData>).callChains)
-      ? (((parsed as Partial<UserData>).callChains as Array<Partial<CallChain>>).map((c) => ({
-          id: String(c.id || `call-${newKeyId()}`),
-          name: String(c.name || 'Call'),
-          root:
+      ? (((parsed as Partial<UserData>).callChains as Array<Partial<CallChain>>).map((c) => {
+          const rawRoot: FlowNode =
             (c.root as FlowNode) ??
             ({
               id: `node-${newKeyId()}`,
@@ -117,9 +226,16 @@ const loadUserData = (userId: UserId): UserData => {
               children: { next: [null] },
               weighting: 'equal',
               collapsed: false,
-            } as unknown as FlowNode),
-          collapsed: Boolean(c.collapsed ?? false),
-        })) as CallChain[])
+            } as unknown as FlowNode)
+          const ensured = ensureSlots(rawRoot)
+          const root = hasLegacyIdsOrDuplicates(ensured) ? ensureSlots(regenerateIds(ensured)) : ensured
+          return {
+            id: String(c.id || `call-${newKeyId()}`),
+            name: String(c.name || 'Call'),
+            root,
+            collapsed: Boolean(c.collapsed ?? false),
+          }
+        }) as CallChain[])
       : []
     const ui = parsed.ui ? ({ ...defaultUiState(), ...(parsed.ui as Partial<UserUiState>) } as UserUiState) : defaultUiState()
     return { savedBots, watchlists, callChains, ui }
@@ -171,8 +287,18 @@ function LoginScreen({ onLogin }: { onLogin: (userId: UserId) => void }) {
   }
 
   return (
-    <div className="app" style={{ padding: 24 }}>
-      <div style={{ maxWidth: 420, margin: '64px auto', border: '1px solid #e5e7eb', borderRadius: 14, padding: 18 }}>
+    <div style={{ padding: 24 }}>
+      <div
+        style={{
+          maxWidth: 420,
+          margin: '64px auto',
+          border: '1px solid var(--border-soft)',
+          borderRadius: 14,
+          padding: 18,
+          background: 'var(--surface)',
+          boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
+        }}
+      >
         <div className="eyebrow">Admin Login</div>
         <h1 style={{ margin: '6px 0 14px' }}>System.app</h1>
         <div style={{ display: 'grid', gap: 10 }}>
@@ -184,9 +310,9 @@ function LoginScreen({ onLogin }: { onLogin: (userId: UserId) => void }) {
             <div style={{ fontWeight: 700, fontSize: 12 }}>Password</div>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
           </label>
-          {error ? <div style={{ color: '#b91c1c', fontWeight: 700 }}>{error}</div> : null}
+          {error ? <div style={{ color: 'var(--danger)', fontWeight: 700 }}>{error}</div> : null}
           <button onClick={submit}>Login</button>
-          <div style={{ fontSize: 12, color: '#64748b' }}>Valid accounts: 1/1 and 9/9.</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Valid accounts: 1/1 and 9/9.</div>
         </div>
       </div>
     </div>
@@ -230,6 +356,7 @@ type BotVisibility = 'private' | 'community'
 type SavedBot = {
   id: string
   name: string
+  builderId: UserId
   payload: FlowNode
   visibility: BotVisibility
   createdAt: number
@@ -241,10 +368,42 @@ type Watchlist = {
   botIds: string[]
 }
 
+type PortfolioBotRow = {
+  id: string
+  name: string
+  allocation: number
+  capital: number
+  pnl: number
+  tags: string[]
+  readonly?: boolean
+}
+
+type PortfolioSnapshot = {
+  accountValue: number
+  cash: number
+  totalPnl: number
+  totalPnlPct: number
+  todaysChange: number
+  todaysChangePct: number
+  positions: Array<{
+    ticker: string
+    value: number
+    costBasis: number
+    todaysChange: number
+    allocation: number
+    pnl: number
+    pnlPct: number
+  }>
+  bots: PortfolioBotRow[]
+}
+
 type UserUiState = {
+  theme: ThemeMode
   analyzeCollapsedByBotId: Record<string, boolean>
   analyzeFilterWatchlistId: string | null
   communitySelectedWatchlistId: string | null
+  communityWatchlistSlot1Id: string | null
+  communityWatchlistSlot2Id: string | null
 }
 
 type UserData = {
@@ -295,6 +454,7 @@ type FlowNode = {
   window?: number
   bottom?: number
   rank?: RankChoice
+  callRefId?: string
 }
 
 const SLOT_ORDER: Record<BlockKind, SlotId[]> = {
@@ -303,6 +463,7 @@ const SLOT_ORDER: Record<BlockKind, SlotId[]> = {
   indicator: ['then', 'else', 'next'],
   numbered: ['then', 'else', 'next'],
   position: [],
+  call: [],
 }
 
 const newId = (() => {
@@ -328,7 +489,9 @@ const createNode = (kind: BlockKind): FlowNode => {
             ? 'Numbered'
             : kind === 'position'
               ? 'Position'
-              : 'Basic',
+              : kind === 'call'
+                ? 'Call Reference'
+                : 'Basic',
     children: {},
     weighting: 'equal',
     weightingThen: kind === 'indicator' || kind === 'numbered' ? 'equal' : undefined,
@@ -392,6 +555,9 @@ const createNode = (kind: BlockKind): FlowNode => {
   })
   if (kind === 'position') {
     base.positions = ['Empty']
+  }
+  if (kind === 'call') {
+    base.callRefId = undefined
   }
   return base
 }
@@ -654,21 +820,47 @@ function CandlesChart({ candles }: { candles: CandlestickData[] }) {
   )
 }
 
-type EquityPoint = { time: UTCTimestamp; value: number }
+type EquityPoint = LineData<UTCTimestamp>
 type EquityMarker = { time: UTCTimestamp; text: string }
 
-type VisibleRange = { from: UTCTimestamp; to: UTCTimestamp }
+type VisibleRange = IRange<UTCTimestamp>
 
-const toUtcSeconds = (t: any): UTCTimestamp | null => {
+const EMPTY_EQUITY_POINTS: EquityPoint[] = []
+
+type CommunitySortKey = 'name' | 'tags' | 'oosCagr' | 'oosMaxdd' | 'oosSharpe'
+type SortDir = 'asc' | 'desc'
+type CommunitySort = { key: CommunitySortKey; dir: SortDir }
+
+type CommunityBotRow = {
+  id: string
+  name: string
+  tags: string[]
+  oosCagr: number
+  oosMaxdd: number
+  oosSharpe: number
+}
+
+const nextCommunitySort = (prev: CommunitySort, key: CommunitySortKey): CommunitySort => {
+  if (prev.key === key) return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+  const dir: SortDir = key === 'name' || key === 'tags' ? 'asc' : 'desc'
+  return { key, dir }
+}
+
+const toUtcSeconds = (t: Time | null | undefined): UTCTimestamp | null => {
+  if (t == null) return null
   if (typeof t === 'number' && Number.isFinite(t)) return t as UTCTimestamp
-  if (t && typeof t === 'object') {
-    const y = Number((t as any).year)
-    const m = Number((t as any).month)
-    const d = Number((t as any).day)
-    if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
-      const ms = Date.UTC(y, m - 1, d)
-      return Math.floor(ms / 1000) as UTCTimestamp
-    }
+  if (typeof t === 'string') {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t)
+    const ms = m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : Date.parse(t)
+    return Number.isFinite(ms) ? (Math.floor(ms / 1000) as UTCTimestamp) : null
+  }
+  const bd = t as BusinessDay
+  const y = Number(bd.year)
+  const m = Number(bd.month)
+  const d = Number(bd.day)
+  if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+    const ms = Date.UTC(y, m - 1, d)
+    return Math.floor(ms / 1000) as UTCTimestamp
   }
   return null
 }
@@ -720,28 +912,6 @@ const sanitizeSeriesPoints = (points: EquityPoint[], opts?: { clampMin?: number;
   return out
 }
 
-const Sparkline = ({ points, color = '#0ea5e9' }: { points: EquityPoint[]; color?: string }) => {
-  if (!points || points.length < 2) {
-    return <div style={{ fontSize: 12, color: '#94a3b8' }}>Not enough data</div>
-  }
-  const sample = points.slice(-120)
-  const values = sample.map((p) => Number(p.value)).filter(Number.isFinite)
-  if (values.length < 2) return <div style={{ fontSize: 12, color: '#94a3b8' }}>Not enough data</div>
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const range = max - min || 1
-  const coords = sample.map((p, idx) => {
-    const x = (idx / (sample.length - 1 || 1)) * 100
-    const y = 100 - ((Number(p.value) - min) / range) * 100
-    return `${x},${y}`
-  })
-  return (
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: 70 }}>
-      <polyline fill="none" stroke={color} strokeWidth="2" points={coords.join(' ')} />
-    </svg>
-  )
-}
-
 function EquityChart({
   points,
   benchmarkPoints,
@@ -749,6 +919,8 @@ function EquityChart({
   visibleRange,
   onVisibleRangeChange,
   logScale,
+  showCursorStats = true,
+  heightPx,
 }: {
   points: EquityPoint[]
   benchmarkPoints?: EquityPoint[]
@@ -756,18 +928,23 @@ function EquityChart({
   visibleRange?: VisibleRange
   onVisibleRangeChange?: (range: VisibleRange) => void
   logScale?: boolean
+  showCursorStats?: boolean
+  heightPx?: number
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const benchRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const overlayRef = useRef<HTMLDivElement | null>(null)
-  const baseLineRef = useRef<any>(null)
+  const baseLineRef = useRef<IPriceLine | null>(null)
   const baseEquityRef = useRef<number>(1)
   const pointsRef = useRef<EquityPoint[]>([])
   const visibleRangeRef = useRef<VisibleRange | undefined>(visibleRange)
   const onVisibleRangeChangeRef = useRef<((range: VisibleRange) => void) | undefined>(onVisibleRangeChange)
   const lastEmittedRangeKeyRef = useRef<string>('')
+
+  const chartHeight = heightPx ?? 520
 
   useEffect(() => {
     pointsRef.current = points || []
@@ -842,9 +1019,10 @@ function EquityChart({
 
     const chart = createChart(el, {
       width: Math.floor(innerWidth()),
-      height: 520,
+      height: chartHeight,
       layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
       grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
+      crosshair: { vertLine: { labelVisible: false }, horzLine: { labelVisible: false } },
       rightPriceScale: { borderColor: '#cbd5e1', mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
       timeScale: { borderColor: '#cbd5e1', rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
       handleScroll: false,
@@ -854,7 +1032,7 @@ function EquityChart({
       color: '#0ea5e9',
       lineWidth: 2,
       priceFormat: { type: 'custom', formatter: (v: number) => formatReturnFromBase(v) },
-      autoscaleInfoProvider: (original: any) => {
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const o = original()
         const base = baseEquityRef.current || 1
         if (!o || !o.priceRange || !(Number.isFinite(base) && base > 0)) return o
@@ -867,57 +1045,42 @@ function EquityChart({
           },
         }
       },
-    } as any)
+    })
     const bench = chart.addSeries(LineSeries, {
       color: '#64748b',
       lineWidth: 2,
-      lineStyle: 2,
+      lineStyle: LineStyle.Dashed,
       priceFormat: { type: 'custom', formatter: (v: number) => formatReturnFromBase(v) },
-    } as any)
+    })
     chartRef.current = chart
     seriesRef.current = series
     benchRef.current = bench
+    markersRef.current = createSeriesMarkers(series, [])
 
     const overlay = document.createElement('div')
-    overlay.style.position = 'absolute'
-    overlay.style.display = 'none'
-    overlay.style.pointerEvents = 'none'
-    overlay.style.top = '12px'
-    overlay.style.left = '12px'
-    overlay.style.padding = '8px 10px'
-    overlay.style.borderRadius = '10px'
-    overlay.style.border = '1px solid #cbd5e1'
-    overlay.style.background = 'rgba(255,255,255,0.95)'
-    overlay.style.boxShadow = '0 8px 20px rgba(15, 23, 42, 0.12)'
-    overlay.style.fontWeight = '800'
-    overlay.style.fontSize = '12px'
-    overlay.style.color = '#0f172a'
-    overlay.style.whiteSpace = 'nowrap'
+    overlay.className = 'chart-hover-overlay'
     el.appendChild(overlay)
     overlayRef.current = overlay
 
-    chart.subscribeCrosshairMove((param: any) => {
-      const time = param?.time
-      if (!time || typeof time !== 'number') {
+    chart.subscribeCrosshairMove((param: MouseEventParams<Time>) => {
+      if (!showCursorStats) return
+      const time = toUtcSeconds(param.time)
+      if (!time) {
         overlay.style.display = 'none'
         return
       }
-      const stats = computeWindowStats(time as UTCTimestamp)
+      const stats = computeWindowStats(time)
       overlay.style.display = 'block'
-      overlay.innerHTML = `${isoFromUtcSeconds(time)}<br/>Window CAGR: ${stats ? formatPct(stats.cagr) : '—'}<br/>Window MaxDD: ${stats ? formatPct(stats.maxDD) : '—'}`
+      overlay.innerHTML = `<div class="chart-hover-date">${isoFromUtcSeconds(time)}</div>
+<div class="chart-hover-stats">
+  <div class="chart-hover-stat"><span class="chart-hover-label">CAGR</span> <span class="chart-hover-value">${stats ? formatPct(stats.cagr) : '—'}</span></div>
+  <div class="chart-hover-stat"><span class="chart-hover-label">MaxDD</span> <span class="chart-hover-value">${stats ? formatPct(stats.maxDD) : '—'}</span></div>
+</div>`
 
-      const px = Number(param?.point?.x)
-      if (!Number.isFinite(px)) return
-      const container = el.getBoundingClientRect()
-      const ow = overlay.getBoundingClientRect().width || 160
-      const pad = 10
-      let left = px + 12
-      if (left + ow + pad > container.width) left = px - 12 - ow
-      left = Math.max(pad, Math.min(container.width - ow - pad, left))
-      overlay.style.left = `${Math.round(left)}px`
+      // keep overlay centered; only its values change with the cursor
     })
 
-    const unsubscribeRange = (chart.timeScale() as any).subscribeVisibleTimeRangeChange?.((r: any) => {
+    const handleVisibleRangeChange: TimeRangeChangeEventHandler<Time> = (r) => {
       const cb = onVisibleRangeChangeRef.current
       if (!cb || !r) return
       const from = toUtcSeconds(r.from)
@@ -928,7 +1091,8 @@ function EquityChart({
       if (key === lastEmittedRangeKeyRef.current) return
       lastEmittedRangeKeyRef.current = key
       cb(next)
-    })
+    }
+    chart.timeScale().subscribeVisibleTimeRangeChange(handleVisibleRangeChange)
 
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width: Math.floor(innerWidth()) })
@@ -942,34 +1106,36 @@ function EquityChart({
       } catch {
         // ignore
       }
-      try {
-        if (typeof unsubscribeRange === 'function') unsubscribeRange()
-      } catch {
-        // ignore
-      }
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(handleVisibleRangeChange)
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
       benchRef.current = null
+      try {
+        markersRef.current?.detach()
+      } catch {
+        // ignore
+      }
+      markersRef.current = null
       overlayRef.current = null
       baseLineRef.current = null
     }
-  }, [computeWindowStats, formatReturnFromBase, logScale])
+  }, [computeWindowStats, formatReturnFromBase, logScale, showCursorStats, chartHeight])
 
   useEffect(() => {
     if (!seriesRef.current) return
     const main = sanitizeSeriesPoints(points)
     if (main.length > 0) baseEquityRef.current = main[0].value
-    seriesRef.current.setData(main as any)
+    seriesRef.current.setData(main)
     const base = baseEquityRef.current
     if (Number.isFinite(base) && base > 0) {
       const existing = baseLineRef.current
-      if (!existing && (seriesRef.current as any).createPriceLine) {
-        baseLineRef.current = (seriesRef.current as any).createPriceLine({
+      if (!existing) {
+        baseLineRef.current = seriesRef.current.createPriceLine({
           price: base,
           color: '#0f172a',
           lineWidth: 3,
-          lineStyle: 0,
+          lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
           title: '0%',
         })
@@ -977,30 +1143,30 @@ function EquityChart({
         existing.applyOptions({ price: base })
       }
     }
-    ;(seriesRef.current as any).setMarkers?.(
+    markersRef.current?.setMarkers(
       (markers || []).slice(0, 80).map((m) => ({
         time: m.time,
         position: 'aboveBar',
         color: '#b91c1c',
         shape: 'circle',
         text: m.text,
-      })) as any,
+      })) as SeriesMarker<Time>[],
     )
     if (benchRef.current) {
       if (benchmarkPoints && benchmarkPoints.length > 0) {
-        benchRef.current.setData(sanitizeSeriesPoints(benchmarkPoints) as any)
+        benchRef.current.setData(sanitizeSeriesPoints(benchmarkPoints))
       } else {
-        benchRef.current.setData([] as any)
+        benchRef.current.setData([])
       }
     }
     const chart = chartRef.current
     if (!chart) return
     if (visibleRange) {
-      chart.timeScale().setVisibleRange(visibleRange as any)
+      chart.timeScale().setVisibleRange(visibleRange)
       return
     }
     if (main.length > 1) {
-      chart.timeScale().setVisibleRange({ from: main[0].time, to: main[main.length - 1].time } as any)
+      chart.timeScale().setVisibleRange({ from: main[0].time, to: main[main.length - 1].time })
       return
     }
     chart.timeScale().fitContent()
@@ -1010,13 +1176,13 @@ function EquityChart({
     <div
       ref={containerRef}
       style={{
-        width: '100%',
-        height: 520,
-        borderRadius: 14,
-        border: '1px solid #cbd5e1',
-        overflow: 'hidden',
-      }}
-    />
+      width: '100%',
+      height: chartHeight,
+      borderRadius: 14,
+      border: '1px solid #cbd5e1',
+      overflow: 'hidden',
+    }}
+  />
   )
 }
 
@@ -1069,12 +1235,20 @@ function DrawdownChart({
       topColor: 'rgba(239, 68, 68, 0.22)',
       bottomColor: 'rgba(239, 68, 68, 0.02)',
       lineWidth: 2,
-      priceFormat: { type: 'percent', precision: 2, minMove: 0.01 },
-    } as any)
+      priceFormat: {
+        type: 'custom',
+        formatter: (v: number) => {
+          if (!Number.isFinite(v)) return '—'
+          const pct = Math.round(v * 100)
+          if (pct === 0 && v < 0) return '-0%'
+          return `${pct}%`
+        },
+      },
+    })
     chartRef.current = chart
     seriesRef.current = series
 
-    const unsubscribeRange = (chart.timeScale() as any).subscribeVisibleTimeRangeChange?.((r: any) => {
+    const handleVisibleRangeChange: TimeRangeChangeEventHandler<Time> = (r) => {
       const cb = onVisibleRangeChangeRef.current
       if (!cb || !r) return
       const from = toUtcSeconds(r.from)
@@ -1085,7 +1259,8 @@ function DrawdownChart({
       if (key === lastEmittedRangeKeyRef.current) return
       lastEmittedRangeKeyRef.current = key
       cb(next)
-    })
+    }
+    chart.timeScale().subscribeVisibleTimeRangeChange(handleVisibleRangeChange)
 
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width: Math.floor(innerWidth()) })
@@ -1094,11 +1269,7 @@ function DrawdownChart({
 
     return () => {
       ro.disconnect()
-      try {
-        if (typeof unsubscribeRange === 'function') unsubscribeRange()
-      } catch {
-        // ignore
-      }
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(handleVisibleRangeChange)
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
@@ -1108,15 +1279,15 @@ function DrawdownChart({
   useEffect(() => {
     if (!seriesRef.current) return
     const dd = sanitizeSeriesPoints(points, { clampMin: -0.9999, clampMax: 0 })
-    seriesRef.current.setData(dd as any)
+    seriesRef.current.setData(dd)
     const chart = chartRef.current
     if (!chart) return
     if (visibleRange) {
-      chart.timeScale().setVisibleRange(visibleRange as any)
+      chart.timeScale().setVisibleRange(visibleRange)
       return
     }
     if (dd.length > 1) {
-      chart.timeScale().setVisibleRange({ from: dd[0].time, to: dd[dd.length - 1].time } as any)
+      chart.timeScale().setVisibleRange({ from: dd[0].time, to: dd[dd.length - 1].time })
       return
     }
     chart.timeScale().fitContent()
@@ -1189,9 +1360,11 @@ function RangeNavigator({
     if (!chart || !el || !win || !shadeL || !shadeR) return
 
     const rect = el.getBoundingClientRect()
-    const fromX = (chart.timeScale() as any).timeToCoordinate?.(rangeRef.current.from as any)
-    const toX = (chart.timeScale() as any).timeToCoordinate?.(rangeRef.current.to as any)
-    if (!(Number.isFinite(fromX) && Number.isFinite(toX))) return
+    const fromCoord = chart.timeScale().timeToCoordinate(rangeRef.current.from)
+    const toCoord = chart.timeScale().timeToCoordinate(rangeRef.current.to)
+    if (fromCoord == null || toCoord == null) return
+    const fromX = Number(fromCoord)
+    const toX = Number(toCoord)
 
     const left = Math.max(0, Math.min(rect.width, Math.min(fromX, toX)))
     const right = Math.max(0, Math.min(rect.width, Math.max(fromX, toX)))
@@ -1243,8 +1416,8 @@ function RangeNavigator({
       timeScale: { visible: false, borderColor: '#cbd5e1', fixLeftEdge: true, fixRightEdge: true },
       handleScroll: false,
       handleScale: false,
-    } as any)
-    const series = chart.addSeries(LineSeries, { color: '#94a3b8', lineWidth: 1 } as any)
+    })
+    const series = chart.addSeries(LineSeries, { color: '#94a3b8', lineWidth: 1 })
     chartRef.current = chart
     seriesRef.current = series
 
@@ -1269,7 +1442,7 @@ function RangeNavigator({
     const series = seriesRef.current
     if (!chart || !series) return
     const data = sanitizeSeriesPoints(points)
-    series.setData(data as any)
+    series.setData(data)
     chart.timeScale().fitContent()
     scheduleSync()
   }, [points, scheduleSync])
@@ -1278,13 +1451,7 @@ function RangeNavigator({
     scheduleSync()
   }, [range, scheduleSync])
 
-  const stopDragging = useCallback(() => {
-    dragRef.current = null
-    window.removeEventListener('pointermove', onPointerMove as any)
-    window.removeEventListener('pointerup', onPointerUp as any)
-  }, [])
-
-  const onPointerMove = useCallback((e: PointerEvent) => {
+  const handleWindowPointerMove = useCallback((e: PointerEvent) => {
     const chart = chartRef.current
     const el = containerRef.current
     const drag = dragRef.current
@@ -1316,8 +1483,8 @@ function RangeNavigator({
       toX = Math.max(0, Math.min(drag.containerWidth, toX))
     }
 
-    const fromT = toUtcSeconds((chart.timeScale() as any).coordinateToTime?.(fromX))
-    const toT = toUtcSeconds((chart.timeScale() as any).coordinateToTime?.(toX))
+    const fromT = toUtcSeconds(chart.timeScale().coordinateToTime(fromX))
+    const toT = toUtcSeconds(chart.timeScale().coordinateToTime(toX))
     if (!fromT || !toT) return
 
     const pts = pointsRef.current
@@ -1326,9 +1493,16 @@ function RangeNavigator({
     onChangeRef.current(next)
   }, [])
 
-  const onPointerUp = useCallback(() => {
-    stopDragging()
-  }, [stopDragging])
+  const handleWindowPointerUp = useCallback(() => {
+    dragRef.current = null
+    window.removeEventListener('pointermove', handleWindowPointerMove)
+  }, [handleWindowPointerMove])
+
+  const stopDragging = useCallback(() => {
+    dragRef.current = null
+    window.removeEventListener('pointermove', handleWindowPointerMove)
+    window.removeEventListener('pointerup', handleWindowPointerUp)
+  }, [handleWindowPointerMove, handleWindowPointerUp])
 
   useEffect(() => {
     return () => {
@@ -1346,9 +1520,11 @@ function RangeNavigator({
     e.stopPropagation()
 
     const rect = el.getBoundingClientRect()
-    const fromX = (chart.timeScale() as any).timeToCoordinate?.(rangeRef.current.from as any)
-    const toX = (chart.timeScale() as any).timeToCoordinate?.(rangeRef.current.to as any)
-    if (!(Number.isFinite(fromX) && Number.isFinite(toX))) return
+    const fromCoord = chart.timeScale().timeToCoordinate(rangeRef.current.from)
+    const toCoord = chart.timeScale().timeToCoordinate(rangeRef.current.to)
+    if (fromCoord == null || toCoord == null) return
+    const fromX = Number(fromCoord)
+    const toX = Number(toCoord)
 
     dragRef.current = {
       kind,
@@ -1359,10 +1535,10 @@ function RangeNavigator({
       containerWidth: rect.width,
     }
 
-    window.addEventListener('pointermove', onPointerMove as any)
-    window.addEventListener('pointerup', onPointerUp as any, { once: true })
+    window.addEventListener('pointermove', handleWindowPointerMove)
+    window.addEventListener('pointerup', handleWindowPointerUp, { once: true })
     scheduleSync()
-  }, [onPointerMove, onPointerUp, scheduleSync])
+  }, [handleWindowPointerMove, handleWindowPointerUp, scheduleSync])
 
   const handleBackgroundPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1372,7 +1548,7 @@ function RangeNavigator({
       if (!chart || !el) return
       const rect = el.getBoundingClientRect()
       const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left))
-      const clicked = toUtcSeconds((chart.timeScale() as any).coordinateToTime?.(x))
+      const clicked = toUtcSeconds(chart.timeScale().coordinateToTime(x))
       if (!clicked) return
 
       const prev = rangeRef.current
@@ -1468,7 +1644,7 @@ function AllocationChart({
 
     for (const s of seriesRefs.current) {
       try {
-        ;(chart as any).removeSeries?.(s)
+        chart.removeSeries(s)
       } catch {
         // ignore
       }
@@ -1481,12 +1657,12 @@ function AllocationChart({
         lineWidth: 2,
         priceFormat: { type: 'percent', precision: 2, minMove: 0.01 },
       })
-      line.setData(sanitizeSeriesPoints(s.points, { clampMin: 0, clampMax: 1 }) as any)
+      line.setData(sanitizeSeriesPoints(s.points, { clampMin: 0, clampMax: 1 }))
       seriesRefs.current.push(line)
     }
 
     if (visibleRange) {
-      chart.timeScale().setVisibleRange(visibleRange as any)
+      chart.timeScale().setVisibleRange(visibleRange)
     } else {
       chart.timeScale().fitContent()
     }
@@ -1687,7 +1863,7 @@ function AdminPanel({
     return () => {
       cancelled = true
     }
-  }, [tickersDirty])
+  }, [tickersDirty, onTickersUpdated])
 
   const startDownload = useCallback(async () => {
     setDownloadMsg(null)
@@ -1735,7 +1911,7 @@ function AdminPanel({
     } finally {
       setTickersSaving(false)
     }
-  }, [tickersText])
+  }, [tickersText, onTickersUpdated])
 
   useEffect(() => {
     if (adminTab !== 'Data') return
@@ -1817,7 +1993,7 @@ function AdminPanel({
       cancelled = true
       clearInterval(timer)
     }
-  }, [downloadJob?.id, downloadJob?.status])
+  }, [downloadJob?.id, downloadJob?.status, onTickersUpdated])
 
   return (
     <div className="placeholder">
@@ -2035,6 +2211,18 @@ const updateColor = (node: FlowNode, id: string, color?: string): FlowNode => {
   return { ...node, children }
 }
 
+const updateCallReference = (node: FlowNode, id: string, callId: string | null): FlowNode => {
+  if (node.id === id) {
+    return { ...node, callRefId: callId || undefined }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  SLOT_ORDER[node.kind].forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? updateCallReference(c, id, callId) : c)) : arr
+  })
+  return { ...node, children }
+}
+
 const addPositionRow = (node: FlowNode, id: string): FlowNode => {
   if (node.id === id && node.positions) {
     return { ...node, positions: [...node.positions, 'Empty'] }
@@ -2086,7 +2274,7 @@ const addConditionLine = (node: FlowNode, id: string, type: 'and' | 'or', itemId
         type,
         window: last?.window ?? 14,
         metric: (last?.metric as MetricChoice) ?? 'Relative Strength Index',
-        comparator: last?.comparator ?? 'lt',
+        comparator: normalizeComparatorChoice(last?.comparator ?? 'lt'),
         ticker: last?.ticker ?? 'SPY',
         threshold: last?.threshold ?? 30,
         expanded: false,
@@ -2110,7 +2298,7 @@ const addConditionLine = (node: FlowNode, id: string, type: 'and' | 'or', itemId
             type,
             window: last?.window ?? 14,
             metric: (last?.metric as MetricChoice) ?? 'Relative Strength Index',
-            comparator: last?.comparator ?? 'lt',
+            comparator: normalizeComparatorChoice(last?.comparator ?? 'lt'),
             ticker: last?.ticker ?? 'SPY',
             threshold: last?.threshold ?? 30,
             expanded: false,
@@ -2226,7 +2414,7 @@ const addNumberedItem = (node: FlowNode, id: string): FlowNode => {
           type: 'if',
           window: lastCond?.window ?? 14,
           metric: (lastCond?.metric as MetricChoice) ?? 'Relative Strength Index',
-          comparator: lastCond?.comparator ?? 'lt',
+          comparator: normalizeComparatorChoice(lastCond?.comparator ?? 'lt'),
           ticker: lastCond?.ticker ?? 'SPY',
           threshold: lastCond?.threshold ?? 30,
           expanded: lastCond?.expanded ?? false,
@@ -2302,6 +2490,7 @@ const cloneNode = (node: FlowNode): FlowNode => {
     rank: node.rank,
     bgColor: node.bgColor,
     collapsed: node.collapsed,
+    callRefId: node.callRefId,
   }
   SLOT_ORDER[node.kind].forEach((slot) => {
     const arr = node.children[slot]
@@ -2360,6 +2549,8 @@ const buildLines = (node: FlowNode): LineView[] => {
       return [
         { id: `${node.id}-tag1`, depth: 0, kind: 'text', text: 'Equal Weight', tone: 'tag' },
       ]
+    case 'call':
+      return [{ id: `${node.id}-call`, depth: 1, kind: 'text', text: 'Call reference', tone: 'title' }]
   }
 }
 
@@ -2414,6 +2605,8 @@ type CardProps = {
   onRemovePosition: (id: string, index: number) => void
   onChoosePosition: (id: string, index: number, choice: PositionChoice) => void
   clipboard: FlowNode | null
+  callChains: CallChain[]
+  onUpdateCallRef: (id: string, callId: string | null) => void
 }
 
 const NodeCard = ({
@@ -2452,9 +2645,10 @@ const NodeCard = ({
   onRemovePosition,
   onChoosePosition,
   clipboard,
+  callChains,
+  onUpdateCallRef,
 }: CardProps) => {
   const [addRowOpen, setAddRowOpen] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState(node.collapsed ?? false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(node.title)
   const [positionDrafts, setPositionDrafts] = useState<Record<string, string>>({})
@@ -2468,6 +2662,7 @@ const NodeCard = ({
     () => ['#F8E1E7', '#E5F2FF', '#E3F6F5', '#FFF4D9', '#EDE7FF', '#E1F0DA', '#F9EBD7', '#E7F7FF', '#F3E8FF', '#EAF3FF'],
     [],
   )
+  const callChainMap = useMemo(() => new Map(callChains.map((c) => [c.id, c])), [callChains])
 
   useEffect(() => {
     const close = () => {
@@ -2481,8 +2676,7 @@ const NodeCard = ({
     return () => window.removeEventListener('click', close)
   }, [])
 
-  useEffect(() => setDraft(node.title), [node.title])
-  useEffect(() => setCollapsed(node.collapsed ?? false), [node.collapsed])
+  const collapsed = node.collapsed ?? false
 
   const renderSlot = (slot: SlotId, depthPx: number) => {
     const arr = node.children[slot] ?? [null]
@@ -2569,6 +2763,14 @@ const NodeCard = ({
                   >
                     Add Position
                   </button>
+                  <button
+                    onClick={() => {
+                      onAdd(node.id, slot, 0, 'call')
+                      setAddRowOpen(null)
+                    }}
+                  >
+                    Add Call Reference
+                  </button>
                   {clipboard && (
                     <button
                       onClick={() => {
@@ -2598,9 +2800,9 @@ const NodeCard = ({
                 }}
               />
               <div className="slot-body">
-                  <NodeCard
-                    node={child}
-                    depth={depth + 1}
+                <NodeCard
+                  node={child}
+                  depth={depth + 1}
                     inheritedWeight={autoShare}
                     weightMode={slotWeighting}
                     isSortChild={node.kind === 'function' && slot === 'next'}
@@ -2632,9 +2834,11 @@ const NodeCard = ({
                     onUpdateCondition={onUpdateCondition}
                     onAddPosition={onAddPosition}
                     onRemovePosition={onRemovePosition}
-                    onChoosePosition={onChoosePosition}
-                    clipboard={clipboard}
-                  />
+                  onChoosePosition={onChoosePosition}
+                  clipboard={clipboard}
+                  callChains={callChains}
+                  onUpdateCallRef={onUpdateCallRef}
+                />
                 {node.kind === 'function' && slot === 'next' && index > 0 ? (
                   <button className="icon-btn delete inline" onClick={() => onRemoveSlotEntry(node.id, slot, index)}>
                     X
@@ -2707,6 +2911,14 @@ const NodeCard = ({
                         }}
                       >
                         Add Position
+                      </button>
+                      <button
+                        onClick={() => {
+                          onAdd(node.id, slot, originalIndex + 1, 'call')
+                          setAddRowOpen(null)
+                        }}
+                      >
+                        Add Call Reference
                       </button>
                       {clipboard && (
                         <button
@@ -2797,6 +3009,41 @@ const NodeCard = ({
           <button className="add-more" onClick={() => onAddPosition(node.id)}>
             +
           </button>
+        </div>
+      </div>
+    )
+  }
+
+  const renderCallReference = () => {
+    if (node.kind !== 'call') return null
+    const linked = node.callRefId ? callChainMap.get(node.callRefId) : null
+    return (
+      <div className="line">
+        <div className="indent with-line" style={{ width: 14 }} />
+        <div className="call-ref-wrap">
+          {callChains.length === 0 ? (
+            <div style={{ color: '#64748b', fontWeight: 700 }}>Create a Call in the side panel first.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <select
+                value={node.callRefId ?? ''}
+                onChange={(e) => onUpdateCallRef(node.id, e.target.value || null)}
+                style={{ maxWidth: 260 }}
+              >
+                <option value="">Select a call chain…</option>
+                {callChains.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              {linked ? (
+                <div style={{ fontSize: 12, color: '#475569', fontWeight: 800 }}>Linked to: {linked.name}</div>
+              ) : (
+                <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>No call selected.</div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -3068,7 +3315,13 @@ const NodeCard = ({
             autoFocus
           />
         ) : (
-          <div className="node-title" onClick={() => setEditing(true)}>
+          <div
+            className="node-title"
+            onClick={() => {
+              setDraft(node.title)
+              setEditing(true)
+            }}
+          >
             {depth === 0 ? (
               node.title
             ) : (
@@ -3130,11 +3383,7 @@ const NodeCard = ({
             className="icon-btn"
             onClick={(e) => {
               e.stopPropagation()
-              setCollapsed((v) => {
-                const next = !v
-                onToggleCollapse(node.id, next)
-                return next
-              })
+              onToggleCollapse(node.id, !collapsed)
             }}
           >
             {collapsed ? 'Expand' : 'Collapse'}
@@ -3723,6 +3972,7 @@ const NodeCard = ({
             )}
           </div>
           {renderPosition()}
+          {renderCallReference()}
         </>
       )}
     </div>
@@ -3752,6 +4002,14 @@ type BacktestError = {
   message: string
 }
 
+type ValidationError = Error & { type: 'validation'; errors: BacktestError[] }
+
+const makeValidationError = (errors: BacktestError[]): ValidationError =>
+  Object.assign(new Error('validation'), { type: 'validation' as const, errors })
+
+const isValidationError = (e: unknown): e is ValidationError =>
+  typeof e === 'object' && e !== null && (e as { type?: unknown }).type === 'validation' && Array.isArray((e as { errors?: unknown }).errors)
+
 type BacktestWarning = {
   time: UTCTimestamp
   date: string
@@ -3773,6 +4031,41 @@ type BacktestDayRow = {
   turnover: number
   cost: number
   holdings: Array<{ ticker: string; weight: number }>
+}
+
+type BacktestTraceSample = {
+  date: string
+  left: number | null
+  right?: number | null
+  threshold?: number
+}
+
+type BacktestConditionTrace = {
+  id: string
+  type: ConditionLine['type']
+  expr: string
+  trueCount: number
+  falseCount: number
+  firstTrue?: BacktestTraceSample
+  firstFalse?: BacktestTraceSample
+}
+
+type BacktestNodeTrace = {
+  nodeId: string
+  kind: 'indicator' | 'numbered' | 'numbered-item'
+  thenCount: number
+  elseCount: number
+  conditions: BacktestConditionTrace[]
+}
+
+type BacktestTrace = {
+  nodes: BacktestNodeTrace[]
+}
+
+type BacktestTraceCollector = {
+  recordBranch: (nodeId: string, kind: BacktestNodeTrace['kind'], ok: boolean) => void
+  recordCondition: (traceOwnerId: string, cond: ConditionLine, ok: boolean, sample: BacktestTraceSample) => void
+  toResult: () => BacktestTrace
 }
 
 type BacktestResult = {
@@ -3800,9 +4093,26 @@ type BacktestResult = {
   allocations: BacktestAllocationRow[]
   warnings: BacktestWarning[]
   monthly: Array<{ year: number; month: number; value: number }>
+  trace?: BacktestTrace
 }
 
 const formatPct = (v: number) => (Number.isFinite(v) ? `${(v * 100).toFixed(2)}%` : '—')
+
+const formatUsd = (v: number, options?: Intl.NumberFormatOptions) => {
+  if (!Number.isFinite(v)) return '—'
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+    ...options,
+  }).format(v)
+}
+
+const formatSignedUsd = (v: number, options?: Intl.NumberFormatOptions) => {
+  if (!Number.isFinite(v)) return '—'
+  const formatted = formatUsd(Math.abs(v), options)
+  return v >= 0 ? `+${formatted}` : `-${formatted}`
+}
 
 const csvEscape = (v: unknown) => {
   const s = String(v ?? '')
@@ -4073,7 +4383,7 @@ const getSlotConfig = (node: FlowNode, slot: SlotId) => {
   return { mode: node.weighting, volWindow: node.volWindow ?? 20, cappedFallback: node.cappedFallback ?? 'Empty' }
 }
 
-const collectBacktestInputs = (root: FlowNode): BacktestInputs => {
+const collectBacktestInputs = (root: FlowNode, callMap: Map<string, CallChain>): BacktestInputs => {
   const errors: BacktestError[] = []
   const tickers = new Set<string>()
   const tickerRefs = new Map<string, TickerRef>()
@@ -4112,7 +4422,27 @@ const collectBacktestInputs = (root: FlowNode): BacktestInputs => {
     }
   }
 
-  const walk = (node: FlowNode) => {
+  const walk = (node: FlowNode, callStack: string[]) => {
+    if (node.kind === 'call') {
+      const callId = node.callRefId
+      if (!callId) {
+        addError(node.id, 'callRefId', 'Select a call chain to reference.')
+        return
+      }
+      if (callStack.includes(callId)) {
+        addError(node.id, 'callRefId', 'Call references cannot form a loop.')
+        return
+      }
+      const target = callMap.get(callId)
+      if (!target) {
+        addError(node.id, 'callRefId', 'Call chain not found.')
+        return
+      }
+      const cloned = ensureSlots(cloneNode(target.root))
+      walk(cloned, [...callStack, callId])
+      return
+    }
+
     if (node.kind === 'indicator' && node.conditions) {
       node.conditions.forEach((c) => validateCondition(node.id, 'conditions', c))
     }
@@ -4168,11 +4498,11 @@ const collectBacktestInputs = (root: FlowNode): BacktestInputs => {
 
     for (const slot of SLOT_ORDER[node.kind]) {
       const arr = node.children[slot] || []
-      for (const c of arr) if (c) walk(c)
+      for (const c of arr) if (c) walk(c, callStack)
     }
   }
 
-  walk(root)
+  walk(root, [])
 
   return { tickers: Array.from(tickers).sort(), tickerRefs, maxLookback, errors }
 }
@@ -4367,6 +4697,8 @@ type EvalCtx = {
   indicatorIndex: number
   decisionPrice: 'open' | 'close'
   warnings: BacktestWarning[]
+  resolveCall: (id: string) => FlowNode | null
+  trace?: BacktestTraceCollector
 }
 
 const metricAt = (ctx: EvalCtx, ticker: string, metric: MetricChoice, window: number): number | null => {
@@ -4414,7 +4746,88 @@ const metricAt = (ctx: EvalCtx, ticker: string, metric: MetricChoice, window: nu
   }
 }
 
-const evalCondition = (ctx: EvalCtx, ownerId: string, cond: ConditionLine): boolean => {
+const conditionExpr = (cond: ConditionLine): string => {
+  const leftPrefix = cond.metric === 'Current Price' ? '' : `${Math.floor(Number(cond.window || 0))}d `
+  const left = `${leftPrefix}${cond.metric} of ${normalizeChoice(cond.ticker)}`
+  const cmp = normalizeComparatorChoice(cond.comparator) === 'lt' ? '<' : '>'
+  if (!cond.expanded) return `${left} ${cmp} ${String(cond.threshold)}`
+
+  const rightMetric = cond.rightMetric ?? cond.metric
+  const rightTicker = normalizeChoice(cond.rightTicker ?? cond.ticker)
+  const rightWindow = Math.floor(Number((cond.rightWindow ?? cond.window) || 0))
+  const rightPrefix = rightMetric === 'Current Price' ? '' : `${rightWindow}d `
+  const right = `${rightPrefix}${rightMetric} of ${rightTicker}`
+  return `${left} ${cmp} ${right}`
+}
+
+const createBacktestTraceCollector = (): BacktestTraceCollector => {
+  const branches = new Map<string, { thenCount: number; elseCount: number; kind: BacktestNodeTrace['kind'] }>()
+  const conditionsByOwner = new Map<string, Map<string, BacktestConditionTrace>>()
+
+  const recordBranch: BacktestTraceCollector['recordBranch'] = (nodeId, kind, ok) => {
+    const cur = branches.get(nodeId) ?? { thenCount: 0, elseCount: 0, kind }
+    cur.kind = kind
+    if (ok) cur.thenCount += 1
+    else cur.elseCount += 1
+    branches.set(nodeId, cur)
+  }
+
+  const recordCondition: BacktestTraceCollector['recordCondition'] = (traceOwnerId, cond, ok, sample) => {
+    let byCond = conditionsByOwner.get(traceOwnerId)
+    if (!byCond) {
+      byCond = new Map()
+      conditionsByOwner.set(traceOwnerId, byCond)
+    }
+    const existing =
+      byCond.get(cond.id) ??
+      ({
+        id: cond.id,
+        type: normalizeConditionType(cond.type, 'and'),
+        expr: conditionExpr(cond),
+        trueCount: 0,
+        falseCount: 0,
+      } satisfies BacktestConditionTrace)
+
+    existing.expr = conditionExpr(cond)
+    existing.type = normalizeConditionType(cond.type, existing.type)
+
+    if (ok) {
+      existing.trueCount += 1
+      if (!existing.firstTrue) existing.firstTrue = sample
+    } else {
+      existing.falseCount += 1
+      if (!existing.firstFalse) existing.firstFalse = sample
+    }
+    byCond.set(cond.id, existing)
+  }
+
+  const toResult: BacktestTraceCollector['toResult'] = () => {
+    const nodes: BacktestNodeTrace[] = []
+    const owners = new Set<string>([...branches.keys(), ...conditionsByOwner.keys()])
+    for (const owner of owners) {
+      const branch = branches.get(owner) ?? {
+        thenCount: 0,
+        elseCount: 0,
+        kind: owner.includes(':') ? 'numbered-item' : 'indicator',
+      }
+      const conds = conditionsByOwner.get(owner)
+      nodes.push({
+        nodeId: owner,
+        kind: branch.kind,
+        thenCount: branch.thenCount,
+        elseCount: branch.elseCount,
+        conditions: conds ? Array.from(conds.values()) : [],
+      })
+    }
+    nodes.sort((a, b) => b.thenCount + b.elseCount - (a.thenCount + a.elseCount))
+    return { nodes }
+  }
+
+  return { recordBranch, recordCondition, toResult }
+}
+
+const evalCondition = (ctx: EvalCtx, ownerId: string, traceOwnerId: string, cond: ConditionLine): boolean => {
+  const cmp = normalizeComparatorChoice(cond.comparator)
   const left = metricAt(ctx, cond.ticker, cond.metric, cond.window)
   if (cond.expanded) {
     const rightMetric = cond.rightMetric ?? cond.metric
@@ -4427,9 +4840,20 @@ const evalCondition = (ctx: EvalCtx, ownerId: string, cond: ConditionLine): bool
         date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
         message: `Missing data for condition on ${ownerId}.`,
       })
+      ctx.trace?.recordCondition(traceOwnerId, cond, false, {
+        date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
+        left,
+        right,
+      })
       return false
     }
-    return cond.comparator === 'lt' ? left < right : left > right
+    const ok = cmp === 'lt' ? left < right : left > right
+    ctx.trace?.recordCondition(traceOwnerId, cond, ok, {
+      date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
+      left,
+      right,
+    })
+    return ok
   }
   if (left == null) {
     ctx.warnings.push({
@@ -4437,21 +4861,65 @@ const evalCondition = (ctx: EvalCtx, ownerId: string, cond: ConditionLine): bool
       date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
       message: `Missing data for condition on ${ownerId}.`,
     })
+    ctx.trace?.recordCondition(traceOwnerId, cond, false, {
+      date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
+      left,
+      threshold: cond.threshold,
+    })
     return false
   }
-  return cond.comparator === 'lt' ? left < cond.threshold : left > cond.threshold
+  const ok = cmp === 'lt' ? left < cond.threshold : left > cond.threshold
+  ctx.trace?.recordCondition(traceOwnerId, cond, ok, {
+    date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
+    left,
+    threshold: cond.threshold,
+  })
+  return ok
 }
 
-const evalConditions = (ctx: EvalCtx, ownerId: string, conditions: ConditionLine[] | undefined): boolean => {
+const evalConditions = (
+  ctx: EvalCtx,
+  ownerId: string,
+  conditions: ConditionLine[] | undefined,
+  traceOwnerId: string = ownerId,
+): boolean => {
   if (!conditions || conditions.length === 0) return false
-  let out = false
+
+  // Standard boolean precedence: AND binds tighter than OR.
+  // Example: `A or B and C` => `A || (B && C)`.
+  let currentAnd: boolean | null = null
+  const orTerms: boolean[] = []
+
   for (const c of conditions) {
-    const v = evalCondition(ctx, ownerId, c)
-    if (c.type === 'if') out = v
-    else if (c.type === 'and') out = out && v
-    else out = out || v
+    const v = evalCondition(ctx, ownerId, traceOwnerId, c)
+    const t = normalizeConditionType(c.type, 'and')
+    if (t === 'if') {
+      if (currentAnd !== null) orTerms.push(currentAnd)
+      currentAnd = v
+      continue
+    }
+
+    if (currentAnd === null) {
+      currentAnd = v
+      continue
+    }
+
+    if (t === 'and') {
+      currentAnd = currentAnd && v
+      continue
+    }
+
+    if (t === 'or') {
+      orTerms.push(currentAnd)
+      currentAnd = v
+      continue
+    }
+
+    currentAnd = v
   }
-  return out
+
+  if (currentAnd !== null) orTerms.push(currentAnd)
+  return orTerms.some(Boolean)
 }
 
 const volForAlloc = (ctx: EvalCtx, alloc: Allocation, window: number): number | null => {
@@ -4533,7 +5001,7 @@ const weightChildren = (
   return out
 }
 
-const evaluateNode = (ctx: EvalCtx, node: FlowNode): Allocation => {
+const evaluateNode = (ctx: EvalCtx, node: FlowNode, callStack: string[] = []): Allocation => {
   switch (node.kind) {
     case 'position': {
       const tickers = (node.positions || []).map(normalizeChoice).filter((t) => t !== 'Empty')
@@ -4544,9 +5012,31 @@ const evaluateNode = (ctx: EvalCtx, node: FlowNode): Allocation => {
       for (const t of unique) alloc[t] = (alloc[t] || 0) + share
       return alloc
     }
+    case 'call': {
+      const callId = node.callRefId
+      if (!callId) return {}
+      if (callStack.includes(callId)) {
+        ctx.warnings.push({
+          time: ctx.db.dates[ctx.decisionIndex],
+          date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
+          message: `Call "${callId}" is referencing itself.`,
+        })
+        return {}
+      }
+      const resolved = ctx.resolveCall(callId)
+      if (!resolved) {
+        ctx.warnings.push({
+          time: ctx.db.dates[ctx.decisionIndex],
+          date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
+          message: `Call "${callId}" could not be found.`,
+        })
+        return {}
+      }
+      return evaluateNode(ctx, resolved, [...callStack, callId])
+    }
     case 'basic': {
       const children = (node.children.next || []).filter((c): c is FlowNode => Boolean(c))
-      const childAllocs = children.map((c) => evaluateNode(ctx, c))
+      const childAllocs = children.map((c) => evaluateNode(ctx, c, callStack))
       const weighted = weightChildren(ctx, node, 'next', children, childAllocs)
       const out: Allocation = {}
       for (const w of weighted) mergeAlloc(out, w.alloc, w.share)
@@ -4554,9 +5044,10 @@ const evaluateNode = (ctx: EvalCtx, node: FlowNode): Allocation => {
     }
     case 'indicator': {
       const ok = evalConditions(ctx, node.id, node.conditions)
+      ctx.trace?.recordBranch(node.id, 'indicator', ok)
       const slot: SlotId = ok ? 'then' : 'else'
       const children = (node.children[slot] || []).filter((c): c is FlowNode => Boolean(c))
-      const childAllocs = children.map((c) => evaluateNode(ctx, c))
+      const childAllocs = children.map((c) => evaluateNode(ctx, c, callStack))
       const weighted = weightChildren(ctx, node, slot, children, childAllocs)
       const out: Allocation = {}
       for (const w of weighted) mergeAlloc(out, w.alloc, w.share)
@@ -4564,7 +5055,7 @@ const evaluateNode = (ctx: EvalCtx, node: FlowNode): Allocation => {
     }
     case 'numbered': {
       const items = node.numbered?.items || []
-      const itemTruth = items.map((it) => evalConditions(ctx, node.id, it.conditions))
+      const itemTruth = items.map((it) => evalConditions(ctx, node.id, it.conditions, `${node.id}:${it.id}`))
       const nTrue = itemTruth.filter(Boolean).length
       const q = node.numbered?.quantifier ?? 'all'
       const n = Math.max(0, Math.floor(Number(node.numbered?.n ?? 0)))
@@ -4578,9 +5069,10 @@ const evaluateNode = (ctx: EvalCtx, node: FlowNode): Allocation => {
               : q === 'atLeast'
                 ? nTrue >= n
                 : nTrue <= n
+      ctx.trace?.recordBranch(node.id, 'numbered', ok)
       const slot: SlotId = ok ? 'then' : 'else'
       const children = (node.children[slot] || []).filter((c): c is FlowNode => Boolean(c))
-      const childAllocs = children.map((c) => evaluateNode(ctx, c))
+      const childAllocs = children.map((c) => evaluateNode(ctx, c, callStack))
       const weighted = weightChildren(ctx, node, slot, children, childAllocs)
       const out: Allocation = {}
       for (const w of weighted) mergeAlloc(out, w.alloc, w.share)
@@ -4588,7 +5080,7 @@ const evaluateNode = (ctx: EvalCtx, node: FlowNode): Allocation => {
     }
     case 'function': {
       const children = (node.children.next || []).filter((c): c is FlowNode => Boolean(c))
-      const candidateAllocs = children.map((c) => evaluateNode(ctx, c))
+      const candidateAllocs = children.map((c) => evaluateNode(ctx, c, callStack))
       const candidates = children
         .map((child, idx) => ({ child, alloc: candidateAllocs[idx] }))
         .filter((x) => Object.keys(x.alloc).length > 0)
@@ -4848,7 +5340,7 @@ function BacktesterPanel({
     return tickerOptions.includes(t)
   }, [benchmark, tickerOptions])
 
-  const points = result?.points || []
+  const points = result?.points ?? EMPTY_EQUITY_POINTS
   const visibleRange = useMemo<VisibleRange | undefined>(() => {
     if (!points.length) return undefined
     const full = { from: points[0].time, to: points[points.length - 1].time }
@@ -4856,19 +5348,14 @@ function BacktesterPanel({
     return clampVisibleRangeToPoints(points, r)
   }, [points, selectedRange])
 
-  useEffect(() => {
-    if (!points.length) {
-      setSelectedRange(null)
-      return
-    }
-    setSelectedRange({ from: points[0].time, to: points[points.length - 1].time })
-  }, [points.length])
-
-  useEffect(() => {
-    if (!rangePickerOpen || !visibleRange) return
-    setRangeStart(isoFromUtcSeconds(visibleRange.from))
-    setRangeEnd(isoFromUtcSeconds(visibleRange.to))
-  }, [rangePickerOpen, visibleRange])
+  const handleRun = useCallback(() => {
+    // Reset to full period ("max") on each run.
+    setSelectedRange(null)
+    setRangePickerOpen(false)
+    setRangeStart('')
+    setRangeEnd('')
+    onRun()
+  }, [onRun])
 
   useEffect(() => {
     if (!rangePickerOpen) return
@@ -5056,7 +5543,7 @@ function BacktesterPanel({
             <input type="checkbox" checked={showBenchmark} onChange={(e) => setShowBenchmark(e.target.checked)} />
             <span>Show benchmark</span>
           </label>
-          <button onClick={onRun} disabled={status === 'running'}>
+          <button onClick={handleRun} disabled={status === 'running'}>
             {status === 'running' ? 'Running…' : 'Run Backtest'}
           </button>
         </div>
@@ -5160,7 +5647,6 @@ function BacktesterPanel({
                 benchmarkPoints={showBenchmark ? result.benchmarkPoints : undefined}
                 markers={result.markers}
                 visibleRange={visibleRange}
-                onVisibleRangeChange={handleChartVisibleRangeChange}
                 logScale={logScale}
               />
             </div>
@@ -5169,7 +5655,16 @@ function BacktesterPanel({
               <div className="drawdown-head">
                 <div style={{ fontWeight: 900 }}>Drawdown</div>
                 <div className="range-picker" ref={rangePickerRef}>
-                  <button className="range-pill" onClick={() => setRangePickerOpen((v) => !v)}>
+                  <button
+                    className="range-pill"
+                    onClick={() => {
+                      if (!rangePickerOpen && visibleRange) {
+                        setRangeStart(isoFromUtcSeconds(visibleRange.from))
+                        setRangeEnd(isoFromUtcSeconds(visibleRange.to))
+                      }
+                      setRangePickerOpen((v) => !v)
+                    }}
+                  >
                     {rangeLabel.start} → {rangeLabel.end}
                   </button>
                   {rangePickerOpen ? (
@@ -5195,7 +5690,6 @@ function BacktesterPanel({
               <DrawdownChart
                 points={result.drawdownPoints}
                 visibleRange={visibleRange}
-                onVisibleRangeChange={handleChartVisibleRangeChange}
               />
               {visibleRange ? (
                 <RangeNavigator points={result.points} range={visibleRange} onChange={handleChartVisibleRangeChange} />
@@ -5317,6 +5811,47 @@ function BacktesterPanel({
                 </div>
               </div>
             )}
+
+            {result.trace ? (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 900 }}>Condition trace (debug)</div>
+                  <button onClick={() => downloadTextFile('backtest_trace.json', JSON.stringify(result.trace, null, 2), 'application/json')}>
+                    Download trace JSON
+                  </button>
+                </div>
+                <div style={{ marginTop: 8 }} className="backtester-table">
+                  <div className="backtester-row backtester-head-row">
+                    <div>Node</div>
+                    <div>Kind</div>
+                    <div>Then</div>
+                    <div>Else</div>
+                    <div>Conditions</div>
+                  </div>
+                  <div className="backtester-body-rows">
+                    {result.trace.nodes.slice(0, 80).map((n) => (
+                      <div key={n.nodeId} className="backtester-row">
+                        <div style={{ fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 12 }}>{n.nodeId}</div>
+                        <div>{n.kind}</div>
+                        <div>{n.thenCount}</div>
+                        <div>{n.elseCount}</div>
+                        <div style={{ fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 12 }}>
+                          {n.conditions.length === 0
+                            ? '—'
+                            : n.conditions
+                                .slice(0, 4)
+                                .map((c) => `${c.type.toUpperCase()} ${c.expr} [T:${c.trueCount} F:${c.falseCount}]`)
+                                .join(' | ')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {result.trace.nodes.length > 80 ? (
+                  <div style={{ marginTop: 6, color: '#475569' }}>Showing first 80 nodes. Use Download trace JSON for the full set.</div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : status === 'running' ? (
           <div className="backtester-chart-placeholder">Running backtest…</div>
@@ -5331,22 +5866,33 @@ function BacktesterPanel({
 }
 
 function App() {
-  const initialBotRef = useRef<BotSession | null>(null)
+  const [deviceTheme] = useState<ThemeMode>(() => loadDeviceThemeMode())
 
-  const [userId, setUserId] = useState<UserId | null>(() => {
+  const initialUserId: UserId | null = (() => {
     try {
       const v = localStorage.getItem(CURRENT_USER_KEY)
       return v === '1' || v === '9' ? (v as UserId) : null
     } catch {
       return null
     }
-  })
+  })()
 
-  const [savedBots, setSavedBots] = useState<SavedBot[]>([])
-  const [watchlists, setWatchlists] = useState<Watchlist[]>([])
-  const [callChains, setCallChains] = useState<CallChain[]>([])
-  const [uiState, setUiState] = useState<UserUiState>(() => defaultUiState())
+  const initialUserData: UserData = (() => {
+    if (!initialUserId) {
+      return { savedBots: [], watchlists: ensureDefaultWatchlist([]), callChains: [], ui: defaultUiState() }
+    }
+    return loadUserData(initialUserId)
+  })()
+
+  const [userId, setUserId] = useState<UserId | null>(() => initialUserId)
+
+  const [savedBots, setSavedBots] = useState<SavedBot[]>(() => initialUserData.savedBots)
+  const [watchlists, setWatchlists] = useState<Watchlist[]>(() => initialUserData.watchlists)
+  const [callChains, setCallChains] = useState<CallChain[]>(() => initialUserData.callChains)
+  const [uiState, setUiState] = useState<UserUiState>(() => initialUserData.ui)
   const [analyzeBacktests, setAnalyzeBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
+
+  const theme = userId ? uiState.theme : deviceTheme
 
   const [availableTickers, setAvailableTickers] = useState<string[]>([])
   const [tickerApiError, setTickerApiError] = useState<string | null>(null)
@@ -5361,34 +5907,8 @@ function App() {
 
   useEffect(() => {
     if (!userId) return
-    const data = loadUserData(userId)
-    setSavedBots(data.savedBots)
-    setWatchlists(data.watchlists)
-    setCallChains(data.callChains)
-    setUiState(data.ui)
-    setAnalyzeBacktests({})
-  }, [userId])
-
-  useEffect(() => {
-    if (!userId) return
     saveUserData(userId, { savedBots, watchlists, callChains, ui: uiState })
   }, [userId, savedBots, watchlists, callChains, uiState])
-
-  useEffect(() => {
-    setAnalyzeBacktests((prev) => {
-      const allowed = new Set(savedBots.map((b) => b.id))
-      const next: Record<string, AnalyzeBacktestState> = {}
-      let changed = false
-      for (const [id, state] of Object.entries(prev)) {
-        if (allowed.has(id)) {
-          next[id] = state
-        } else {
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [savedBots])
 
 
   const loadAvailableTickers = useCallback(async () => {
@@ -5456,7 +5976,10 @@ function App() {
   }, [])
 
   useEffect(() => {
-    void loadAvailableTickers()
+    const t = window.setTimeout(() => {
+      void loadAvailableTickers()
+    }, 0)
+    return () => window.clearTimeout(t)
   }, [loadAvailableTickers])
 
   const tickerOptions = useMemo(() => normalizeTickersForUi(availableTickers), [availableTickers])
@@ -5468,20 +5991,21 @@ function App() {
     return { id: `bot-${newId()}`, history: [root], historyIndex: 0 }
   }, [])
 
-  const [bots, setBots] = useState<BotSession[]>(() => {
-    const bot = initialBotRef.current ?? createBotSession('Algo Name Here')
-    initialBotRef.current = bot
-    return [bot]
-  })
-  const [activeBotId, setActiveBotId] = useState<string>(() => initialBotRef.current?.id ?? '')
+  const initialBot = useMemo(() => createBotSession('Algo Name Here'), [createBotSession])
+  const [bots, setBots] = useState<BotSession[]>(() => [initialBot])
+  const [activeBotId, setActiveBotId] = useState<string>(() => initialBot.id)
   const [clipboard, setClipboard] = useState<FlowNode | null>(null)
   const [tab, setTab] = useState<'Portfolio' | 'Community' | 'Analyze' | 'Build' | 'Admin'>('Build')
+  const [analyzeSubtab, setAnalyzeSubtab] = useState<'Bots' | 'Correlation Tool'>('Bots')
   const [adminTab, setAdminTab] = useState<'Ticker List' | 'Data'>('Ticker List')
   const [saveMenuOpen, setSaveMenuOpen] = useState(false)
   const [saveNewWatchlistName, setSaveNewWatchlistName] = useState('')
   const [addToWatchlistBotId, setAddToWatchlistBotId] = useState<string | null>(null)
   const [addToWatchlistNewName, setAddToWatchlistNewName] = useState('')
   const [callPanelOpen, setCallPanelOpen] = useState(false)
+  const [communityTopSort, setCommunityTopSort] = useState<CommunitySort>({ key: 'oosCagr', dir: 'desc' })
+  const [communityWatchlistSort1, setCommunityWatchlistSort1] = useState<CommunitySort>({ key: 'name', dir: 'asc' })
+  const [communityWatchlistSort2, setCommunityWatchlistSort2] = useState<CommunitySort>({ key: 'name', dir: 'asc' })
 
   const activeBot = useMemo(() => {
     return bots.find((b) => b.id === activeBotId) ?? bots[0]
@@ -5515,34 +6039,95 @@ function App() {
     return wl ? wl.botIds : []
   }, [allWatchlistedBotIds, uiState.analyzeFilterWatchlistId, watchlistsById])
 
-  useEffect(() => {
-    if (!activeBot) return
-    if (!hasLegacyIdsOrDuplicates(current)) return
-    const refreshed = ensureSlots(regenerateIds(current))
-    setBots((prev) =>
-      prev.map((b) => (b.id === activeBot.id ? { ...b, history: [refreshed], historyIndex: 0 } : b)),
-    )
-    setClipboard(null)
-  }, [activeBot?.id, current])
+  const callChainsById = useMemo(() => new Map(callChains.map((c) => [c.id, c])), [callChains])
 
-  const push = (next: FlowNode) => {
-    if (!activeBot) return
-    setBots((prev) =>
-      prev.map((b) => {
-        if (b.id !== activeBot.id) return b
-        const trimmed = b.history.slice(0, b.historyIndex + 1)
-        trimmed.push(ensureSlots(next))
-        return { ...b, history: trimmed, historyIndex: trimmed.length - 1 }
-      }),
-    )
-  }
+  const portfolioSnapshot = useMemo<PortfolioSnapshot>(() => {
+    const basePositions = [
+      { ticker: 'SPY', value: 42000, costBasis: 38000, todaysChange: 320 },
+      { ticker: 'QQQ', value: 28500, costBasis: 25250, todaysChange: 210 },
+      { ticker: 'IWM', value: 18200, costBasis: 19500, todaysChange: -140 },
+      { ticker: 'TLT', value: 12500, costBasis: 11000, todaysChange: 65 },
+    ]
+    const cash = 9500
+    const positionsValue = basePositions.reduce((sum, pos) => sum + pos.value, 0)
+    const investedCapital = basePositions.reduce((sum, pos) => sum + pos.costBasis, 0)
+    const enrichedPositions = basePositions.map((pos) => {
+      const pnl = pos.value - pos.costBasis
+      const allocation = positionsValue > 0 ? pos.value / positionsValue : 0
+      const pnlPct = pos.costBasis > 0 ? pnl / pos.costBasis : 0
+      return { ...pos, allocation, pnl, pnlPct }
+    })
+    const totalPnl = enrichedPositions.reduce((sum, pos) => sum + pos.pnl, 0)
+    const accountValue = cash + positionsValue
+    const todaysChange = basePositions.reduce((sum, pos) => sum + pos.todaysChange, 0)
+    const previousValue = accountValue - todaysChange
+    const todaysChangePct = previousValue > 0 ? todaysChange / previousValue : 0
+
+    const sampleBots: PortfolioBotRow[] = [
+      { id: 'sample-alpha', name: 'Momentum Swing', allocation: 0.32, capital: 36000, pnl: 3100, tags: ['Default'] },
+      { id: 'sample-beta', name: 'Rate Hedge', allocation: 0.24, capital: 27000, pnl: -850, tags: ['Hedges'] },
+      { id: 'sample-gamma', name: 'Rotation Grid', allocation: 0.22, capital: 24500, pnl: 1400, tags: ['Default'] },
+      { id: 'sample-delta', name: 'Vol Carry', allocation: 0.18, capital: 21000, pnl: 620, tags: ['Growth'] },
+    ]
+
+    const saved = savedBots.slice(0, sampleBots.length)
+    const bots: PortfolioBotRow[] = saved.length
+      ? saved.map((bot, index) => {
+          const template = sampleBots[index % sampleBots.length]
+          const tagNames = (watchlistsByBotId.get(bot.id) ?? []).map((wl) => wl.name)
+          return {
+            ...template,
+            id: bot.id,
+            name: bot.name,
+            tags: tagNames.length ? tagNames : template.tags,
+            readonly: bot.visibility === 'community',
+          }
+        })
+      : sampleBots
+
+    return {
+      accountValue,
+      cash,
+      totalPnl,
+      totalPnlPct: investedCapital > 0 ? totalPnl / investedCapital : 0,
+      todaysChange,
+      todaysChangePct,
+      positions: enrichedPositions,
+      bots,
+    }
+  }, [savedBots, watchlistsByBotId])
+
+  const {
+    accountValue,
+    cash,
+    totalPnl,
+    totalPnlPct,
+    todaysChange,
+    todaysChangePct,
+    positions,
+    bots: investedBots,
+  } = portfolioSnapshot
+
+  const push = useCallback(
+    (next: FlowNode) => {
+      setBots((prev) =>
+        prev.map((b) => {
+          if (b.id !== activeBotId) return b
+          const trimmed = b.history.slice(0, b.historyIndex + 1)
+          trimmed.push(ensureSlots(next))
+          return { ...b, history: trimmed, historyIndex: trimmed.length - 1 }
+        }),
+      )
+    },
+    [activeBotId],
+  )
 
   const handleAdd = useCallback(
     (parentId: string, slot: SlotId, index: number, kind: BlockKind) => {
       const next = replaceSlot(current, parentId, slot, index, ensureSlots(createNode(kind)))
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleAppend = useCallback(
@@ -5550,7 +6135,7 @@ function App() {
       const next = appendPlaceholder(current, parentId, slot)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleRemoveSlotEntry = useCallback(
@@ -5558,7 +6143,7 @@ function App() {
       const next = removeSlotEntry(current, parentId, slot, index)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleCloseBot = useCallback(
@@ -5590,7 +6175,7 @@ function App() {
       const next = deleteNode(current, id)
       push(next)
     },
-    [current, handleCloseBot, activeBotId],
+    [current, push, handleCloseBot, activeBotId],
   )
 
   const handleCopy = useCallback(
@@ -5604,10 +6189,10 @@ function App() {
 
   const handlePaste = useCallback(
     (parentId: string, slot: SlotId, index: number, child: FlowNode) => {
-      const next = replaceSlot(current, parentId, slot, index, ensureSlots(cloneNode(child)))
+      const next = replaceSlot(current, parentId, slot, index, ensureSlots(regenerateIds(cloneNode(child))))
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleRename = useCallback(
@@ -5615,7 +6200,7 @@ function App() {
       const next = updateTitle(current, id, title)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleWeightChange = useCallback(
@@ -5623,7 +6208,7 @@ function App() {
       const next = updateWeight(current, id, weight, branch)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleUpdateCappedFallback = useCallback(
@@ -5631,7 +6216,7 @@ function App() {
       const next = updateCappedFallback(current, id, choice, branch)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleUpdateVolWindow = useCallback(
@@ -5639,16 +6224,15 @@ function App() {
       const next = updateVolWindow(current, id, days, branch)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
-
-const handleFunctionWindow = useCallback(
-  (id: string, value: number) => {
-    const next = updateFunctionWindow(current, id, value)
+  const handleFunctionWindow = useCallback(
+    (id: string, value: number) => {
+      const next = updateFunctionWindow(current, id, value)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleFunctionBottom = useCallback(
@@ -5656,39 +6240,47 @@ const handleFunctionWindow = useCallback(
       const next = updateFunctionBottom(current, id, value)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
-const handleFunctionMetric = useCallback(
-  (id: string, metric: MetricChoice) => {
-    const next = updateFunctionMetric(current, id, metric)
-    push(next)
-  },
-  [current],
-)
+  const handleFunctionMetric = useCallback(
+    (id: string, metric: MetricChoice) => {
+      const next = updateFunctionMetric(current, id, metric)
+      push(next)
+    },
+    [current, push],
+  )
 
-const handleFunctionRank = useCallback(
-  (id: string, rank: RankChoice) => {
-    const next = updateFunctionRank(current, id, rank)
-    push(next)
-  },
-  [current],
-)
+  const handleFunctionRank = useCallback(
+    (id: string, rank: RankChoice) => {
+      const next = updateFunctionRank(current, id, rank)
+      push(next)
+    },
+    [current, push],
+  )
 
-const handleColorChange = useCallback(
-  (id: string, color?: string) => {
-    const next = updateColor(current, id, color)
-    push(next)
-  },
-  [current],
-)
+  const handleColorChange = useCallback(
+    (id: string, color?: string) => {
+      const next = updateColor(current, id, color)
+      push(next)
+    },
+    [current, push],
+  )
+
+  const handleUpdateCallRef = useCallback(
+    (id: string, callId: string | null) => {
+      const next = updateCallReference(current, id, callId)
+      push(next)
+    },
+    [current, push],
+  )
 
   const handleToggleCollapse = useCallback(
     (id: string, isCollapsed: boolean) => {
       const next = updateCollapse(current, id, isCollapsed)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleJumpToBacktestError = useCallback(
@@ -5700,24 +6292,18 @@ const handleColorChange = useCallback(
         document.getElementById(`node-${err.nodeId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }, 30)
     },
-    [current],
+    [current, push],
   )
 
   const runBacktestForNode = useCallback(
     async (node: FlowNode) => {
-      const prepared = ensureSlots(cloneNode(node))
-      const inputs = collectBacktestInputs(prepared)
+      const prepared = normalizeNodeForBacktest(ensureSlots(cloneNode(node)))
+      const inputs = collectBacktestInputs(prepared, callChainsById)
       if (inputs.errors.length > 0) {
-        const err = new Error('validation')
-        ;(err as any).type = 'validation'
-        ;(err as any).errors = inputs.errors
-        throw err
+        throw makeValidationError(inputs.errors)
       }
       if (inputs.tickers.length === 0) {
-        const err = new Error('validation')
-        ;(err as any).type = 'validation'
-        ;(err as any).errors = [{ nodeId: prepared.id, field: 'tickers', message: 'No tickers found in this strategy.' }]
-        throw err
+        throw makeValidationError([{ nodeId: prepared.id, field: 'tickers', message: 'No tickers found in this strategy.' }])
       }
 
       const decisionPrice: EvalCtx['decisionPrice'] = backtestMode === 'CC' || backtestMode === 'CO' ? 'close' : 'open'
@@ -5731,14 +6317,12 @@ const handleColorChange = useCallback(
 
       const db = buildPriceDb(loaded)
       if (db.dates.length < 3) {
-        const err = new Error('validation')
-        ;(err as any).type = 'validation'
-        ;(err as any).errors = [{ nodeId: prepared.id, field: 'data', message: 'Not enough overlapping price data to run a backtest.' }]
-        throw err
+        throw makeValidationError([{ nodeId: prepared.id, field: 'data', message: 'Not enough overlapping price data to run a backtest.' }])
       }
 
       const cache = emptyCache()
       const warnings: BacktestWarning[] = []
+      const trace = createBacktestTraceCollector()
 
       let benchBars: Array<{ time: UTCTimestamp; open: number; close: number }> | null = null
       if (benchTicker && benchTicker !== 'Empty') {
@@ -5766,9 +6350,28 @@ const handleColorChange = useCallback(
       const lookback = Math.max(0, Math.floor(Number(inputs.maxLookback || 0)))
       const startEvalIndex = decisionPrice === 'open' ? (lookback > 0 ? lookback + 1 : 0) : lookback
 
+      const callNodeCache = new Map<string, FlowNode>()
+      const resolveCallNode = (id: string) => {
+        const chain = callChainsById.get(id)
+        if (!chain) return null
+        if (!callNodeCache.has(id)) {
+          callNodeCache.set(id, normalizeNodeForBacktest(ensureSlots(cloneNode(chain.root))))
+        }
+        return callNodeCache.get(id) ?? null
+      }
+
       for (let i = startEvalIndex; i < db.dates.length; i++) {
         const indicatorIndex = decisionPrice === 'open' ? i - 1 : i
-        const ctx: EvalCtx = { db, cache, decisionIndex: i, indicatorIndex, decisionPrice, warnings }
+        const ctx: EvalCtx = {
+          db,
+          cache,
+          decisionIndex: i,
+          indicatorIndex,
+          decisionPrice,
+          warnings,
+          resolveCall: resolveCallNode,
+          trace,
+        }
         allocationsAt[i] = evaluateNode(ctx, prepared)
       }
 
@@ -5911,10 +6514,11 @@ const handleColorChange = useCallback(
           allocations,
           warnings,
           monthly,
+          trace: trace.toResult(),
         },
       }
     },
-    [backtestMode, backtestBenchmark, backtestCostBps],
+    [backtestMode, backtestBenchmark, backtestCostBps, callChainsById],
   )
 
   const handleRunBacktest = useCallback(async () => {
@@ -5927,9 +6531,8 @@ const handleColorChange = useCallback(
       setBacktestResult(result)
       setBacktestStatus('done')
     } catch (e) {
-      const info = e as any
-      if (info?.type === 'validation' && Array.isArray(info.errors)) {
-        setBacktestErrors(info.errors)
+      if (isValidationError(e)) {
+        setBacktestErrors(e.errors)
       } else {
         const msg = String((e as Error)?.message || e)
         const friendly = msg.includes('Failed to fetch') ? `${msg}. Is the backend running? (npm run api)` : msg
@@ -5991,25 +6594,37 @@ const handleColorChange = useCallback(
     )
   }, [])
 
+  const activeSavedBotId = activeBot?.savedBotId
+
   const handleSaveToWatchlist = useCallback(
     (watchlistNameOrId: string) => {
-      if (!activeBot) return
       if (!current) return
+      if (!userId) return
       const watchlistId = resolveWatchlistId(watchlistNameOrId)
       const payload = ensureSlots(cloneNode(current))
       const now = Date.now()
 
-      const existingSavedBotId = activeBot?.savedBotId
-      let savedBotId = existingSavedBotId
+      let savedBotId = activeSavedBotId
 
       if (!savedBotId) {
         savedBotId = `saved-${newId()}`
-        const entry: SavedBot = { id: savedBotId, name: current.title || 'Algo', payload, visibility: 'private', createdAt: now }
+        const entry: SavedBot = {
+          id: savedBotId,
+          name: current.title || 'Algo',
+          builderId: userId,
+          payload,
+          visibility: 'private',
+          createdAt: now,
+        }
         setSavedBots((prev) => [entry, ...prev])
-        setBots((prev) => prev.map((b) => (b.id === activeBot.id ? { ...b, savedBotId } : b)))
+        setBots((prev) => prev.map((b) => (b.id === activeBotId ? { ...b, savedBotId } : b)))
       } else {
         setSavedBots((prev) =>
-          prev.map((b) => (b.id === savedBotId ? { ...b, payload, name: b.name || current.title || 'Algo' } : b)),
+          prev.map((b) =>
+            b.id === savedBotId
+              ? { ...b, payload, name: current.title || b.name || 'Algo', builderId: b.builderId ?? userId }
+              : b,
+          ),
         )
       }
 
@@ -6020,7 +6635,7 @@ const handleColorChange = useCallback(
         setAnalyzeBacktests((prev) => ({ ...prev, [savedBotId]: { status: 'idle' } }))
       }
     },
-    [current, activeBot?.id, activeBot?.savedBotId, resolveWatchlistId, addBotToWatchlist],
+    [current, activeBotId, activeSavedBotId, resolveWatchlistId, addBotToWatchlist, userId],
   )
 
   const handleConfirmAddToWatchlist = useCallback(
@@ -6043,10 +6658,9 @@ const handleColorChange = useCallback(
         const { result } = await runBacktestForNode(bot.payload)
         setAnalyzeBacktests((prev) => ({ ...prev, [bot.id]: { status: 'done', result } }))
       } catch (err) {
-        const info = err as any
         let message = String((err as Error)?.message || err)
-        if (info?.type === 'validation' && Array.isArray(info.errors)) {
-          message = info.errors.map((e: BacktestError) => e.message).join(', ')
+        if (isValidationError(err)) {
+          message = err.errors.map((e: BacktestError) => e.message).join(', ')
         }
         setAnalyzeBacktests((prev) => ({ ...prev, [bot.id]: { status: 'error', error: message } }))
       }
@@ -6080,6 +6694,10 @@ const handleColorChange = useCallback(
 
   const handleToggleCallChainCollapse = useCallback((id: string) => {
     setCallChains((prev) => prev.map((c) => (c.id === id ? { ...c, collapsed: !c.collapsed } : c)))
+  }, [])
+
+  const handleDeleteCallChain = useCallback((id: string) => {
+    setCallChains((prev) => prev.filter((c) => c.id !== id))
   }, [])
 
   const pushCallChain = useCallback((id: string, next: FlowNode) => {
@@ -6142,7 +6760,7 @@ const handleColorChange = useCallback(
           prev.map((b) => (b.id === activeBot.id ? { ...b, history: [ensured], historyIndex: 0 } : b)),
         )
         setClipboard(null)
-      } catch (err) {
+      } catch {
         alert('Failed to Import due to an error in the JSON')
       }
     }
@@ -6154,7 +6772,7 @@ const handleColorChange = useCallback(
       const next = addConditionLine(current, id, type, itemId)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleDeleteCondition = useCallback(
@@ -6162,7 +6780,7 @@ const handleColorChange = useCallback(
       const next = deleteConditionLine(current, id, condId, itemId)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleNumberedQuantifier = useCallback(
@@ -6170,7 +6788,7 @@ const handleColorChange = useCallback(
       const next = updateNumberedQuantifier(current, id, quantifier)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleNumberedN = useCallback(
@@ -6178,7 +6796,7 @@ const handleColorChange = useCallback(
       const next = updateNumberedN(current, id, n)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleAddNumberedItem = useCallback(
@@ -6186,7 +6804,7 @@ const handleColorChange = useCallback(
       const next = addNumberedItem(current, id)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleDeleteNumberedItem = useCallback(
@@ -6194,7 +6812,7 @@ const handleColorChange = useCallback(
       const next = deleteNumberedItem(current, id, itemId)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleAddPos = useCallback(
@@ -6202,7 +6820,7 @@ const handleColorChange = useCallback(
       const next = addPositionRow(current, id)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleRemovePos = useCallback(
@@ -6210,7 +6828,7 @@ const handleColorChange = useCallback(
       const next = removePositionRow(current, id, index)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const handleChoosePos = useCallback(
@@ -6218,7 +6836,7 @@ const handleColorChange = useCallback(
       const next = choosePosition(current, id, index, choice)
       push(next)
     },
-    [current],
+    [current, push],
   )
 
   const undo = () => {
@@ -6242,7 +6860,13 @@ const handleColorChange = useCallback(
     } catch {
       // ignore
     }
+    const data = loadUserData(nextUser)
     setUserId(nextUser)
+    setSavedBots(data.savedBots)
+    setWatchlists(data.watchlists)
+    setCallChains(data.callChains)
+    setUiState(data.ui)
+    setAnalyzeBacktests({})
     setTab('Build')
   }
 
@@ -6253,21 +6877,39 @@ const handleColorChange = useCallback(
       // ignore
     }
     setUserId(null)
+    setSavedBots([])
+    setWatchlists([])
+    setCallChains([])
+    setUiState(defaultUiState())
+    setAnalyzeBacktests({})
     setTab('Build')
     setSaveMenuOpen(false)
     setAddToWatchlistBotId(null)
   }
 
   if (!userId) {
-    return <LoginScreen onLogin={handleLogin} />
+    return (
+      <div className={`app ${theme === 'dark' ? 'theme-dark' : ''}`}>
+        <LoginScreen onLogin={handleLogin} />
+      </div>
+    )
   }
 
   return (
-    <div className="app">
+    <div className={`app ${theme === 'dark' ? 'theme-dark' : ''}`}>
       <header className="app-header">
         <div>
           <div className="eyebrow">System</div>
-          <h1>System.app</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h1 style={{ marginRight: 4 }}>System.app</h1>
+            <button
+              onClick={() => setUiState((prev) => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
+              style={{ padding: '6px 10px', fontSize: 12 }}
+              title="Toggle light/dark mode"
+            >
+              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            </button>
+          </div>
           <p className="lede">Click any Node or + to extend with Basic, Function, Indicator, or Position. Paste uses the last copied node.</p>
           <div className="tabs">
             {(['Portfolio', 'Community', 'Analyze', 'Build', 'Admin'] as const).map((t) => (
@@ -6277,9 +6919,29 @@ const handleColorChange = useCallback(
             ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-            <div style={{ fontSize: 12, color: '#64748b' }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
               Logged in as <span style={{ fontWeight: 800 }}>{userId}</span>
             </div>
+            <button
+              onClick={() => {
+                if (!confirm(`Clear saved data for user ${userId}? This will remove saved bots, watchlists, and UI state.`)) return
+                try {
+                  localStorage.removeItem(userDataKey(userId))
+                } catch {
+                  // ignore
+                }
+                const data = loadUserData(userId)
+                setSavedBots(data.savedBots)
+                setWatchlists(data.watchlists)
+                setCallChains(data.callChains)
+                setUiState(data.ui)
+                setAnalyzeBacktests({})
+              }}
+              style={{ padding: '6px 10px', fontSize: 12 }}
+              title="Clear all locally saved data for this user"
+            >
+              Clear Data
+            </button>
             <button onClick={handleLogout} style={{ padding: '6px 10px', fontSize: 12 }}>
               Logout
             </button>
@@ -6402,228 +7064,293 @@ const handleColorChange = useCallback(
               result={backtestResult}
               errors={backtestErrors}
               onRun={handleRunBacktest}
-              onJumpToError={handleJumpToBacktestError}
-            />
-            <NodeCard
-              node={current}
-              depth={0}
-              errorNodeIds={backtestErrorNodeIds}
-              focusNodeId={backtestFocusNodeId}
-              tickerOptions={tickerOptions}
-              onAdd={handleAdd}
-              onAppend={handleAppend}
-              onRemoveSlotEntry={handleRemoveSlotEntry}
-              onDelete={handleDelete}
-              onCopy={handleCopy}
-              onPaste={handlePaste}
-              onRename={handleRename}
-              onWeightChange={handleWeightChange}
-              onUpdateCappedFallback={handleUpdateCappedFallback}
-              onUpdateVolWindow={handleUpdateVolWindow}
-              onColorChange={handleColorChange}
-              onToggleCollapse={handleToggleCollapse}
-              onNumberedQuantifier={handleNumberedQuantifier}
-              onNumberedN={handleNumberedN}
-              onAddNumberedItem={handleAddNumberedItem}
-              onDeleteNumberedItem={handleDeleteNumberedItem}
-              onAddCondition={handleAddCondition}
-              onDeleteCondition={handleDeleteCondition}
-              onFunctionWindow={handleFunctionWindow}
-              onFunctionBottom={handleFunctionBottom}
-              onFunctionMetric={handleFunctionMetric}
-              onFunctionRank={handleFunctionRank}
-              onUpdateCondition={(id, condId, updates, itemId) => {
-                const next = updateConditionFields(current, id, condId, updates, itemId)
-                push(next)
-              }}
-              onAddPosition={handleAddPos}
-              onRemovePosition={handleRemovePos}
-              onChoosePosition={handleChoosePos}
-              clipboard={clipboard}
-            />
-
+               onJumpToError={handleJumpToBacktestError}
+             />
             <div
-              style={{
-                position: 'fixed',
-                right: 14,
-                top: 140,
-                width: callPanelOpen ? 420 : 44,
-                maxHeight: 'calc(100vh - 170px)',
-                overflow: 'auto',
-                background: 'white',
-                border: '1px solid #cbd5e1',
-                borderRadius: 14,
-                boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
-                padding: callPanelOpen ? 12 : 6,
-                zIndex: 80,
+              className="build-code-zone-scroll"
+              onWheel={(e) => {
+                if (!e.shiftKey) return
+                e.preventDefault()
+                e.currentTarget.scrollLeft += e.deltaY
               }}
+              title="Tip: hold Shift and use mouse wheel to scroll horizontally"
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                {callPanelOpen ? <div style={{ fontWeight: 900 }}>Calls</div> : null}
-                <button
-                  className="icon-btn"
-                  onClick={() => setCallPanelOpen((v) => !v)}
-                  title={callPanelOpen ? 'Collapse' : 'Expand'}
-                >
-                  {callPanelOpen ? '→' : '←'}
-                </button>
-              </div>
-              {callPanelOpen ? (
-                <>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <button onClick={handleAddCallChain}>Make new Call</button>
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 4, pointerEvents: 'none' }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      right: 0,
+                      width: 56,
+                      bottom: 0,
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      borderLeft: callPanelOpen ? 'none' : '1px solid var(--border)',
+                      borderRadius: callPanelOpen ? '0 14px 14px 0' : '14px',
+                      boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
+                      overflow: 'hidden',
+                      zIndex: 2,
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    <button
+                      onClick={() => setCallPanelOpen((v) => !v)}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        border: 'none',
+                        borderRadius: 0,
+                        background: 'var(--surface)',
+                        color: 'var(--text)',
+                        fontWeight: 900,
+                        writingMode: 'vertical-rl',
+                        textOrientation: 'mixed',
+                        letterSpacing: '0.08em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title={callPanelOpen ? 'Collapse call node zone' : 'Open call node zone'}
+                    >
+                      <div style={{ pointerEvents: 'none' }}>Callback Node Zone</div>
+                    </button>
                   </div>
-                  <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-                    {callChains.length === 0 ? (
-                      <div style={{ color: '#64748b' }}>No call chains yet.</div>
-                    ) : (
-                      callChains.map((c) => (
-                        <div key={c.id} style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 10 }}>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <input
-                              value={c.name}
-                              onChange={(e) => handleRenameCallChain(c.id, e.target.value)}
-                              style={{ flex: 1 }}
-                            />
-                            <button className="icon-btn" onClick={() => handleToggleCallChainCollapse(c.id)}>
-                              {c.collapsed ? 'Expand' : 'Collapse'}
-                            </button>
-                            <button
-                              className="icon-btn"
-                              onClick={async () => {
-                                try {
-                                  await navigator.clipboard.writeText(c.id)
-                                } catch {
-                                  // ignore
-                                }
-                              }}
-                              title="Copy call ID"
-                            >
-                              Copy ID
-                            </button>
-                          </div>
-                          <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>ID: {c.id}</div>
-                          {!c.collapsed ? (
-                            <div style={{ marginTop: 10 }}>
-                              <NodeCard
-                                node={c.root}
-                                depth={0}
-                                tickerOptions={tickerOptions}
-                                onAdd={(parentId, slot, index, kind) => {
-                                  const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(createNode(kind)))
-                                  pushCallChain(c.id, next)
-                                }}
-                                onAppend={(parentId, slot) => {
-                                  const next = appendPlaceholder(c.root, parentId, slot)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onRemoveSlotEntry={(parentId, slot, index) => {
-                                  const next = removeSlotEntry(c.root, parentId, slot, index)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onDelete={(id) => {
-                                  const next = deleteNode(c.root, id)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onCopy={(id) => {
-                                  const found = findNode(c.root, id)
-                                  if (!found) return
-                                  setClipboard(cloneNode(found))
-                                }}
-                                onPaste={(parentId, slot, index, child) => {
-                                  const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(cloneNode(child)))
-                                  pushCallChain(c.id, next)
-                                }}
-                                onRename={(id, title) => {
-                                  const next = updateTitle(c.root, id, title)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onWeightChange={(id, weight, branch) => {
-                                  const next = updateWeight(c.root, id, weight, branch)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onUpdateCappedFallback={(id, choice, branch) => {
-                                  const next = updateCappedFallback(c.root, id, choice, branch)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onUpdateVolWindow={(id, days, branch) => {
-                                  const next = updateVolWindow(c.root, id, days, branch)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onColorChange={(id, color) => {
-                                  const next = updateColor(c.root, id, color)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onToggleCollapse={(id, collapsed) => {
-                                  const next = updateCollapse(c.root, id, collapsed)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onNumberedQuantifier={(id, quantifier) => {
-                                  const next = updateNumberedQuantifier(c.root, id, quantifier)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onNumberedN={(id, n) => {
-                                  const next = updateNumberedN(c.root, id, n)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onAddNumberedItem={(id) => {
-                                  const next = addNumberedItem(c.root, id)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onDeleteNumberedItem={(id, itemId) => {
-                                  const next = deleteNumberedItem(c.root, id, itemId)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onAddCondition={(id, type, itemId) => {
-                                  const next = addConditionLine(c.root, id, type, itemId)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onDeleteCondition={(id, condId, itemId) => {
-                                  const next = deleteConditionLine(c.root, id, condId, itemId)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onFunctionWindow={(id, value) => {
-                                  const next = updateFunctionWindow(c.root, id, value)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onFunctionBottom={(id, value) => {
-                                  const next = updateFunctionBottom(c.root, id, value)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onFunctionMetric={(id, metric) => {
-                                  const next = updateFunctionMetric(c.root, id, metric)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onFunctionRank={(id, rank) => {
-                                  const next = updateFunctionRank(c.root, id, rank)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onUpdateCondition={(id, condId, updates, itemId) => {
-                                  const next = updateConditionFields(c.root, id, condId, updates, itemId)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onAddPosition={(id) => {
-                                  const next = addPositionRow(c.root, id)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onRemovePosition={(id, index) => {
-                                  const next = removePositionRow(c.root, id, index)
-                                  pushCallChain(c.id, next)
-                                }}
-                                onChoosePosition={(id, index, choice) => {
-                                  const next = choosePosition(c.root, id, index, choice)
-                                  pushCallChain(c.id, next)
-                                }}
-                                clipboard={clipboard}
-                              />
+
+                  {callPanelOpen ? (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 56,
+                        width: 'min(90vw, 1400px)',
+                        bottom: 0,
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        borderRight: 'none',
+                        borderRadius: '14px 0 0 14px',
+                        boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
+                        padding: 12,
+                        overflow: 'auto',
+                        zIndex: 1,
+                        pointerEvents: 'auto',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ fontWeight: 900 }}>Calls</div>
+                        <button className="icon-btn" onClick={() => setCallPanelOpen(false)} title="Collapse">
+                          Collapse
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <button onClick={handleAddCallChain}>Make new Call</button>
+                      </div>
+                      <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+                        {callChains.length === 0 ? (
+                          <div style={{ color: '#64748b' }}>No call chains yet.</div>
+                        ) : (
+                          callChains.map((c) => (
+                            <div key={c.id} style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 10 }}>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <input value={c.name} onChange={(e) => handleRenameCallChain(c.id, e.target.value)} style={{ flex: 1 }} />
+                                <button className="icon-btn" onClick={() => handleToggleCallChainCollapse(c.id)}>
+                                  {c.collapsed ? 'Expand' : 'Collapse'}
+                                </button>
+                                <button
+                                  className="icon-btn"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(c.id)
+                                    } catch {
+                                      // ignore
+                                    }
+                                  }}
+                                  title="Copy call ID"
+                                >
+                                  Copy ID
+                                </button>
+                                <button
+                                  className="icon-btn delete"
+                                  onClick={() => {
+                                    if (!confirm(`Delete call chain "${c.name}"?`)) return
+                                    handleDeleteCallChain(c.id)
+                                  }}
+                                  title="Delete call chain"
+                                >
+                                  X
+                                </button>
+                              </div>
+                              <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>ID: {c.id}</div>
+                              {!c.collapsed ? (
+                                <div style={{ marginTop: 10 }}>
+                                  <NodeCard
+                                    node={c.root}
+                                    depth={0}
+                                    tickerOptions={tickerOptions}
+                                    onAdd={(parentId, slot, index, kind) => {
+                                      const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(createNode(kind)))
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onAppend={(parentId, slot) => {
+                                      const next = appendPlaceholder(c.root, parentId, slot)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onRemoveSlotEntry={(parentId, slot, index) => {
+                                      const next = removeSlotEntry(c.root, parentId, slot, index)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onDelete={(id) => {
+                                      const next = deleteNode(c.root, id)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onCopy={(id) => {
+                                      const found = findNode(c.root, id)
+                                      if (!found) return
+                                      setClipboard(cloneNode(found))
+                                    }}
+                                    onPaste={(parentId, slot, index, child) => {
+                                      const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(regenerateIds(cloneNode(child))))
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onRename={(id, title) => {
+                                      const next = updateTitle(c.root, id, title)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onWeightChange={(id, weight, branch) => {
+                                      const next = updateWeight(c.root, id, weight, branch)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onUpdateCappedFallback={(id, choice, branch) => {
+                                      const next = updateCappedFallback(c.root, id, choice, branch)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onUpdateVolWindow={(id, days, branch) => {
+                                      const next = updateVolWindow(c.root, id, days, branch)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onColorChange={(id, color) => {
+                                      const next = updateColor(c.root, id, color)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onToggleCollapse={(id, collapsed) => {
+                                      const next = updateCollapse(c.root, id, collapsed)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onNumberedQuantifier={(id, quantifier) => {
+                                      const next = updateNumberedQuantifier(c.root, id, quantifier)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onNumberedN={(id, n) => {
+                                      const next = updateNumberedN(c.root, id, n)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onAddNumberedItem={(id) => {
+                                      const next = addNumberedItem(c.root, id)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onDeleteNumberedItem={(id, itemId) => {
+                                      const next = deleteNumberedItem(c.root, id, itemId)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onAddCondition={(id, type, itemId) => {
+                                      const next = addConditionLine(c.root, id, type, itemId)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onDeleteCondition={(id, condId, itemId) => {
+                                      const next = deleteConditionLine(c.root, id, condId, itemId)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onFunctionWindow={(id, value) => {
+                                      const next = updateFunctionWindow(c.root, id, value)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onFunctionBottom={(id, value) => {
+                                      const next = updateFunctionBottom(c.root, id, value)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onFunctionMetric={(id, metric) => {
+                                      const next = updateFunctionMetric(c.root, id, metric)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onFunctionRank={(id, rank) => {
+                                      const next = updateFunctionRank(c.root, id, rank)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onUpdateCondition={(id, condId, updates, itemId) => {
+                                      const next = updateConditionFields(c.root, id, condId, updates, itemId)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onAddPosition={(id) => {
+                                      const next = addPositionRow(c.root, id)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onRemovePosition={(id, index) => {
+                                      const next = removePositionRow(c.root, id, index)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    onChoosePosition={(id, index, choice) => {
+                                      const next = choosePosition(c.root, id, index, choice)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                    clipboard={clipboard}
+                                    callChains={callChains}
+                                    onUpdateCallRef={(id, callId) => {
+                                      const next = updateCallReference(c.root, id, callId)
+                                      pushCallChain(c.id, next)
+                                    }}
+                                  />
+                                </div>
+                              ) : null}
                             </div>
-                          ) : null}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </>
-              ) : null}
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ overflow: 'auto' }}>
+                  <NodeCard
+                    node={current}
+                    depth={0}
+                    errorNodeIds={backtestErrorNodeIds}
+                    focusNodeId={backtestFocusNodeId}
+                    tickerOptions={tickerOptions}
+                    onAdd={handleAdd}
+                    onAppend={handleAppend}
+                    onRemoveSlotEntry={handleRemoveSlotEntry}
+                    onDelete={handleDelete}
+                    onCopy={handleCopy}
+                    onPaste={handlePaste}
+                    onRename={handleRename}
+                    onWeightChange={handleWeightChange}
+                    onUpdateCappedFallback={handleUpdateCappedFallback}
+                    onUpdateVolWindow={handleUpdateVolWindow}
+                    onColorChange={handleColorChange}
+                    onToggleCollapse={handleToggleCollapse}
+                    onNumberedQuantifier={handleNumberedQuantifier}
+                    onNumberedN={handleNumberedN}
+                    onAddNumberedItem={handleAddNumberedItem}
+                    onDeleteNumberedItem={handleDeleteNumberedItem}
+                    onAddCondition={handleAddCondition}
+                    onDeleteCondition={handleDeleteCondition}
+                    onFunctionWindow={handleFunctionWindow}
+                    onFunctionBottom={handleFunctionBottom}
+                    onFunctionMetric={handleFunctionMetric}
+                    onFunctionRank={handleFunctionRank}
+                    onUpdateCondition={(id, condId, updates, itemId) => {
+                      const next = updateConditionFields(current, id, condId, updates, itemId)
+                      push(next)
+                    }}
+                    onAddPosition={handleAddPos}
+                    onRemovePosition={handleRemovePos}
+                    onChoosePosition={handleChoosePos}
+                    clipboard={clipboard}
+                    callChains={callChains}
+                    onUpdateCallRef={handleUpdateCallRef}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         ) : tab === 'Admin' ? (
@@ -6636,10 +7363,24 @@ const handleColorChange = useCallback(
           />
         ) : tab === 'Analyze' ? (
           <div className="placeholder">
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontWeight: 900 }}>Analyze</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 900 }}>Analyze</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(['Bots', 'Correlation Tool'] as const).map((t) => (
+                    <button
+                      key={t}
+                      className={`tab-btn ${analyzeSubtab === t ? 'active' : ''}`}
+                      onClick={() => setAnalyzeSubtab(t)}
+                      style={{ padding: '6px 10px', fontSize: 12 }}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>Filter</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Filter</div>
                 <select
                   value={uiState.analyzeFilterWatchlistId ?? ''}
                   onChange={(e) =>
@@ -6656,8 +7397,24 @@ const handleColorChange = useCallback(
               </label>
             </div>
 
-            {analyzeVisibleBotIds.length === 0 ? (
-              <div style={{ marginTop: 12, color: '#64748b' }}>No bots in your watchlists yet.</div>
+            {analyzeSubtab === 'Correlation Tool' ? (
+              <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                <div className="saved-item" style={{ display: 'grid', placeItems: 'center', minHeight: 220, fontWeight: 900 }}>
+                  Placeholder Text: Invested Systems
+                </div>
+                <div className="saved-item" style={{ display: 'grid', placeItems: 'center', minHeight: 220, fontWeight: 900 }}>
+                  Placeholder Text: Community suggestions based on filters (Beta, Correlation, Volatility weighting)
+                </div>
+                <div className="saved-item" style={{ display: 'grid', placeItems: 'center', minHeight: 220, fontWeight: 900 }}>
+                  Combined portfolio and allocations based on suggestions
+                </div>
+              </div>
+            ) : null}
+
+            {analyzeSubtab !== 'Bots' ? null : (
+              <>
+                {analyzeVisibleBotIds.length === 0 ? (
+              <div style={{ marginTop: 12, color: 'var(--muted)' }}>No bots in your watchlists yet.</div>
             ) : (
               <div className="saved-list" style={{ marginTop: 12 }}>
                 {analyzeVisibleBotIds
@@ -6684,11 +7441,10 @@ const handleColorChange = useCallback(
                             {collapsed ? 'Expand' : 'Collapse'}
                           </button>
                           <div style={{ fontWeight: 900 }}>{b.name}</div>
-                          {b.visibility === 'community' ? (
-                            <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', background: '#e0f2fe', padding: '4px 8px', borderRadius: 999 }}>
-                              Community
-                            </div>
-                          ) : null}
+                          <span className={`bot-tag ${b.visibility === 'community' ? 'muted' : ''}`}>
+                            {b.visibility === 'community' ? 'Community' : 'Private'}
+                          </span>
+                          <span className="bot-tag">Builder: {b.builderId}</span>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {tags.map((w) => (
                               <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: '#eff6ff', fontSize: 12, fontWeight: 800 }}>
@@ -6734,18 +7490,52 @@ const handleColorChange = useCallback(
                             ) : analyzeState?.status === 'done' ? (
                               <>
                                 <div>
-                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Real Stats</div>
+                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>OOS Stats</div>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
                                     <div>
                                       <div className="stat-label">Total Return</div>
-                                      <div className="stat-value">{formatPct(analyzeState.result?.metrics.totalReturn ?? NaN)}</div>
+                                      <div className="stat-value">{formatPct(0)}</div>
                                     </div>
+                                    <div>
+                                      <div className="stat-label">CAGR</div>
+                                      <div className="stat-value">{formatPct(0)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="stat-label">Max Drawdown</div>
+                                      <div className="stat-value">{formatPct(0)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="stat-label">Sharpe</div>
+                                      <div className="stat-value">{(0).toFixed(2)}</div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Backtest Snapshot</div>
+                                  <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>Benchmark: {backtestBenchmark}</div>
+                                  <EquityChart
+                                    points={analyzeState.result?.points ?? []}
+                                    benchmarkPoints={analyzeState.result?.benchmarkPoints}
+                                    markers={analyzeState.result?.markers ?? []}
+                                    logScale
+                                    showCursorStats={false}
+                                    heightPx={390}
+                                  />
+                                  <div style={{ marginTop: 10 }}>
+                                    <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Hist Stats</div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(160px, 1fr))', gap: 10, overflowX: 'auto' }}>
                                     <div>
                                       <div className="stat-label">CAGR</div>
                                       <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
                                     </div>
                                     <div>
-                                      <div className="stat-label">Max Drawdown</div>
+                                      <div className="stat-label">MaxDD</div>
                                       <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
                                     </div>
                                     <div>
@@ -6756,20 +7546,6 @@ const handleColorChange = useCallback(
                                           : '—'}
                                       </div>
                                     </div>
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Historical Stats</div>
-                                  <Sparkline points={analyzeState.result?.points ?? []} />
-                                  <div style={{ fontSize: 12, color: '#94a3b8' }}>Equity (sampled)</div>
-                                  <Sparkline points={analyzeState.result?.drawdownPoints ?? []} color="#ef4444" />
-                                  <div style={{ fontSize: 12, color: '#94a3b8' }}>Drawdown</div>
-                                </div>
-
-                                <div>
-                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Historical Backtest</div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
                                     <div>
                                       <div className="stat-label">Volatility</div>
                                       <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
@@ -6779,7 +7555,7 @@ const handleColorChange = useCallback(
                                       <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
                                     </div>
                                     <div>
-                                      <div className="stat-label">Avg Turnover</div>
+                                      <div className="stat-label">Turnover</div>
                                       <div className="stat-value">{formatPct(analyzeState.result?.metrics.avgTurnover ?? NaN)}</div>
                                     </div>
                                     <div>
@@ -6791,15 +7567,12 @@ const handleColorChange = useCallback(
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="stat-label">Start → End</div>
-                                      <div className="stat-value">
-                                        {analyzeState.result?.metrics.startDate} → {analyzeState.result?.metrics.endDate}
-                                      </div>
-                                    </div>
-                                    <div>
                                       <div className="stat-label">Trading Days</div>
                                       <div className="stat-value">{analyzeState.result?.metrics.days ?? '—'}</div>
                                     </div>
+                                  </div>
+                                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
+                                    Period: {analyzeState.result?.metrics.startDate ?? '—'} — {analyzeState.result?.metrics.endDate ?? '—'}
                                   </div>
                                 </div>
                               </>
@@ -6813,128 +7586,354 @@ const handleColorChange = useCallback(
                   })}
               </div>
             )}
+              </>
+            )}
           </div>
         ) : tab === 'Community' ? (
           <div className="placeholder">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 14, alignItems: 'start' }}>
-              <div>
-                <div style={{ fontWeight: 900, marginBottom: 10 }}>Top Community Bots by Metric</div>
-                <div style={{ display: 'grid', gap: 10 }}>
-                  {(['Best CAGR', 'Best Sharpe', 'Best CAGR/DD', 'BrianE'] as const).map((section) => (
-                    <div key={section} style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 12 }}>
-                      <div style={{ fontWeight: 900, marginBottom: 8 }}>{section}</div>
-                      <div style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>
-                        Community bots are read-only: you can add them to your watchlists or view them in Analyze, but you cannot open them in Build.
+            {(() => {
+              const firstWatchlistId = watchlists[0]?.id ?? null
+              const secondWatchlistId = watchlists[1]?.id ?? firstWatchlistId
+
+              const slot1Id =
+                uiState.communityWatchlistSlot1Id && watchlistsById.has(uiState.communityWatchlistSlot1Id)
+                  ? uiState.communityWatchlistSlot1Id
+                  : firstWatchlistId
+              const slot2Id =
+                uiState.communityWatchlistSlot2Id && watchlistsById.has(uiState.communityWatchlistSlot2Id)
+                  ? uiState.communityWatchlistSlot2Id
+                  : secondWatchlistId
+
+              const rowsForWatchlist = (watchlistId: string | null): CommunityBotRow[] => {
+                if (!watchlistId) return []
+                const wl = watchlistsById.get(watchlistId)
+                if (!wl) return []
+                const out: CommunityBotRow[] = []
+                for (const botId of wl.botIds || []) {
+                  const bot = savedBots.find((b) => b.id === botId)
+                  if (!bot) continue
+                  const tagNames = (watchlistsByBotId.get(bot.id) ?? []).map((w) => w.name)
+                  const tags = [bot.visibility === 'community' ? 'Community' : 'Private', `Builder: ${bot.builderId}`, ...tagNames]
+                  out.push({
+                    id: bot.id,
+                    name: bot.name,
+                    tags,
+                    oosCagr: 0,
+                    oosMaxdd: 0,
+                    oosSharpe: 0,
+                  })
+                }
+                return out
+              }
+
+              const sortRows = (rows: CommunityBotRow[], sort: CommunitySort): CommunityBotRow[] => {
+                const dir = sort.dir === 'asc' ? 1 : -1
+                const arr = [...rows]
+                arr.sort((a, b) => {
+                  let cmp = 0
+                  if (sort.key === 'name') cmp = a.name.localeCompare(b.name)
+                  else if (sort.key === 'tags') cmp = a.tags.join(',').localeCompare(b.tags.join(','))
+                  else if (sort.key === 'oosCagr') cmp = a.oosCagr - b.oosCagr
+                  else if (sort.key === 'oosMaxdd') cmp = a.oosMaxdd - b.oosMaxdd
+                  else cmp = a.oosSharpe - b.oosSharpe
+                  return dir * (cmp || a.id.localeCompare(b.id))
+                })
+                return arr
+              }
+
+              const renderTable = (
+                rows: CommunityBotRow[],
+                sort: CommunitySort,
+                setSort: Dispatch<SetStateAction<CommunitySort>>,
+                opts?: { emptyMessage?: string; headerOnly?: boolean },
+              ) => {
+                const arrow = (k: CommunitySortKey) => (sort.key === k ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '')
+                const sorted = sortRows(rows, sort)
+                return (
+                  <table className="portfolio-table" style={{ width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setSort((p) => nextCommunitySort(p, 'name'))}>
+                          Name{arrow('name')}
+                        </th>
+                        <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setSort((p) => nextCommunitySort(p, 'tags'))}>
+                          Tags{arrow('tags')}
+                        </th>
+                        <th
+                          style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}
+                          onClick={() => setSort((p) => nextCommunitySort(p, 'oosCagr'))}
+                        >
+                          OOS CAGR{arrow('oosCagr')}
+                        </th>
+                        <th
+                          style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}
+                          onClick={() => setSort((p) => nextCommunitySort(p, 'oosMaxdd'))}
+                        >
+                          OOS MaxDD{arrow('oosMaxdd')}
+                        </th>
+                        <th
+                          style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}
+                          onClick={() => setSort((p) => nextCommunitySort(p, 'oosSharpe'))}
+                        >
+                          OOS Sharpe{arrow('oosSharpe')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {opts?.headerOnly
+                        ? null
+                        : sorted.length === 0
+                          ? (
+                              <tr>
+                                <td colSpan={5} style={{ color: 'var(--muted)' }}>
+                                  {opts?.emptyMessage ?? 'No bots yet.'}
+                                </td>
+                              </tr>
+                            )
+                          : sorted.map((r) => (
+                              <tr key={r.id}>
+                                <td>{r.name}</td>
+                                <td>
+                                  <div className="bot-tags" style={{ marginTop: 0 }}>
+                                    {r.tags.map((t) => (
+                                      <span key={`${r.id}-${t}`} className={`bot-tag ${t === 'Community' ? 'muted' : ''}`}>
+                                        {t}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>{formatPct(r.oosCagr)}</td>
+                                <td style={{ textAlign: 'right' }}>{formatPct(r.oosMaxdd)}</td>
+                                <td style={{ textAlign: 'right' }}>{Number.isFinite(r.oosSharpe) ? r.oosSharpe.toFixed(2) : '—'}</td>
+                              </tr>
+                            ))}
+                    </tbody>
+                  </table>
+                )
+              }
+
+              const watchlistSelect = (currentId: string | null, onChange: (id: string | null) => void) => (
+                <select
+                  value={currentId ?? ''}
+                  onChange={(e) => onChange(e.target.value ? e.target.value : null)}
+                  style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                >
+                  {watchlists.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              )
+
+              return (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: 12,
+                    minHeight: 'calc(100vh - 260px)',
+                    alignItems: 'stretch',
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ fontWeight: 900 }}>Top Community Bots</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
+                      <div
+                        className="saved-item"
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'stretch',
+                          justifyContent: 'flex-start',
+                          gap: 10,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div style={{ fontWeight: 900 }}>Top community bots by CAGR</div>
+                        {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
                       </div>
-                      <div style={{ display: 'grid', gap: 8 }}>
-                        {savedBots.filter((b) => b.visibility === 'community').length === 0 ? (
-                          <div style={{ color: '#64748b' }}>No community bots available yet.</div>
-                        ) : (
-                          savedBots
-                            .filter((b) => b.visibility === 'community')
-                            .slice(0, 10)
-                            .map((b) => (
-                              <div key={b.id} className="saved-item" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ fontWeight: 900 }}>{b.name}</div>
-                                <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                                  <button
-                                    onClick={() => {
-                                      setAddToWatchlistBotId(b.id)
-                                      setAddToWatchlistNewName('')
-                                    }}
-                                  >
-                                    Add to my watchlist
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      const wlId =
-                                        uiState.communitySelectedWatchlistId ??
-                                        watchlists.find((w) => w.name === 'Default')?.id ??
-                                        watchlists[0]?.id ??
-                                        null
-                                      if (!wlId) {
-                                        alert('Create a watchlist first.')
-                                        return
-                                      }
-                                      addBotToWatchlist(b.id, wlId)
-                                      setUiState((prev) => ({ ...prev, analyzeFilterWatchlistId: wlId }))
-                                      setTab('Analyze')
-                                    }}
-                                  >
-                                    View in Analyze
-                                  </button>
-                                </div>
-                              </div>
-                            ))
-                        )}
+                      <div
+                        className="saved-item"
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'stretch',
+                          justifyContent: 'flex-start',
+                          gap: 10,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div style={{ fontWeight: 900 }}>Top community bots by Calmar Ratio</div>
+                        {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
+                      </div>
+                      <div
+                        className="saved-item"
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'stretch',
+                          justifyContent: 'flex-start',
+                          gap: 10,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div style={{ fontWeight: 900 }}>Top community bots by Sharpe Ratio</div>
+                        {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  <div style={{ gridColumn: '2 / span 2', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div className="saved-item" style={{ flex: 2, display: 'grid', placeItems: 'center', fontWeight: 900 }}>
+                      News and Select Bots
+                    </div>
+                    <div className="saved-item" style={{ flex: 1, display: 'grid', placeItems: 'center', fontWeight: 900 }}>
+                      Search for other community bots by metrics or by Builder's names.
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ fontWeight: 900 }}>Personal Watchlists</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
+                      <div
+                        className="saved-item"
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'stretch',
+                          justifyContent: 'flex-start',
+                          gap: 10,
+                          overflow: 'auto',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <div style={{ fontWeight: 900 }}>Watchlist Zone #1</div>
+                          {watchlistSelect(slot1Id, (id) => setUiState((p) => ({ ...p, communityWatchlistSlot1Id: id })))}
+                        </div>
+                        {renderTable(rowsForWatchlist(slot1Id), communityWatchlistSort1, setCommunityWatchlistSort1, {
+                          emptyMessage: 'No bots in this watchlist.',
+                        })}
+                      </div>
+                      <div
+                        className="saved-item"
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'stretch',
+                          justifyContent: 'flex-start',
+                          gap: 10,
+                          overflow: 'auto',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <div style={{ fontWeight: 900 }}>Watchlist Zone #2</div>
+                          {watchlistSelect(slot2Id, (id) => setUiState((p) => ({ ...p, communityWatchlistSlot2Id: id })))}
+                        </div>
+                        {renderTable(rowsForWatchlist(slot2Id), communityWatchlistSort2, setCommunityWatchlistSort2, {
+                          emptyMessage: 'No bots in this watchlist.',
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        ) : tab === 'Portfolio' ? (
+          <div className="placeholder">
+            <div className="portfolio-grid">
+              <div className="summary-cards">
+                <div className="summary-card">
+                  <div className="stat-label">Account value</div>
+                  <div className="summary-value">{formatUsd(accountValue)}</div>
+                  <div className="stat-label">Cash available {formatUsd(cash)}</div>
+                </div>
+                <div className="summary-card">
+                  <div className="stat-label">Total PnL</div>
+                  <div className={`summary-value ${totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+                    {formatSignedUsd(totalPnl)}
+                  </div>
+                  <div className="stat-label">{formatPct(totalPnlPct)}</div>
+                </div>
+                <div className="summary-card">
+                  <div className="stat-label">Day change</div>
+                  <div className={`summary-value ${todaysChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+                    {formatSignedUsd(todaysChange)}
+                  </div>
+                  <div className="stat-label">{formatPct(todaysChangePct)}</div>
                 </div>
               </div>
 
-              <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 12 }}>
-                <div style={{ fontWeight: 900, marginBottom: 10 }}>My Watchlist</div>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>Select watchlist</div>
-                  <select
-                    value={uiState.communitySelectedWatchlistId ?? ''}
-                    onChange={(e) =>
-                      setUiState((prev) => ({
-                        ...prev,
-                        communitySelectedWatchlistId: e.target.value ? e.target.value : null,
-                      }))
-                    }
-                  >
-                    <option value="">Default</option>
-                    {watchlists
-                      .filter((w) => w.name !== 'Default')
-                      .map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
+              <div className="panel-grid">
+                <div className="panel-card">
+                  <div className="panel-title">Current positions</div>
+                  <table className="portfolio-table">
+                    <thead>
+                      <tr>
+                        <th>Ticker</th>
+                        <th>Allocation</th>
+                        <th>Value</th>
+                        <th>PnL</th>
+                        <th>PnL %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {positions.map((pos) => (
+                        <tr key={pos.ticker}>
+                          <td>{pos.ticker}</td>
+                          <td>{formatPct(pos.allocation)}</td>
+                          <td>{formatUsd(pos.value)}</td>
+                          <td className={pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}>{formatSignedUsd(pos.pnl)}</td>
+                          <td className={pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}>{formatPct(pos.pnlPct)}</td>
+                        </tr>
                       ))}
-                  </select>
-                </label>
-                {(() => {
-                  const selectedId =
-                    uiState.communitySelectedWatchlistId ??
-                    watchlists.find((w) => w.name === 'Default')?.id ??
-                    watchlists[0]?.id ??
-                    null
-                  const wl = selectedId ? watchlistsById.get(selectedId) : null
-                  const ids = wl?.botIds ?? []
-                  if (!ids.length) return <div style={{ marginTop: 12, color: '#64748b' }}>No bots yet.</div>
-                  return (
-                    <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-                      {ids
-                        .map((id) => savedBots.find((b) => b.id === id))
-                        .filter((b): b is SavedBot => Boolean(b))
-                        .map((b) => (
-                          <div key={b.id} className="saved-item" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{ fontWeight: 900 }}>{b.name}</div>
-                            {b.visibility === 'community' ? (
-                              <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', background: '#e0f2fe', padding: '4px 8px', borderRadius: 999 }}>
-                                Community
-                              </div>
-                            ) : null}
-                            <button
-                              className="icon-btn delete inline"
-                              style={{ marginLeft: 'auto' }}
-                              onClick={() => selectedId && removeBotFromWatchlist(b.id, selectedId)}
-                            >
-                              Remove
-                            </button>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="panel-card">
+                  <div className="panel-title">Bots invested in</div>
+                  {investedBots.length === 0 ? (
+                    <div style={{ color: '#64748b' }}>No bots saved yet.</div>
+                  ) : (
+                    <div className="bot-list">
+                      {investedBots.map((bot) => (
+                        <div key={bot.id} className="bot-row">
+                          <div style={{ flex: 1 }}>
+                            <div className="bot-row-title">
+                              {bot.name}
+                              {bot.readonly ? <span className="bot-tag muted">Community</span> : null}
+                            </div>
+                            <div className="bot-row-meta">
+                              Allocation {formatPct(bot.allocation)} · Capital {formatUsd(bot.capital)}
+                            </div>
+                            <div className="bot-tags">
+                              {(bot.tags.length ? bot.tags : ['Unassigned']).map((tag) => (
+                                <span key={tag} className="bot-tag">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        ))}
+                          <div className={`bot-row-pnl ${bot.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+                            {formatSignedUsd(bot.pnl)}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  )
-                })()}
+                  )}
+                </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="placeholder">{tab === 'Portfolio' ? 'Portfolio content coming soon.' : null}</div>
+          <div className="placeholder" />
         )}
 
         {addToWatchlistBotId ? (

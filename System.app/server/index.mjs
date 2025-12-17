@@ -295,10 +295,7 @@ app.get('/api/candles/:ticker', async (req, res) => {
 
 const PORT = Number(process.env.PORT || 8787)
 app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
   console.log(`[api] listening on http://localhost:${PORT}`)
-  // eslint-disable-next-line no-console
   console.log(`[api] tickers: ${TICKERS_PATH}`)
-  // eslint-disable-next-line no-console
   console.log(`[api] parquet:  ${PARQUET_DIR}`)
 })

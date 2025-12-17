@@ -22,7 +22,10 @@ General templates/live docs:
 4. `Build/010-backtester-summary-cards-layout.md`
 5. `Build/011-monthly-returns-heatmap-v2.md`
 6. `Build/012-call-chains.md`
-7. `Bot DB/003-analyze-tab-collapsible-bot-cards.md`
-8. `Community/004-watchlists-crud-and-membership.md`
-9. `Community/005-community-watchlists-view.md`
-10. `Portfolio/006-portfolio-dashboard.md` (placeholders only; last)
+7. `Build/014-backtester-ux-and-bot-metadata.md`
+8. `Build/015-conditional-logic-validation.md`
+9. `Bot DB/003-analyze-tab-collapsible-bot-cards.md`
+10. `Community/004-watchlists-crud-and-membership.md`
+11. `Community/005-community-watchlists-view.md`
+12. `Backlog/013-theming-and-user-data-persistence.md`
+13. `Portfolio/006-portfolio-dashboard.md` (placeholders only; last)

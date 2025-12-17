@@ -1,4 +1,4 @@
-# PRD 003 — Analyze Tab (Collapsible Bot Cards + Performance)
+# PRD 003 - Analyze Tab (Collapsible Bot Cards + Performance)
 
 ## Metadata
 - ID: 003
@@ -7,7 +7,7 @@
 - Owner:
 - Depends on: PRD 004 (watchlists), PRD 007 (backtesting)
 - Created: 2025-12-15
-- Last updated: 2025-12-15
+- Last updated: 2025-12-17
 
 ## Summary
 Rename `Bot Database` to `Analyze` and render bots as collapsible cards instead of click-to-open. Cards default collapsed; expanding shows performance metrics and a visual backtest equity curve. The view is scoped to the currently logged-in account and lists that user’s watchlisted bots with optional filtering by watchlist. Keep `Open in Build Tab` always visible, plus `Add to Watchlist`.
@@ -44,8 +44,14 @@ Rename `Bot Database` to `Analyze` and render bots as collapsible cards instead 
 ### Expanded content
 - Header line: collapse/expand, bot name, watchlist tags (with remove), same actions as collapsed.
 - Real Stats zone: Open in Build (navigates + loads bot), amount invested, buy/sell button, CAGR since investment started, MaxDD since investment started.
-- Historical stats: non-interactive equity curve with drawdown overlay and benchmark label.
-- Historical backtest zone: the Build “top metrics” block duplicated under the charts (placeholder until Build PRDs wire full metrics).
+- Historical stats: equity + drawdown chart mirrors Build tab styling: includes dates, benchmark label, same colors/line weights, full backtest period (no window controls here).
+  - Equity chart (Analyze expanded card only): log scale enabled and height reduced to ~75% of the Build tab equity chart height; drawdown chart height unchanged.
+- Historical backtest zone: show two metric groups:
+  - `OOS Stats` (display labels drop the prefix, e.g., OOS CAGR -> "CAGR", but internally keyed as OOS) for the top block.
+    - For now, OOS metrics render as `0` until live trading returns are wired.
+  - `Hist` metrics block as the lower block; display labels omit "Hist".
+    - Display order (2 lines): `CAGR`, `MaxDD`, `Sharpe`, `Volatility`; then `Win Rate`, `Turnover`, `Avg holdings`, `Trading days`.
+    - Hist metrics use the full max-period backtest results from the Build-style backtest.
 - Backtest results must reflect correct strategy execution (conditions, tickers, dates); not mock numbers. Expansion may auto-run a backtest if no cached results exist for current inputs.
 
 ### Watchlist add flow
@@ -53,6 +59,13 @@ Rename `Bot Database` to `Analyze` and render bots as collapsible cards instead 
   - `Create New Watchlist`
   - Existing watchlists (searchable/writable input with autocomplete).
 - Bots can belong to multiple watchlists but only once per watchlist.
+
+### Correlation Tool subtab
+- New subtab within Analyze named `Correlation Tool`.
+- Layout: three equally wide bubbles/columns:
+  - Left: “Placeholder Text: Invested Systems”.
+  - Middle: “Placeholder Text: Community suggestions based on filters (Beta, Correlation, Volatility weighting)”.
+  - Right: “Combined portfolio and allocations based on suggestions”.
 
 ## Data Model / State
 - Scoped to logged-in user (see PRD 004 auth).
@@ -73,9 +86,10 @@ Rename `Bot Database` to `Analyze` and render bots as collapsible cards instead 
 - Bot list entries render as collapsible cards, default collapsed, scoped to current user’s watchlists.
 - Filter by watchlist works; `All` shows all bots across the user’s watchlists (de-duped).
 - Collapsed card shows bot name, expand/collapse, watchlist tags with remove, and actions (`Open in Build Tab`, `Add to Watchlist`).
-- Expanded card shows Real Stats zone (Open in Build, amount invested, buy/sell, CAGR since investment, MaxDD since investment), historical equity + drawdown chart with benchmark label, and the historical backtest metrics block.
+- Expanded card shows Real Stats zone (Open in Build, amount invested, buy/sell, CAGR since investment, MaxDD since investment), historical equity + drawdown chart with benchmark label matching Build styling, and two metric blocks (OOS metrics up top, Hist metrics below; display labels drop the prefixes).
 - `Open in Build Tab` is visible while collapsed and opens that bot in Build.
 - `Add to Watchlist` offers create-new and existing watchlists with type-to-filter autocomplete; bots can be on multiple watchlists but not duplicated within one.
+- Correlation Tool subtab exists with three equally wide bubbles containing the specified placeholder texts.
 
 ## Open Questions
 - Equity curve benchmark choice for the overlay.
