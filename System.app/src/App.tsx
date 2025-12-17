@@ -4194,7 +4194,7 @@ type BacktestResult = {
 type TickerContributionState = {
   status: 'idle' | 'loading' | 'error' | 'done'
   returnPct?: number
-  maxDD?: number
+  expectancy?: number
   error?: string
 }
 
@@ -6886,53 +6886,78 @@ function App() {
         const days = botResult.days || []
         const points = botResult.points || []
         let cumulative = 0
-        let peak = 1
-        let maxDD = 0
+        let winCount = 0
+        let lossCount = 0
+        let sumWins = 0
+        let sumLossAbs = 0
 
         for (let i = 0; i < days.length; i++) {
           const day = days[i]
           const prevBotEquity = i === 0 ? 1 : days[i - 1]?.equity ?? 1
           const weight = day.holdings?.find((h) => normalizeChoice(h.ticker) === normalizeChoice(ticker))?.weight ?? 0
           if (!(Number.isFinite(weight) && weight > 0)) {
-            const eq = 1 + cumulative
-            if (eq > peak) peak = eq
-            if (peak > 0) maxDD = Math.min(maxDD, eq / peak - 1)
             continue
           }
 
           const endTime = day.time
-          const startTime = backtestMode === 'OC' ? endTime : (points[i]?.time ?? endTime)
-          const startBar = barMap.get(Number(startTime))
+          const prevTime = points[i]?.time ?? endTime
+          const startBar = barMap.get(Number(prevTime))
           const endBar = barMap.get(Number(endTime))
           const entry =
-            backtestMode === 'OO' || backtestMode === 'OC' ? startBar?.open : startBar?.close
-          const exit =
-            backtestMode === 'OO'
+            backtestMode === 'OC'
               ? endBar?.open
-              : backtestMode === 'CC'
-                ? endBar?.close
-                : backtestMode === 'CO'
-                  ? endBar?.open
-                  : startBar?.close
+              : backtestMode === 'OO'
+                ? startBar?.open
+                : backtestMode === 'CC'
+                  ? startBar?.close
+                  : backtestMode === 'CO'
+                    ? startBar?.close
+                    : startBar?.open
+          const exit =
+            backtestMode === 'OC'
+              ? endBar?.close
+              : backtestMode === 'OO'
+                ? endBar?.open
+                : backtestMode === 'CC'
+                  ? endBar?.close
+                  : backtestMode === 'CO'
+                    ? endBar?.open
+                    : endBar?.close
           if (entry == null || exit == null || !(entry > 0) || !(exit > 0)) {
-            const eq = 1 + cumulative
-            if (eq > peak) peak = eq
-            if (peak > 0) maxDD = Math.min(maxDD, eq / peak - 1)
             continue
           }
 
           const r = exit / entry - 1
-          const dailyDollar = prevBotEquity * weight * r
-          if (Number.isFinite(dailyDollar)) cumulative += dailyDollar
+          const investedWeight = (day.holdings || []).reduce((sum, h) => {
+            const t = normalizeChoice(h.ticker)
+            if (t === 'CASH' || t === 'Empty') return sum
+            const w = Number(h.weight || 0)
+            return sum + (Number.isFinite(w) ? w : 0)
+          }, 0)
+          const costShare = investedWeight > 0 ? (day.cost || 0) * (weight / investedWeight) : 0
+          const contribPct = weight * r - costShare
 
-          const eq = 1 + cumulative
-          if (eq > peak) peak = eq
-          if (peak > 0) maxDD = Math.min(maxDD, eq / peak - 1)
+          if (contribPct > 0) {
+            winCount += 1
+            sumWins += contribPct
+          } else if (contribPct < 0) {
+            lossCount += 1
+            sumLossAbs += Math.abs(contribPct)
+          }
+
+          const dailyDollar = prevBotEquity * contribPct
+          if (Number.isFinite(dailyDollar)) cumulative += dailyDollar
         }
 
         const botTotal = days.length ? (days[days.length - 1].equity ?? 1) - 1 : 0
         const returnPct = botTotal !== 0 ? cumulative / botTotal : 0
-        setAnalyzeTickerContrib((prev) => ({ ...prev, [key]: { status: 'done', returnPct, maxDD } }))
+        const totalCount = winCount + lossCount
+        const winRate = totalCount > 0 ? winCount / totalCount : 0
+        const lossRate = totalCount > 0 ? lossCount / totalCount : 0
+        const avgWin = winCount > 0 ? sumWins / winCount : 0
+        const avgLoss = lossCount > 0 ? sumLossAbs / lossCount : 0
+        const expectancy = winRate * avgWin - lossRate * avgLoss
+        setAnalyzeTickerContrib((prev) => ({ ...prev, [key]: { status: 'done', returnPct, expectancy } }))
       } catch (err) {
         const message = String((err as Error)?.message || err)
         setAnalyzeTickerContrib((prev) => ({ ...prev, [key]: { status: 'error', error: message } }))
@@ -7826,15 +7851,15 @@ function App() {
                         </div>
 
                         {!collapsed ? (
-                          <div
+                              <div
                             style={{
                               display: 'grid',
                               gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr)',
                               gap: 12,
-                              alignItems: 'start',
+                              alignItems: 'stretch',
                             }}
                           >
-                            <div className="saved-item" style={{ display: 'grid', gap: 14 }}>
+                            <div className="saved-item" style={{ display: 'grid', gap: 14, height: '100%', minWidth: 0, overflow: 'hidden' }}>
                               {analyzeState?.status === 'loading' ? (
                               <div style={{ color: '#64748b' }}>Running backtest…</div>
                             ) : analyzeState?.status === 'error' ? (
@@ -7845,8 +7870,15 @@ function App() {
                             ) : analyzeState?.status === 'done' ? (
                               <>
                                 <div>
-                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>OOS Stats</div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Live Stats</div>
+                                  <div
+                                    style={{
+                                      display: 'grid',
+                                      gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                                      gap: 10,
+                                      overflowX: 'auto',
+                                    }}
+                                  >
                                     <div>
                                       <div className="stat-label">Total Return</div>
                                       <div className="stat-value">{formatPct(0)}</div>
@@ -7936,11 +7968,11 @@ function App() {
                             )}
                             </div>
 
-                            <div className="saved-item" style={{ display: 'grid', gap: 10 }}>
+                            <div className="saved-item" style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%', minWidth: 0 }}>
                               <div style={{ fontWeight: 900 }}>Information</div>
                               <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 800 }}>Placeholder text: Information, tickers, etc</div>
                               <div style={{ fontWeight: 900, marginTop: 6 }}>Tickers</div>
-                              <div style={{ maxHeight: 260, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                              <div style={{ flex: 1, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 12 }}>
                                 {(() => {
                                   try {
                                     if (analyzeState?.status !== 'done' || !analyzeState.result) {
@@ -7986,10 +8018,10 @@ function App() {
                                             <th>Tickers</th>
                                             <th>Allocation</th>
                                             <th>CAGR</th>
-                                            <th>Max DD</th>
+                                            <th>Expectancy</th>
                                             <th>Allocation</th>
                                             <th>Return %</th>
-                                            <th>Max DD</th>
+                                            <th>Expectancy</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -8004,11 +8036,11 @@ function App() {
                                                   : st.status === 'loading'
                                                     ? '...'
                                                     : '—'
-                                            const histMaxdd =
+                                            const histExpectancy =
                                               !st
                                                 ? '...'
                                                 : st.status === 'done'
-                                                  ? formatPct(st.maxDD ?? NaN)
+                                                  ? formatPct(st.expectancy ?? NaN)
                                                   : st.status === 'loading'
                                                     ? '...'
                                                     : '—'
@@ -8020,7 +8052,7 @@ function App() {
                                                 <td>{formatPct(0)}</td>
                                                 <td>{formatPct(histAlloc(t))}</td>
                                                 <td>{histReturn}</td>
-                                                <td>{histMaxdd}</td>
+                                                <td>{histExpectancy}</td>
                                               </tr>
                                             )
                                           })}
@@ -8034,12 +8066,64 @@ function App() {
                               </div>
                             </div>
 
-                            <div className="saved-item" style={{ display: 'grid', gap: 10 }}>
-                              <div style={{ fontWeight: 900 }}>Advanced Stats</div>
-                              <div style={{ fontSize: 12, fontWeight: 900 }}>Monte Carlo Stats (5000 years): (all of the historical stats on 1 line)</div>
-                              <div style={{ fontSize: 12, fontWeight: 900 }}>Monte Carlo Stats (500 Folds): (all of the historical stats on 1 line)</div>
-                              <div style={{ fontSize: 12, fontWeight: 900 }}>vs Null Set: (all of the historical stats on 1 line)</div>
-                              <div style={{ fontSize: 12, fontWeight: 900 }}>vs Benchmarks: (all of the historical stats on 1 line)</div>
+                            <div className="saved-item" style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%', minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                                <div style={{ fontWeight: 900 }}>Advanced Stats</div>
+                                <button style={{ padding: '6px 10px', fontSize: 12 }}>Run</button>
+                              </div>
+                              <div style={{ fontWeight: 900 }}>Comparison Table</div>
+                              <div style={{ flex: 1, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                                {(() => {
+                                  const rows = [
+                                    'Monte Carlo Comparison',
+                                    'K-Fold Comparison',
+                                    'Null Set Comparison',
+                                    'Benchmark VTI',
+                                    'Benchmark SPY',
+                                    'Benchmark QQQ',
+                                    'Benchmark DIA',
+                                    'Benchmark DBC',
+                                    'Benchmark DBO',
+                                    'Benchmark GLD',
+                                    'Benchmark BND',
+                                    'Benchmark TLT',
+                                    'Benchmark GBTC',
+                                  ] as const
+                                  const cols = [
+                                    'CAGR-50',
+                                    'MaxDD-DD50',
+                                    'Tail Risk-DD95',
+                                    'Calmar-50',
+                                    'Calmar-95',
+                                    'Sharpe',
+                                    'Sortino',
+                                    'Volatility',
+                                    'Win Rate',
+                                  ] as const
+                                  return (
+                                    <table className="analyze-compare-table">
+                                      <thead>
+                                        <tr>
+                                          <th>Comparison</th>
+                                          {cols.map((c) => (
+                                            <th key={c}>{c}</th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {rows.map((r) => (
+                                          <tr key={r}>
+                                            <td>{r}</td>
+                                            {cols.map((c) => (
+                                              <td key={c}>0</td>
+                                            ))}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )
+                                })()}
+                              </div>
                             </div>
                           </div>
                         ) : null}

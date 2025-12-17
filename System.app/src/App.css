@@ -1127,6 +1127,34 @@ select {
   letter-spacing: 0.05em;
 }
 
+.analyze-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.analyze-compare-table th,
+.analyze-compare-table td {
+  border: 1px solid #e2e8f0;
+  padding: 8px 10px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.analyze-compare-table thead th {
+  background: #f8fafc;
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.analyze-compare-table td:first-child {
+  text-align: left;
+  font-weight: 900;
+  color: #0f172a;
+}
+
 .pnl-positive {
   color: #15803d;
 }
