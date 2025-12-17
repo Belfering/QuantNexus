@@ -9,6 +9,10 @@ dist/
 build/
 *.local
 
+# Allow PRD folder named "Build" (Windows/macOS can be case-insensitive)
+!prd/Build/
+!prd/Build/**
+
 # Environment variables
 .env
 .env.local

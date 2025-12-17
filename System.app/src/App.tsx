@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
 } from 'react'
+import { createPortal } from 'react-dom'
 import './App.css'
 import {
   AreaSeries,
@@ -935,6 +936,7 @@ function EquityChart({
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const benchRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const cursorSegRef = useRef<ISeriesApi<'Line'> | null>(null)
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const overlayRef = useRef<HTMLDivElement | null>(null)
   const baseLineRef = useRef<IPriceLine | null>(null)
@@ -943,6 +945,9 @@ function EquityChart({
   const visibleRangeRef = useRef<VisibleRange | undefined>(visibleRange)
   const onVisibleRangeChangeRef = useRef<((range: VisibleRange) => void) | undefined>(onVisibleRangeChange)
   const lastEmittedRangeKeyRef = useRef<string>('')
+  const lastCursorTimeRef = useRef<UTCTimestamp | null>(null)
+  const segRafRef = useRef<number | null>(null)
+  const segKeyRef = useRef<string>('')
 
   const chartHeight = heightPx ?? 520
 
@@ -1000,6 +1005,41 @@ function EquityChart({
     return { cagr, maxDD }
   }, [])
 
+  const updateCursorSegment = useCallback((cursorTime: UTCTimestamp) => {
+    const seg = cursorSegRef.current
+    const pts = pointsRef.current
+    if (!seg || !pts || pts.length < 2) return
+
+    const vr = visibleRangeRef.current
+    const startTime = vr?.from ?? pts[0].time
+    const endTime = cursorTime
+    if (!(Number(startTime) <= Number(endTime))) {
+      seg.setData([])
+      return
+    }
+
+    const key = `${Number(startTime)}:${Number(endTime)}`
+    if (key === segKeyRef.current) return
+    segKeyRef.current = key
+
+    if (segRafRef.current != null) cancelAnimationFrame(segRafRef.current)
+    segRafRef.current = requestAnimationFrame(() => {
+      segRafRef.current = null
+
+      let startIdx = 0
+      while (startIdx < pts.length && Number(pts[startIdx].time) < Number(startTime)) startIdx++
+      let endIdx = startIdx
+      while (endIdx < pts.length && Number(pts[endIdx].time) <= Number(endTime)) endIdx++
+      endIdx = Math.max(startIdx, endIdx - 1)
+      if (endIdx <= startIdx) {
+        seg.setData([])
+        return
+      }
+
+      seg.setData(pts.slice(startIdx, endIdx + 1) as unknown as LineData<Time>[])
+    })
+  }, [])
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -1052,9 +1092,17 @@ function EquityChart({
       lineStyle: LineStyle.Dashed,
       priceFormat: { type: 'custom', formatter: (v: number) => formatReturnFromBase(v) },
     })
+    const cursorSeg = chart.addSeries(LineSeries, {
+      color: '#16a34a',
+      lineWidth: 3,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      priceFormat: { type: 'custom', formatter: (v: number) => formatReturnFromBase(v) },
+    })
     chartRef.current = chart
     seriesRef.current = series
     benchRef.current = bench
+    cursorSegRef.current = cursorSeg
     markersRef.current = createSeriesMarkers(series, [])
 
     const overlay = document.createElement('div')
@@ -1067,9 +1115,14 @@ function EquityChart({
       const time = toUtcSeconds(param.time)
       if (!time) {
         overlay.style.display = 'none'
+        lastCursorTimeRef.current = null
+        segKeyRef.current = ''
+        cursorSeg.setData([])
         return
       }
+      lastCursorTimeRef.current = time
       const stats = computeWindowStats(time)
+      updateCursorSegment(time)
       overlay.style.display = 'block'
       overlay.innerHTML = `<div class="chart-hover-date">${isoFromUtcSeconds(time)}</div>
 <div class="chart-hover-stats">
@@ -1119,6 +1172,7 @@ function EquityChart({
       chartRef.current = null
       seriesRef.current = null
       benchRef.current = null
+      cursorSegRef.current = null
       try {
         markersRef.current?.detach()
       } catch {
@@ -1127,14 +1181,19 @@ function EquityChart({
       markersRef.current = null
       overlayRef.current = null
       baseLineRef.current = null
+      if (segRafRef.current != null) cancelAnimationFrame(segRafRef.current)
+      segRafRef.current = null
     }
-  }, [computeWindowStats, formatReturnFromBase, logScale, showCursorStats, chartHeight])
+  }, [computeWindowStats, formatReturnFromBase, logScale, showCursorStats, chartHeight, updateCursorSegment])
 
   useEffect(() => {
     if (!seriesRef.current) return
     const main = sanitizeSeriesPoints(points)
     if (main.length > 0) baseEquityRef.current = main[0].value
     seriesRef.current.setData(main)
+    cursorSegRef.current?.setData([])
+    segKeyRef.current = ''
+    lastCursorTimeRef.current = null
     const base = baseEquityRef.current
     if (Number.isFinite(base) && base > 0) {
       const existing = baseLineRef.current
@@ -1179,6 +1238,21 @@ function EquityChart({
     }
     chart.timeScale().fitContent()
   }, [points, benchmarkPoints, markers, visibleRange, logScale])
+
+  useEffect(() => {
+    if (!showCursorStats) return
+    const time = lastCursorTimeRef.current
+    if (!time) return
+    const overlay = overlayRef.current
+    if (!overlay) return
+    const stats = computeWindowStats(time)
+    overlay.innerHTML = `<div class="chart-hover-date">${isoFromUtcSeconds(time)}</div>
+<div class="chart-hover-stats">
+  <div class="chart-hover-stat"><span class="chart-hover-label">CAGR</span> <span class="chart-hover-value">${stats ? formatPct(stats.cagr) : '—'}</span></div>
+  <div class="chart-hover-stat"><span class="chart-hover-label">Max DD</span> <span class="chart-hover-value">${stats ? formatPct(stats.maxDD) : '—'}</span></div>
+</div>`
+    updateCursorSegment(time)
+  }, [computeWindowStats, showCursorStats, updateCursorSegment, visibleRange])
 
   return (
     <div
@@ -5351,10 +5425,13 @@ function BacktesterPanel({
   const [tab, setTab] = useState<'Overview' | 'Allocations' | 'Rebalances' | 'Warnings'>('Overview')
   const [selectedRange, setSelectedRange] = useState<VisibleRange | null>(null)
   const [logScale, setLogScale] = useState(true)
+  const [activePreset, setActivePreset] = useState<'1m' | '3m' | '6m' | 'ytd' | '1y' | '5y' | 'max' | 'custom'>('max')
   const [rangePickerOpen, setRangePickerOpen] = useState(false)
   const [rangeStart, setRangeStart] = useState<string>('')
   const [rangeEnd, setRangeEnd] = useState<string>('')
   const rangePickerRef = useRef<HTMLDivElement | null>(null)
+  const rangePopoverRef = useRef<HTMLDivElement | null>(null)
+  const [rangePopoverPos, setRangePopoverPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const benchmarkKnown = useMemo(() => {
     const t = normalizeChoice(benchmark)
     if (!t || t === 'Empty') return false
@@ -5372,23 +5449,45 @@ function BacktesterPanel({
   const handleRun = useCallback(() => {
     // Reset to full period ("max") on each run.
     setSelectedRange(null)
+    setActivePreset('max')
     setRangePickerOpen(false)
     setRangeStart('')
     setRangeEnd('')
     onRun()
   }, [onRun])
 
+  const computeRangePopoverPos = useCallback(() => {
+    const anchor = rangePickerRef.current
+    if (!anchor) return null
+    const rect = anchor.getBoundingClientRect()
+    const width = 360
+    const padding = 10
+    const top = rect.bottom + 8
+    let left = rect.right - width
+    left = Math.max(padding, Math.min(left, window.innerWidth - width - padding))
+    return { top, left, width }
+  }, [])
+
   useEffect(() => {
     if (!rangePickerOpen) return
     const onDown = (e: MouseEvent) => {
       const el = rangePickerRef.current
+      const pop = rangePopoverRef.current
       if (!el) return
       if (e.target && el.contains(e.target as Node)) return
+      if (pop && e.target && pop.contains(e.target as Node)) return
       setRangePickerOpen(false)
     }
     window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
-  }, [rangePickerOpen])
+    const onPos = () => setRangePopoverPos(computeRangePopoverPos())
+    window.addEventListener('resize', onPos)
+    window.addEventListener('scroll', onPos, true)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('resize', onPos)
+      window.removeEventListener('scroll', onPos, true)
+    }
+  }, [computeRangePopoverPos, rangePickerOpen])
 
   const rangeLabel = useMemo(() => {
     if (!visibleRange) return { start: '', end: '' }
@@ -5409,8 +5508,9 @@ function BacktesterPanel({
 
   const applyPreset = (preset: '1m' | '3m' | '6m' | 'ytd' | '1y' | '5y' | 'max') => {
     if (!points.length) return
+    setActivePreset(preset)
     if (preset === 'max') {
-      setSelectedRange({ from: points[0].time, to: points[points.length - 1].time })
+      setSelectedRange(null)
       return
     }
 
@@ -5457,6 +5557,7 @@ function BacktesterPanel({
     (r: VisibleRange) => {
       if (!points.length) return
       const next = clampVisibleRangeToPoints(points, r)
+      setActivePreset('custom')
       setSelectedRange((prev) => {
         if (!prev) return next
         if (Number(prev.from) === Number(next.from) && Number(prev.to) === Number(next.to)) return prev
@@ -5479,8 +5580,45 @@ function BacktesterPanel({
     if (!from0 || !to0) return
     const clamped = clampVisibleRangeToPoints(points, { from: from0, to: to0 })
     setSelectedRange(clamped)
+    setActivePreset('custom')
     setRangePickerOpen(false)
   }, [points, rangeEnd, rangeStart])
+
+  const rangePopover = rangePickerOpen
+    ? createPortal(
+        <div
+          ref={rangePopoverRef}
+          className="range-popover"
+          role="dialog"
+          aria-label="Choose date range"
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: rangePopoverPos?.top ?? 0,
+            left: rangePopoverPos?.left ?? 0,
+            width: rangePopoverPos?.width ?? 360,
+            right: 'auto',
+            zIndex: 500,
+          }}
+        >
+          <div className="range-popover-row">
+            <label className="range-field">
+              <span>Start</span>
+              <input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} />
+            </label>
+            <label className="range-field">
+              <span>End</span>
+              <input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} />
+            </label>
+          </div>
+          <div className="range-popover-actions">
+            <button onClick={() => setRangePickerOpen(false)}>Cancel</button>
+            <button onClick={applyCustomRange}>Apply</button>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null
 
   const allocationSeries = useMemo(() => {
     const days = result?.days || []
@@ -5621,6 +5759,7 @@ function BacktesterPanel({
                     setRangeStart(isoFromUtcSeconds(visibleRange.from))
                     setRangeEnd(isoFromUtcSeconds(visibleRange.to))
                   }
+                  setRangePopoverPos(computeRangePopoverPos())
                   setRangePickerOpen((v) => !v)
                 }}
                 onKeyDown={(e) => {
@@ -5630,6 +5769,7 @@ function BacktesterPanel({
                     setRangeStart(isoFromUtcSeconds(visibleRange.from))
                     setRangeEnd(isoFromUtcSeconds(visibleRange.to))
                   }
+                  setRangePopoverPos(computeRangePopoverPos())
                   setRangePickerOpen((v) => !v)
                 }}
                 style={{ cursor: 'pointer', position: 'relative' }}
@@ -5640,25 +5780,6 @@ function BacktesterPanel({
                   {rangeLabel.start} → {rangeLabel.end}
                 </div>
                 <div className="stat-sub">{tradingDaysInRange} trading days</div>
-
-                {rangePickerOpen ? (
-                  <div className="range-popover" role="dialog" aria-label="Choose date range" onClick={(e) => e.stopPropagation()}>
-                    <div className="range-popover-row">
-                      <label className="range-field">
-                        <span>Start</span>
-                        <input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} />
-                      </label>
-                      <label className="range-field">
-                        <span>End</span>
-                        <input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} />
-                      </label>
-                    </div>
-                    <div className="range-popover-actions">
-                      <button onClick={() => setRangePickerOpen(false)}>Cancel</button>
-                      <button onClick={applyCustomRange}>Apply</button>
-                    </div>
-                  </div>
-                ) : null}
               </div>
               <div className="stat-card">
                 <div className="stat-label">CAGR</div>
@@ -5697,29 +5818,44 @@ function BacktesterPanel({
               </div>
             </div>
 
-            <div className="equity-wrap">
-              <div className="chart-toolbar">
-                <div className="chart-presets">
-                  <button onClick={() => applyPreset('1m')}>1m</button>
-                  <button onClick={() => applyPreset('3m')}>3m</button>
-                  <button onClick={() => applyPreset('6m')}>6m</button>
-                  <button onClick={() => applyPreset('ytd')}>YTD</button>
-                  <button onClick={() => applyPreset('1y')}>1yr</button>
-                  <button onClick={() => applyPreset('5y')}>5yr</button>
-                  <button onClick={() => applyPreset('max')}>Max</button>
-                  <button className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)}>
-                    Log
-                  </button>
+              <div className="equity-wrap">
+                <div className="chart-toolbar">
+                  <div className="chart-presets">
+                    <button className={activePreset === '1m' ? 'active' : ''} onClick={() => applyPreset('1m')}>
+                      1m
+                    </button>
+                    <button className={activePreset === '3m' ? 'active' : ''} onClick={() => applyPreset('3m')}>
+                      3m
+                    </button>
+                    <button className={activePreset === '6m' ? 'active' : ''} onClick={() => applyPreset('6m')}>
+                      6m
+                    </button>
+                    <button className={activePreset === 'ytd' ? 'active' : ''} onClick={() => applyPreset('ytd')}>
+                      YTD
+                    </button>
+                    <button className={activePreset === '1y' ? 'active' : ''} onClick={() => applyPreset('1y')}>
+                      1yr
+                    </button>
+                    <button className={activePreset === '5y' ? 'active' : ''} onClick={() => applyPreset('5y')}>
+                      5yr
+                    </button>
+                    <button className={activePreset === 'max' ? 'active' : ''} onClick={() => applyPreset('max')}>
+                      Max
+                    </button>
+                    <button className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)}>
+                      Log
+                    </button>
+                  </div>
                 </div>
+                <EquityChart
+                  points={result.points}
+                  benchmarkPoints={showBenchmark ? result.benchmarkPoints : undefined}
+                  markers={result.markers}
+                  visibleRange={visibleRange}
+                  logScale={logScale}
+                />
               </div>
-              <EquityChart
-                points={result.points}
-                benchmarkPoints={showBenchmark ? result.benchmarkPoints : undefined}
-                markers={result.markers}
-                visibleRange={visibleRange}
-                logScale={logScale}
-              />
-            </div>
+              {rangePopover}
 
             <div className="drawdown-wrap">
               <div className="drawdown-head">
@@ -5929,6 +6065,8 @@ function App() {
   const [callChains, setCallChains] = useState<CallChain[]>(() => initialUserData.callChains)
   const [uiState, setUiState] = useState<UserUiState>(() => initialUserData.ui)
   const [analyzeBacktests, setAnalyzeBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
+  const [partnerFundBacktests, setPartnerFundBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
+  const [partnerFundCollapsedById, setPartnerFundCollapsedById] = useState<Record<string, boolean>>({})
 
   const theme = userId ? uiState.theme : deviceTheme
 
@@ -6033,7 +6171,8 @@ function App() {
   const [bots, setBots] = useState<BotSession[]>(() => [initialBot])
   const [activeBotId, setActiveBotId] = useState<string>(() => initialBot.id)
   const [clipboard, setClipboard] = useState<FlowNode | null>(null)
-  const [tab, setTab] = useState<'Portfolio' | 'Community' | 'Analyze' | 'Build' | 'Admin'>('Build')
+  const [tab, setTab] = useState<'Dashboard' | 'Community' | 'Analyze' | 'Build' | 'Admin'>('Build')
+  const [dashboardSubtab, setDashboardSubtab] = useState<'Portfolio' | 'Partner Program'>('Portfolio')
   const [analyzeSubtab, setAnalyzeSubtab] = useState<'Bots' | 'Correlation Tool'>('Bots')
   const [adminTab, setAdminTab] = useState<'Ticker List' | 'Data'>('Ticker List')
   const [saveMenuOpen, setSaveMenuOpen] = useState(false)
@@ -6078,6 +6217,25 @@ function App() {
   }, [allWatchlistedBotIds, uiState.analyzeFilterWatchlistId, watchlistsById])
 
   const callChainsById = useMemo(() => new Map(callChains.map((c) => [c.id, c])), [callChains])
+
+  const partnerFunds = useMemo(() => {
+    const makeFund = (id: string, name: string, ticker: string) => {
+      const root = ensureSlots(createNode('basic'))
+      root.title = name
+      const pos = ensureSlots(createNode('position'))
+      pos.positions = [ticker]
+      pos.collapsed = true
+      root.children.next = [pos]
+      return { id, name, root }
+    }
+    return [
+      makeFund('fund-1', 'Fund #1', 'SPY'),
+      makeFund('fund-2', 'Fund #2', 'QQQ'),
+      makeFund('fund-3', 'Fund #3', 'TLT'),
+      makeFund('fund-4', 'Fund #4', 'IWM'),
+      makeFund('fund-5', 'Fund #5', 'GLD'),
+    ]
+  }, [])
 
   const portfolioSnapshot = useMemo<PortfolioSnapshot>(() => {
     const basePositions = [
@@ -6706,6 +6864,26 @@ function App() {
     [runBacktestForNode],
   )
 
+  const runPartnerFundBacktest = useCallback(
+    async (fundId: string, root: FlowNode) => {
+      setPartnerFundBacktests((prev) => {
+        if (prev[fundId]?.status === 'loading') return prev
+        return { ...prev, [fundId]: { status: 'loading' } }
+      })
+      try {
+        const { result } = await runBacktestForNode(root)
+        setPartnerFundBacktests((prev) => ({ ...prev, [fundId]: { status: 'done', result } }))
+      } catch (err) {
+        let message = String((err as Error)?.message || err)
+        if (isValidationError(err)) {
+          message = err.errors.map((e: BacktestError) => e.message).join(', ')
+        }
+        setPartnerFundBacktests((prev) => ({ ...prev, [fundId]: { status: 'error', error: message } }))
+      }
+    },
+    [runBacktestForNode],
+  )
+
   useEffect(() => {
     savedBots.forEach((bot) => {
       if (uiState.analyzeCollapsedByBotId[bot.id] === false) {
@@ -6976,7 +7154,7 @@ function App() {
           </div>
           <p className="lede">Click any Node or + to extend with Basic, Function, Indicator, or Position. Paste uses the last copied node.</p>
           <div className="tabs">
-            {(['Portfolio', 'Community', 'Analyze', 'Build', 'Admin'] as const).map((t) => (
+            {(['Dashboard', 'Community', 'Analyze', 'Build', 'Admin'] as const).map((t) => (
               <button key={t} className={`tab-btn ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
                 {t}
               </button>
@@ -7543,8 +7721,16 @@ function App() {
                         </div>
 
                         {!collapsed ? (
-                          <div style={{ display: 'grid', gap: 14 }}>
-                            {analyzeState?.status === 'loading' ? (
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr)',
+                              gap: 12,
+                              alignItems: 'start',
+                            }}
+                          >
+                            <div className="saved-item" style={{ display: 'grid', gap: 14 }}>
+                              {analyzeState?.status === 'loading' ? (
                               <div style={{ color: '#64748b' }}>Running backtest…</div>
                             ) : analyzeState?.status === 'error' ? (
                               <div style={{ display: 'grid', gap: 8 }}>
@@ -7599,7 +7785,7 @@ function App() {
                                       <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
                                     </div>
                                     <div>
-                                      <div className="stat-label">MaxDD</div>
+                                      <div className="stat-label">Max DD</div>
                                       <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
                                     </div>
                                     <div>
@@ -7643,6 +7829,51 @@ function App() {
                             ) : (
                               <button onClick={() => runAnalyzeBacktest(b)}>Run backtest</button>
                             )}
+                            </div>
+
+                            <div className="saved-item" style={{ display: 'grid', gap: 10 }}>
+                              <div style={{ fontWeight: 900 }}>Information</div>
+                              <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 800 }}>Placeholder text: Information, tickers, etc</div>
+                              <div style={{ fontWeight: 900, marginTop: 6 }}>Tickers</div>
+                              <div style={{ maxHeight: 260, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                                {(() => {
+                                  try {
+                                    const prepared = normalizeNodeForBacktest(ensureSlots(cloneNode(b.payload)))
+                                    const inputs = collectBacktestInputs(prepared, callChainsById)
+                                    const tickers = Array.from(
+                                      new Set(
+                                        (inputs.tickers || [])
+                                          .map((t) => normalizeChoice(t))
+                                          .filter((t) => t && t !== 'Empty' && t !== 'CASH'),
+                                      ),
+                                    ).sort()
+                                    return tickers.length ? (
+                                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <tbody>
+                                          {tickers.map((t) => (
+                                            <tr key={t}>
+                                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>{t}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    ) : (
+                                      <div style={{ padding: 10, color: 'var(--muted)' }}>No tickers found.</div>
+                                    )
+                                  } catch {
+                                    return <div style={{ padding: 10, color: 'var(--muted)' }}>Unable to read tickers.</div>
+                                  }
+                                })()}
+                              </div>
+                            </div>
+
+                            <div className="saved-item" style={{ display: 'grid', gap: 10 }}>
+                              <div style={{ fontWeight: 900 }}>Advanced Stats</div>
+                              <div style={{ fontSize: 12, fontWeight: 900 }}>Monte Carlo Stats (5000 years): (all of the historical stats on 1 line)</div>
+                              <div style={{ fontSize: 12, fontWeight: 900 }}>Monte Carlo Stats (500 Folds): (all of the historical stats on 1 line)</div>
+                              <div style={{ fontSize: 12, fontWeight: 900 }}>vs Null Set: (all of the historical stats on 1 line)</div>
+                              <div style={{ fontSize: 12, fontWeight: 900 }}>vs Benchmarks: (all of the historical stats on 1 line)</div>
+                            </div>
                           </div>
                         ) : null}
                       </div>
@@ -7909,92 +8140,200 @@ function App() {
               )
             })()}
           </div>
-        ) : tab === 'Portfolio' ? (
+        ) : tab === 'Dashboard' ? (
           <div className="placeholder">
-            <div className="portfolio-grid">
-              <div className="summary-cards">
-                <div className="summary-card">
-                  <div className="stat-label">Account value</div>
-                  <div className="summary-value">{formatUsd(accountValue)}</div>
-                  <div className="stat-label">Cash available {formatUsd(cash)}</div>
-                </div>
-                <div className="summary-card">
-                  <div className="stat-label">Total PnL</div>
-                  <div className={`summary-value ${totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
-                    {formatSignedUsd(totalPnl)}
-                  </div>
-                  <div className="stat-label">{formatPct(totalPnlPct)}</div>
-                </div>
-                <div className="summary-card">
-                  <div className="stat-label">Day change</div>
-                  <div className={`summary-value ${todaysChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
-                    {formatSignedUsd(todaysChange)}
-                  </div>
-                  <div className="stat-label">{formatPct(todaysChangePct)}</div>
-                </div>
-              </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              {(['Portfolio', 'Partner Program'] as const).map((t) => (
+                <button
+                  key={t}
+                  className={`tab-btn ${dashboardSubtab === t ? 'active' : ''}`}
+                  onClick={() => setDashboardSubtab(t)}
+                  style={{ padding: '6px 10px', fontSize: 12 }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
 
-              <div className="panel-grid">
-                <div className="panel-card">
-                  <div className="panel-title">Current positions</div>
-                  <table className="portfolio-table">
-                    <thead>
-                      <tr>
-                        <th>Ticker</th>
-                        <th>Allocation</th>
-                        <th>Value</th>
-                        <th>PnL</th>
-                        <th>PnL %</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {positions.map((pos) => (
-                        <tr key={pos.ticker}>
-                          <td>{pos.ticker}</td>
-                          <td>{formatPct(pos.allocation)}</td>
-                          <td>{formatUsd(pos.value)}</td>
-                          <td className={pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}>{formatSignedUsd(pos.pnl)}</td>
-                          <td className={pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}>{formatPct(pos.pnlPct)}</td>
+            {dashboardSubtab === 'Portfolio' ? (
+              <div className="portfolio-grid" style={{ marginTop: 12 }}>
+                <div className="summary-cards">
+                  <div className="summary-card">
+                    <div className="stat-label">Account value</div>
+                    <div className="summary-value">{formatUsd(accountValue)}</div>
+                    <div className="stat-label">Cash available {formatUsd(cash)}</div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="stat-label">Total PnL</div>
+                    <div className={`summary-value ${totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+                      {formatSignedUsd(totalPnl)}
+                    </div>
+                    <div className="stat-label">{formatPct(totalPnlPct)}</div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="stat-label">Day change</div>
+                    <div className={`summary-value ${todaysChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+                      {formatSignedUsd(todaysChange)}
+                    </div>
+                    <div className="stat-label">{formatPct(todaysChangePct)}</div>
+                  </div>
+                </div>
+
+                <div className="panel-grid">
+                  <div className="panel-card">
+                    <div className="panel-title">Current positions</div>
+                    <table className="portfolio-table">
+                      <thead>
+                        <tr>
+                          <th>Ticker</th>
+                          <th>Allocation</th>
+                          <th>Value</th>
+                          <th>PnL</th>
+                          <th>PnL %</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {positions.map((pos) => (
+                          <tr key={pos.ticker}>
+                            <td>{pos.ticker}</td>
+                            <td>{formatPct(pos.allocation)}</td>
+                            <td>{formatUsd(pos.value)}</td>
+                            <td className={pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}>{formatSignedUsd(pos.pnl)}</td>
+                            <td className={pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}>{formatPct(pos.pnlPct)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
-                <div className="panel-card">
-                  <div className="panel-title">Bots invested in</div>
-                  {investedBots.length === 0 ? (
-                    <div style={{ color: '#64748b' }}>No bots saved yet.</div>
-                  ) : (
-                    <div className="bot-list">
-                      {investedBots.map((bot) => (
-                        <div key={bot.id} className="bot-row">
-                          <div style={{ flex: 1 }}>
-                            <div className="bot-row-title">
-                              {bot.name}
-                              {bot.readonly ? <span className="bot-tag muted">Community</span> : null}
+                  <div className="panel-card">
+                    <div className="panel-title">Bots invested in</div>
+                    {investedBots.length === 0 ? (
+                      <div style={{ color: '#64748b' }}>No bots saved yet.</div>
+                    ) : (
+                      <div className="bot-list">
+                        {investedBots.map((bot) => (
+                          <div key={bot.id} className="bot-row">
+                            <div style={{ flex: 1 }}>
+                              <div className="bot-row-title">
+                                {bot.name}
+                                {bot.readonly ? <span className="bot-tag muted">Community</span> : null}
+                              </div>
+                              <div className="bot-row-meta">
+                                Allocation {formatPct(bot.allocation)} · Capital {formatUsd(bot.capital)}
+                              </div>
+                              <div className="bot-tags">
+                                {(bot.tags.length ? bot.tags : ['Unassigned']).map((tag) => (
+                                  <span key={tag} className="bot-tag">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
-                            <div className="bot-row-meta">
-                              Allocation {formatPct(bot.allocation)} · Capital {formatUsd(bot.capital)}
-                            </div>
-                            <div className="bot-tags">
-                              {(bot.tags.length ? bot.tags : ['Unassigned']).map((tag) => (
-                                <span key={tag} className="bot-tag">
-                                  {tag}
-                                </span>
-                              ))}
+                            <div className={`bot-row-pnl ${bot.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+                              {formatSignedUsd(bot.pnl)}
                             </div>
                           </div>
-                          <div className={`bot-row-pnl ${bot.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
-                            {formatSignedUsd(bot.pnl)}
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {partnerFunds.map((fund) => {
+                    const collapsed = partnerFundCollapsedById[fund.id] ?? true
+                    const state = partnerFundBacktests[fund.id]
+                    return (
+                      <div key={fund.id} className="saved-item" style={{ display: 'grid', gap: 10 }}>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => {
+                              const next = !(partnerFundCollapsedById[fund.id] ?? true)
+                              setPartnerFundCollapsedById((prev) => ({ ...prev, [fund.id]: next }))
+                              if (!next && (!state || state.status === 'idle' || state.status === 'error')) {
+                                runPartnerFundBacktest(fund.id, fund.root)
+                              }
+                            }}
+                            style={{ padding: '6px 10px' }}
+                          >
+                            {collapsed ? 'Expand' : 'Collapse'}
+                          </button>
+                          <div style={{ fontWeight: 900 }}>{fund.name}</div>
+                          <div style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 12, fontWeight: 800 }}>
+                            Placeholder: Partner Program fund
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+
+                        {!collapsed ? (
+                          <div style={{ display: 'grid', gap: 12 }}>
+                            {state?.status === 'loading' ? (
+                              <div style={{ color: '#64748b' }}>Running backtest…</div>
+                            ) : state?.status === 'error' ? (
+                              <div style={{ display: 'grid', gap: 8 }}>
+                                <div style={{ color: '#b91c1c', fontWeight: 800 }}>{state.error ?? 'Failed to run backtest.'}</div>
+                                <button onClick={() => runPartnerFundBacktest(fund.id, fund.root)}>Retry</button>
+                              </div>
+                            ) : state?.status === 'done' ? (
+                              <>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                                  <div>
+                                    <div className="stat-label">CAGR</div>
+                                    <div className="stat-value">{formatPct(state.result?.metrics.cagr ?? NaN)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="stat-label">Max DD</div>
+                                    <div className="stat-value">{formatPct(state.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="stat-label">Sharpe</div>
+                                    <div className="stat-value">
+                                      {Number.isFinite(state.result?.metrics.sharpe ?? NaN) ? (state.result?.metrics.sharpe ?? 0).toFixed(2) : '—'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="stat-label">Trading Days</div>
+                                    <div className="stat-value">{state.result?.metrics.days ?? '—'}</div>
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                                  Period: {state.result?.metrics.startDate ?? '—'} → {state.result?.metrics.endDate ?? '—'}
+                                </div>
+                                <EquityChart
+                                  points={state.result?.points ?? []}
+                                  benchmarkPoints={state.result?.benchmarkPoints}
+                                  markers={state.result?.markers ?? []}
+                                  logScale
+                                  showCursorStats={false}
+                                  heightPx={320}
+                                />
+                              </>
+                            ) : (
+                              <button onClick={() => runPartnerFundBacktest(fund.id, fund.root)}>Run backtest</button>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="saved-item" style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ fontWeight: 900 }}>T-Bill Zone</div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    <li>T-Bill Bot</li>
+                    <li>Total gains for year</li>
+                    <li>Gains for Fund #1</li>
+                    <li>Gains for Fund #2</li>
+                    <li>Gains for Fund #3</li>
+                    <li>Gains for Fund #4</li>
+                    <li>Gains for Fund #5</li>
+                  </ul>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         ) : (
           <div className="placeholder" />

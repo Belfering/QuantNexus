@@ -20,3 +20,4 @@ General templates/live docs:
 2. `Community/002-community-watchlists-view.md`
 3. `Build/003-conditional-logic-validation.md`
 4. `Backlog/004-theming-and-user-data-persistence.md`
+5. `Build/004-custom-indicator-zone.md`
