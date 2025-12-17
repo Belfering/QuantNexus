@@ -7862,7 +7862,18 @@ function App() {
                               overflowX: 'hidden',
                             }}
                           >
-                            <div className="saved-item" style={{ display: 'grid', gap: 14, height: '100%', minWidth: 0, overflow: 'hidden' }}>
+                            <div
+                              className="saved-item"
+                              style={{
+                                display: 'grid',
+                                gap: 14,
+                                height: '100%',
+                                minWidth: 0,
+                                overflow: 'hidden',
+                                alignItems: 'stretch',
+                                justifyContent: 'flex-start',
+                              }}
+                            >
                               {analyzeState?.status === 'loading' ? (
                               <div style={{ color: '#64748b' }}>Running backtest…</div>
                             ) : analyzeState?.status === 'error' ? (
@@ -7872,7 +7883,7 @@ function App() {
                               </div>
                             ) : analyzeState?.status === 'done' ? (
                               <>
-                                <div>
+                                <div style={{ width: '100%' }}>
                                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Live Stats</div>
                                   <div
                                     style={{
@@ -7919,18 +7930,18 @@ function App() {
                                   </div>
                                 </div>
 
-                                <div>
+                                <div style={{ width: '100%' }}>
                                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Hist Stats</div>
-                                    <div
-                                      style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))',
-                                        gap: 10,
-                                        overflowX: 'auto',
-                                        maxWidth: '100%',
-                                        width: '100%',
-                                      }}
-                                    >
+                                  <div
+                                    style={{
+                                      display: 'grid',
+                                      gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))',
+                                      gap: 10,
+                                      overflowX: 'auto',
+                                      maxWidth: '100%',
+                                      width: '100%',
+                                    }}
+                                  >
                                     <div>
                                       <div className="stat-label">CAGR</div>
                                       <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
