@@ -4609,6 +4609,42 @@ const collectBacktestInputs = (root: FlowNode, callMap: Map<string, CallChain>):
   return { tickers: Array.from(tickers).sort(), tickerRefs, maxLookback, errors }
 }
 
+const collectPositionTickers = (root: FlowNode, callMap: Map<string, CallChain>): string[] => {
+  const tickers = new Set<string>()
+
+  const addTicker = (t: PositionChoice) => {
+    const norm = normalizeChoice(t)
+    if (norm === 'Empty') return
+    tickers.add(norm)
+  }
+
+  const walk = (node: FlowNode, callStack: string[]) => {
+    if (node.kind === 'call') {
+      const callId = node.callRefId
+      if (!callId) return
+      if (callStack.includes(callId)) return
+      const target = callMap.get(callId)
+      if (!target) return
+      const cloned = ensureSlots(cloneNode(target.root))
+      walk(cloned, [...callStack, callId])
+      return
+    }
+
+    if (node.kind === 'position') {
+      for (const p of node.positions || []) addTicker(p)
+    }
+
+    for (const slot of SLOT_ORDER[node.kind]) {
+      const arr = node.children[slot] || []
+      for (const c of arr) if (c) walk(c, callStack)
+    }
+  }
+
+  walk(root, [])
+
+  return Array.from(tickers).sort()
+}
+
 type PriceDB = {
   dates: UTCTimestamp[]
   open: Record<string, Array<number | null>>
@@ -6073,6 +6109,10 @@ function App() {
   const [uiState, setUiState] = useState<UserUiState>(() => initialUserData.ui)
   const [analyzeBacktests, setAnalyzeBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
   const [analyzeTickerContrib, setAnalyzeTickerContrib] = useState<Record<string, TickerContributionState>>({})
+  const [analyzeTickerSort, setAnalyzeTickerSort] = useState<{ column: string; dir: 'asc' | 'desc' }>({
+    column: 'ticker',
+    dir: 'asc',
+  })
   const [partnerFundBacktests, setPartnerFundBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
   const [partnerFundCollapsedById, setPartnerFundCollapsedById] = useState<Record<string, boolean>>({})
 
@@ -7006,13 +7046,7 @@ function App() {
       if (!botResult) continue
       try {
         const prepared = normalizeNodeForBacktest(ensureSlots(cloneNode(bot.payload)))
-        const inputs = collectBacktestInputs(prepared, callChainsById)
-        const tickers = Array.from(
-          new Set(
-            (inputs.tickers || []).map((t) => normalizeChoice(t)).filter((t) => t && t !== 'Empty' && t !== 'CASH'),
-          ),
-        )
-        tickers.sort()
+        const tickers = collectPositionTickers(prepared, callChainsById).filter((t) => t && t !== 'Empty' && t !== 'CASH')
         for (const t of tickers) {
           const key = `${bot.id}:${t}:${backtestMode}:${botResult.metrics.startDate}:${botResult.metrics.endDate}`
           const existing = analyzeTickerContrib[key]
@@ -7866,12 +7900,14 @@ function App() {
                               className="saved-item"
                               style={{
                                 display: 'grid',
+                                gridTemplateColumns: '1fr',
                                 gap: 14,
                                 height: '100%',
+                                width: '100%',
                                 minWidth: 0,
                                 overflow: 'hidden',
                                 alignItems: 'stretch',
-                                justifyContent: 'flex-start',
+                                justifyItems: 'stretch',
                               }}
                             >
                               {analyzeState?.status === 'loading' ? (
@@ -7882,37 +7918,79 @@ function App() {
                                 <button onClick={() => runAnalyzeBacktest(b)}>Retry</button>
                               </div>
                             ) : analyzeState?.status === 'done' ? (
-                              <>
-                                <div style={{ width: '100%' }}>
-                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Live Stats</div>
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: '1fr',
+                                  gap: 10,
+                                  minWidth: 0,
+                                  width: '100%',
+                                  boxSizing: 'border-box',
+                                }}
+                              >
+                                <div style={{ fontWeight: 900, textAlign: 'center', width: '100%' }}>Base Stats</div>
+                                <div
+                                  className="base-stats-grid"
+                                  style={{
+                                    width: '100%',
+                                    alignSelf: 'stretch',
+                                    display: 'grid',
+                                    gridTemplateColumns: '1fr',
+                                    gridTemplateRows: 'auto auto auto',
+                                    gap: 12,
+                                  }}
+                                >
                                   <div
+                                    className="base-stats-card"
                                     style={{
-                                      display: 'grid',
-                                      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                                      gap: 10,
                                       width: '100%',
+                                      minWidth: 0,
+                                      maxWidth: '100%',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'stretch',
+                                      textAlign: 'center',
                                     }}
                                   >
-                                    <div>
-                                      <div className="stat-label">Total Return</div>
-                                      <div className="stat-value">{formatPct(0)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">CAGR</div>
-                                      <div className="stat-value">{formatPct(0)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">Max Drawdown</div>
-                                      <div className="stat-value">{formatPct(0)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">Sharpe</div>
-                                      <div className="stat-value">{(0).toFixed(2)}</div>
+                                    <div style={{ fontWeight: 900, marginBottom: 8, textAlign: 'center' }}>Live Stats</div>
+                                    <div
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                                        gap: 10,
+                                        justifyItems: 'center',
+                                        width: '100%',
+                                      }}
+                                    >
+                                      <div>
+                                        <div className="stat-label">Total Return</div>
+                                        <div className="stat-value">{formatPct(0)}</div>
+                                      </div>
+                                      <div>
+                                        <div className="stat-label">CAGR</div>
+                                        <div className="stat-value">{formatPct(0)}</div>
+                                      </div>
+                                      <div>
+                                        <div className="stat-label">Max Drawdown</div>
+                                        <div className="stat-value">{formatPct(0)}</div>
+                                      </div>
+                                      <div>
+                                        <div className="stat-label">Sharpe</div>
+                                        <div className="stat-value">{(0).toFixed(2)}</div>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
 
-                                <div style={{ width: '100%' }}>
+                                  <div
+                                    className="base-stats-card"
+                                    style={{
+                                      width: '100%',
+                                      minWidth: 0,
+                                      textAlign: 'center',
+                                      alignSelf: 'stretch',
+                                    }}
+                                  >
+                                    <div style={{ width: '100%' }}>
                                   <div style={{ fontWeight: 900, marginBottom: 6 }}>Backtest Snapshot</div>
                                   <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>Benchmark: {backtestBenchmark}</div>
                                   <div style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
@@ -7925,69 +8003,82 @@ function App() {
                                       heightPx={390}
                                     />
                                   </div>
-                                  <div style={{ marginTop: 10, width: '100%' }}>
-                                    <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
+                                      <div style={{ marginTop: 10, width: '100%' }}>
+                                        <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
 
-                                <div style={{ width: '100%' }}>
-                                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Hist Stats</div>
                                   <div
+                                    className="base-stats-card"
                                     style={{
-                                      display: 'grid',
-                                      gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))',
-                                      gap: 10,
-                                      overflowX: 'auto',
-                                      maxWidth: '100%',
                                       width: '100%',
+                                      minWidth: 0,
+                                      textAlign: 'center',
+                                      alignSelf: 'stretch',
                                     }}
                                   >
-                                    <div>
-                                      <div className="stat-label">CAGR</div>
-                                      <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">Max DD</div>
-                                      <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">Sharpe</div>
-                                      <div className="stat-value">
-                                        {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
-                                          ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
-                                          : '—'}
+                                    <div style={{ width: '100%' }}>
+                                      <div style={{ fontWeight: 900, marginBottom: 8 }}>Historical Stats</div>
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))',
+                                          gap: 10,
+                                          justifyItems: 'center',
+                                          overflowX: 'auto',
+                                          maxWidth: '100%',
+                                          width: '100%',
+                                        }}
+                                      >
+                                        <div>
+                                          <div className="stat-label">CAGR</div>
+                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Max DD</div>
+                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Sharpe</div>
+                                          <div className="stat-value">
+                                            {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
+                                              ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                              : '--'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Volatility</div>
+                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Win Rate</div>
+                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Turnover</div>
+                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.avgTurnover ?? NaN)}</div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Avg Holdings</div>
+                                          <div className="stat-value">
+                                            {Number.isFinite(analyzeState.result?.metrics.avgHoldings ?? NaN)
+                                              ? (analyzeState.result?.metrics.avgHoldings ?? 0).toFixed(1)
+                                              : '--'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Trading Days</div>
+                                          <div className="stat-value">{analyzeState.result?.metrics.days ?? '--'}</div>
+                                        </div>
+                                      </div>
+                                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
+                                        Period: {analyzeState.result?.metrics.startDate ?? '--'} to {analyzeState.result?.metrics.endDate ?? '--'}
                                       </div>
                                     </div>
-                                    <div>
-                                      <div className="stat-label">Volatility</div>
-                                      <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">Win Rate</div>
-                                      <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">Turnover</div>
-                                      <div className="stat-value">{formatPct(analyzeState.result?.metrics.avgTurnover ?? NaN)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">Avg Holdings</div>
-                                      <div className="stat-value">
-                                        {Number.isFinite(analyzeState.result?.metrics.avgHoldings ?? NaN)
-                                          ? (analyzeState.result?.metrics.avgHoldings ?? 0).toFixed(1)
-                                          : '—'}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="stat-label">Trading Days</div>
-                                      <div className="stat-value">{analyzeState.result?.metrics.days ?? '—'}</div>
-                                    </div>
-                                  </div>
-                                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
-                                    Period: {analyzeState.result?.metrics.startDate ?? '—'} — {analyzeState.result?.metrics.endDate ?? '—'}
                                   </div>
                                 </div>
-                              </>
+                              </div>
                             ) : (
                               <button onClick={() => runAnalyzeBacktest(b)}>Run backtest</button>
                             )}
@@ -8005,27 +8096,91 @@ function App() {
                                     }
                                     const botRes = analyzeState.result
                                     const prepared = normalizeNodeForBacktest(ensureSlots(cloneNode(b.payload)))
-                                    const inputs = collectBacktestInputs(prepared, callChainsById)
-                                    const tickers = Array.from(
-                                      new Set(
-                                        (inputs.tickers || [])
-                                          .map((t) => normalizeChoice(t))
-                                          .filter((t) => t && t !== 'Empty' && t !== 'CASH'),
-                                      ),
-                                    ).sort()
-                                    if (!tickers.length) return <div style={{ padding: 10, color: 'var(--muted)' }}>No tickers found.</div>
+                                    const positionTickers = collectPositionTickers(prepared, callChainsById).filter(
+                                      (t) => t && t !== 'Empty' && t !== 'CASH',
+                                    )
+                                    positionTickers.sort()
+                                    const tickers = [...positionTickers, 'CASH']
 
                                     const days = botRes.days || []
                                     const denom = days.length || 1
                                     const allocSum = new Map<string, number>()
                                     for (const d of days) {
+                                      let dayTotal = 0
+                                      let sawCash = false
                                       for (const h of d.holdings || []) {
                                         const key = normalizeChoice(h.ticker)
-                                        if (key === 'CASH' || key === 'Empty') continue
-                                        allocSum.set(key, (allocSum.get(key) || 0) + Number(h.weight || 0))
+                                        if (key === 'Empty') continue
+                                        const w = Number(h.weight || 0)
+                                        allocSum.set(key, (allocSum.get(key) || 0) + w)
+                                        dayTotal += w
+                                        if (key === 'CASH') sawCash = true
+                                      }
+                                      if (!sawCash) {
+                                        const impliedCash = Math.max(0, 1 - dayTotal)
+                                        allocSum.set('CASH', (allocSum.get('CASH') || 0) + impliedCash)
                                       }
                                     }
                                     const histAlloc = (ticker: string) => (allocSum.get(ticker) || 0) / denom
+
+                                    const toggleSort = (column: string) => {
+                                      setAnalyzeTickerSort((prev) => {
+                                        if (prev.column === column) return { column, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+                                        return { column, dir: column === 'ticker' ? 'asc' : 'desc' }
+                                      })
+                                    }
+
+                                    const sortGlyph = (column: string) =>
+                                      analyzeTickerSort.column === column ? (analyzeTickerSort.dir === 'asc' ? ' ▲' : ' ▼') : ''
+
+                                    const rows = tickers.map((t) => {
+                                      const display = t === 'CASH' ? 'Cash' : t
+                                      const key = `${b.id}:${t}:${backtestMode}:${botRes.metrics.startDate}:${botRes.metrics.endDate}`
+                                      const st = t === 'CASH' ? null : analyzeTickerContrib[key]
+                                      return { t, display, key, st, histAllocation: histAlloc(t) }
+                                    })
+
+                                    const sortedRows = [...rows].sort((a, b) => {
+                                      if (a.t === 'CASH' && b.t !== 'CASH') return 1
+                                      if (b.t === 'CASH' && a.t !== 'CASH') return -1
+
+                                      const col = analyzeTickerSort.column
+                                      const mult = analyzeTickerSort.dir === 'asc' ? 1 : -1
+
+                                      if (col === 'ticker') return mult * a.display.localeCompare(b.display)
+
+                                      const aVal =
+                                        col === 'histAllocation'
+                                          ? a.histAllocation
+                                          : col === 'histReturnPct'
+                                            ? a.st?.status === 'done'
+                                              ? a.st.returnPct ?? NaN
+                                              : NaN
+                                            : col === 'histExpectancy'
+                                              ? a.st?.status === 'done'
+                                                ? a.st.expectancy ?? NaN
+                                                : NaN
+                                              : 0
+                                      const bVal =
+                                        col === 'histAllocation'
+                                          ? b.histAllocation
+                                          : col === 'histReturnPct'
+                                            ? b.st?.status === 'done'
+                                              ? b.st.returnPct ?? NaN
+                                              : NaN
+                                            : col === 'histExpectancy'
+                                              ? b.st?.status === 'done'
+                                                ? b.st.expectancy ?? NaN
+                                                : NaN
+                                              : 0
+
+                                      const aOk = Number.isFinite(aVal)
+                                      const bOk = Number.isFinite(bVal)
+                                      if (!aOk && !bOk) return a.display.localeCompare(b.display)
+                                      if (!aOk) return 1
+                                      if (!bOk) return -1
+                                      return mult * ((aVal as number) - (bVal as number))
+                                    })
 
                                     return (
                                       <table className="analyze-ticker-table">
@@ -8040,19 +8195,34 @@ function App() {
                                             </th>
                                           </tr>
                                           <tr>
-                                            <th>Tickers</th>
-                                            <th>Allocation</th>
-                                            <th>CAGR</th>
-                                            <th>Expectancy</th>
-                                            <th>Allocation</th>
-                                            <th>Return %</th>
-                                            <th>Expectancy</th>
+                                            <th onClick={() => toggleSort('ticker')} style={{ cursor: 'pointer' }}>
+                                              Tickers{sortGlyph('ticker')}
+                                            </th>
+                                            <th onClick={() => toggleSort('liveAllocation')} style={{ cursor: 'pointer' }}>
+                                              Allocation{sortGlyph('liveAllocation')}
+                                            </th>
+                                            <th onClick={() => toggleSort('liveCagr')} style={{ cursor: 'pointer' }}>
+                                              CAGR{sortGlyph('liveCagr')}
+                                            </th>
+                                            <th onClick={() => toggleSort('liveExpectancy')} style={{ cursor: 'pointer' }}>
+                                              Expectancy{sortGlyph('liveExpectancy')}
+                                            </th>
+                                            <th onClick={() => toggleSort('histAllocation')} style={{ cursor: 'pointer' }}>
+                                              Allocation{sortGlyph('histAllocation')}
+                                            </th>
+                                            <th onClick={() => toggleSort('histReturnPct')} style={{ cursor: 'pointer' }}>
+                                              Return %{sortGlyph('histReturnPct')}
+                                            </th>
+                                            <th onClick={() => toggleSort('histExpectancy')} style={{ cursor: 'pointer' }}>
+                                              Expectancy{sortGlyph('histExpectancy')}
+                                            </th>
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          {tickers.map((t) => {
-                                            const key = `${b.id}:${t}:${backtestMode}:${botRes.metrics.startDate}:${botRes.metrics.endDate}`
-                                            const st = analyzeTickerContrib[key]
+                                          {sortedRows.map((row) => {
+                                            const t = row.t
+                                            const st =
+                                              t === 'CASH' ? ({ status: 'done', returnPct: 0, expectancy: 0 } as TickerContributionState) : row.st
                                             const histReturn =
                                               !st
                                                 ? '...'
@@ -8071,11 +8241,11 @@ function App() {
                                                     : '—'
                                             return (
                                               <tr key={t}>
-                                                <td style={{ fontWeight: 900 }}>{t}</td>
+                                                <td style={{ fontWeight: 900 }}>{row.display}</td>
                                                 <td>{formatPct(0)}</td>
                                                 <td>{formatPct(0)}</td>
                                                 <td>{formatPct(0)}</td>
-                                                <td>{formatPct(histAlloc(t))}</td>
+                                                <td>{formatPct(row.histAllocation)}</td>
                                                 <td>{histReturn}</td>
                                                 <td>{histExpectancy}</td>
                                               </tr>
