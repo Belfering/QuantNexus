@@ -1628,14 +1628,7 @@ function RangeNavigator({
       <div className="navigator-chart-wrap">
         <div
           ref={containerRef}
-          className="navigator-chart"
-          style={{
-            width: '100%',
-            height: 110,
-            borderRadius: 14,
-            border: '1px solid #cbd5e1',
-            overflow: 'hidden',
-          }}
+          className="navigator-chart w-full h-[110px] rounded-xl border border-border overflow-hidden"
         />
         <div className="navigator-overlay" onPointerDown={handleBackgroundPointerDown}>
           <div ref={shadeLeftRef} className="navigator-shade" />
@@ -7502,8 +7495,8 @@ function App() {
               }}
               title="Tip: hold Shift and use mouse wheel to scroll horizontally"
             >
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 4, pointerEvents: 'none' }}>
+              <div className="relative">
+                <div className="absolute top-0 right-0 bottom-0 z-[4] pointer-events-none">
                   <div
                     style={{
                       position: 'absolute',
@@ -7540,7 +7533,7 @@ function App() {
                       }}
                       title={callPanelOpen ? 'Collapse call node zone' : 'Open call node zone'}
                     >
-                      <div style={{ pointerEvents: 'none' }}>Callback Node Zone</div>
+                      <div className="pointer-events-none">Callback Node Zone</div>
                     </button>
                   </div>
 
@@ -7912,31 +7905,8 @@ function App() {
                         </div>
 
                         {!collapsed ? (
-                          <div
-                            style={{
-                              display: 'grid',
-                              width: '100%',
-                              maxWidth: '100%',
-                              gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 0.85fr) minmax(0, 1.15fr)',
-                              gap: 10,
-                              alignItems: 'stretch',
-                              overflowX: 'hidden',
-                            }}
-                          >
-                            <div
-                              className="saved-item"
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr',
-                                gap: 14,
-                                height: '100%',
-                                width: '100%',
-                                minWidth: 0,
-                                overflow: 'hidden',
-                                alignItems: 'stretch',
-                                justifyItems: 'stretch',
-                              }}
-                            >
+                          <div className="grid w-full max-w-full grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)_minmax(0,1.15fr)] gap-2.5 items-stretch overflow-x-hidden">
+                            <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
                               {analyzeState?.status === 'loading' ? (
                               <div className="text-muted">Running backtest…</div>
                             ) : analyzeState?.status === 'error' ? (
@@ -8685,61 +8655,53 @@ function App() {
 
         {addToWatchlistBotId ? (
           <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(15, 23, 42, 0.35)',
-              display: 'grid',
-              placeItems: 'center',
-              zIndex: 200,
-            }}
+            className="fixed inset-0 bg-slate-900/35 grid place-items-center z-[200]"
             onClick={() => setAddToWatchlistBotId(null)}
           >
-            <div
-              style={{ width: 420, background: 'white', borderRadius: 12, padding: 12, border: '1px solid #e5e7eb' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ fontWeight: 900, marginBottom: 10 }}>Add to Watchlist</div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {watchlists.map((w) => (
-                  <button
-                    key={w.id}
-                    onClick={() => {
-                      if (addToWatchlistBotId) handleConfirmAddToWatchlist(addToWatchlistBotId, w.id)
-                    }}
-                  >
-                    {w.name}
-                  </button>
-                ))}
-                <div style={{ marginTop: 4, paddingTop: 10, borderTop: '1px solid #e5e7eb' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Create new</div>
-                  <input
-                    value={addToWatchlistNewName}
-                    placeholder="Watchlist name…"
-                    onChange={(e) => setAddToWatchlistNewName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        if (addToWatchlistBotId) handleConfirmAddToWatchlist(addToWatchlistBotId, addToWatchlistNewName)
-                      }
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button
+            <Card className="w-[420px]" onClick={(e) => e.stopPropagation()}>
+              <CardContent className="p-3">
+                <div className="font-black mb-2.5">Add to Watchlist</div>
+                <div className="grid gap-2">
+                  {watchlists.map((w) => (
+                    <Button
+                      key={w.id}
+                      variant="secondary"
                       onClick={() => {
-                        if (addToWatchlistBotId) handleConfirmAddToWatchlist(addToWatchlistBotId, addToWatchlistNewName)
+                        if (addToWatchlistBotId) handleConfirmAddToWatchlist(addToWatchlistBotId, w.id)
                       }}
-                      style={{ flex: 1 }}
                     >
-                      Add
-                    </button>
-                    <button onClick={() => setAddToWatchlistBotId(null)} style={{ flex: 1 }}>
-                      Cancel
-                    </button>
+                      {w.name}
+                    </Button>
+                  ))}
+                  <div className="mt-1 pt-2.5 border-t border-border">
+                    <div className="text-xs font-bold mb-1.5">Create new</div>
+                    <Input
+                      value={addToWatchlistNewName}
+                      placeholder="Watchlist name…"
+                      onChange={(e) => setAddToWatchlistNewName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (addToWatchlistBotId) handleConfirmAddToWatchlist(addToWatchlistBotId, addToWatchlistNewName)
+                        }
+                      }}
+                    />
+                    <div className="flex gap-2 mt-2">
+                      <Button
+                        className="flex-1"
+                        onClick={() => {
+                          if (addToWatchlistBotId) handleConfirmAddToWatchlist(addToWatchlistBotId, addToWatchlistNewName)
+                        }}
+                      >
+                        Add
+                      </Button>
+                      <Button variant="secondary" className="flex-1" onClick={() => setAddToWatchlistBotId(null)}>
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </div>
         ) : null}
       </main>
