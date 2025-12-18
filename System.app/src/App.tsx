@@ -13,7 +13,7 @@ import './App.css'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { cn } from '@/lib/utils'
@@ -295,34 +295,26 @@ function LoginScreen({ onLogin }: { onLogin: (userId: UserId) => void }) {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <div
-        style={{
-          maxWidth: 420,
-          margin: '64px auto',
-          border: '1px solid var(--border-soft)',
-          borderRadius: 14,
-          padding: 18,
-          background: 'var(--surface)',
-          boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
-        }}
-      >
-        <div className="eyebrow">Admin Login</div>
-        <h1 style={{ margin: '6px 0 14px' }}>System.app</h1>
-        <div style={{ display: 'grid', gap: 10 }}>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <div style={{ fontWeight: 700, fontSize: 12 }}>Username</div>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+    <div className="p-6">
+      <Card className="max-w-sm mx-auto mt-16">
+        <CardHeader>
+          <div className="text-xs tracking-widest uppercase text-muted mb-1">Admin Login</div>
+          <h1 className="m-0 my-1.5 text-2xl font-extrabold tracking-tight">System.app</h1>
+        </CardHeader>
+        <CardContent className="grid gap-2.5">
+          <label className="grid gap-1.5">
+            <div className="font-bold text-xs">Username</div>
+            <Input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
           </label>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <div style={{ fontWeight: 700, fontSize: 12 }}>Password</div>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
+          <label className="grid gap-1.5">
+            <div className="font-bold text-xs">Password</div>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
           </label>
-          {error ? <div style={{ color: 'var(--danger)', fontWeight: 700 }}>{error}</div> : null}
-          <button onClick={submit}>Login</button>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Valid accounts: 1/1 and 9/9.</div>
-        </div>
-      </div>
+          {error ? <div className="text-danger font-bold">{error}</div> : null}
+          <Button onClick={submit}>Login</Button>
+          <div className="text-xs text-muted">Valid accounts: 1/1 and 9/9.</div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
