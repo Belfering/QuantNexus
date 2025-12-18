@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { cn } from '@/lib/utils'
@@ -8457,65 +8458,65 @@ function App() {
                 const arrow = (k: CommunitySortKey) => (sort.key === k ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '')
                 const sorted = sortRows(rows, sort)
                 return (
-                  <table className="portfolio-table" style={{ width: '100%' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setSort((p) => nextCommunitySort(p, 'name'))}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="cursor-pointer select-none" onClick={() => setSort((p) => nextCommunitySort(p, 'name'))}>
                           Name{arrow('name')}
-                        </th>
-                        <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setSort((p) => nextCommunitySort(p, 'tags'))}>
+                        </TableHead>
+                        <TableHead className="cursor-pointer select-none" onClick={() => setSort((p) => nextCommunitySort(p, 'tags'))}>
                           Tags{arrow('tags')}
-                        </th>
-                        <th
-                          style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}
+                        </TableHead>
+                        <TableHead
+                          className="cursor-pointer select-none text-right"
                           onClick={() => setSort((p) => nextCommunitySort(p, 'oosCagr'))}
                         >
                           OOS CAGR{arrow('oosCagr')}
-                        </th>
-                        <th
-                          style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}
+                        </TableHead>
+                        <TableHead
+                          className="cursor-pointer select-none text-right"
                           onClick={() => setSort((p) => nextCommunitySort(p, 'oosMaxdd'))}
                         >
                           OOS MaxDD{arrow('oosMaxdd')}
-                        </th>
-                        <th
-                          style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}
+                        </TableHead>
+                        <TableHead
+                          className="cursor-pointer select-none text-right"
                           onClick={() => setSort((p) => nextCommunitySort(p, 'oosSharpe'))}
                         >
                           OOS Sharpe{arrow('oosSharpe')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {opts?.headerOnly
                         ? null
                         : sorted.length === 0
                           ? (
-                              <tr>
-                                <td colSpan={5} style={{ color: 'var(--muted)' }}>
+                              <TableRow>
+                                <TableCell colSpan={5} className="text-muted">
                                   {opts?.emptyMessage ?? 'No bots yet.'}
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             )
                           : sorted.map((r) => (
-                              <tr key={r.id}>
-                                <td>{r.name}</td>
-                                <td>
-                                  <div className="bot-tags" style={{ marginTop: 0 }}>
+                              <TableRow key={r.id}>
+                                <TableCell>{r.name}</TableCell>
+                                <TableCell>
+                                  <div className="flex gap-1.5 flex-wrap">
                                     {r.tags.map((t) => (
-                                      <span key={`${r.id}-${t}`} className={`bot-tag ${t === 'Community' ? 'muted' : ''}`}>
+                                      <Badge key={`${r.id}-${t}`} variant={t === 'Community' ? 'muted' : 'default'}>
                                         {t}
-                                      </span>
+                                      </Badge>
                                     ))}
                                   </div>
-                                </td>
-                                <td style={{ textAlign: 'right' }}>{formatPct(r.oosCagr)}</td>
-                                <td style={{ textAlign: 'right' }}>{formatPct(r.oosMaxdd)}</td>
-                                <td style={{ textAlign: 'right' }}>{Number.isFinite(r.oosSharpe) ? r.oosSharpe.toFixed(2) : '—'}</td>
-                              </tr>
+                                </TableCell>
+                                <TableCell className="text-right">{formatPct(r.oosCagr)}</TableCell>
+                                <TableCell className="text-right">{formatPct(r.oosMaxdd)}</TableCell>
+                                <TableCell className="text-right">{Number.isFinite(r.oosSharpe) ? r.oosSharpe.toFixed(2) : '—'}</TableCell>
+                              </TableRow>
                             ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 )
               }
 
@@ -8668,62 +8669,62 @@ function App() {
             </div>
 
             {dashboardSubtab === 'Portfolio' ? (
-              <div className="portfolio-grid" style={{ marginTop: 12 }}>
-                <div className="summary-cards">
-                  <div className="summary-card">
-                    <div className="stat-label">Account value</div>
-                    <div className="summary-value">{formatUsd(accountValue)}</div>
-                    <div className="stat-label">Cash available {formatUsd(cash)}</div>
-                  </div>
-                  <div className="summary-card">
-                    <div className="stat-label">Total PnL</div>
-                    <div className={`summary-value ${totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+              <div className="mt-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <Card>
+                    <div className="text-xs font-bold text-muted mb-1">Account value</div>
+                    <div className="text-2xl font-black">{formatUsd(accountValue)}</div>
+                    <div className="text-xs font-bold text-muted mt-1">Cash available {formatUsd(cash)}</div>
+                  </Card>
+                  <Card>
+                    <div className="text-xs font-bold text-muted mb-1">Total PnL</div>
+                    <div className={cn("text-2xl font-black", totalPnl >= 0 ? 'text-success' : 'text-danger')}>
                       {formatSignedUsd(totalPnl)}
                     </div>
-                    <div className="stat-label">{formatPct(totalPnlPct)}</div>
-                  </div>
-                  <div className="summary-card">
-                    <div className="stat-label">Day change</div>
-                    <div className={`summary-value ${todaysChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+                    <div className="text-xs font-bold text-muted mt-1">{formatPct(totalPnlPct)}</div>
+                  </Card>
+                  <Card>
+                    <div className="text-xs font-bold text-muted mb-1">Day change</div>
+                    <div className={cn("text-2xl font-black", todaysChange >= 0 ? 'text-success' : 'text-danger')}>
                       {formatSignedUsd(todaysChange)}
                     </div>
-                    <div className="stat-label">{formatPct(todaysChangePct)}</div>
-                  </div>
+                    <div className="text-xs font-bold text-muted mt-1">{formatPct(todaysChangePct)}</div>
+                  </Card>
                 </div>
 
-                <div className="panel-grid">
-                  <div className="panel-card">
-                    <div className="panel-title">Current positions</div>
-                    <table className="portfolio-table">
-                      <thead>
-                        <tr>
-                          <th>Ticker</th>
-                          <th>Allocation</th>
-                          <th>Value</th>
-                          <th>PnL</th>
-                          <th>PnL %</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <Card>
+                    <div className="font-black mb-2">Current positions</div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Ticker</TableHead>
+                          <TableHead>Allocation</TableHead>
+                          <TableHead>Value</TableHead>
+                          <TableHead>PnL</TableHead>
+                          <TableHead>PnL %</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {positions.map((pos) => (
-                          <tr key={pos.ticker}>
-                            <td>{pos.ticker}</td>
-                            <td>{formatPct(pos.allocation)}</td>
-                            <td>{formatUsd(pos.value)}</td>
-                            <td className={pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}>{formatSignedUsd(pos.pnl)}</td>
-                            <td className={pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}>{formatPct(pos.pnlPct)}</td>
-                          </tr>
+                          <TableRow key={pos.ticker}>
+                            <TableCell>{pos.ticker}</TableCell>
+                            <TableCell>{formatPct(pos.allocation)}</TableCell>
+                            <TableCell>{formatUsd(pos.value)}</TableCell>
+                            <TableCell className={cn(pos.pnl >= 0 ? 'text-success' : 'text-danger')}>{formatSignedUsd(pos.pnl)}</TableCell>
+                            <TableCell className={cn(pos.pnl >= 0 ? 'text-success' : 'text-danger')}>{formatPct(pos.pnlPct)}</TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </TableBody>
+                    </Table>
+                  </Card>
 
-                  <div className="panel-card">
-                    <div className="panel-title">Bots invested in</div>
+                  <Card>
+                    <div className="font-black mb-2">Bots invested in</div>
                     {investedBots.length === 0 ? (
-                      <div style={{ color: '#64748b' }}>No bots saved yet.</div>
+                      <div className="text-muted">No bots saved yet.</div>
                     ) : (
-                      <div className="bot-list">
+                      <div className="grid gap-2">
                         {investedBots.map((bot) => (
                           <div key={bot.id} className="bot-row">
                             <div style={{ flex: 1 }}>
@@ -8749,7 +8750,7 @@ function App() {
                         ))}
                       </div>
                     )}
-                  </div>
+                  </Card>
                 </div>
               </div>
             ) : (
