@@ -635,7 +635,7 @@ function AdminTickerList({
 }) {
   return (
     <div>
-      <div style={{ display: 'grid', gap: 6 }}>
+      <div className="grid gap-1.5">
         <div>
           <strong>Ticker data root:</strong> {status?.root || '...'}
         </div>
@@ -647,40 +647,33 @@ function AdminTickerList({
         </div>
       </div>
 
-      {error && <div style={{ marginTop: 10, color: '#b91c1c', fontWeight: 700 }}>{error}</div>}
+      {error && <div className="mt-2.5 text-danger font-bold">{error}</div>}
 
-      <div style={{ marginTop: 12 }}>
-        <div style={{ fontWeight: 800 }}>Tickers ({tickers.length})</div>
+      <div className="mt-3">
+        <div className="font-extrabold">Tickers ({tickers.length})</div>
 
-        <div style={{ marginTop: 8 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Edit tickers.txt</div>
+        <div className="mt-2">
+          <div className="font-bold mb-1.5">Edit tickers.txt</div>
           <textarea
             value={tickersText}
             onChange={(e) => onTickersTextChange(e.target.value)}
             rows={10}
             spellCheck={false}
-            style={{
-              width: '100%',
-              fontFamily:
-                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-              padding: 10,
-              borderRadius: 12,
-              border: '1px solid #cbd5e1',
-            }}
+            className="w-full font-mono p-2.5 rounded-xl border border-border"
           />
-          <div style={{ marginTop: 8, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button onClick={onSaveTickers} disabled={saveDisabled}>
+          <div className="mt-2 flex gap-2.5 items-center flex-wrap">
+            <Button onClick={onSaveTickers} disabled={saveDisabled}>
               Save tickers.txt
-            </button>
-            {saveStatus ? <div style={{ color: '#4b5563' }}>{saveStatus}</div> : null}
+            </Button>
+            {saveStatus ? <div className="text-muted">{saveStatus}</div> : null}
           </div>
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Download settings</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontWeight: 700 }}>Batch size</span>
+        <div className="mt-3.5">
+          <div className="font-extrabold mb-1.5">Download settings</div>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2.5">
+            <label className="grid gap-1.5">
+              <span className="font-bold">Batch size</span>
               <input
                 type="number"
                 min={1}
@@ -689,9 +682,9 @@ function AdminTickerList({
                 onChange={(e) => onChangeDownloadConfig({ batchSize: Number(e.target.value) })}
               />
             </label>
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontWeight: 700 }}>Sleep seconds</span>
-              <input
+            <label className="grid gap-1.5">
+              <span className="font-bold">Sleep seconds</span>
+              <Input
                 type="number"
                 min={0}
                 max={60}
@@ -700,9 +693,9 @@ function AdminTickerList({
                 onChange={(e) => onChangeDownloadConfig({ sleepSeconds: Number(e.target.value) })}
               />
             </label>
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontWeight: 700 }}>Max retries</span>
-              <input
+            <label className="grid gap-1.5">
+              <span className="font-bold">Max retries</span>
+              <Input
                 type="number"
                 min={0}
                 max={10}
@@ -710,9 +703,9 @@ function AdminTickerList({
                 onChange={(e) => onChangeDownloadConfig({ maxRetries: Number(e.target.value) })}
               />
             </label>
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontWeight: 700 }}>Limit tickers (0 = no limit)</span>
-              <input
+            <label className="grid gap-1.5">
+              <span className="font-bold">Limit tickers (0 = no limit)</span>
+              <Input
                 type="number"
                 min={0}
                 max={100000}
@@ -720,35 +713,25 @@ function AdminTickerList({
                 onChange={(e) => onChangeDownloadConfig({ limit: Number(e.target.value) })}
               />
             </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'center', paddingTop: 26 }}>
+            <label className="flex gap-2.5 items-center pt-6">
               <input
                 type="checkbox"
                 checked={downloadConfig.threads}
                 onChange={(e) => onChangeDownloadConfig({ threads: e.target.checked })}
               />
-              <span style={{ fontWeight: 700 }}>Threads inside batch</span>
+              <span className="font-bold">Threads inside batch</span>
             </label>
           </div>
         </div>
 
-        <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button onClick={onDownload} disabled={downloadDisabled}>
+        <div className="mt-2.5 flex gap-2.5 items-center flex-wrap">
+          <Button onClick={onDownload} disabled={downloadDisabled}>
             Download
-          </button>
-          {downloadStatus ? <div style={{ color: '#4b5563' }}>{downloadStatus}</div> : null}
+          </Button>
+          {downloadStatus ? <div className="text-muted">{downloadStatus}</div> : null}
         </div>
 
-        <pre
-          style={{
-            marginTop: 10,
-            maxHeight: 340,
-            overflow: 'auto',
-            padding: 10,
-            borderRadius: 12,
-            border: '1px solid #cbd5e1',
-            background: '#fff',
-          }}
-        >
+        <pre className="mt-2.5 max-h-[340px] overflow-auto p-2.5 rounded-xl border border-border bg-white">
           {tickers.join('\n') || 'No tickers found.'}
         </pre>
       </div>
@@ -810,13 +793,7 @@ function CandlesChart({ candles }: { candles: CandlestickData[] }) {
   return (
     <div
       ref={containerRef}
-      style={{
-        width: '100%',
-        height: 420,
-        borderRadius: 14,
-        border: '1px solid #cbd5e1',
-        overflow: 'hidden',
-      }}
+      className="w-full h-[420px] rounded-xl border border-border overflow-hidden"
     />
   )
 }
@@ -1257,13 +1234,8 @@ function EquityChart({
   return (
     <div
       ref={containerRef}
-      style={{
-      width: '100%',
-      height: chartHeight,
-      borderRadius: 14,
-      border: '1px solid #cbd5e1',
-      overflow: 'hidden',
-    }}
+      className="w-full rounded-xl border border-border overflow-hidden"
+      style={{ height: chartHeight }}
   />
   )
 }
@@ -1391,13 +1363,7 @@ function DrawdownChart({
   return (
     <div
       ref={containerRef}
-      style={{
-        width: '100%',
-        height: 130,
-        borderRadius: 14,
-        border: '1px solid #cbd5e1',
-        overflow: 'hidden',
-      }}
+      className="w-full h-[130px] rounded-xl border border-border overflow-hidden"
     />
   )
 }
@@ -1766,13 +1732,7 @@ function AllocationChart({
   return (
     <div
       ref={containerRef}
-      style={{
-        width: '100%',
-        height: 240,
-        borderRadius: 14,
-        border: '1px solid #cbd5e1',
-        overflow: 'hidden',
-      }}
+      className="w-full h-[240px] rounded-xl border border-border overflow-hidden"
     />
   )
 }
@@ -1834,58 +1794,58 @@ function AdminDataPanel({
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ fontWeight: 800 }}>Ticker</div>
-        <select value={selected} onChange={(e) => setSelected(e.target.value)} style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1' }}>
+      <div className="flex gap-2.5 items-center flex-wrap">
+        <div className="font-extrabold">Ticker</div>
+        <Select value={selected} onChange={(e) => setSelected(e.target.value)}>
           {tickers.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
           ))}
-        </select>
-        <button onClick={() => void load(selected)} disabled={!selected || loading}>
+        </Select>
+        <Button onClick={() => void load(selected)} disabled={!selected || loading}>
           {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        </Button>
       </div>
 
-      {combinedError && <div style={{ marginTop: 10, color: '#b91c1c', fontWeight: 700 }}>{combinedError}</div>}
+      {combinedError && <div className="mt-2.5 text-danger font-bold">{combinedError}</div>}
 
-      <div style={{ marginTop: 12 }}>
+      <div className="mt-3">
         <CandlesChart candles={candles} />
       </div>
 
-      <div style={{ marginTop: 12 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>Ticker data preview (last 50 rows)</div>
-        <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid #cbd5e1', borderRadius: 14, background: '#fff' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
+      <div className="mt-3">
+        <div className="font-extrabold mb-1.5">Ticker data preview (last 50 rows)</div>
+        <div className="max-h-[320px] overflow-auto border border-border rounded-xl bg-white">
+          <Table>
+            <TableHeader>
+              <TableRow>
                 {['Date', 'Open', 'High', 'Low', 'Close'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #eef2f7', position: 'sticky', top: 0, background: '#fff' }}>
+                  <TableHead key={h} className="sticky top-0 bg-white">
                     {h}
-                  </th>
+                  </TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {preview.map((r, idx) => (
-                <tr key={idx}>
-                  <td style={{ padding: '8px 10px', borderBottom: '1px solid #eef2f7', whiteSpace: 'nowrap' }}>{r.Date}</td>
-                  <td style={{ padding: '8px 10px', borderBottom: '1px solid #eef2f7' }}>{r.Open}</td>
-                  <td style={{ padding: '8px 10px', borderBottom: '1px solid #eef2f7' }}>{r.High}</td>
-                  <td style={{ padding: '8px 10px', borderBottom: '1px solid #eef2f7' }}>{r.Low}</td>
-                  <td style={{ padding: '8px 10px', borderBottom: '1px solid #eef2f7' }}>{r.Close}</td>
-                </tr>
+                <TableRow key={idx}>
+                  <TableCell className="whitespace-nowrap">{r.Date}</TableCell>
+                  <TableCell>{r.Open}</TableCell>
+                  <TableCell>{r.High}</TableCell>
+                  <TableCell>{r.Low}</TableCell>
+                  <TableCell>{r.Close}</TableCell>
+                </TableRow>
               ))}
               {preview.length === 0 && (
-                <tr>
-                  <td colSpan={5} style={{ padding: 10, color: '#4b5563' }}>
+                <TableRow>
+                  <TableCell colSpan={5} className="text-muted">
                     No data loaded yet.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
     </div>
@@ -2099,7 +2059,7 @@ function AdminPanel({
           </button>
         ))}
       </div>
-      <div style={{ marginTop: 16 }}>
+      <div className="mt-4">
         {adminTab === 'Ticker List' ? (
           <AdminTickerList
             status={status}
@@ -2124,9 +2084,9 @@ function AdminPanel({
           <AdminDataPanel tickers={parquetTickers.length ? parquetTickers : tickers} error={error} />
         )}
         {adminTab === 'Ticker List' && downloadJob?.logs?.length ? (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>Downloader log</div>
-            <pre style={{ maxHeight: 260, overflow: 'auto', padding: 10, borderRadius: 12, border: '1px solid #cbd5e1', background: '#fff' }}>
+          <div className="mt-3.5">
+            <div className="font-extrabold mb-1.5">Downloader log</div>
+            <pre className="max-h-[260px] overflow-auto p-2.5 rounded-xl border border-border bg-white">
               {downloadJob.logs.join('\n')}
             </pre>
           </div>
@@ -3057,7 +3017,7 @@ const NodeCard = ({
       <div className="positions">
         {node.positions.map((p, idx) => (
           <div className="position-row" key={`${node.id}-pos-${idx}`}>
-            <div className="indent" style={{ width: 14 }} />
+            <div className="indent w-3.5" />
             <div className="pill-select">
               {(() => {
                 const key = `${node.id}-pos-${idx}`
@@ -3102,7 +3062,7 @@ const NodeCard = ({
                     }}
                     placeholder="Ticker"
                     spellCheck={false}
-                    style={{ width: 120 }}
+                    className="w-[120px]"
                   />
                 )
               })()}
@@ -5975,11 +5935,11 @@ function BacktesterPanel({
         ) : result && tab === 'Allocations' ? (
           <>
             <div className="saved-item">
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Monthly returns</div>
+              <div className="font-black mb-1.5">Monthly returns</div>
               <div className="monthly-heatmap">{renderMonthlyHeatmap(result.monthly, result.days)}</div>
             </div>
             <div className="saved-item">
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Allocation over time (top 10 + cash)</div>
+              <div className="font-black mb-1.5">Allocation over time (top 10 + cash)</div>
               <AllocationChart series={allocationSeries} visibleRange={visibleRange} />
               <div className="backtester-legend">
                 {allocationSeries.map((s) => (
@@ -5990,9 +5950,9 @@ function BacktesterPanel({
                 ))}
               </div>
             </div>
-            <div className="saved-item">
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Allocations (recent)</div>
-              <div style={{ maxHeight: 280, overflow: 'auto', fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 12 }}>
+            <Card>
+              <div className="font-black mb-1.5">Allocations (recent)</div>
+              <div className="max-h-[280px] overflow-auto font-mono text-xs">
                 {(result.allocations || []).slice(-300).map((row) => (
                   <div key={row.date}>
                     {row.date} —{' '}
@@ -6006,16 +5966,16 @@ function BacktesterPanel({
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={() => downloadEquityCsv(result, mode, costBps, benchmark, showBenchmark)}>Download equity CSV</button>
-                <button onClick={() => downloadAllocationsCsv(result)}>Download allocations CSV</button>
-                <button onClick={() => downloadRebalancesCsv(result)}>Download rebalances CSV</button>
+              <div className="mt-2.5 flex gap-2 flex-wrap">
+                <Button size="sm" onClick={() => downloadEquityCsv(result, mode, costBps, benchmark, showBenchmark)}>Download equity CSV</Button>
+                <Button size="sm" onClick={() => downloadAllocationsCsv(result)}>Download allocations CSV</Button>
+                <Button size="sm" onClick={() => downloadRebalancesCsv(result)}>Download rebalances CSV</Button>
               </div>
-            </div>
+            </Card>
           </>
         ) : result && tab === 'Rebalances' ? (
-          <div className="saved-item">
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>Rebalance days ({rebalanceDays.length})</div>
+          <Card>
+            <div className="font-black mb-1.5">Rebalance days ({rebalanceDays.length})</div>
             <div className="backtester-table">
               <div className="backtester-row backtester-head-row">
                 <div>Date</div>
@@ -6031,7 +5991,7 @@ function BacktesterPanel({
                     <div>{formatPct(d.netReturn)}</div>
                     <div>{formatPct(d.turnover)}</div>
                     <div>{formatPct(d.cost)}</div>
-                    <div style={{ fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 12 }}>
+                    <div className="font-mono text-xs">
                       {d.holdings.length === 0
                         ? 'Cash'
                         : d.holdings
@@ -6044,12 +6004,12 @@ function BacktesterPanel({
                 ))}
               </div>
             </div>
-          </div>
+          </Card>
         ) : result && tab === 'Warnings' ? (
           <div className="saved-item">
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>Warnings ({result.warnings.length})</div>
+            <div className="font-black mb-1.5">Warnings ({result.warnings.length})</div>
             {groupedWarnings.length === 0 ? (
-              <div style={{ color: '#475569' }}>No warnings.</div>
+              <div className="text-muted">No warnings.</div>
             ) : (
               <div className="backtester-table">
                 <div className="backtester-row backtester-head-row">
@@ -6072,14 +6032,14 @@ function BacktesterPanel({
             )}
 
             {result.trace ? (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ fontWeight: 900 }}>Condition trace (debug)</div>
-                  <button onClick={() => downloadTextFile('backtest_trace.json', JSON.stringify(result.trace, null, 2), 'application/json')}>
+              <div className="mt-3.5">
+                <div className="flex gap-2.5 items-center flex-wrap">
+                  <div className="font-black">Condition trace (debug)</div>
+                  <Button onClick={() => downloadTextFile('backtest_trace.json', JSON.stringify(result.trace, null, 2), 'application/json')}>
                     Download trace JSON
-                  </button>
+                  </Button>
                 </div>
-                <div style={{ marginTop: 8 }} className="backtester-table">
+                <div className="mt-2 backtester-table">
                   <div className="backtester-row backtester-head-row">
                     <div>Node</div>
                     <div>Kind</div>
@@ -6090,11 +6050,11 @@ function BacktesterPanel({
                   <div className="backtester-body-rows">
                     {result.trace.nodes.slice(0, 80).map((n) => (
                       <div key={n.nodeId} className="backtester-row">
-                        <div style={{ fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 12 }}>{n.nodeId}</div>
+                        <div className="font-mono text-xs">{n.nodeId}</div>
                         <div>{n.kind}</div>
                         <div>{n.thenCount}</div>
                         <div>{n.elseCount}</div>
-                        <div style={{ fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 12 }}>
+                        <div className="font-mono text-xs">
                           {n.conditions.length === 0
                             ? '—'
                             : n.conditions
@@ -6107,7 +6067,7 @@ function BacktesterPanel({
                   </div>
                 </div>
                 {result.trace.nodes.length > 80 ? (
-                  <div style={{ marginTop: 6, color: '#475569' }}>Showing first 80 nodes. Use Download trace JSON for the full set.</div>
+                  <div className="mt-1.5 text-muted">Showing first 80 nodes. Use Download trace JSON for the full set.</div>
                 ) : null}
               </div>
             ) : null}
@@ -7778,7 +7738,7 @@ function App() {
                   ) : null}
                 </div>
 
-                <div style={{ overflow: 'auto' }}>
+                <div className="overflow-auto">
                   <NodeCard
                     node={current}
                     depth={0}
@@ -7978,57 +7938,19 @@ function App() {
                               }}
                             >
                               {analyzeState?.status === 'loading' ? (
-                              <div style={{ color: '#64748b' }}>Running backtest…</div>
+                              <div className="text-muted">Running backtest…</div>
                             ) : analyzeState?.status === 'error' ? (
-                              <div style={{ display: 'grid', gap: 8 }}>
-                                <div style={{ color: '#b91c1c', fontWeight: 800 }}>{analyzeState.error ?? 'Failed to run backtest.'}</div>
-                                <button onClick={() => runAnalyzeBacktest(b)}>Retry</button>
+                              <div className="grid gap-2">
+                                <div className="text-danger font-extrabold">{analyzeState.error ?? 'Failed to run backtest.'}</div>
+                                <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>
                               </div>
                             ) : analyzeState?.status === 'done' ? (
-                              <div
-                                style={{
-                                  display: 'grid',
-                                  gridTemplateColumns: '1fr',
-                                  gap: 10,
-                                  minWidth: 0,
-                                  width: '100%',
-                                  boxSizing: 'border-box',
-                                }}
-                              >
-                                <div style={{ fontWeight: 900, textAlign: 'center', width: '100%' }}>Base Stats</div>
-                                <div
-                                  className="base-stats-grid"
-                                  style={{
-                                    width: '100%',
-                                    alignSelf: 'stretch',
-                                    display: 'grid',
-                                    gridTemplateColumns: '1fr',
-                                    gridTemplateRows: 'auto auto auto',
-                                    gap: 12,
-                                  }}
-                                >
-                                  <div
-                                    className="base-stats-card"
-                                    style={{
-                                      width: '100%',
-                                      minWidth: 0,
-                                      maxWidth: '100%',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      alignItems: 'stretch',
-                                      textAlign: 'center',
-                                    }}
-                                  >
-                                    <div style={{ fontWeight: 900, marginBottom: 8, textAlign: 'center' }}>Live Stats</div>
-                                    <div
-                                      style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                                        gap: 10,
-                                        justifyItems: 'center',
-                                        width: '100%',
-                                      }}
-                                    >
+                              <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
+                                <div className="font-black text-center w-full">Base Stats</div>
+                                <div className="base-stats-grid w-full self-stretch grid grid-cols-1 grid-rows-[auto_auto_auto] gap-3">
+                                  <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                    <div className="font-black mb-2 text-center">Live Stats</div>
+                                    <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
                                       <div>
                                         <div className="stat-label">Total Return</div>
                                         <div className="stat-value">{formatPct(0)}</div>
@@ -8048,19 +7970,11 @@ function App() {
                                     </div>
                                   </div>
 
-                                  <div
-                                    className="base-stats-card"
-                                    style={{
-                                      width: '100%',
-                                      minWidth: 0,
-                                      textAlign: 'center',
-                                      alignSelf: 'stretch',
-                                    }}
-                                  >
-                                    <div style={{ width: '100%' }}>
-                                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Backtest Snapshot</div>
-                                  <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>Benchmark: {backtestBenchmark}</div>
-                                  <div style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+                                  <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                    <div className="w-full">
+                                  <div className="font-black mb-1.5">Backtest Snapshot</div>
+                                  <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
+                                  <div className="w-full max-w-full overflow-hidden">
                                     <EquityChart
                                       points={analyzeState.result?.points ?? []}
                                       benchmarkPoints={analyzeState.result?.benchmarkPoints}
@@ -8070,34 +7984,16 @@ function App() {
                                       heightPx={390}
                                     />
                                   </div>
-                                      <div style={{ marginTop: 10, width: '100%' }}>
+                                      <div className="mt-2.5 w-full">
                                         <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
                                       </div>
                                     </div>
                                   </div>
 
-                                  <div
-                                    className="base-stats-card"
-                                    style={{
-                                      width: '100%',
-                                      minWidth: 0,
-                                      textAlign: 'center',
-                                      alignSelf: 'stretch',
-                                    }}
-                                  >
-                                    <div style={{ width: '100%' }}>
-                                      <div style={{ fontWeight: 900, marginBottom: 8 }}>Historical Stats</div>
-                                      <div
-                                        style={{
-                                          display: 'grid',
-                                          gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))',
-                                          gap: 10,
-                                          justifyItems: 'center',
-                                          overflowX: 'auto',
-                                          maxWidth: '100%',
-                                          width: '100%',
-                                        }}
-                                      >
+                                  <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                    <div className="w-full">
+                                      <div className="font-black mb-2">Historical Stats</div>
+                                      <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
                                         <div>
                                           <div className="stat-label">CAGR</div>
                                           <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
@@ -8139,7 +8035,7 @@ function App() {
                                           <div className="stat-value">{analyzeState.result?.metrics.days ?? '--'}</div>
                                         </div>
                                       </div>
-                                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
+                                      <div className="mt-2 text-xs text-muted">
                                         Period: {analyzeState.result?.metrics.startDate ?? '--'} to {analyzeState.result?.metrics.endDate ?? '--'}
                                       </div>
                                     </div>
@@ -8151,15 +8047,15 @@ function App() {
                             )}
                             </div>
 
-                            <div className="saved-item" style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%', minWidth: 0 }}>
-                              <div style={{ fontWeight: 900 }}>Information</div>
-                              <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 800 }}>Placeholder text: Information, tickers, etc</div>
-                              <div style={{ fontWeight: 900, marginTop: 6 }}>Tickers</div>
-                              <div style={{ flex: 1, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 12, maxWidth: '100%' }}>
+                            <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
+                              <div className="font-black">Information</div>
+                              <div className="text-xs text-muted font-extrabold">Placeholder text: Information, tickers, etc</div>
+                              <div className="font-black mt-1.5">Tickers</div>
+                              <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
                                 {(() => {
                                   try {
                                     if (analyzeState?.status !== 'done' || !analyzeState.result) {
-                                      return <div style={{ padding: 10, color: 'var(--muted)' }}>Run a backtest to populate historical stats.</div>
+                                      return <div className="p-2.5 text-muted">Run a backtest to populate historical stats.</div>
                                     }
                                     const botRes = analyzeState.result
                                     const prepared = normalizeNodeForBacktest(ensureSlots(cloneNode(b.payload)))
@@ -8254,33 +8150,33 @@ function App() {
                                         <thead>
                                           <tr>
                                             <th />
-                                            <th colSpan={3} style={{ textAlign: 'center' }}>
+                                            <th colSpan={3} className="text-center">
                                               Live
                                             </th>
-                                            <th colSpan={3} style={{ textAlign: 'center' }}>
+                                            <th colSpan={3} className="text-center">
                                               Historical
                                             </th>
                                           </tr>
                                           <tr>
-                                            <th onClick={() => toggleSort('ticker')} style={{ cursor: 'pointer' }}>
+                                            <th onClick={() => toggleSort('ticker')} className="cursor-pointer">
                                               Tickers{sortGlyph('ticker')}
                                             </th>
-                                            <th onClick={() => toggleSort('liveAllocation')} style={{ cursor: 'pointer' }}>
+                                            <th onClick={() => toggleSort('liveAllocation')} className="cursor-pointer">
                                               Allocation{sortGlyph('liveAllocation')}
                                             </th>
-                                            <th onClick={() => toggleSort('liveCagr')} style={{ cursor: 'pointer' }}>
+                                            <th onClick={() => toggleSort('liveCagr')} className="cursor-pointer">
                                               CAGR{sortGlyph('liveCagr')}
                                             </th>
-                                            <th onClick={() => toggleSort('liveExpectancy')} style={{ cursor: 'pointer' }}>
+                                            <th onClick={() => toggleSort('liveExpectancy')} className="cursor-pointer">
                                               Expectancy{sortGlyph('liveExpectancy')}
                                             </th>
-                                            <th onClick={() => toggleSort('histAllocation')} style={{ cursor: 'pointer' }}>
+                                            <th onClick={() => toggleSort('histAllocation')} className="cursor-pointer">
                                               Allocation{sortGlyph('histAllocation')}
                                             </th>
-                                            <th onClick={() => toggleSort('histReturnPct')} style={{ cursor: 'pointer' }}>
+                                            <th onClick={() => toggleSort('histReturnPct')} className="cursor-pointer">
                                               Return %{sortGlyph('histReturnPct')}
                                             </th>
-                                            <th onClick={() => toggleSort('histExpectancy')} style={{ cursor: 'pointer' }}>
+                                            <th onClick={() => toggleSort('histExpectancy')} className="cursor-pointer">
                                               Expectancy{sortGlyph('histExpectancy')}
                                             </th>
                                           </tr>
@@ -8308,7 +8204,7 @@ function App() {
                                                     : '—'
                                             return (
                                               <tr key={t}>
-                                                <td style={{ fontWeight: 900 }}>{row.display}</td>
+                                                <td className="font-black">{row.display}</td>
                                                 <td>{formatPct(0)}</td>
                                                 <td>{formatPct(0)}</td>
                                                 <td>{formatPct(0)}</td>
@@ -8322,19 +8218,19 @@ function App() {
                                       </table>
                                     )
                                   } catch {
-                                    return <div style={{ padding: 10, color: 'var(--muted)' }}>Unable to read tickers.</div>
+                                    return <div className="p-2.5 text-muted">Unable to read tickers.</div>
                                   }
                                 })()}
                               </div>
                             </div>
 
-                            <div className="saved-item" style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%', minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                                <div style={{ fontWeight: 900 }}>Advanced Stats</div>
-                                <button style={{ padding: '6px 10px', fontSize: 12 }}>Run</button>
+                            <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
+                              <div className="flex items-center justify-between gap-2.5">
+                                <div className="font-black">Advanced Stats</div>
+                                <Button size="sm">Run</Button>
                               </div>
-                              <div style={{ fontWeight: 900 }}>Comparison Table</div>
-                              <div style={{ flex: 1, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 12, maxWidth: '100%' }}>
+                              <div className="font-black">Comparison Table</div>
+                              <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
                                 {(() => {
                                   const rows = [
                                     'Monte Carlo Comparison',
@@ -8521,126 +8417,62 @@ function App() {
               }
 
               const watchlistSelect = (currentId: string | null, onChange: (id: string | null) => void) => (
-                <select
+                <Select
                   value={currentId ?? ''}
                   onChange={(e) => onChange(e.target.value ? e.target.value : null)}
-                  style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
                 >
                   {watchlists.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               )
 
               return (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(4, 1fr)',
-                    gap: 12,
-                    minHeight: 'calc(100vh - 260px)',
-                    alignItems: 'stretch',
-                  }}
-                >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div style={{ fontWeight: 900 }}>Top Community Bots</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
-                      <div
-                        className="saved-item"
-                        style={{
-                          flex: 1,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'stretch',
-                          justifyContent: 'flex-start',
-                          gap: 10,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div style={{ fontWeight: 900 }}>Top community bots by CAGR</div>
+                <div className="grid grid-cols-4 gap-3 min-h-[calc(100vh-260px)] items-stretch">
+                  <div className="flex flex-col gap-3">
+                    <div className="font-black">Top Community Bots</div>
+                    <div className="flex flex-col gap-3 flex-1">
+                      <div className="saved-item flex-1 flex flex-col items-stretch justify-start gap-2.5 overflow-hidden">
+                        <div className="font-black">Top community bots by CAGR</div>
                         {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
                       </div>
-                      <div
-                        className="saved-item"
-                        style={{
-                          flex: 1,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'stretch',
-                          justifyContent: 'flex-start',
-                          gap: 10,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div style={{ fontWeight: 900 }}>Top community bots by Calmar Ratio</div>
+                      <div className="saved-item flex-1 flex flex-col items-stretch justify-start gap-2.5 overflow-hidden">
+                        <div className="font-black">Top community bots by Calmar Ratio</div>
                         {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
                       </div>
-                      <div
-                        className="saved-item"
-                        style={{
-                          flex: 1,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'stretch',
-                          justifyContent: 'flex-start',
-                          gap: 10,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div style={{ fontWeight: 900 }}>Top community bots by Sharpe Ratio</div>
+                      <div className="saved-item flex-1 flex flex-col items-stretch justify-start gap-2.5 overflow-hidden">
+                        <div className="font-black">Top community bots by Sharpe Ratio</div>
                         {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ gridColumn: '2 / span 2', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div className="saved-item" style={{ flex: 2, display: 'grid', placeItems: 'center', fontWeight: 900 }}>
+                  <div className="col-span-2 flex flex-col gap-3">
+                    <div className="saved-item flex-[2] grid place-items-center font-black">
                       News and Select Bots
                     </div>
-                    <div className="saved-item" style={{ flex: 1, display: 'grid', placeItems: 'center', fontWeight: 900 }}>
+                    <div className="saved-item flex-1 grid place-items-center font-black">
                       Search for other community bots by metrics or by Builder's names.
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div style={{ fontWeight: 900 }}>Personal Watchlists</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
-                      <div
-                        className="saved-item"
-                        style={{
-                          flex: 1,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'stretch',
-                          justifyContent: 'flex-start',
-                          gap: 10,
-                          overflow: 'auto',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                          <div style={{ fontWeight: 900 }}>Watchlist Zone #1</div>
+                  <div className="flex flex-col gap-3">
+                    <div className="font-black">Personal Watchlists</div>
+                    <div className="flex flex-col gap-3 flex-1">
+                      <div className="saved-item flex-1 flex flex-col items-stretch justify-start gap-2.5 overflow-auto">
+                        <div className="flex items-center justify-between gap-2.5">
+                          <div className="font-black">Watchlist Zone #1</div>
                           {watchlistSelect(slot1Id, (id) => setUiState((p) => ({ ...p, communityWatchlistSlot1Id: id })))}
                         </div>
                         {renderTable(rowsForWatchlist(slot1Id), communityWatchlistSort1, setCommunityWatchlistSort1, {
                           emptyMessage: 'No bots in this watchlist.',
                         })}
                       </div>
-                      <div
-                        className="saved-item"
-                        style={{
-                          flex: 1,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'stretch',
-                          justifyContent: 'flex-start',
-                          gap: 10,
-                          overflow: 'auto',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                          <div style={{ fontWeight: 900 }}>Watchlist Zone #2</div>
+                      <div className="saved-item flex-1 flex flex-col items-stretch justify-start gap-2.5 overflow-auto">
+                        <div className="flex items-center justify-between gap-2.5">
+                          <div className="font-black">Watchlist Zone #2</div>
                           {watchlistSelect(slot2Id, (id) => setUiState((p) => ({ ...p, communityWatchlistSlot2Id: id })))}
                         </div>
                         {renderTable(rowsForWatchlist(slot2Id), communityWatchlistSort2, setCommunityWatchlistSort2, {
@@ -8655,13 +8487,12 @@ function App() {
           </div>
         ) : tab === 'Dashboard' ? (
           <div className="placeholder">
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="flex gap-2.5 items-center flex-wrap">
               {(['Portfolio', 'Partner Program'] as const).map((t) => (
                 <button
                   key={t}
                   className={`tab-btn ${dashboardSubtab === t ? 'active' : ''}`}
                   onClick={() => setDashboardSubtab(t)}
-                  style={{ padding: '6px 10px', fontSize: 12 }}
                 >
                   {t}
                 </button>
@@ -8727,7 +8558,7 @@ function App() {
                       <div className="grid gap-2">
                         {investedBots.map((bot) => (
                           <div key={bot.id} className="bot-row">
-                            <div style={{ flex: 1 }}>
+                            <div className="flex-1">
                               <div className="bot-row-title">
                                 {bot.name}
                                 {bot.readonly ? <span className="bot-tag muted">Community</span> : null}
@@ -8754,15 +8585,16 @@ function App() {
                 </div>
               </div>
             ) : (
-              <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
-                <div style={{ display: 'grid', gap: 12 }}>
+              <div className="mt-3 grid gap-3">
+                <div className="grid gap-3">
                   {partnerFunds.map((fund) => {
                     const collapsed = partnerFundCollapsedById[fund.id] ?? true
                     const state = partnerFundBacktests[fund.id]
                     return (
-                      <div key={fund.id} className="saved-item" style={{ display: 'grid', gap: 10 }}>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <button
+                      <div key={fund.id} className="saved-item grid gap-2.5">
+                        <div className="flex gap-2.5 items-center flex-wrap">
+                          <Button
+                            size="sm"
                             onClick={() => {
                               const next = !(partnerFundCollapsedById[fund.id] ?? true)
                               setPartnerFundCollapsedById((prev) => ({ ...prev, [fund.id]: next }))
@@ -8770,28 +8602,27 @@ function App() {
                                 runPartnerFundBacktest(fund.id, fund.root)
                               }
                             }}
-                            style={{ padding: '6px 10px' }}
                           >
                             {collapsed ? 'Expand' : 'Collapse'}
-                          </button>
-                          <div style={{ fontWeight: 900 }}>{fund.name}</div>
-                          <div style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 12, fontWeight: 800 }}>
+                          </Button>
+                          <div className="font-black">{fund.name}</div>
+                          <div className="ml-auto text-muted text-xs font-extrabold">
                             Placeholder: Partner Program fund
                           </div>
                         </div>
 
                         {!collapsed ? (
-                          <div style={{ display: 'grid', gap: 12 }}>
+                          <div className="grid gap-3">
                             {state?.status === 'loading' ? (
-                              <div style={{ color: '#64748b' }}>Running backtest…</div>
+                              <div className="text-muted">Running backtest…</div>
                             ) : state?.status === 'error' ? (
-                              <div style={{ display: 'grid', gap: 8 }}>
-                                <div style={{ color: '#b91c1c', fontWeight: 800 }}>{state.error ?? 'Failed to run backtest.'}</div>
-                                <button onClick={() => runPartnerFundBacktest(fund.id, fund.root)}>Retry</button>
+                              <div className="grid gap-2">
+                                <div className="text-danger font-extrabold">{state.error ?? 'Failed to run backtest.'}</div>
+                                <Button onClick={() => runPartnerFundBacktest(fund.id, fund.root)}>Retry</Button>
                               </div>
                             ) : state?.status === 'done' ? (
                               <>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                                <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-2.5">
                                   <div>
                                     <div className="stat-label">CAGR</div>
                                     <div className="stat-value">{formatPct(state.result?.metrics.cagr ?? NaN)}</div>
@@ -8811,7 +8642,7 @@ function App() {
                                     <div className="stat-value">{state.result?.metrics.days ?? '—'}</div>
                                   </div>
                                 </div>
-                                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                                <div className="text-xs text-muted">
                                   Period: {state.result?.metrics.startDate ?? '—'} → {state.result?.metrics.endDate ?? '—'}
                                 </div>
                                 <EquityChart
@@ -8824,7 +8655,7 @@ function App() {
                                 />
                               </>
                             ) : (
-                              <button onClick={() => runPartnerFundBacktest(fund.id, fund.root)}>Run backtest</button>
+                              <Button onClick={() => runPartnerFundBacktest(fund.id, fund.root)}>Run backtest</Button>
                             )}
                           </div>
                         ) : null}
@@ -8833,9 +8664,9 @@ function App() {
                   })}
                 </div>
 
-                <div className="saved-item" style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ fontWeight: 900 }}>T-Bill Zone</div>
-                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                <div className="saved-item grid gap-2">
+                  <div className="font-black">T-Bill Zone</div>
+                  <ul className="m-0 pl-[18px]">
                     <li>T-Bill Bot</li>
                     <li>Total gains for year</li>
                     <li>Gains for Fund #1</li>
