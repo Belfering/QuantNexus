@@ -767,10 +767,12 @@ h1 {
   border-radius: 14px;
   padding: 10px 12px;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-  display: inline-block;
+  display: flex;
+  flex-direction: column;
   width: max(1000px, fit-content);
   min-width: 1000px;
   max-width: 100%;
+  flex: 1;
 }
 
 .node-card.backtest-error {

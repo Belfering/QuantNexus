@@ -6222,7 +6222,8 @@ function App() {
   const [saveNewWatchlistName, setSaveNewWatchlistName] = useState('')
   const [addToWatchlistBotId, setAddToWatchlistBotId] = useState<string | null>(null)
   const [addToWatchlistNewName, setAddToWatchlistNewName] = useState('')
-  const [callPanelOpen, setCallPanelOpen] = useState(false)
+  const [callbackNodesCollapsed, setCallbackNodesCollapsed] = useState(true)
+  const [customIndicatorsCollapsed, setCustomIndicatorsCollapsed] = useState(true)
   const [communityTopSort, setCommunityTopSort] = useState<CommunitySort>({ key: 'oosCagr', dir: 'desc' })
   const [communityWatchlistSort1, setCommunityWatchlistSort1] = useState<CommunitySort>({ key: 'name', dir: 'asc' })
   const [communityWatchlistSort2, setCommunityWatchlistSort2] = useState<CommunitySort>({ key: 'name', dir: 'asc' })
@@ -7060,7 +7061,8 @@ function App() {
     root.title = 'Call'
     const name = `Call ${callChains.length + 1}`
     setCallChains((prev) => [{ id, name, root, collapsed: false }, ...prev])
-    setCallPanelOpen(true)
+    // Auto-expand Callback Nodes when new call is created
+    setCallbackNodesCollapsed(false)
   }, [callChains.length])
 
   const handleRenameCallChain = useCallback((id: string, name: string) => {
@@ -7297,8 +7299,8 @@ function App() {
   }
 
   return (
-    <div className={cn('min-h-screen bg-bg text-text font-sans', theme === 'dark' && 'dark')}>
-      <header className="flex items-center justify-between px-4 py-3.5 border-b border-border bg-surface sticky top-0 z-10">
+    <div className={cn('h-screen flex flex-col bg-bg text-text font-sans', theme === 'dark' && 'dark')}>
+      <header className="flex items-center justify-between px-4 py-3.5 border-b border-border bg-surface shrink-0 z-10">
         <div>
           <div className="text-xs tracking-widest uppercase text-muted mb-1">System</div>
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -7467,271 +7469,267 @@ function App() {
         </Alert>
       )}
       <TickerDatalist id={TICKER_DATALIST_ID} options={tickerOptions} />
-      <main className="p-4">
+      <main className="flex-1 overflow-hidden min-h-0">
         {tab === 'Build' ? (
-          <div className="build-layout">
-            <BacktesterPanel
-              mode={backtestMode}
-              setMode={setBacktestMode}
-              costBps={backtestCostBps}
-              setCostBps={setBacktestCostBps}
-              benchmark={backtestBenchmark}
-              setBenchmark={setBacktestBenchmark}
-              showBenchmark={backtestShowBenchmark}
-              setShowBenchmark={setBacktestShowBenchmark}
-              tickerOptions={tickerOptions}
-              status={backtestStatus}
-              result={backtestResult}
-              errors={backtestErrors}
-              onRun={handleRunBacktest}
-               onJumpToError={handleJumpToBacktestError}
-             />
-            <div
-              className="build-code-zone-scroll"
-              onWheel={(e) => {
-                if (!e.shiftKey) return
-                e.preventDefault()
-                e.currentTarget.scrollLeft += e.deltaY
-              }}
-              title="Tip: hold Shift and use mouse wheel to scroll horizontally"
-            >
-              <div className="relative">
-                <div className="absolute top-0 right-0 bottom-0 z-[4] pointer-events-none">
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      right: 0,
-                      width: 56,
-                      bottom: 0,
-                      background: 'var(--surface)',
-                      border: '1px solid var(--border)',
-                      borderLeft: callPanelOpen ? 'none' : '1px solid var(--border)',
-                      borderRadius: callPanelOpen ? '0 14px 14px 0' : '14px',
-                      boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
-                      overflow: 'hidden',
-                      zIndex: 2,
-                      pointerEvents: 'auto',
-                    }}
-                  >
-                    <button
-                      onClick={() => setCallPanelOpen((v) => !v)}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        border: 'none',
-                        borderRadius: 0,
-                        background: 'var(--surface)',
-                        color: 'var(--text)',
-                        fontWeight: 900,
-                        writingMode: 'vertical-rl',
-                        textOrientation: 'mixed',
-                        letterSpacing: '0.08em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                      title={callPanelOpen ? 'Collapse call node zone' : 'Open call node zone'}
-                    >
-                      <div className="pointer-events-none">Callback Node Zone</div>
-                    </button>
-                  </div>
+          <Card className="h-full flex flex-col overflow-hidden m-4">
+            <CardContent className="flex-1 flex flex-col gap-4 p-4 overflow-hidden min-h-0">
+              {/* Top Zone - Backtester */}
+              <div className="shrink-0 border-b border-border pb-4">
+                <BacktesterPanel
+                  mode={backtestMode}
+                  setMode={setBacktestMode}
+                  costBps={backtestCostBps}
+                  setCostBps={setBacktestCostBps}
+                  benchmark={backtestBenchmark}
+                  setBenchmark={setBacktestBenchmark}
+                  showBenchmark={backtestShowBenchmark}
+                  setShowBenchmark={setBacktestShowBenchmark}
+                  tickerOptions={tickerOptions}
+                  status={backtestStatus}
+                  result={backtestResult}
+                  errors={backtestErrors}
+                  onRun={handleRunBacktest}
+                  onJumpToError={handleJumpToBacktestError}
+                />
+              </div>
 
-                  {callPanelOpen ? (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 56,
-                        width: 'min(90vw, 1400px)',
-                        bottom: 0,
-                        background: 'var(--surface)',
-                        border: '1px solid var(--border)',
-                        borderRight: 'none',
-                        borderRadius: '14px 0 0 14px',
-                        boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
-                        padding: 12,
-                        overflow: 'auto',
-                        zIndex: 1,
-                        pointerEvents: 'auto',
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-black">Calls</div>
-                        <Button variant="ghost" size="sm" onClick={() => setCallPanelOpen(false)} title="Collapse">
-                          Collapse
-                        </Button>
-                      </div>
-                      <div className="flex gap-2 mt-2.5">
-                        <Button onClick={handleAddCallChain}>Make new Call</Button>
-                      </div>
-                      <div className="grid gap-2.5 mt-2.5">
-                        {callChains.length === 0 ? (
-                          <div className="text-muted">No call chains yet.</div>
-                        ) : (
-                          callChains.map((c) => (
-                            <Card key={c.id}>
-                              <div className="flex gap-2 items-center">
-                                <Input value={c.name} onChange={(e) => handleRenameCallChain(c.id, e.target.value)} className="flex-1" />
-                                <Button variant="ghost" size="sm" onClick={() => handleToggleCallChainCollapse(c.id)}>
-                                  {c.collapsed ? 'Expand' : 'Collapse'}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={async () => {
-                                    try {
-                                      await navigator.clipboard.writeText(c.id)
-                                    } catch {
-                                      // ignore
-                                    }
-                                  }}
-                                  title="Copy call ID"
-                                >
-                                  Copy ID
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => {
-                                    if (!confirm(`Delete call chain "${c.name}"?`)) return
-                                    handleDeleteCallChain(c.id)
-                                  }}
-                                  title="Delete call chain"
-                                >
-                                  X
-                                </Button>
-                              </div>
-                              <div className="text-xs text-muted mt-1.5">ID: {c.id}</div>
-                              {!c.collapsed ? (
-                                <div className="mt-2.5">
-                                  <NodeCard
-                                    node={c.root}
-                                    depth={0}
-                                    tickerOptions={tickerOptions}
-                                    onAdd={(parentId, slot, index, kind) => {
-                                      const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(createNode(kind)))
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onAppend={(parentId, slot) => {
-                                      const next = appendPlaceholder(c.root, parentId, slot)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onRemoveSlotEntry={(parentId, slot, index) => {
-                                      const next = removeSlotEntry(c.root, parentId, slot, index)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onDelete={(id) => {
-                                      const next = deleteNode(c.root, id)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onCopy={(id) => {
-                                      const found = findNode(c.root, id)
-                                      if (!found) return
-                                      setClipboard(cloneNode(found))
-                                    }}
-                                    onPaste={(parentId, slot, index, child) => {
-                                      const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(regenerateIds(cloneNode(child))))
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onRename={(id, title) => {
-                                      const next = updateTitle(c.root, id, title)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onWeightChange={(id, weight, branch) => {
-                                      const next = updateWeight(c.root, id, weight, branch)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onUpdateCappedFallback={(id, choice, branch) => {
-                                      const next = updateCappedFallback(c.root, id, choice, branch)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onUpdateVolWindow={(id, days, branch) => {
-                                      const next = updateVolWindow(c.root, id, days, branch)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onColorChange={(id, color) => {
-                                      const next = updateColor(c.root, id, color)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onToggleCollapse={(id, collapsed) => {
-                                      const next = updateCollapse(c.root, id, collapsed)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onNumberedQuantifier={(id, quantifier) => {
-                                      const next = updateNumberedQuantifier(c.root, id, quantifier)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onNumberedN={(id, n) => {
-                                      const next = updateNumberedN(c.root, id, n)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onAddNumberedItem={(id) => {
-                                      const next = addNumberedItem(c.root, id)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onDeleteNumberedItem={(id, itemId) => {
-                                      const next = deleteNumberedItem(c.root, id, itemId)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onAddCondition={(id, type, itemId) => {
-                                      const next = addConditionLine(c.root, id, type, itemId)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onDeleteCondition={(id, condId, itemId) => {
-                                      const next = deleteConditionLine(c.root, id, condId, itemId)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onFunctionWindow={(id, value) => {
-                                      const next = updateFunctionWindow(c.root, id, value)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onFunctionBottom={(id, value) => {
-                                      const next = updateFunctionBottom(c.root, id, value)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onFunctionMetric={(id, metric) => {
-                                      const next = updateFunctionMetric(c.root, id, metric)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onFunctionRank={(id, rank) => {
-                                      const next = updateFunctionRank(c.root, id, rank)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onUpdateCondition={(id, condId, updates, itemId) => {
-                                      const next = updateConditionFields(c.root, id, condId, updates, itemId)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onAddPosition={(id) => {
-                                      const next = addPositionRow(c.root, id)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onRemovePosition={(id, index) => {
-                                      const next = removePositionRow(c.root, id, index)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    onChoosePosition={(id, index, choice) => {
-                                      const next = choosePosition(c.root, id, index, choice)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                    clipboard={clipboard}
-                                    callChains={callChains}
-                                    onUpdateCallRef={(id, callId) => {
-                                      const next = updateCallReference(c.root, id, callId)
-                                      pushCallChain(c.id, next)
-                                    }}
-                                  />
-                                </div>
-                              ) : null}
-                            </Card>
-                          ))
-                        )}
+              {/* Bottom Row - 2 Zones Side by Side */}
+              <div className="flex gap-4 flex-1 min-h-0">
+                {/* Bottom Left Zone - Wrapper with Labels and Content */}
+                <div className={`flex border border-border rounded-lg bg-card overflow-hidden transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'w-auto' : 'w-1/2'}`}>
+                  {/* Left Side - Labels and Buttons (2 zones stacked) */}
+                  <div className="flex flex-col w-auto border-r border-border">
+                    {/* Callback Nodes Label/Button Zone */}
+                    <div className="flex-1 flex flex-col items-center border-b border-border">
+                      <button
+                        onClick={() => setCallbackNodesCollapsed(!callbackNodesCollapsed)}
+                        className="px-2 py-2 hover:bg-accent/10 transition-colors border-b border-border"
+                        title={callbackNodesCollapsed ? 'Expand' : 'Collapse'}
+                      >
+                        <div className="text-xs font-bold" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
+                          {callbackNodesCollapsed ? 'Expand' : 'Collapse'}
+                        </div>
+                      </button>
+                      <div className="flex-1 flex items-center justify-center px-2">
+                        <div className="font-black text-lg tracking-wide" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
+                          Callback Nodes
+                        </div>
                       </div>
                     </div>
-                  ) : null}
+
+                    {/* Custom Indicators Label/Button Zone */}
+                    <div className="flex-1 flex flex-col items-center">
+                      <button
+                        onClick={() => setCustomIndicatorsCollapsed(!customIndicatorsCollapsed)}
+                        className="px-2 py-2 hover:bg-accent/10 transition-colors border-b border-border"
+                        title={customIndicatorsCollapsed ? 'Expand' : 'Collapse'}
+                      >
+                        <div className="text-xs font-bold" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
+                          {customIndicatorsCollapsed ? 'Expand' : 'Collapse'}
+                        </div>
+                      </button>
+                      <div className="flex-1 flex items-center justify-center px-2">
+                        <div className="font-black text-lg tracking-wide" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
+                          Custom Indicators
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Side - Content Area (dynamic based on expanded state) */}
+                  <div
+                    className="flex-1 grid overflow-hidden"
+                    style={{
+                      gridTemplateRows:
+                        callbackNodesCollapsed && customIndicatorsCollapsed ? '0fr 0fr' :
+                        callbackNodesCollapsed && !customIndicatorsCollapsed ? '0fr 1fr' :
+                        !callbackNodesCollapsed && customIndicatorsCollapsed ? '1fr 0fr' :
+                        '1fr 1fr'
+                    }}
+                  >
+                    {/* Callback Nodes Content */}
+                    {!callbackNodesCollapsed && (
+                      <div className="overflow-auto p-4 border-b border-border">
+                      <div className="flex gap-2 mb-4">
+                        <Button onClick={handleAddCallChain}>Make new Call</Button>
+                      </div>
+                      <div className="grid gap-2.5">
+                    {callChains.length === 0 ? (
+                      <div className="text-muted">No call chains yet.</div>
+                    ) : (
+                      callChains.map((c) => (
+                        <Card key={c.id}>
+                          <div className="flex gap-2 items-center">
+                            <Input value={c.name} onChange={(e) => handleRenameCallChain(c.id, e.target.value)} className="flex-1" />
+                            <Button variant="ghost" size="sm" onClick={() => handleToggleCallChainCollapse(c.id)}>
+                              {c.collapsed ? 'Expand' : 'Collapse'}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(c.id)
+                                } catch {
+                                  // ignore
+                                }
+                              }}
+                              title="Copy call ID"
+                            >
+                              Copy ID
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                if (!confirm(`Delete call chain "${c.name}"?`)) return
+                                handleDeleteCallChain(c.id)
+                              }}
+                              title="Delete call chain"
+                            >
+                              X
+                            </Button>
+                          </div>
+                          <div className="text-xs text-muted mt-1.5">ID: {c.id}</div>
+                          {!c.collapsed ? (
+                            <div className="mt-2.5">
+                              <NodeCard
+                                node={c.root}
+                                depth={0}
+                                tickerOptions={tickerOptions}
+                                onAdd={(parentId, slot, index, kind) => {
+                                  const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(createNode(kind)))
+                                  pushCallChain(c.id, next)
+                                }}
+                                onAppend={(parentId, slot) => {
+                                  const next = appendPlaceholder(c.root, parentId, slot)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onRemoveSlotEntry={(parentId, slot, index) => {
+                                  const next = removeSlotEntry(c.root, parentId, slot, index)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onDelete={(id) => {
+                                  const next = deleteNode(c.root, id)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onCopy={(id) => {
+                                  const found = findNode(c.root, id)
+                                  if (!found) return
+                                  setClipboard(cloneNode(found))
+                                }}
+                                onPaste={(parentId, slot, index, child) => {
+                                  const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(regenerateIds(cloneNode(child))))
+                                  pushCallChain(c.id, next)
+                                }}
+                                onRename={(id, title) => {
+                                  const next = updateTitle(c.root, id, title)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onWeightChange={(id, weight, branch) => {
+                                  const next = updateWeight(c.root, id, weight, branch)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onUpdateCappedFallback={(id, choice, branch) => {
+                                  const next = updateCappedFallback(c.root, id, choice, branch)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onUpdateVolWindow={(id, days, branch) => {
+                                  const next = updateVolWindow(c.root, id, days, branch)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onColorChange={(id, color) => {
+                                  const next = updateColor(c.root, id, color)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onToggleCollapse={(id, collapsed) => {
+                                  const next = updateCollapse(c.root, id, collapsed)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onNumberedQuantifier={(id, quantifier) => {
+                                  const next = updateNumberedQuantifier(c.root, id, quantifier)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onNumberedN={(id, n) => {
+                                  const next = updateNumberedN(c.root, id, n)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onAddNumberedItem={(id) => {
+                                  const next = addNumberedItem(c.root, id)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onDeleteNumberedItem={(id, itemId) => {
+                                  const next = deleteNumberedItem(c.root, id, itemId)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onAddCondition={(id, type, itemId) => {
+                                  const next = addConditionLine(c.root, id, type, itemId)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onDeleteCondition={(id, condId, itemId) => {
+                                  const next = deleteConditionLine(c.root, id, condId, itemId)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onFunctionWindow={(id, value) => {
+                                  const next = updateFunctionWindow(c.root, id, value)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onFunctionBottom={(id, value) => {
+                                  const next = updateFunctionBottom(c.root, id, value)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onFunctionMetric={(id, metric) => {
+                                  const next = updateFunctionMetric(c.root, id, metric)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onFunctionRank={(id, rank) => {
+                                  const next = updateFunctionRank(c.root, id, rank)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onUpdateCondition={(id, condId, updates, itemId) => {
+                                  const next = updateConditionFields(c.root, id, condId, updates, itemId)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onAddPosition={(id) => {
+                                  const next = addPositionRow(c.root, id)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onRemovePosition={(id, index) => {
+                                  const next = removePositionRow(c.root, id, index)
+                                  pushCallChain(c.id, next)
+                                }}
+                                onChoosePosition={(id, index, choice) => {
+                                  const next = choosePosition(c.root, id, index, choice)
+                                  pushCallChain(c.id, next)
+                                }}
+                                clipboard={clipboard}
+                                callChains={callChains}
+                                onUpdateCallRef={(id, callId) => {
+                                  const next = updateCallReference(c.root, id, callId)
+                                  pushCallChain(c.id, next)
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                        </Card>
+                      ))
+                    )}
+                      </div>
+                      </div>
+                    )}
+
+                    {/* Custom Indicators Content */}
+                    {!customIndicatorsCollapsed && (
+                      <div className="overflow-auto p-4">
+                        <div className="text-muted text-sm">Coming soon...</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="overflow-auto">
+                {/* Bottom Right Zone - Flow Tree Builder */}
+                <div className={`flex flex-col overflow-auto border border-border rounded-lg bg-card p-4 transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
+                  <div className="flex-1 flex flex-col min-h-0">
                   <NodeCard
                     node={current}
                     depth={0}
@@ -7771,10 +7769,11 @@ function App() {
                     callChains={callChains}
                     onUpdateCallRef={handleUpdateCallRef}
                   />
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         ) : tab === 'Admin' ? (
           <AdminPanel
             adminTab={adminTab}
