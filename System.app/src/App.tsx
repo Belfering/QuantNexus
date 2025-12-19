@@ -5401,12 +5401,14 @@ const computeBacktestSummary = (points: EquityPoint[], drawdowns: number[], days
   const dailyStd = Math.sqrt(Math.max(0, variance))
   const vol = dailyStd * Math.sqrt(252)
 
-  // Sortino: uses downside deviation (only negative returns)
-  const negativeReturns = returns.filter((r) => r < 0)
-  const downsideVariance =
-    negativeReturns.length > 1 ? negativeReturns.reduce((a, b) => a + b ** 2, 0) / (negativeReturns.length - 1) : 0
+  // Sortino: uses downside deviation (squared negative returns relative to 0)
+  // Calculate downside deviation using all returns, but only penalizing negative ones
+  const downsideSquaredSum = returns.reduce((sum, r) => sum + (r < 0 ? r * r : 0), 0)
+  const downsideVariance = returns.length > 1 ? downsideSquaredSum / (returns.length - 1) : 0
   const downsideStd = Math.sqrt(Math.max(0, downsideVariance))
-  const sortino = downsideStd > 0 ? (Math.sqrt(252) * mean) / downsideStd : 0
+  const annualizedDownsideStd = downsideStd * Math.sqrt(252)
+  const annualizedMean = mean * 252
+  const sortino = annualizedDownsideStd > 0 ? annualizedMean / annualizedDownsideStd : 0
 
   const winRate = returns.length ? returns.filter((r) => r > 0).length / returns.length : 0
   const bestDay = returns.length ? Math.max(...returns) : 0
@@ -5971,7 +5973,7 @@ function BacktesterPanel({
                 <div className="text-sm font-black">{formatPct(result.metrics.avgTurnover)}</div>
               </Card>
               <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Holdings</div>
+                <div className="text-[10px] font-bold text-muted">Avg # Holdings</div>
                 <div className="text-sm font-black">{result.metrics.avgHoldings.toFixed(2)}</div>
               </Card>
             </div>
