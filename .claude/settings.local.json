@@ -14,7 +14,19 @@
       "Bash(npm install:*)",
       "Bash(npx tailwindcss:*)",
       "Bash(ls:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:full:*)",
+      "Bash(cat:*)",
+      "Bash(git checkout:*)",
+      "Bash(timeout /t 3)",
+      "Bash(npm run api:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout /t 2)",
+      "Bash(C:/Python313/python.exe:*)"
     ]
   }
 }

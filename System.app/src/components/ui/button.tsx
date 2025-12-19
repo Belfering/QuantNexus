@@ -16,7 +16,7 @@ const buttonVariants = cva(
         secondary:
           "bg-slate-200 border border-slate-300 text-slate-900 hover:bg-slate-300 shadow-sm dark:bg-slate-600 dark:border-slate-500 dark:text-slate-100 dark:hover:bg-slate-500",
         ghost:
-          "hover:bg-slate-100 text-slate-900 dark:hover:bg-slate-800 dark:text-slate-100",
+          "border border-slate-300 hover:bg-slate-100 text-slate-900 dark:border-slate-600 dark:hover:bg-slate-800 dark:text-slate-100",
         link:
           "text-blue-600 underline-offset-4 hover:underline bg-transparent border-none p-0 dark:text-blue-400",
         accent:

@@ -7682,7 +7682,7 @@ function App() {
           <Card className="h-full flex flex-col overflow-hidden m-4">
             <CardContent className="flex-1 flex flex-col gap-4 p-4 overflow-auto min-h-0">
               {/* Top Zone - Backtester */}
-              <div className="shrink-0 border-b border-border pb-4 max-h-[40vh] overflow-auto">
+              <div className="shrink-0 border-b border-border pb-4">
                 <BacktesterPanel
                   mode={backtestMode}
                   setMode={setBacktestMode}
@@ -7702,41 +7702,41 @@ function App() {
               </div>
 
               {/* Bottom Row - 2 Zones Side by Side */}
-              <div className="flex gap-4 flex-1 min-h-0">
-                {/* Bottom Left Zone - Wrapper with Labels and Content */}
-                <div className={`flex border border-border rounded-lg bg-card overflow-hidden transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'w-auto' : 'w-1/2'}`}>
-                  {/* Left Side - Labels and Buttons (2 zones stacked) */}
-                  <div className="flex flex-col w-auto border-r border-border">
-                    {/* Callback Nodes Label/Button Zone */}
-                    <div className="flex-1 flex flex-col items-center border-b border-border">
+              <div className="flex gap-4">
+                {/* Bottom Left Zone - Sticky Labels + Content */}
+                <div className={`flex items-start transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'w-auto' : 'w-1/2'}`}>
+                  {/* Left Side - Labels and Buttons (sticky, fills visible height, split 50/50) */}
+                  <div className="flex flex-col w-auto border border-border rounded-l-lg bg-card sticky top-4 z-10" style={{ height: 'calc(100vh - 240px)' }}>
+                    {/* Callback Nodes Label/Button Zone - takes 50% */}
+                    <div className="flex-1 flex flex-col items-center justify-center border-b border-border">
                       <button
                         onClick={() => setCallbackNodesCollapsed(!callbackNodesCollapsed)}
-                        className="px-2 py-2 hover:bg-accent/10 transition-colors border-b border-border"
+                        className="px-2 py-2 hover:bg-accent/10 transition-colors rounded"
                         title={callbackNodesCollapsed ? 'Expand' : 'Collapse'}
                       >
                         <div className="text-xs font-bold" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
                           {callbackNodesCollapsed ? 'Expand' : 'Collapse'}
                         </div>
                       </button>
-                      <div className="flex-1 flex items-center justify-center px-2">
+                      <div className="px-2 py-2">
                         <div className="font-black text-lg tracking-wide" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
                           Callback Nodes
                         </div>
                       </div>
                     </div>
 
-                    {/* Custom Indicators Label/Button Zone */}
-                    <div className="flex-1 flex flex-col items-center">
+                    {/* Custom Indicators Label/Button Zone - takes 50% */}
+                    <div className="flex-1 flex flex-col items-center justify-center">
                       <button
                         onClick={() => setCustomIndicatorsCollapsed(!customIndicatorsCollapsed)}
-                        className="px-2 py-2 hover:bg-accent/10 transition-colors border-b border-border"
+                        className="px-2 py-2 hover:bg-accent/10 transition-colors rounded"
                         title={customIndicatorsCollapsed ? 'Expand' : 'Collapse'}
                       >
                         <div className="text-xs font-bold" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
                           {customIndicatorsCollapsed ? 'Expand' : 'Collapse'}
                         </div>
                       </button>
-                      <div className="flex-1 flex items-center justify-center px-2">
+                      <div className="px-2 py-2">
                         <div className="font-black text-lg tracking-wide" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
                           Custom Indicators
                         </div>
@@ -7746,7 +7746,7 @@ function App() {
 
                   {/* Right Side - Content Area (dynamic based on expanded state) */}
                   <div
-                    className="flex-1 grid overflow-hidden"
+                    className="flex-1 grid overflow-hidden border border-l-0 border-border rounded-r-lg bg-card"
                     style={{
                       gridTemplateRows:
                         callbackNodesCollapsed && customIndicatorsCollapsed ? '0fr 0fr' :
@@ -7936,7 +7936,7 @@ function App() {
                 </div>
 
                 {/* Bottom Right Zone - Flow Tree Builder */}
-                <div className={`flex flex-col overflow-auto border border-border rounded-lg bg-card p-4 transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
+                <div className={`flex flex-col border border-border rounded-lg bg-card p-4 transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
                   <div className="flex-1 flex flex-col min-h-0">
                   <NodeCard
                     node={current}
