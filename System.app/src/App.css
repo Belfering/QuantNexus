@@ -6,9 +6,10 @@
   --muted: #64748b;
   --border: #cbd5e1;
   --border-soft: #e5e7eb;
-  --accent-bg: #e0f2fe;
-  --accent-border: #bae6fd;
-  --accent-text: #075985;
+  --accent: #3b82f6;
+  --accent-bg: #eff6ff;
+  --accent-border: #bfdbfe;
+  --accent-text: #1d4ed8;
   --danger: #b91c1c;
   --success: #15803d;
 
@@ -18,6 +19,87 @@
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
+/* Slate (Default) - Light */
+.app.theme-slate {
+  --accent: #3b82f6;
+  --accent-bg: #eff6ff;
+  --accent-border: #bfdbfe;
+  --accent-text: #1d4ed8;
+}
+
+/* Ocean - Light */
+.app.theme-ocean {
+  --accent: #0ea5e9;
+  --accent-bg: #e0f2fe;
+  --accent-border: #bae6fd;
+  --accent-text: #0369a1;
+}
+
+/* Emerald - Light */
+.app.theme-emerald {
+  --accent: #10b981;
+  --accent-bg: #ecfdf5;
+  --accent-border: #a7f3d0;
+  --accent-text: #047857;
+}
+
+/* Violet - Light */
+.app.theme-violet {
+  --accent: #8b5cf6;
+  --accent-bg: #f5f3ff;
+  --accent-border: #ddd6fe;
+  --accent-text: #6d28d9;
+}
+
+/* Rose - Light */
+.app.theme-rose {
+  --accent: #f43f5e;
+  --accent-bg: #fff1f2;
+  --accent-border: #fecdd3;
+  --accent-text: #be123c;
+}
+
+/* Amber - Light */
+.app.theme-amber {
+  --accent: #f59e0b;
+  --accent-bg: #fffbeb;
+  --accent-border: #fde68a;
+  --accent-text: #b45309;
+}
+
+/* Cyan - Light */
+.app.theme-cyan {
+  --accent: #06b6d4;
+  --accent-bg: #ecfeff;
+  --accent-border: #a5f3fc;
+  --accent-text: #0e7490;
+}
+
+/* Indigo - Light */
+.app.theme-indigo {
+  --accent: #6366f1;
+  --accent-bg: #eef2ff;
+  --accent-border: #c7d2fe;
+  --accent-text: #4338ca;
+}
+
+/* Lime - Light */
+.app.theme-lime {
+  --accent: #84cc16;
+  --accent-bg: #f7fee7;
+  --accent-border: #d9f99d;
+  --accent-text: #4d7c0f;
+}
+
+/* Fuchsia - Light */
+.app.theme-fuchsia {
+  --accent: #d946ef;
+  --accent-bg: #fdf4ff;
+  --accent-border: #f5d0fe;
+  --accent-text: #a21caf;
+}
+
+/* Dark mode base */
 .app.theme-dark {
   --bg: #0b1220;
   --surface: #0f172a;
@@ -26,11 +108,110 @@
   --muted: #9ca3af;
   --border: #24324a;
   --border-soft: #24324a;
-  --accent-bg: rgba(14, 165, 233, 0.16);
-  --accent-border: rgba(14, 165, 233, 0.35);
-  --accent-text: #7dd3fc;
   --danger: #f87171;
   --success: #34d399;
+}
+
+/* Slate - Dark */
+.app.theme-dark.theme-slate {
+  --accent: #60a5fa;
+  --accent-bg: rgba(59, 130, 246, 0.15);
+  --accent-border: rgba(59, 130, 246, 0.35);
+  --accent-text: #93c5fd;
+}
+
+/* Ocean - Dark */
+.app.theme-dark.theme-ocean {
+  --accent: #38bdf8;
+  --accent-bg: rgba(14, 165, 233, 0.15);
+  --accent-border: rgba(14, 165, 233, 0.35);
+  --accent-text: #7dd3fc;
+}
+
+/* Emerald - Dark */
+.app.theme-dark.theme-emerald {
+  --accent: #34d399;
+  --accent-bg: rgba(16, 185, 129, 0.15);
+  --accent-border: rgba(16, 185, 129, 0.35);
+  --accent-text: #6ee7b7;
+}
+
+/* Violet - Dark */
+.app.theme-dark.theme-violet {
+  --accent: #a78bfa;
+  --accent-bg: rgba(139, 92, 246, 0.15);
+  --accent-border: rgba(139, 92, 246, 0.35);
+  --accent-text: #c4b5fd;
+}
+
+/* Rose - Dark */
+.app.theme-dark.theme-rose {
+  --accent: #fb7185;
+  --accent-bg: rgba(244, 63, 94, 0.15);
+  --accent-border: rgba(244, 63, 94, 0.35);
+  --accent-text: #fda4af;
+}
+
+/* Amber - Dark */
+.app.theme-dark.theme-amber {
+  --accent: #fbbf24;
+  --accent-bg: rgba(245, 158, 11, 0.15);
+  --accent-border: rgba(245, 158, 11, 0.35);
+  --accent-text: #fcd34d;
+}
+
+/* Cyan - Dark */
+.app.theme-dark.theme-cyan {
+  --accent: #22d3ee;
+  --accent-bg: rgba(6, 182, 212, 0.15);
+  --accent-border: rgba(6, 182, 212, 0.35);
+  --accent-text: #67e8f9;
+}
+
+/* Indigo - Dark */
+.app.theme-dark.theme-indigo {
+  --accent: #818cf8;
+  --accent-bg: rgba(99, 102, 241, 0.15);
+  --accent-border: rgba(99, 102, 241, 0.35);
+  --accent-text: #a5b4fc;
+}
+
+/* Lime - Dark */
+.app.theme-dark.theme-lime {
+  --accent: #a3e635;
+  --accent-bg: rgba(132, 204, 22, 0.15);
+  --accent-border: rgba(132, 204, 22, 0.35);
+  --accent-text: #bef264;
+}
+
+/* Fuchsia - Dark */
+.app.theme-dark.theme-fuchsia {
+  --accent: #e879f9;
+  --accent-bg: rgba(217, 70, 239, 0.15);
+  --accent-border: rgba(217, 70, 239, 0.35);
+  --accent-text: #f0abfc;
+}
+
+/* Accent button that uses theme color */
+.btn-accent {
+  background-color: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: white !important;
+}
+
+.btn-accent:hover {
+  filter: brightness(1.1);
+}
+
+.app.theme-dark .btn-accent {
+  color: #0f172a !important;
+}
+
+/* Active tab styling using theme accent */
+.tab-btn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
 }
 
 .app-header {
@@ -307,9 +488,9 @@ h1 {
 }
 
 .backtester-message {
-  border: 1px solid #bae6fd;
-  background: #e0f2fe;
-  color: #075985;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent-text);
   border-radius: 12px;
   padding: 10px 12px;
   font-weight: 800;
@@ -405,9 +586,9 @@ h1 {
 }
 
 .chart-presets button.active {
-  border-color: #38bdf8;
-  background: #e0f2fe;
-  color: #075985;
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent-text);
 }
 
 .drawdown-wrap {
@@ -507,8 +688,8 @@ h1 {
   position: absolute;
   top: 0;
   bottom: 0;
-  border: 2px solid #38bdf8;
-  background: rgba(14, 165, 233, 0.06);
+  border: 2px solid var(--accent);
+  background: var(--accent-bg);
   border-radius: 12px;
   cursor: grab;
 }
@@ -522,7 +703,8 @@ h1 {
   top: 0;
   bottom: 0;
   width: 14px;
-  background: rgba(56, 189, 248, 0.7);
+  background: var(--accent);
+  opacity: 0.7;
 }
 
 .navigator-handle.left {
@@ -889,9 +1071,9 @@ h1 {
 }
 
 .chip.tag {
-  background: #e0f2fe;
-  border-color: #bae6fd;
-  color: #075985;
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
   font-weight: 700;
 }
 
@@ -1228,10 +1410,10 @@ select {
   align-items: center;
   border-radius: 999px;
   padding: 2px 10px;
-  background: #eff6ff;
+  background: var(--accent-bg);
   font-size: 12px;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text);
 }
 
 .bot-tag.muted {

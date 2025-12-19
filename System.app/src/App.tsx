@@ -63,6 +63,20 @@ type WeightMode = 'equal' | 'defined' | 'inverse' | 'pro' | 'capped'
 
 type UserId = '1' | '9'
 type ThemeMode = 'light' | 'dark'
+type ColorTheme = 'slate' | 'ocean' | 'emerald' | 'violet' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'lime' | 'fuchsia'
+
+const COLOR_THEMES: { id: ColorTheme; name: string; accent: string }[] = [
+  { id: 'slate', name: 'Slate', accent: '#3b82f6' },
+  { id: 'ocean', name: 'Ocean', accent: '#0ea5e9' },
+  { id: 'emerald', name: 'Emerald', accent: '#10b981' },
+  { id: 'violet', name: 'Violet', accent: '#8b5cf6' },
+  { id: 'rose', name: 'Rose', accent: '#f43f5e' },
+  { id: 'amber', name: 'Amber', accent: '#f59e0b' },
+  { id: 'cyan', name: 'Cyan', accent: '#06b6d4' },
+  { id: 'indigo', name: 'Indigo', accent: '#6366f1' },
+  { id: 'lime', name: 'Lime', accent: '#84cc16' },
+  { id: 'fuchsia', name: 'Fuchsia', accent: '#d946ef' },
+]
 
 type ConditionLine = {
   id: string
@@ -182,6 +196,7 @@ const newKeyId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 8
 
 const defaultUiState = (): UserUiState => ({
   theme: loadInitialThemeMode(),
+  colorTheme: 'slate',
   analyzeCollapsedByBotId: {},
   analyzeFilterWatchlistId: null,
   communitySelectedWatchlistId: null,
@@ -413,6 +428,7 @@ type PortfolioSnapshot = {
 
 type UserUiState = {
   theme: ThemeMode
+  colorTheme: ColorTheme
   analyzeCollapsedByBotId: Record<string, boolean>
   analyzeFilterWatchlistId: string | null
   communitySelectedWatchlistId: string | null
@@ -7712,29 +7728,43 @@ function App() {
     setAddToWatchlistBotId(null)
   }
 
+  const colorTheme = uiState.colorTheme ?? 'slate'
+
   if (!userId) {
     return (
-      <div className={cn('min-h-screen bg-bg text-text font-sans', theme === 'dark' && 'dark')}>
+      <div className={cn('app min-h-screen bg-bg text-text font-sans', `theme-${colorTheme}`, theme === 'dark' && 'theme-dark dark')}>
         <LoginScreen onLogin={handleLogin} />
       </div>
     )
   }
 
   return (
-    <div className={cn('h-screen flex flex-col bg-bg text-text font-sans', theme === 'dark' && 'dark')}>
+    <div className={cn('app h-screen flex flex-col bg-bg text-text font-sans', `theme-${colorTheme}`, theme === 'dark' && 'theme-dark dark')}>
       <header className="flex items-center justify-between px-4 py-3.5 border-b border-border bg-surface shrink-0 z-10">
         <div>
           <div className="text-xs tracking-widest uppercase text-muted mb-1">System</div>
           <div className="flex items-center gap-2.5 flex-wrap">
             <h1 className="m-0 text-2xl font-extrabold tracking-tight mr-1">System.app</h1>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setUiState((prev) => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
-              title="Toggle light/dark mode"
-            >
-              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Select
+                className="h-8 text-xs"
+                value={colorTheme}
+                onChange={(e) => setUiState((prev) => ({ ...prev, colorTheme: e.target.value as ColorTheme }))}
+                title="Select color theme"
+              >
+                {COLOR_THEMES.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </Select>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setUiState((prev) => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
+                title="Toggle light/dark mode"
+              >
+                {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              </Button>
+            </div>
           </div>
           <p className="mt-1.5 mb-0 text-muted text-sm">Click any Node or + to extend with Basic, Function, Indicator, or Position. Paste uses the last copied node.</p>
           <div className="flex gap-2 mt-3">
