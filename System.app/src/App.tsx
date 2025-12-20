@@ -61,7 +61,7 @@ type ComparatorChoice = 'lt' | 'gt'
 
 type WeightMode = 'equal' | 'defined' | 'inverse' | 'pro' | 'capped'
 
-type UserId = '1' | '9'
+type UserId = '1' | '3' | '5' | '7' | '9'
 type ThemeMode = 'light' | 'dark'
 type ColorTheme = 'slate' | 'ocean' | 'emerald' | 'violet' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'lime' | 'fuchsia'
 
@@ -210,11 +210,65 @@ const ensureDefaultWatchlist = (watchlists: Watchlist[]): Watchlist[] => {
   return [{ id: `wl-${newKeyId()}`, name: 'Default', botIds: [] }, ...watchlists]
 }
 
+// First 100 tickers distributed across 5 users (20 each)
+const SEED_TICKERS: Record<UserId, string[]> = {
+  '1': ['SPY', 'QQQ', 'SMH', 'DIA', 'IVV', 'VTI', 'VUG', 'VTV', 'IWF', 'IJH', 'IJR', 'VGT', 'VWO', 'IWM', 'VO', 'GLD', 'XLK', 'RSP', 'VB', 'ITOT'],
+  '3': ['IWD', 'IVW', 'EFA', 'SPLG', 'XLF', 'IWR', 'VV', 'IWB', 'XLV', 'XLE', 'VNQ', 'IVE', 'IAU', 'SPYG', 'VBR', 'SPYV', 'MDY', 'XLY', 'VXF', 'XLI'],
+  '5': ['SDY', 'DVY', 'IUSG', 'VBK', 'IUSV', 'IYW', 'EFV', 'XLU', 'EEM', 'IWP', 'VGK', 'VHT', 'XLP', 'IWV', 'EFG', 'OEF', 'IWS', 'SOXX', 'EWJ', 'IWN'],
+  '7': ['IWO', 'SPMD', 'SPHQ', 'VFH', 'FVD', 'IJK', 'SPTM', 'IGV', 'VDE', 'IJJ', 'FXI', 'PRF', 'IJS', 'XLG', 'ONEQ', 'VDC', 'VPL', 'VPU', 'EZU', 'IBB'],
+  '9': ['IJT', 'VCR', 'IOO', 'XLB', 'VIS', 'IGM', 'EWT', 'IXN', 'IYR', 'PPA', 'VOX', 'SLYV', 'EWY', 'IXJ', 'IYF', 'MDYV', 'EWZ', 'FEZ', 'IYH', 'XMMO'],
+}
+
+const generateSeedData = (userId: UserId): UserData => {
+  const tickers = SEED_TICKERS[userId] || []
+  const savedBots: SavedBot[] = tickers.map((ticker, idx) => ({
+    id: `seed-bot-${ticker}`,
+    name: ticker,
+    builderId: userId,
+    payload: {
+      id: `node-seed-${ticker}-1`,
+      kind: 'basic' as BlockKind,
+      title: ticker,
+      children: {
+        next: [
+          {
+            id: `node-seed-${ticker}-2`,
+            kind: 'position' as BlockKind,
+            title: 'Position',
+            children: {},
+            weighting: 'equal' as WeightMode,
+            collapsed: false,
+            positions: [ticker],
+          },
+        ],
+      },
+      weighting: 'equal' as WeightMode,
+      collapsed: false,
+    },
+    visibility: 'private' as BotVisibility,
+    createdAt: 1700000000000 + idx * 1000,
+  }))
+
+  return {
+    savedBots,
+    watchlists: [
+      {
+        id: `default-watchlist-${userId}`,
+        name: 'Default',
+        botIds: savedBots.map((b) => b.id),
+      },
+    ],
+    callChains: [],
+    ui: defaultUiState(),
+  }
+}
+
 const loadUserData = (userId: UserId): UserData => {
   try {
     const raw = localStorage.getItem(userDataKey(userId))
     if (!raw) {
-      return { savedBots: [], watchlists: ensureDefaultWatchlist([]), callChains: [], ui: defaultUiState() }
+      // No localStorage data - return seed data for this user
+      return generateSeedData(userId)
     }
     const parsed = JSON.parse(raw) as Partial<UserData>
     const savedBots = Array.isArray(parsed.savedBots)
@@ -234,7 +288,7 @@ const loadUserData = (userId: UserId): UserData => {
           return {
             id: String(b.id || ''),
             name: String(b.name || 'Untitled'),
-            builderId: (b.builderId === '1' || b.builderId === '9' ? b.builderId : userId) as UserId,
+            builderId: (['1', '3', '5', '7', '9'].includes(b.builderId as string) ? b.builderId : userId) as UserId,
             payload,
             visibility: (b.visibility === 'community' ? 'community' : 'private') as BotVisibility,
             createdAt: Number(b.createdAt || 0) || Date.now(),
@@ -283,6 +337,40 @@ const saveUserData = (userId: UserId, data: UserData) => {
   localStorage.setItem(userDataKey(userId), JSON.stringify(data))
 }
 
+// Dashboard investment helpers
+const getEligibleBots = (allBots: SavedBot[], userId: UserId): SavedBot[] => {
+  return allBots.filter(
+    (bot) =>
+      bot.builderId === userId || // own private bots
+      bot.tags?.includes('Atlas') ||
+      bot.tags?.includes('Nexus'),
+  )
+}
+
+const calculateInvestmentPnl = (
+  investment: DashboardInvestment,
+  equityCurve: Array<{ date: number; value: number }>,
+): { currentValue: number; pnl: number; pnlPercent: number } => {
+  if (!equityCurve || equityCurve.length < 2) {
+    return { currentValue: investment.costBasis, pnl: 0, pnlPercent: 0 }
+  }
+
+  // Find the equity value at or after the buy date
+  const buyDateEquityPoint = equityCurve.find((pt) => pt.date >= investment.buyDate)
+  const buyDateEquity = buyDateEquityPoint?.value ?? equityCurve[0]?.value ?? 100
+
+  // Get the latest equity value
+  const latestEquity = equityCurve[equityCurve.length - 1]?.value ?? buyDateEquity
+
+  // Calculate growth ratio and apply to cost basis
+  const growthRatio = buyDateEquity > 0 ? latestEquity / buyDateEquity : 1
+  const currentValue = investment.costBasis * growthRatio
+  const pnl = currentValue - investment.costBasis
+  const pnlPercent = investment.costBasis > 0 ? (pnl / investment.costBasis) * 100 : 0
+
+  return { currentValue, pnl, pnlPercent }
+}
+
 const normalizeTickersForUi = (tickers: string[]): string[] => {
   const normalized = tickers
     .map((t) => String(t || '').trim().toUpperCase())
@@ -312,7 +400,7 @@ function LoginScreen({ onLogin }: { onLogin: (userId: UserId) => void }) {
   const submit = () => {
     const u = String(username || '').trim()
     const p = String(password || '')
-    const ok = (u === '1' && p === '1') || (u === '9' && p === '9')
+    const ok = (u === '1' && p === '1') || (u === '3' && p === '3') || (u === '5' && p === '5') || (u === '7' && p === '7') || (u === '9' && p === '9')
     if (!ok) {
       setError('Invalid username/password.')
       return
@@ -326,7 +414,7 @@ function LoginScreen({ onLogin }: { onLogin: (userId: UserId) => void }) {
       <Card className="max-w-sm mx-auto mt-16">
         <CardHeader>
           <div className="text-xs tracking-widest uppercase text-muted mb-1">Admin Login</div>
-          <h1 className="m-0 my-1.5 text-2xl font-extrabold tracking-tight">System.app</h1>
+          <h1 className="m-0 my-1.5 text-2xl font-extrabold tracking-tight">Atlas Engine</h1>
         </CardHeader>
         <CardContent className="grid gap-2.5">
           <label className="grid gap-1.5">
@@ -339,7 +427,7 @@ function LoginScreen({ onLogin }: { onLogin: (userId: UserId) => void }) {
           </label>
           {error ? <div className="text-danger font-bold">{error}</div> : null}
           <Button onClick={submit}>Login</Button>
-          <div className="text-xs text-muted">Valid accounts: 1/1 and 9/9.</div>
+          <div className="text-xs text-muted">Valid accounts: 1/1, 3/3, 5/5, 7/7, 9/9.</div>
         </CardContent>
       </Card>
     </div>
@@ -388,6 +476,7 @@ type SavedBot = {
   payload: FlowNode
   visibility: BotVisibility
   createdAt: number
+  tags?: string[] // e.g., ['Atlas', 'Nexus']
 }
 
 type Watchlist = {
@@ -396,35 +485,25 @@ type Watchlist = {
   botIds: string[]
 }
 
-type PortfolioBotRow = {
-  id: string
-  name: string
-  allocation: number
-  capital: number
-  pnl: number
-  tags: string[]
-  readonly?: boolean
+// Dashboard investment types
+type DashboardInvestment = {
+  botId: string
+  botName: string
+  buyDate: number // timestamp when purchased
+  costBasis: number // amount invested (dollars)
 }
 
-type PortfolioSnapshot = {
-  accountValue: number
-  cash: number
-  totalPnl: number
-  totalPnlPct: number
-  todaysChange: number
-  todaysChangePct: number
-  positions: Array<{
-    ticker: string
-    value: number
-    costBasis: number
-    todaysChange: number
-    allocation: number
-    pnl: number
-    pnlPct: number
-    color: string
-  }>
-  bots: PortfolioBotRow[]
+type DashboardPortfolio = {
+  cash: number // remaining uninvested cash (starts at $100,000)
+  investments: DashboardInvestment[]
 }
+
+const STARTING_CAPITAL = 100000
+
+const defaultDashboardPortfolio = (): DashboardPortfolio => ({
+  cash: STARTING_CAPITAL,
+  investments: [],
+})
 
 type UserUiState = {
   theme: ThemeMode
@@ -441,6 +520,7 @@ type UserData = {
   watchlists: Watchlist[]
   callChains: CallChain[]
   ui: UserUiState
+  dashboardPortfolio?: DashboardPortfolio
 }
 
 type AnalyzeBacktestState = {
@@ -697,31 +777,54 @@ type VisibleRange = IRange<UTCTimestamp>
 
 const EMPTY_EQUITY_POINTS: EquityPoint[] = []
 
-// Dashboard Equity + Drawdown Chart Component
+// Bot return series type
+type BotReturnSeries = {
+  id: string
+  name: string
+  color: string
+  data: EquityCurvePoint[]
+}
+
+// Dashboard Equity + Drawdown Chart Component (% based with multiple bot lines)
 const DashboardEquityChart = ({
-  data,
+  portfolioData,
+  botSeries,
   theme,
 }: {
-  data: EquityCurvePoint[]
+  portfolioData: EquityCurvePoint[]
+  botSeries: BotReturnSeries[]
   theme: ThemeMode
 }) => {
   const equityContainerRef = useRef<HTMLDivElement>(null)
   const drawdownContainerRef = useRef<HTMLDivElement>(null)
   const equityChartRef = useRef<IChartApi | null>(null)
   const drawdownChartRef = useRef<IChartApi | null>(null)
-  const equitySeriesRef = useRef<ISeriesApi<'Area'> | null>(null)
+  const portfolioSeriesRef = useRef<ISeriesApi<'Area'> | null>(null)
+  const botSeriesRefs = useRef<ISeriesApi<'Line'>[]>([])
   const drawdownSeriesRef = useRef<ISeriesApi<'Area'> | null>(null)
 
-  // Compute drawdown from equity data
-  const drawdownData = useMemo(() => {
+  // Convert equity to % returns (rebased to 0%)
+  const toReturns = useCallback((data: EquityCurvePoint[]) => {
     if (data.length === 0) return []
-    let peak = data[0].value
-    return data.map((p) => {
+    const startValue = data[0].value
+    return data.map((p) => ({
+      time: p.time,
+      value: startValue > 0 ? ((p.value - startValue) / startValue) * 100 : 0,
+    }))
+  }, [])
+
+  const portfolioReturns = useMemo(() => toReturns(portfolioData), [portfolioData, toReturns])
+
+  // Compute drawdown from portfolio data (unified)
+  const drawdownData = useMemo(() => {
+    if (portfolioData.length === 0) return []
+    let peak = portfolioData[0].value
+    return portfolioData.map((p) => {
       if (p.value > peak) peak = p.value
       const dd = peak > 0 ? (p.value - peak) / peak : 0
       return { time: p.time, value: dd * 100 } // percentage
     })
-  }, [data])
+  }, [portfolioData])
 
   useEffect(() => {
     const equityEl = equityContainerRef.current
@@ -734,23 +837,36 @@ const DashboardEquityChart = ({
     const gridColor = isDark ? '#334155' : '#eef2f7'
     const borderColor = isDark ? '#475569' : '#cbd5e1'
 
-    // Equity chart
+    // Returns chart
     const equityChart = createChart(equityEl, {
       width: equityEl.clientWidth,
-      height: 150,
+      height: 200,
       layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
       grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
       rightPriceScale: { borderColor },
-      timeScale: { borderColor, visible: false }, // Hide time scale on equity chart
-      handleScroll: false, // Disable scroll
-      handleScale: false, // Disable zoom
+      timeScale: { borderColor, visible: false }, // Hide time scale on returns chart
+      handleScroll: false,
+      handleScale: false,
     })
 
-    const equitySeries = equityChart.addSeries(AreaSeries, {
+    // Portfolio returns series (main area)
+    const portfolioSeries = equityChart.addSeries(AreaSeries, {
       lineColor: '#3b82f6',
-      topColor: 'rgba(59, 130, 246, 0.4)',
+      topColor: 'rgba(59, 130, 246, 0.3)',
       bottomColor: 'rgba(59, 130, 246, 0.0)',
       lineWidth: 2,
+      priceFormat: { type: 'custom', formatter: (v: number) => `${v.toFixed(1)}%` },
+    })
+
+    // Add bot lines
+    const newBotSeriesRefs: ISeriesApi<'Line'>[] = []
+    botSeries.forEach((bot) => {
+      const series = equityChart.addSeries(LineSeries, {
+        color: bot.color,
+        lineWidth: 1,
+        priceFormat: { type: 'custom', formatter: (v: number) => `${v.toFixed(1)}%` },
+      })
+      newBotSeriesRefs.push(series)
     })
 
     // Drawdown chart
@@ -761,8 +877,8 @@ const DashboardEquityChart = ({
       grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
       rightPriceScale: { borderColor },
       timeScale: { borderColor },
-      handleScroll: false, // Disable scroll
-      handleScale: false, // Disable zoom
+      handleScroll: false,
+      handleScale: false,
     })
 
     const drawdownSeries = drawdownChart.addSeries(AreaSeries, {
@@ -771,11 +887,13 @@ const DashboardEquityChart = ({
       bottomColor: 'rgba(239, 68, 68, 0.4)',
       lineWidth: 2,
       invertFilledArea: true,
+      priceFormat: { type: 'custom', formatter: (v: number) => `${v.toFixed(1)}%` },
     })
 
     equityChartRef.current = equityChart
     drawdownChartRef.current = drawdownChart
-    equitySeriesRef.current = equitySeries
+    portfolioSeriesRef.current = portfolioSeries
+    botSeriesRefs.current = newBotSeriesRefs
     drawdownSeriesRef.current = drawdownSeries
 
     // Synchronize time scales
@@ -803,78 +921,36 @@ const DashboardEquityChart = ({
       drawdownChart.remove()
       equityChartRef.current = null
       drawdownChartRef.current = null
-      equitySeriesRef.current = null
+      portfolioSeriesRef.current = null
+      botSeriesRefs.current = []
       drawdownSeriesRef.current = null
     }
-  }, [theme])
+  }, [theme, botSeries.length])
 
   useEffect(() => {
-    if (!equitySeriesRef.current || !drawdownSeriesRef.current) return
-    equitySeriesRef.current.setData(data.map((p) => ({ time: p.time, value: p.value })))
+    if (!portfolioSeriesRef.current || !drawdownSeriesRef.current) return
+
+    // Set portfolio returns
+    portfolioSeriesRef.current.setData(portfolioReturns)
+
+    // Set bot series data
+    botSeries.forEach((bot, idx) => {
+      const series = botSeriesRefs.current[idx]
+      if (series) {
+        series.setData(toReturns(bot.data))
+      }
+    })
+
     drawdownSeriesRef.current.setData(drawdownData)
     equityChartRef.current?.timeScale().fitContent()
     drawdownChartRef.current?.timeScale().fitContent()
-  }, [data, drawdownData])
+  }, [portfolioReturns, botSeries, drawdownData, toReturns])
 
   return (
     <div className="w-full flex flex-col gap-1">
-      <div ref={equityContainerRef} className="w-full h-[150px] rounded-t-lg border border-b-0 border-border overflow-hidden" />
+      <div ref={equityContainerRef} className="w-full h-[200px] rounded-t-lg border border-b-0 border-border overflow-hidden" />
       <div className="text-[10px] text-muted font-bold px-1">Drawdown</div>
       <div ref={drawdownContainerRef} className="w-full h-[80px] rounded-b-lg border border-border overflow-hidden" />
-    </div>
-  )
-}
-
-// Position Pie Chart Component (SVG)
-const PositionPieChart = ({
-  positions,
-}: {
-  positions: Array<{ ticker: string; allocation: number; color: string }>
-}) => {
-  const size = 180
-  const radius = 70
-  const cx = size / 2
-  const cy = size / 2
-
-  // Calculate pie slices
-  let cumulativeAngle = -90 // Start from top
-
-  const slices = positions.map((pos) => {
-    const startAngle = cumulativeAngle
-    const sweepAngle = pos.allocation * 360
-    cumulativeAngle += sweepAngle
-
-    const startRad = (startAngle * Math.PI) / 180
-    const endRad = ((startAngle + sweepAngle) * Math.PI) / 180
-
-    const x1 = cx + radius * Math.cos(startRad)
-    const y1 = cy + radius * Math.sin(startRad)
-    const x2 = cx + radius * Math.cos(endRad)
-    const y2 = cy + radius * Math.sin(endRad)
-
-    const largeArc = sweepAngle > 180 ? 1 : 0
-
-    const d = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`
-
-    return { ...pos, d }
-  })
-
-  return (
-    <div className="flex flex-col items-center gap-3">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {slices.map((slice, idx) => (
-          <path key={idx} d={slice.d} fill={slice.color} stroke="#fff" strokeWidth={2} />
-        ))}
-      </svg>
-      <div className="flex flex-wrap justify-center gap-2">
-        {positions.map((pos, idx) => (
-          <div key={idx} className="flex items-center gap-1.5 text-xs">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: pos.color }} />
-            <span className="font-medium">{pos.ticker}</span>
-            <span className="text-muted">{(pos.allocation * 100).toFixed(1)}%</span>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -4482,6 +4558,7 @@ type BacktestResult = {
     calmar: number
     sharpe: number
     sortino: number
+    treynor: number
     winRate: number
     bestDay: number
     worstDay: number
@@ -5664,7 +5741,7 @@ const computeMonthlyReturns = (days: BacktestDayRow[]) => {
     .sort((a, b) => (a.year - b.year) || (a.month - b.month))
 }
 
-const computeBacktestSummary = (points: EquityPoint[], drawdowns: number[], days: BacktestDayRow[]) => {
+const computeBacktestSummary = (points: EquityPoint[], drawdowns: number[], days: BacktestDayRow[], benchmarkPoints?: EquityPoint[]) => {
   const equity = points.map((p) => p.value)
   const returns = days.map((d) => d.netReturn)
   const base = computeMetrics(equity, returns)
@@ -5686,6 +5763,49 @@ const computeBacktestSummary = (points: EquityPoint[], drawdowns: number[], days
   const annualizedDownsideStd = downsideStd * Math.sqrt(252)
   const annualizedMean = mean * 252
   const sortino = annualizedDownsideStd > 0 ? annualizedMean / annualizedDownsideStd : 0
+
+  // Treynor Ratio: (Portfolio Return - Risk-Free Rate) / Beta
+  // Beta = Cov(Rp, Rm) / Var(Rm)
+  let treynor = 0
+  if (benchmarkPoints && benchmarkPoints.length > 1 && returns.length > 1) {
+    // Calculate benchmark returns from benchmark equity points
+    const benchReturns: number[] = []
+    for (let i = 1; i < benchmarkPoints.length; i++) {
+      const prev = benchmarkPoints[i - 1].value
+      const curr = benchmarkPoints[i].value
+      if (prev > 0) {
+        benchReturns.push(curr / prev - 1)
+      }
+    }
+
+    // Align returns arrays (use minimum length)
+    const minLen = Math.min(returns.length, benchReturns.length)
+    if (minLen > 1) {
+      const portReturns = returns.slice(0, minLen)
+      const mktReturns = benchReturns.slice(0, minLen)
+
+      const portMean = portReturns.reduce((a, b) => a + b, 0) / minLen
+      const mktMean = mktReturns.reduce((a, b) => a + b, 0) / minLen
+
+      // Covariance of portfolio and market
+      let cov = 0
+      let mktVar = 0
+      for (let i = 0; i < minLen; i++) {
+        cov += (portReturns[i] - portMean) * (mktReturns[i] - mktMean)
+        mktVar += (mktReturns[i] - mktMean) ** 2
+      }
+      cov /= (minLen - 1)
+      mktVar /= (minLen - 1)
+
+      // Beta = Cov(Rp, Rm) / Var(Rm)
+      const beta = mktVar > 0 ? cov / mktVar : 0
+
+      // Treynor = annualized excess return / beta (assuming 0% risk-free rate)
+      if (beta !== 0) {
+        treynor = annualizedMean / beta
+      }
+    }
+  }
 
   const winRate = returns.length ? returns.filter((r) => r > 0).length / returns.length : 0
   const bestDay = returns.length ? Math.max(...returns) : 0
@@ -5712,6 +5832,7 @@ const computeBacktestSummary = (points: EquityPoint[], drawdowns: number[], days
     calmar,
     sharpe: base.sharpe,
     sortino,
+    treynor,
     winRate,
     bestDay,
     worstDay,
@@ -6226,16 +6347,20 @@ function BacktesterPanel({
                 <div className="text-sm font-black">{formatPct(result.metrics.maxDrawdown)}</div>
               </Card>
               <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Calmar</div>
+                <div className="text-[10px] font-bold text-muted">Calmar Ratio</div>
                 <div className="text-sm font-black">{Number.isFinite(result.metrics.calmar) ? result.metrics.calmar.toFixed(2) : '—'}</div>
               </Card>
               <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Sharpe</div>
+                <div className="text-[10px] font-bold text-muted">Sharpe Ratio</div>
                 <div className="text-sm font-black">{Number.isFinite(result.metrics.sharpe) ? result.metrics.sharpe.toFixed(2) : '—'}</div>
               </Card>
               <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Sortino</div>
+                <div className="text-[10px] font-bold text-muted">Sortino Ratio</div>
                 <div className="text-sm font-black">{Number.isFinite(result.metrics.sortino) ? result.metrics.sortino.toFixed(2) : '—'}</div>
+              </Card>
+              <Card className="p-2 text-center">
+                <div className="text-[10px] font-bold text-muted">Treynor Ratio</div>
+                <div className="text-sm font-black">{Number.isFinite(result.metrics.treynor) ? result.metrics.treynor.toFixed(2) : '—'}</div>
               </Card>
               <Card className="p-2 text-center">
                 <div className="text-[10px] font-bold text-muted">Vol</div>
@@ -6503,6 +6628,9 @@ function App() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>(() => initialUserData.watchlists)
   const [callChains, setCallChains] = useState<CallChain[]>(() => initialUserData.callChains)
   const [uiState, setUiState] = useState<UserUiState>(() => initialUserData.ui)
+  const [dashboardPortfolio, setDashboardPortfolio] = useState<DashboardPortfolio>(
+    () => initialUserData.dashboardPortfolio ?? defaultDashboardPortfolio(),
+  )
   const [analyzeBacktests, setAnalyzeBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
   const [analyzeTickerContrib, setAnalyzeTickerContrib] = useState<Record<string, TickerContributionState>>({})
   const [analyzeTickerSort, setAnalyzeTickerSort] = useState<{ column: string; dir: 'asc' | 'desc' }>({
@@ -6527,8 +6655,8 @@ function App() {
 
   useEffect(() => {
     if (!userId) return
-    saveUserData(userId, { savedBots, watchlists, callChains, ui: uiState })
-  }, [userId, savedBots, watchlists, callChains, uiState])
+    saveUserData(userId, { savedBots, watchlists, callChains, ui: uiState, dashboardPortfolio })
+  }, [userId, savedBots, watchlists, callChains, uiState, dashboardPortfolio])
 
 
   const loadAvailableTickers = useCallback(async () => {
@@ -6615,7 +6743,7 @@ function App() {
   const [bots, setBots] = useState<BotSession[]>(() => [initialBot])
   const [activeBotId, setActiveBotId] = useState<string>(() => initialBot.id)
   const [clipboard, setClipboard] = useState<FlowNode | null>(null)
-  const [tab, setTab] = useState<'Dashboard' | 'Community' | 'Analyze' | 'Build' | 'Admin'>('Build')
+  const [tab, setTab] = useState<'Dashboard' | 'Community Nexus' | 'Analyze' | 'Build' | 'Help/Support' | 'Admin'>('Build')
   const [dashboardSubtab, setDashboardSubtab] = useState<'Portfolio' | 'Partner Program'>('Portfolio')
   const [analyzeSubtab, setAnalyzeSubtab] = useState<'Bots' | 'Correlation Tool'>('Bots')
   const [adminTab, setAdminTab] = useState<'Ticker List' | 'Data'>('Ticker List')
@@ -6632,6 +6760,17 @@ function App() {
   // Dashboard state
   const [dashboardTimePeriod, setDashboardTimePeriod] = useState<DashboardTimePeriod>('1Y')
   const [dashboardBotExpanded, setDashboardBotExpanded] = useState<Record<string, boolean>>({})
+  const [dashboardBuyBotId, setDashboardBuyBotId] = useState<string>('')
+  const [dashboardBuyBotSearch, setDashboardBuyBotSearch] = useState<string>('')
+  const [dashboardBuyBotDropdownOpen, setDashboardBuyBotDropdownOpen] = useState(false)
+  const [dashboardBuyAmount, setDashboardBuyAmount] = useState<string>('')
+  const [dashboardBuyMode, setDashboardBuyMode] = useState<'$' | '%'>('$')
+  const [dashboardSellBotId, setDashboardSellBotId] = useState<string | null>(null)
+  const [dashboardSellAmount, setDashboardSellAmount] = useState<string>('')
+  const [dashboardSellMode, setDashboardSellMode] = useState<'$' | '%'>('$')
+  const [dashboardBuyMoreBotId, setDashboardBuyMoreBotId] = useState<string | null>(null)
+  const [dashboardBuyMoreAmount, setDashboardBuyMoreAmount] = useState<string>('')
+  const [dashboardBuyMoreMode, setDashboardBuyMoreMode] = useState<'$' | '%'>('$')
 
   const activeBot = useMemo(() => {
     return bots.find((b) => b.id === activeBotId) ?? bots[0]
@@ -6686,105 +6825,276 @@ function App() {
     ]
   }, [])
 
-  // Pie chart colors
-  const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
+  // Dashboard investment logic
+  const eligibleBots = useMemo(() => {
+    if (!userId) return []
+    return getEligibleBots(savedBots, userId)
+  }, [savedBots, userId])
 
-  const portfolioSnapshot = useMemo<PortfolioSnapshot>(() => {
-    const basePositions = [
-      { ticker: 'SPY', value: 42000, costBasis: 38000, todaysChange: 320 },
-      { ticker: 'QQQ', value: 28500, costBasis: 25250, todaysChange: 210 },
-      { ticker: 'IWM', value: 18200, costBasis: 19500, todaysChange: -140 },
-      { ticker: 'TLT', value: 12500, costBasis: 11000, todaysChange: 65 },
-    ]
-    const cash = 9500
-    const positionsValue = basePositions.reduce((sum, pos) => sum + pos.value, 0)
-    const investedCapital = basePositions.reduce((sum, pos) => sum + pos.costBasis, 0)
-    const enrichedPositions = basePositions.map((pos, idx) => {
-      const pnl = pos.value - pos.costBasis
-      const allocation = positionsValue > 0 ? pos.value / positionsValue : 0
-      const pnlPct = pos.costBasis > 0 ? pnl / pos.costBasis : 0
-      return { ...pos, allocation, pnl, pnlPct, color: PIE_COLORS[idx % PIE_COLORS.length] }
+  const dashboardCash = dashboardPortfolio.cash
+
+  // Calculate live P&L for investments using real backtest data
+  const dashboardInvestmentsWithPnl = useMemo(() => {
+    return dashboardPortfolio.investments.map((inv) => {
+      // Get backtest result for this bot from analyzeBacktests
+      const backtestState = analyzeBacktests[inv.botId]
+      const backtestResult = backtestState?.result
+
+      // Convert backtest equity points to the format expected by calculateInvestmentPnl
+      let equityCurve: Array<{ date: number; value: number }> = []
+      if (backtestResult?.points && backtestResult.points.length > 0) {
+        equityCurve = backtestResult.points.map((pt) => ({
+          date: (typeof pt.time === 'number' ? pt.time : Date.parse(pt.time as string) / 1000) * 1000,
+          value: pt.value,
+        }))
+      } else {
+        // Fallback: mock data if no backtest available
+        equityCurve = [
+          { date: inv.buyDate, value: 100 },
+          { date: Date.now(), value: 100 },
+        ]
+      }
+
+      const { currentValue, pnl, pnlPercent } = calculateInvestmentPnl(inv, equityCurve)
+      return { ...inv, currentValue, pnl, pnlPercent }
     })
-    const totalPnl = enrichedPositions.reduce((sum, pos) => sum + pos.pnl, 0)
-    const accountValue = cash + positionsValue
-    const todaysChange = basePositions.reduce((sum, pos) => sum + pos.todaysChange, 0)
-    const previousValue = accountValue - todaysChange
-    const todaysChangePct = previousValue > 0 ? todaysChange / previousValue : 0
+  }, [dashboardPortfolio.investments, analyzeBacktests])
 
-    const sampleBots: PortfolioBotRow[] = [
-      { id: 'sample-alpha', name: 'Momentum Swing', allocation: 0.32, capital: 36000, pnl: 3100, tags: ['Default'] },
-      { id: 'sample-beta', name: 'Rate Hedge', allocation: 0.24, capital: 27000, pnl: -850, tags: ['Hedges'] },
-      { id: 'sample-gamma', name: 'Rotation Grid', allocation: 0.22, capital: 24500, pnl: 1400, tags: ['Default'] },
-      { id: 'sample-delta', name: 'Vol Carry', allocation: 0.18, capital: 21000, pnl: 620, tags: ['Growth'] },
-    ]
+  const dashboardTotalValue = dashboardCash + dashboardInvestmentsWithPnl.reduce((sum, inv) => sum + inv.currentValue, 0)
+  const dashboardTotalPnl = dashboardInvestmentsWithPnl.reduce((sum, inv) => sum + inv.pnl, 0)
+  const dashboardTotalPnlPct = STARTING_CAPITAL > 0 ? (dashboardTotalPnl / STARTING_CAPITAL) * 100 : 0
 
-    const saved = savedBots.slice(0, sampleBots.length)
-    const bots: PortfolioBotRow[] = saved.length
-      ? saved.map((bot, index) => {
-          const template = sampleBots[index % sampleBots.length]
-          const tagNames = (watchlistsByBotId.get(bot.id) ?? []).map((wl) => wl.name)
-          return {
-            ...template,
-            id: bot.id,
-            name: bot.name,
-            tags: tagNames.length ? tagNames : template.tags,
-            readonly: bot.visibility === 'community',
+  const handleDashboardBuy = () => {
+    if (!dashboardBuyBotId) return
+    const bot = savedBots.find((b) => b.id === dashboardBuyBotId)
+    if (!bot) return
+
+    // Calculate amount
+    let amount = 0
+    if (dashboardBuyMode === '$') {
+      amount = parseFloat(dashboardBuyAmount) || 0
+    } else {
+      const pct = parseFloat(dashboardBuyAmount) || 0
+      amount = (pct / 100) * dashboardCash
+    }
+
+    // Validate
+    if (amount < 100) {
+      alert('Minimum investment is $100')
+      return
+    }
+    if (amount > dashboardCash) {
+      alert('Insufficient cash')
+      return
+    }
+    // Check if already invested
+    if (dashboardPortfolio.investments.some((inv) => inv.botId === dashboardBuyBotId)) {
+      alert('Already invested in this bot. Sell first to reinvest.')
+      return
+    }
+
+    const newInvestment: DashboardInvestment = {
+      botId: bot.id,
+      botName: bot.name,
+      buyDate: Date.now(),
+      costBasis: amount,
+    }
+
+    setDashboardPortfolio((prev) => ({
+      cash: prev.cash - amount,
+      investments: [...prev.investments, newInvestment],
+    }))
+    setDashboardBuyBotId('')
+    setDashboardBuyBotSearch('')
+    setDashboardBuyAmount('')
+  }
+
+  const handleDashboardSell = (botId: string, sellAll: boolean) => {
+    const investment = dashboardPortfolio.investments.find((inv) => inv.botId === botId)
+    if (!investment) return
+
+    const invWithPnl = dashboardInvestmentsWithPnl.find((inv) => inv.botId === botId)
+    if (!invWithPnl) return
+
+    let sellAmount = invWithPnl.currentValue
+    if (!sellAll) {
+      if (dashboardSellMode === '$') {
+        sellAmount = Math.min(parseFloat(dashboardSellAmount) || 0, invWithPnl.currentValue)
+      } else {
+        const pct = parseFloat(dashboardSellAmount) || 0
+        sellAmount = (pct / 100) * invWithPnl.currentValue
+      }
+    }
+
+    if (sellAmount <= 0) return
+
+    // If selling all or selling more than 99% of position, remove investment
+    if (sellAmount >= invWithPnl.currentValue * 0.99) {
+      setDashboardPortfolio((prev) => ({
+        cash: prev.cash + invWithPnl.currentValue,
+        investments: prev.investments.filter((inv) => inv.botId !== botId),
+      }))
+    } else {
+      // Partial sell - reduce cost basis proportionally
+      const sellRatio = sellAmount / invWithPnl.currentValue
+      const newCostBasis = investment.costBasis * (1 - sellRatio)
+      setDashboardPortfolio((prev) => ({
+        cash: prev.cash + sellAmount,
+        investments: prev.investments.map((inv) =>
+          inv.botId === botId ? { ...inv, costBasis: newCostBasis } : inv,
+        ),
+      }))
+    }
+
+    setDashboardSellBotId(null)
+    setDashboardSellAmount('')
+  }
+
+  const handleDashboardBuyMore = (botId: string) => {
+    const investment = dashboardPortfolio.investments.find((inv) => inv.botId === botId)
+    if (!investment) return
+
+    // Calculate amount
+    let amount = 0
+    if (dashboardBuyMoreMode === '$') {
+      amount = parseFloat(dashboardBuyMoreAmount) || 0
+    } else {
+      const pct = parseFloat(dashboardBuyMoreAmount) || 0
+      amount = (pct / 100) * dashboardCash
+    }
+
+    // Validate
+    if (amount < 100) {
+      alert('Minimum investment is $100')
+      return
+    }
+    if (amount > dashboardCash) {
+      alert('Insufficient cash')
+      return
+    }
+
+    // Add to existing position
+    setDashboardPortfolio((prev) => ({
+      cash: prev.cash - amount,
+      investments: prev.investments.map((inv) =>
+        inv.botId === botId
+          ? { ...inv, costBasis: inv.costBasis + amount, buyDate: Date.now() }
+          : inv,
+      ),
+    }))
+
+    setDashboardBuyMoreBotId(null)
+    setDashboardBuyMoreAmount('')
+  }
+
+  // Bot colors for chart lines
+  const BOT_CHART_COLORS = ['#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1']
+
+  // Generate equity curves from actual invested bot backtest data
+  const { dashboardEquityCurve, dashboardBotSeries } = useMemo(() => {
+    const investments = dashboardInvestmentsWithPnl
+
+    if (investments.length === 0) {
+      // No investments - show flat line at starting capital
+      const now = Date.now()
+      const oneDay = 24 * 60 * 60 * 1000
+      const portfolioPoints: EquityCurvePoint[] = []
+      for (let i = 30; i >= 0; i--) {
+        const timestamp = Math.floor((now - i * oneDay) / 1000) as UTCTimestamp
+        portfolioPoints.push({ time: timestamp, value: STARTING_CAPITAL })
+      }
+      return { dashboardEquityCurve: portfolioPoints, dashboardBotSeries: [] }
+    }
+
+    // Build bot series from real backtest data, starting from each bot's buy date
+    const botSeries: BotReturnSeries[] = []
+    const botEquityByTime = new Map<number, Map<string, { value: number; costBasis: number }>>()
+
+    investments.forEach((inv, botIdx) => {
+      const backtestState = analyzeBacktests[inv.botId]
+      const backtestResult = backtestState?.result
+      const buyDateSec = Math.floor(inv.buyDate / 1000)
+
+      if (backtestResult?.points && backtestResult.points.length > 0) {
+        // Find the equity value at buy date to calculate growth ratio
+        let buyDateEquity: number | null = null
+        const botPoints: EquityCurvePoint[] = []
+
+        for (const pt of backtestResult.points) {
+          const timeSec = typeof pt.time === 'number' ? pt.time : Math.floor(Date.parse(pt.time as string) / 1000)
+
+          // Only include points from buy date onwards
+          if (timeSec >= buyDateSec) {
+            if (buyDateEquity === null) {
+              buyDateEquity = pt.value
+            }
+
+            // Calculate the current value based on cost basis and growth
+            const growthRatio = buyDateEquity > 0 ? pt.value / buyDateEquity : 1
+            const currentValue = inv.costBasis * growthRatio
+
+            botPoints.push({ time: timeSec as UTCTimestamp, value: currentValue })
+
+            // Track for portfolio aggregation
+            if (!botEquityByTime.has(timeSec)) {
+              botEquityByTime.set(timeSec, new Map())
+            }
+            botEquityByTime.get(timeSec)!.set(inv.botId, { value: currentValue, costBasis: inv.costBasis })
           }
-        })
-      : sampleBots
+        }
 
-    return {
-      accountValue,
-      cash,
-      totalPnl,
-      totalPnlPct: investedCapital > 0 ? totalPnl / investedCapital : 0,
-      todaysChange,
-      todaysChangePct,
-      positions: enrichedPositions,
-      bots,
-    }
-  }, [savedBots, watchlistsByBotId])
+        if (botPoints.length > 0) {
+          botSeries.push({
+            id: inv.botId,
+            name: inv.botName,
+            color: BOT_CHART_COLORS[botIdx % BOT_CHART_COLORS.length],
+            data: botPoints,
+          })
+        }
+      }
+    })
 
-  const {
-    accountValue,
-    cash,
-    totalPnl,
-    totalPnlPct,
-    todaysChange,
-    todaysChangePct,
-    positions,
-    bots: investedBots,
-  } = portfolioSnapshot
+    // Build portfolio equity curve by summing all bot values + remaining cash at each time point
+    const sortedTimes = Array.from(botEquityByTime.keys()).sort((a, b) => a - b)
+    const portfolioPoints: EquityCurvePoint[] = []
+    const lastKnownValues = new Map<string, number>()
 
-  // Generate mock equity curve data
-  const dashboardEquityCurve = useMemo<EquityCurvePoint[]>(() => {
-    const points: EquityCurvePoint[] = []
-    const now = Date.now()
-    const oneDay = 24 * 60 * 60 * 1000
-    const startValue = 85000 // Starting capital
-    const endValue = accountValue // Current account value
+    // Initialize with cost basis values for each investment
+    investments.forEach((inv) => {
+      lastKnownValues.set(inv.botId, inv.costBasis)
+    })
 
-    // Generate 365 days of data with realistic volatility
-    let value = startValue
-    const dailyDrift = Math.pow(endValue / startValue, 1 / 365) - 1 // Average daily return
-    const volatility = 0.012 // Daily volatility ~12% annualized
+    for (const timeSec of sortedTimes) {
+      const timeData = botEquityByTime.get(timeSec)!
 
-    for (let i = 365; i >= 0; i--) {
-      const timestamp = Math.floor((now - i * oneDay) / 1000) as UTCTimestamp
-      points.push({ time: timestamp, value })
+      // Update last known values for bots that have data at this time
+      for (const [botId, data] of timeData) {
+        lastKnownValues.set(botId, data.value)
+      }
 
-      // Random walk with drift
-      const randomReturn = (Math.random() - 0.5) * 2 * volatility + dailyDrift
-      value = value * (1 + randomReturn)
+      // Sum all bot values at this time point
+      let totalBotValue = 0
+      for (const value of lastKnownValues.values()) {
+        totalBotValue += value
+      }
+
+      // Total portfolio = cash + all bot values
+      const portfolioValue = dashboardCash + totalBotValue
+      portfolioPoints.push({ time: timeSec as UTCTimestamp, value: portfolioValue })
     }
 
-    // Ensure last point matches actual account value
-    if (points.length > 0) {
-      points[points.length - 1].value = accountValue
+    // If no portfolio points generated, create a simple curve
+    if (portfolioPoints.length === 0) {
+      const now = Date.now()
+      const oneDay = 24 * 60 * 60 * 1000
+      for (let i = 30; i >= 0; i--) {
+        const timestamp = Math.floor((now - i * oneDay) / 1000) as UTCTimestamp
+        portfolioPoints.push({ time: timestamp, value: dashboardTotalValue })
+      }
     }
 
-    return points
-  }, [accountValue])
+    return { dashboardEquityCurve: portfolioPoints, dashboardBotSeries: botSeries }
+  }, [dashboardInvestmentsWithPnl, analyzeBacktests, dashboardCash, dashboardTotalValue])
 
   const push = useCallback(
     (next: FlowNode) => {
@@ -6990,8 +7300,13 @@ function App() {
       const needsBench = benchTicker && benchTicker !== 'Empty' && !inputs.tickers.includes(benchTicker)
       const benchPromise = needsBench ? fetchOhlcSeries(benchTicker, limit) : null
 
+      // Always fetch SPY for Treynor Ratio calculation (fixed benchmark)
+      const needsSpy = !inputs.tickers.includes('SPY') && benchTicker !== 'SPY'
+      const spyPromise = needsSpy ? fetchOhlcSeries('SPY', limit) : null
+
       const loaded = await Promise.all(inputs.tickers.map(async (t) => ({ ticker: t, bars: await fetchOhlcSeries(t, limit) })))
       const benchSettled = benchPromise ? await Promise.allSettled([benchPromise]) : []
+      const spySettled = spyPromise ? await Promise.allSettled([spyPromise]) : []
 
       const db = buildPriceDb(loaded)
       if (db.dates.length < 3) {
@@ -7022,6 +7337,24 @@ function App() {
       const benchMap = new Map<number, { open: number; close: number }>()
       if (benchBars) {
         for (const b of benchBars) benchMap.set(Number(b.time), { open: b.open, close: b.close })
+      }
+
+      // SPY data for Treynor Ratio (always uses SPY as systematic risk benchmark)
+      let spyBars: Array<{ time: UTCTimestamp; open: number; close: number }> | null = null
+      if (benchTicker === 'SPY' && benchBars) {
+        spyBars = benchBars
+      } else {
+        const alreadySpy = loaded.find((x) => getSeriesKey(x.ticker) === 'SPY')
+        if (alreadySpy) {
+          spyBars = alreadySpy.bars
+        } else if (spySettled.length && spySettled[0].status === 'fulfilled') {
+          spyBars = spySettled[0].value
+        }
+      }
+
+      const spyMap = new Map<number, { open: number; close: number }>()
+      if (spyBars) {
+        for (const b of spyBars) spyMap.set(Number(b.time), { open: b.open, close: b.close })
       }
 
       const allocationsAt: Allocation[] = Array.from({ length: db.dates.length }, () => ({}))
@@ -7057,6 +7390,7 @@ function App() {
       const startPointIndex = backtestMode === 'OC' ? Math.max(0, startTradeIndex - 1) : startTradeIndex
       const points: EquityPoint[] = [{ time: db.dates[startPointIndex], value: 1 }]
       const benchmarkPoints: EquityPoint[] = benchMap.size ? [{ time: db.dates[startPointIndex], value: 1 }] : []
+      const spyBenchmarkPoints: EquityPoint[] = spyMap.size ? [{ time: db.dates[startPointIndex], value: 1 }] : []
       const drawdownPoints: EquityPoint[] = [{ time: db.dates[startPointIndex], value: 0 }]
       const markers: EquityMarker[] = []
       const allocations: BacktestAllocationRow[] = []
@@ -7066,6 +7400,7 @@ function App() {
       let equity = 1
       let peak = 1
       let benchEquity = 1
+      let spyEquity = 1
       const startEnd = backtestMode === 'OC' ? startTradeIndex : startTradeIndex + 1
       for (let end = startEnd; end < db.dates.length; end++) {
         let start = end - 1
@@ -7165,6 +7500,36 @@ function App() {
           }
         }
 
+        // SPY tracking for Treynor Ratio calculation
+        if (spyMap.size) {
+          const startTime = Number(db.dates[start])
+          const endTime = Number(db.dates[end])
+          const startBar = spyMap.get(startTime)
+          const endBar = spyMap.get(endTime)
+          const entrySpy =
+            backtestMode === 'OO'
+              ? startBar?.open
+              : backtestMode === 'CC'
+                ? startBar?.close
+                : backtestMode === 'CO'
+                  ? startBar?.close
+                  : startBar?.open
+          const exitSpy =
+            backtestMode === 'OO'
+              ? endBar?.open
+              : backtestMode === 'CC'
+                ? endBar?.close
+                : backtestMode === 'CO'
+                  ? endBar?.open
+                  : startBar?.close
+          if (entrySpy != null && exitSpy != null && entrySpy > 0 && exitSpy > 0) {
+            spyEquity *= 1 + (exitSpy / entrySpy - 1)
+            spyBenchmarkPoints.push({ time: db.dates[end], value: spyEquity })
+          } else {
+            spyBenchmarkPoints.push({ time: db.dates[end], value: spyEquity })
+          }
+        }
+
         days.push({
           time: db.dates[end],
           date: isoFromUtcSeconds(db.dates[end]),
@@ -7178,7 +7543,7 @@ function App() {
         })
       }
 
-      const metrics = computeBacktestSummary(points, days.map((d) => d.drawdown), days)
+      const metrics = computeBacktestSummary(points, days.map((d) => d.drawdown), days, spyBenchmarkPoints.length > 0 ? spyBenchmarkPoints : undefined)
       const monthly = computeMonthlyReturns(days)
 
       return {
@@ -7744,7 +8109,7 @@ function App() {
         <div>
           <div className="text-xs tracking-widest uppercase text-muted mb-1">System</div>
           <div className="flex items-center gap-2.5 flex-wrap">
-            <h1 className="m-0 text-2xl font-extrabold tracking-tight mr-1">System.app</h1>
+            <h1 className="m-0 text-2xl font-extrabold tracking-tight mr-1">Atlas Engine</h1>
             <div className="flex items-center gap-1.5">
               <Select
                 className="h-8 text-xs"
@@ -7766,9 +8131,8 @@ function App() {
               </Button>
             </div>
           </div>
-          <p className="mt-1.5 mb-0 text-muted text-sm">Click any Node or + to extend with Basic, Function, Indicator, or Position. Paste uses the last copied node.</p>
           <div className="flex gap-2 mt-3">
-            {(['Dashboard', 'Community', 'Analyze', 'Build', 'Admin'] as const).map((t) => (
+            {(['Dashboard', 'Community Nexus', 'Analyze', 'Build', 'Help/Support', 'Admin'] as const).map((t) => (
               <Button
                 key={t}
                 variant={tab === t ? 'accent' : 'secondary'}
@@ -8227,6 +8591,15 @@ function App() {
               </div>
             </CardContent>
           </Card>
+        ) : tab === 'Help/Support' ? (
+          <Card className="h-full flex flex-col overflow-hidden m-4">
+            <CardContent className="p-6 flex flex-col h-full overflow-auto">
+              <div className="text-center py-12">
+                <h2 className="text-xl font-bold mb-4">Help & Support</h2>
+                <p className="text-muted">Coming soon...</p>
+              </div>
+            </CardContent>
+          </Card>
         ) : tab === 'Admin' ? (
           <Card className="h-full flex flex-col overflow-hidden m-4">
             <CardContent className="p-6 flex flex-col h-full overflow-auto">
@@ -8430,10 +8803,34 @@ function App() {
                                           <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
                                         </div>
                                         <div>
-                                          <div className="stat-label">Sharpe</div>
+                                          <div className="stat-label">Calmar Ratio</div>
+                                          <div className="stat-value">
+                                            {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
+                                              ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
+                                              : '--'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Sharpe Ratio</div>
                                           <div className="stat-value">
                                             {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
                                               ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                              : '--'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Sortino Ratio</div>
+                                          <div className="stat-value">
+                                            {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
+                                              ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
+                                              : '--'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="stat-label">Treynor Ratio</div>
+                                          <div className="stat-value">
+                                            {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
+                                              ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
                                               : '--'}
                                           </div>
                                         </div>
@@ -8678,10 +9075,11 @@ function App() {
                                     'CAGR-50',
                                     'MaxDD-DD50',
                                     'Tail Risk-DD95',
-                                    'Calmar-50',
-                                    'Calmar-95',
-                                    'Sharpe',
-                                    'Sortino',
+                                    'Calmar Ratio-50',
+                                    'Calmar Ratio-95',
+                                    'Sharpe Ratio',
+                                    'Sortino Ratio',
+                                    'Treynor Ratio',
                                     'Volatility',
                                     'Win Rate',
                                   ] as const
@@ -8721,7 +9119,7 @@ function App() {
             )}
             </CardContent>
           </Card>
-        ) : tab === 'Community' ? (
+        ) : tab === 'Community Nexus' ? (
           <Card className="h-full flex flex-col overflow-hidden m-4">
             <CardContent className="p-4 flex flex-col h-full overflow-auto">
             {(() => {
@@ -8941,133 +9339,491 @@ function App() {
 
             {dashboardSubtab === 'Portfolio' ? (
               <div className="mt-3 flex flex-col gap-4">
-                {/* 5 Stat Bubbles */}
-                <div className="grid grid-cols-5 gap-3">
+                {/* 6 Stat Bubbles - Using Dashboard Portfolio */}
+                <div className="grid grid-cols-6 gap-3">
                   <Card className="p-3 text-center">
                     <div className="text-[10px] font-bold text-muted">Account Value</div>
-                    <div className="text-lg font-black">{formatUsd(accountValue)}</div>
+                    <div className="text-lg font-black">{formatUsd(dashboardTotalValue)}</div>
                   </Card>
                   <Card className="p-3 text-center">
                     <div className="text-[10px] font-bold text-muted">Cash Available</div>
-                    <div className="text-lg font-black">{formatUsd(cash)}</div>
+                    <div className="text-lg font-black">{formatUsd(dashboardCash)}</div>
                   </Card>
                   <Card className="p-3 text-center">
-                    <div className="text-[10px] font-bold text-muted">Total PnL</div>
-                    <div className={cn("text-lg font-black", totalPnl >= 0 ? 'text-success' : 'text-danger')}>
-                      {formatSignedUsd(totalPnl)}
+                    <div className="text-[10px] font-bold text-muted">Total PnL ($)</div>
+                    <div className={cn("text-lg font-black", dashboardTotalPnl >= 0 ? 'text-success' : 'text-danger')}>
+                      {formatSignedUsd(dashboardTotalPnl)}
                     </div>
-                    <div className="text-[10px] text-muted">{formatPct(totalPnlPct)}</div>
                   </Card>
                   <Card className="p-3 text-center">
-                    <div className="text-[10px] font-bold text-muted">Day Change</div>
-                    <div className={cn("text-lg font-black", todaysChange >= 0 ? 'text-success' : 'text-danger')}>
-                      {formatSignedUsd(todaysChange)}
+                    <div className="text-[10px] font-bold text-muted">Total PnL (%)</div>
+                    <div className={cn("text-lg font-black", dashboardTotalPnlPct >= 0 ? 'text-success' : 'text-danger')}>
+                      {dashboardTotalPnlPct >= 0 ? '+' : ''}{dashboardTotalPnlPct.toFixed(2)}%
                     </div>
-                    <div className="text-[10px] text-muted">{formatPct(todaysChangePct)}</div>
+                  </Card>
+                  <Card className="p-3 text-center">
+                    <div className="text-[10px] font-bold text-muted">Invested</div>
+                    <div className="text-lg font-black">{formatUsd(dashboardTotalValue - dashboardCash)}</div>
                   </Card>
                   <Card className="p-3 text-center">
                     <div className="text-[10px] font-bold text-muted">Positions</div>
-                    <div className="text-lg font-black">{positions.length}</div>
+                    <div className="text-lg font-black">{dashboardInvestmentsWithPnl.length}</div>
                   </Card>
                 </div>
 
-                {/* Equity Chart and Pie Chart Row */}
-                <div className="grid grid-cols-3 gap-4">
-                  {/* Equity Chart - 2/3 width */}
-                  <Card className="col-span-2 p-4">
-                    <div className="flex items-center justify-between mb-3">
+                {/* Full-Width Portfolio Performance Chart */}
+                <Card className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-4">
                       <div className="font-black">Portfolio Performance</div>
-                      <div className="flex gap-1">
-                        {(['1D', '1W', '1M', '3M', '6M', 'YTD', '1Y', 'ALL'] as DashboardTimePeriod[]).map((period) => (
-                          <Button
-                            key={period}
-                            size="sm"
-                            variant={dashboardTimePeriod === period ? 'accent' : 'ghost'}
-                            className="h-6 px-2 text-xs"
-                            onClick={() => setDashboardTimePeriod(period)}
-                          >
-                            {period}
-                          </Button>
+                      {/* Legend for bot lines */}
+                      <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-3 h-0.5 rounded" style={{ backgroundColor: '#3b82f6' }} />
+                          <span className="text-muted font-bold">Portfolio</span>
+                        </div>
+                        {dashboardBotSeries.map((bot) => (
+                          <div key={bot.id} className="flex items-center gap-1.5">
+                            <div className="w-3 h-0.5 rounded" style={{ backgroundColor: bot.color }} />
+                            <span className="text-muted font-bold">{bot.name}</span>
+                          </div>
                         ))}
                       </div>
                     </div>
-                    <DashboardEquityChart data={dashboardEquityCurve} theme={uiState.theme} />
+                    <div className="flex gap-1">
+                      {(['1D', '1W', '1M', '3M', '6M', 'YTD', '1Y', 'ALL'] as DashboardTimePeriod[]).map((period) => (
+                        <Button
+                          key={period}
+                          size="sm"
+                          variant={dashboardTimePeriod === period ? 'accent' : 'ghost'}
+                          className="h-6 px-2 text-xs"
+                          onClick={() => setDashboardTimePeriod(period)}
+                        >
+                          {period}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <DashboardEquityChart
+                    portfolioData={dashboardEquityCurve}
+                    botSeries={dashboardBotSeries}
+                    theme={uiState.theme}
+                  />
+                </Card>
+
+                {/* Bottom Zone: Buy Bot + Invested Bots (left 2/3) | Portfolio Allocation (right 1/3) */}
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Left Panel: Buy Bot + Bots Invested In (2/3 width) */}
+                  <Card className="col-span-2 p-4">
+                    {/* Buy Bot Section */}
+                    <div className="font-black mb-3">Buy Bot</div>
+                    <div className="grid gap-2 mb-4">
+                      {/* Cash available line */}
+                      <div className="text-sm">
+                        <span className="text-muted">Cash Available:</span>{' '}
+                        <span className="font-bold">{formatUsd(dashboardCash)}</span>
+                        {dashboardBuyMode === '%' && dashboardBuyAmount && (
+                          <span className="text-muted"> · Amount: {formatUsd((parseFloat(dashboardBuyAmount) / 100) * dashboardCash)}</span>
+                        )}
+                      </div>
+
+                      {/* Buy button, $/% toggle, amount input */}
+                      <div className="flex gap-2 items-center">
+                        <Button
+                          onClick={handleDashboardBuy}
+                          disabled={!dashboardBuyBotId || !dashboardBuyAmount}
+                          className="h-8 px-4"
+                        >
+                          Buy
+                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant={dashboardBuyMode === '$' ? 'accent' : 'outline'}
+                            className="h-8 w-8 p-0"
+                            onClick={() => setDashboardBuyMode('$')}
+                          >
+                            $
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={dashboardBuyMode === '%' ? 'accent' : 'outline'}
+                            className="h-8 w-8 p-0"
+                            onClick={() => setDashboardBuyMode('%')}
+                          >
+                            %
+                          </Button>
+                        </div>
+                        <Input
+                          type="number"
+                          placeholder={dashboardBuyMode === '$' ? 'Amount' : '% of cash'}
+                          value={dashboardBuyAmount}
+                          onChange={(e) => setDashboardBuyAmount(e.target.value)}
+                          className="h-8 flex-1"
+                        />
+                      </div>
+
+                      {/* Bot selector with search */}
+                      <div className="relative">
+                        <Input
+                          type="text"
+                          placeholder="Search and select a bot..."
+                          value={dashboardBuyBotSearch}
+                          onChange={(e) => {
+                            setDashboardBuyBotSearch(e.target.value)
+                            setDashboardBuyBotDropdownOpen(true)
+                          }}
+                          onFocus={() => setDashboardBuyBotDropdownOpen(true)}
+                          className="h-8 w-full"
+                        />
+                        {dashboardBuyBotDropdownOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-40"
+                              onClick={() => setDashboardBuyBotDropdownOpen(false)}
+                            />
+                            <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto bg-card border border-border rounded-md shadow-lg">
+                              {(() => {
+                                const availableBots = eligibleBots.filter(
+                                  (bot) => !dashboardPortfolio.investments.some((inv) => inv.botId === bot.id)
+                                )
+                                const searchLower = dashboardBuyBotSearch.toLowerCase()
+                                const filteredBots = availableBots.filter(
+                                  (bot) =>
+                                    bot.name.toLowerCase().includes(searchLower) ||
+                                    bot.tags?.some((t) => t.toLowerCase().includes(searchLower))
+                                )
+
+                                if (filteredBots.length === 0) {
+                                  return (
+                                    <div className="px-3 py-2 text-sm text-muted">
+                                      {availableBots.length === 0
+                                        ? 'No eligible bots available'
+                                        : 'No matching bots found'}
+                                    </div>
+                                  )
+                                }
+
+                                return filteredBots.map((bot) => (
+                                  <div
+                                    key={bot.id}
+                                    className={cn(
+                                      'px-3 py-2 text-sm cursor-pointer hover:bg-muted/50',
+                                      dashboardBuyBotId === bot.id && 'bg-muted'
+                                    )}
+                                    onClick={() => {
+                                      setDashboardBuyBotId(bot.id)
+                                      setDashboardBuyBotSearch(bot.name)
+                                      setDashboardBuyBotDropdownOpen(false)
+                                    }}
+                                  >
+                                    <div className="font-bold">{bot.name}</div>
+                                    {bot.tags && bot.tags.length > 0 && (
+                                      <div className="text-xs text-muted">{bot.tags.join(', ')}</div>
+                                    )}
+                                  </div>
+                                ))
+                              })()}
+                            </div>
+                          </>
+                        )}
+                        {dashboardBuyBotId && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0 text-muted hover:text-foreground"
+                            onClick={() => {
+                              setDashboardBuyBotId('')
+                              setDashboardBuyBotSearch('')
+                            }}
+                          >
+                            ×
+                          </Button>
+                        )}
+                      </div>
+
+                      {eligibleBots.length === 0 && (
+                        <div className="text-xs text-muted">
+                          No eligible bots. Your private bots or bots tagged "Atlas"/"Nexus" will appear here.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="border-t border-border my-3" />
+
+                    {/* Bots Invested In Section */}
+                    <div className="font-black mb-3">Bots Invested In ({dashboardInvestmentsWithPnl.length})</div>
+                    {dashboardInvestmentsWithPnl.length === 0 ? (
+                      <div className="text-muted text-center py-4">No investments yet.</div>
+                    ) : (
+                      <div className="grid gap-2 max-h-[250px] overflow-y-auto">
+                        {dashboardInvestmentsWithPnl.map((inv, idx) => {
+                          const isExpanded = dashboardBotExpanded[inv.botId] ?? false
+                          const isSelling = dashboardSellBotId === inv.botId
+                          const isBuyingMore = dashboardBuyMoreBotId === inv.botId
+                          const botColor = BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length]
+                          const allocation = dashboardTotalValue > 0 ? (inv.currentValue / dashboardTotalValue) * 100 : 0
+                          return (
+                            <Card key={inv.botId} className="p-3 border">
+                              <div className="flex items-center gap-3">
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: botColor }} />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => setDashboardBotExpanded((prev) => ({ ...prev, [inv.botId]: !isExpanded }))}
+                                >
+                                  {isExpanded ? '▼' : '▶'}
+                                </Button>
+                                <div className="flex-1">
+                                  <div className="font-bold">{inv.botName}</div>
+                                </div>
+                                <div className="text-sm text-muted">
+                                  {formatUsd(inv.costBasis)} → {formatUsd(inv.currentValue)}
+                                </div>
+                                <div className={cn("font-bold min-w-[80px] text-right", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                  {formatSignedUsd(inv.pnl)} ({inv.pnlPercent >= 0 ? '+' : ''}{inv.pnlPercent.toFixed(1)}%)
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => {
+                                    setDashboardSellBotId(null)
+                                    setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
+                                  }}
+                                >
+                                  Buy
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => {
+                                    setDashboardBuyMoreBotId(null)
+                                    setDashboardSellBotId(isSelling ? null : inv.botId)
+                                  }}
+                                >
+                                  Sell
+                                </Button>
+                              </div>
+                              {isBuyingMore && (
+                                <div className="mt-3 pt-3 border-t border-border flex gap-2 items-center">
+                                  <div className="flex gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                      className="h-6 w-6 p-0 text-xs"
+                                      onClick={() => setDashboardBuyMoreMode('$')}
+                                    >
+                                      $
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                      className="h-6 w-6 p-0 text-xs"
+                                      onClick={() => setDashboardBuyMoreMode('%')}
+                                    >
+                                      %
+                                    </Button>
+                                  </div>
+                                  <Input
+                                    type="number"
+                                    placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                    value={dashboardBuyMoreAmount}
+                                    onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                    className="h-6 w-24 text-sm"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => handleDashboardBuyMore(inv.botId)}
+                                  >
+                                    Buy More
+                                  </Button>
+                                  <span className="text-xs text-muted">Cash: {formatUsd(dashboardCash)}</span>
+                                </div>
+                              )}
+                              {isSelling && (
+                                <div className="mt-3 pt-3 border-t border-border flex gap-2 items-center">
+                                  <div className="flex gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant={dashboardSellMode === '$' ? 'accent' : 'outline'}
+                                      className="h-6 w-6 p-0 text-xs"
+                                      onClick={() => setDashboardSellMode('$')}
+                                    >
+                                      $
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant={dashboardSellMode === '%' ? 'accent' : 'outline'}
+                                      className="h-6 w-6 p-0 text-xs"
+                                      onClick={() => setDashboardSellMode('%')}
+                                    >
+                                      %
+                                    </Button>
+                                  </div>
+                                  <Input
+                                    type="number"
+                                    placeholder={dashboardSellMode === '$' ? 'Amount' : 'Percent'}
+                                    value={dashboardSellAmount}
+                                    onChange={(e) => setDashboardSellAmount(e.target.value)}
+                                    className="h-6 w-24 text-sm"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => handleDashboardSell(inv.botId, false)}
+                                  >
+                                    Sell
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => handleDashboardSell(inv.botId, true)}
+                                  >
+                                    Sell All
+                                  </Button>
+                                </div>
+                              )}
+                              {isExpanded && !isSelling && !isBuyingMore && (
+                                <div className="mt-3 pt-3 border-t border-border">
+                                  <div className="grid grid-cols-4 gap-4 text-sm">
+                                    <div>
+                                      <div className="text-[10px] text-muted font-bold">Allocation</div>
+                                      <div className="font-bold">{allocation.toFixed(1)}%</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] text-muted font-bold">Cost Basis</div>
+                                      <div className="font-bold">{formatUsd(inv.costBasis)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] text-muted font-bold">Current Value</div>
+                                      <div className="font-bold">{formatUsd(inv.currentValue)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] text-muted font-bold">PnL</div>
+                                      <div className={cn("font-bold", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                        {formatSignedUsd(inv.pnl)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </Card>
+                          )
+                        })}
+                      </div>
+                    )}
                   </Card>
 
-                  {/* Pie Chart - 1/3 width */}
-                  <Card className="p-4 flex flex-col">
-                    <div className="font-black mb-3 text-center">Current Holdings</div>
-                    <div className="flex-1 flex items-center justify-center">
-                      <PositionPieChart positions={positions.map(p => ({ ticker: p.ticker, allocation: p.allocation, color: p.color }))} />
+                  {/* Right Panel: Portfolio Allocation Pie Chart */}
+                  <Card className="p-4">
+                    <div className="font-black mb-3">Portfolio Allocation</div>
+                    <div className="flex items-start gap-4">
+                      {/* Pie Chart SVG */}
+                      <svg viewBox="0 0 100 100" className="w-40 h-40 flex-shrink-0">
+                        {(() => {
+                          const cashAlloc = dashboardTotalValue > 0 ? dashboardCash / dashboardTotalValue : 1
+                          const slices: Array<{ color: string; percent: number; label: string }> = []
+
+                          // Add bot slices
+                          dashboardInvestmentsWithPnl.forEach((inv, idx) => {
+                            const pct = dashboardTotalValue > 0 ? inv.currentValue / dashboardTotalValue : 0
+                            if (pct > 0) {
+                              slices.push({
+                                color: BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length],
+                                percent: pct,
+                                label: inv.botName,
+                              })
+                            }
+                          })
+
+                          // Add cash slice
+                          if (cashAlloc > 0) {
+                            slices.push({ color: '#94a3b8', percent: cashAlloc, label: 'Cash' })
+                          }
+
+                          // Draw pie slices
+                          let cumulativePercent = 0
+                          return slices.map((slice, i) => {
+                            const startAngle = cumulativePercent * 360
+                            cumulativePercent += slice.percent
+                            const endAngle = cumulativePercent * 360
+
+                            const startRad = ((startAngle - 90) * Math.PI) / 180
+                            const endRad = ((endAngle - 90) * Math.PI) / 180
+
+                            const x1 = 50 + 45 * Math.cos(startRad)
+                            const y1 = 50 + 45 * Math.sin(startRad)
+                            const x2 = 50 + 45 * Math.cos(endRad)
+                            const y2 = 50 + 45 * Math.sin(endRad)
+
+                            const largeArc = slice.percent > 0.5 ? 1 : 0
+
+                            // Handle full circle case
+                            if (slices.length === 1) {
+                              return (
+                                <circle
+                                  key={i}
+                                  cx="50"
+                                  cy="50"
+                                  r="45"
+                                  fill={slice.color}
+                                />
+                              )
+                            }
+
+                            return (
+                              <path
+                                key={i}
+                                d={`M 50 50 L ${x1} ${y1} A 45 45 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                                fill={slice.color}
+                              />
+                            )
+                          })
+                        })()}
+                      </svg>
+
+                      {/* Legend */}
+                      <div className="flex-1 grid gap-1.5 text-sm">
+                        {dashboardInvestmentsWithPnl.map((inv, idx) => {
+                          const pct = dashboardTotalValue > 0 ? (inv.currentValue / dashboardTotalValue) * 100 : 0
+                          return (
+                            <div key={inv.botId} className="flex items-center gap-2">
+                              <div
+                                className="w-3 h-3 rounded-sm flex-shrink-0"
+                                style={{ backgroundColor: BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length] }}
+                              />
+                              <span className="flex-1 truncate font-bold">{inv.botName}</span>
+                              <span className="text-muted">{pct.toFixed(1)}%</span>
+                              <span className="font-bold">{formatUsd(inv.currentValue)}</span>
+                            </div>
+                          )
+                        })}
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-sm flex-shrink-0 bg-slate-400" />
+                          <span className="flex-1 font-bold">Cash</span>
+                          <span className="text-muted">
+                            {dashboardTotalValue > 0 ? ((dashboardCash / dashboardTotalValue) * 100).toFixed(1) : '100.0'}%
+                          </span>
+                          <span className="font-bold">{formatUsd(dashboardCash)}</span>
+                        </div>
+                        <div className="border-t border-border pt-1.5 mt-1 flex items-center gap-2">
+                          <div className="w-3 h-3" />
+                          <span className="flex-1 font-black">Total</span>
+                          <span className="text-muted">100%</span>
+                          <span className="font-black">{formatUsd(dashboardTotalValue)}</span>
+                        </div>
+                      </div>
                     </div>
                   </Card>
                 </div>
-
-                {/* Bots Invested In - Collapsible Cards */}
-                <Card className="p-4">
-                  <div className="font-black mb-3">Bots Invested In</div>
-                  {investedBots.length === 0 ? (
-                    <div className="text-muted text-center py-4">No bots saved yet.</div>
-                  ) : (
-                    <div className="grid gap-2">
-                      {investedBots.map((bot) => {
-                        const isExpanded = dashboardBotExpanded[bot.id] ?? false
-                        return (
-                          <Card key={bot.id} className="p-3 border">
-                            <div
-                              className="flex items-center gap-3 cursor-pointer"
-                              onClick={() => setDashboardBotExpanded((prev) => ({ ...prev, [bot.id]: !isExpanded }))}
-                            >
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0">
-                                {isExpanded ? '▼' : '▶'}
-                              </Button>
-                              <div className="flex-1">
-                                <div className="font-bold flex items-center gap-2">
-                                  {bot.name}
-                                  {bot.readonly ? <Badge variant="secondary" className="text-[10px]">Community</Badge> : null}
-                                </div>
-                              </div>
-                              <div className="text-sm text-muted">
-                                {formatPct(bot.allocation)} · {formatUsd(bot.capital)}
-                              </div>
-                              <div className={cn("font-bold", bot.pnl >= 0 ? 'text-success' : 'text-danger')}>
-                                {formatSignedUsd(bot.pnl)}
-                              </div>
-                            </div>
-                            {isExpanded && (
-                              <div className="mt-3 pt-3 border-t border-border">
-                                <div className="grid grid-cols-4 gap-4 text-sm">
-                                  <div>
-                                    <div className="text-[10px] text-muted font-bold">Allocation</div>
-                                    <div className="font-bold">{formatPct(bot.allocation)}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-[10px] text-muted font-bold">Capital</div>
-                                    <div className="font-bold">{formatUsd(bot.capital)}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-[10px] text-muted font-bold">PnL</div>
-                                    <div className={cn("font-bold", bot.pnl >= 0 ? 'text-success' : 'text-danger')}>
-                                      {formatSignedUsd(bot.pnl)}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-[10px] text-muted font-bold">Tags</div>
-                                    <div className="flex flex-wrap gap-1">
-                                      {(bot.tags.length ? bot.tags : ['Unassigned']).map((tag) => (
-                                        <Badge key={tag} variant="outline" className="text-[10px]">{tag}</Badge>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </Card>
-                        )
-                      })}
-                    </div>
-                  )}
-                </Card>
               </div>
             ) : (
               <div className="mt-3 grid gap-3">
@@ -9117,10 +9873,32 @@ function App() {
                                     <div className="stat-value">{formatPct(state.result?.metrics.maxDrawdown ?? NaN)}</div>
                                   </div>
                                   <div>
-                                    <div className="stat-label">Sharpe</div>
+                                    <div className="stat-label">Calmar Ratio</div>
+                                    <div className="stat-value">
+                                      {Number.isFinite(state.result?.metrics.calmar ?? NaN) ? (state.result?.metrics.calmar ?? 0).toFixed(2) : '—'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="stat-label">Sharpe Ratio</div>
                                     <div className="stat-value">
                                       {Number.isFinite(state.result?.metrics.sharpe ?? NaN) ? (state.result?.metrics.sharpe ?? 0).toFixed(2) : '—'}
                                     </div>
+                                  </div>
+                                  <div>
+                                    <div className="stat-label">Sortino Ratio</div>
+                                    <div className="stat-value">
+                                      {Number.isFinite(state.result?.metrics.sortino ?? NaN) ? (state.result?.metrics.sortino ?? 0).toFixed(2) : '—'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="stat-label">Treynor Ratio</div>
+                                    <div className="stat-value">
+                                      {Number.isFinite(state.result?.metrics.treynor ?? NaN) ? (state.result?.metrics.treynor ?? 0).toFixed(2) : '—'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="stat-label">Volatility</div>
+                                    <div className="stat-value">{formatPct(state.result?.metrics.vol ?? NaN)}</div>
                                   </div>
                                   <div>
                                     <div className="stat-label">Trading Days</div>

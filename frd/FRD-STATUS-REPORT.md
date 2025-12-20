@@ -1,12 +1,17 @@
 # FRD Status Report
-Generated: 2025-12-18
+Generated: 2025-12-19
 
 ## Executive Summary
 
-**Total FRDs**: 7 active documents
+**Total FRDs**: 10 active documents
 **Completed**: 1 (FRD-006: Tailwind/shadcn refactor)
-**In Progress**: 6 (all draft status)
-**Completion Rate**: 14%
+**In Progress**: 9 (all draft status)
+**Completion Rate**: 10%
+
+### New FRDs Added (2025-12-19)
+- FRD-007: Database Architecture & Migration
+- FRD-008: User Data Security Best Practices
+- FRD-009: Technology Stack Selection
 
 ---
 
@@ -424,6 +429,78 @@ Generated: 2025-12-18
    - Update README.md?
    - Update package.json name/description?
    - Update GitHub repo description?
+
+---
+
+### FRD-007: Database Architecture & Migration
+**Status**: 🔴 **NOT STARTED** (0% complete)
+**Priority**: Critical
+**Owner**: Unassigned
+**Dependencies**: None
+
+#### Summary:
+Migrate user data persistence from browser localStorage to a server-side database, enabling cross-device access, proper backup/restore, and production-ready data management.
+
+#### Key Deliverables:
+1. Database schema for users, bots, watchlists, call_chains, ui_state
+2. CRUD API endpoints for user data
+3. Seed data management (load/clear endpoints)
+4. Frontend migration from localStorage to API calls
+
+#### Questions to Execute:
+1. Should we support migration from existing localStorage data?
+2. Sync strategy: automatic background sync or manual "sync" button?
+3. How to handle conflicts from multiple devices?
+
+---
+
+### FRD-008: User Data Security Best Practices
+**Status**: 🔴 **NOT STARTED** (0% complete)
+**Priority**: High
+**Owner**: Unassigned
+**Dependencies**: FRD-007
+
+#### Summary:
+Implement security best practices for storing and managing user data, including authentication, authorization, encryption, and audit logging.
+
+#### Key Deliverables:
+1. Password hashing with bcrypt
+2. JWT authentication with proper expiration
+3. Authorization middleware for user data isolation
+4. Rate limiting on login attempts
+5. Audit logging for security events
+6. Environment variable management (.env.example)
+
+#### Questions to Execute:
+1. Should we implement password reset via email?
+2. Account lockout after N failed attempts?
+3. Data retention policy for audit logs?
+
+---
+
+### FRD-009: Technology Stack Selection
+**Status**: 🔴 **NOT STARTED** (0% complete)
+**Priority**: High
+**Owner**: Unassigned
+**Dependencies**: None
+
+#### Summary:
+Evaluate and recommend technology choices for database, ORM, authentication, and hosting infrastructure.
+
+#### Recommended Stack:
+| Layer | Technology | Reason |
+|-------|------------|--------|
+| Database (prod) | PostgreSQL | Industry standard, JSONB support |
+| Database (dev) | SQLite | Zero config, easy setup |
+| ORM | Drizzle ORM | TypeScript-native, lightweight |
+| Auth | Custom JWT | Simple, full control |
+| Migrations | Drizzle Kit | Integrated with ORM |
+| Hosting | Railway or Render | Easy full-stack deployment |
+
+#### Questions to Execute:
+1. Connection pooling for PostgreSQL?
+2. Database backup automation?
+3. Should we use Supabase Auth instead of custom JWT?
 
 ---
 

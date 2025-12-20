@@ -16,10 +16,16 @@ General templates/live docs:
 
 ## Current Priority Order
 
-1. `Bot DB/001-analyze-tab-collapsible-bot-cards.md`
-2. `Community/002-community-watchlists-view.md`
-3. `Build/003-conditional-logic-validation.md`
-4. `Backlog/004-theming-and-user-data-persistence.md`
-5. `Build/004-custom-indicator-zone.md`
-6. `Build/005-composer-symphony-integration.md`
-7. `Backlog/005-branding-atlas-nexus.md`
+### Critical Infrastructure (New)
+1. `Build/007-database-architecture-migration.md` - Database migration from localStorage
+2. `Build/008-user-data-security.md` - Authentication & security best practices
+3. `Build/009-technology-stack-selection.md` - Tech stack decisions (Drizzle, PostgreSQL)
+
+### Feature Development
+4. `Bot DB/001-analyze-tab-collapsible-bot-cards.md`
+5. `Community/002-community-watchlists-view.md`
+6. `Build/003-conditional-logic-validation.md`
+7. `Backlog/004-theming-and-user-data-persistence.md`
+8. `Build/004-custom-indicator-zone.md`
+9. `Build/005-composer-symphony-integration.md`
+10. `Backlog/005-branding-atlas-nexus.md`
