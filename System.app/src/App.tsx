@@ -202,6 +202,7 @@ const defaultUiState = (): UserUiState => ({
   communitySelectedWatchlistId: null,
   communityWatchlistSlot1Id: null,
   communityWatchlistSlot2Id: null,
+  fundZones: { fund1: null, fund2: null, fund3: null, fund4: null, fund5: null },
 })
 
 const ensureDefaultWatchlist = (watchlists: Watchlist[]): Watchlist[] => {
@@ -500,9 +501,20 @@ type DashboardPortfolio = {
 }
 
 // Admin types for Atlas Overview
+type EligibilityMetric = 'cagr' | 'maxDrawdown' | 'calmar' | 'sharpe' | 'sortino' | 'treynor' | 'vol' | 'winRate' | 'avgTurnover' | 'avgHoldings'
+
+type EligibilityRequirement = {
+  id: string
+  type: 'live_months' | 'metric'
+  metric?: EligibilityMetric
+  comparison?: 'at_least' | 'at_most'
+  value: number
+}
+
 type AdminConfig = {
   atlasFeePercent: number
   partnerProgramSharePercent: number
+  eligibilityRequirements: EligibilityRequirement[]
 }
 
 type TreasuryEntry = {
@@ -521,8 +533,27 @@ type TreasuryState = {
 type AdminAggregatedStats = {
   totalDollarsInAccounts: number
   totalDollarsInvested: number
+  totalPortfolioValue: number
+  totalInvestedAtlas: number
+  totalInvestedNexus: number
+  totalInvestedPrivate: number
   userCount: number
   lastUpdated: number
+}
+
+type TreasuryFeeBreakdown = {
+  atlasFeesTotal: number
+  privateFeesTotal: number
+  nexusFeesTotal: number
+  nexusPartnerPaymentsTotal: number
+}
+
+type FundZones = {
+  fund1: string | null
+  fund2: string | null
+  fund3: string | null
+  fund4: string | null
+  fund5: string | null
 }
 
 const STARTING_CAPITAL = 100000
@@ -540,6 +571,7 @@ type UserUiState = {
   communitySelectedWatchlistId: string | null
   communityWatchlistSlot1Id: string | null
   communityWatchlistSlot2Id: string | null
+  fundZones: FundZones
 }
 
 type UserData = {
@@ -979,6 +1011,74 @@ const DashboardEquityChart = ({
       <div className="text-[10px] text-muted font-bold px-1">Drawdown</div>
       <div ref={drawdownContainerRef} className="w-full h-[80px] rounded-b-lg border border-border overflow-hidden" />
     </div>
+  )
+}
+
+// Partner Program T-Bill Equity Chart Component
+const PartnerTBillChart = ({
+  data,
+  theme,
+}: {
+  data: { time: UTCTimestamp; value: number }[]
+  theme: ThemeMode
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  const seriesRef = useRef<ISeriesApi<'Area'> | null>(null)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+
+    const chart = createChart(el, {
+      width: el.clientWidth,
+      height: 160,
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor, rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
+      handleScroll: false,
+      handleScale: false,
+    })
+
+    const series = chart.addSeries(AreaSeries, {
+      lineColor: '#10b981', // emerald-500
+      topColor: 'rgba(16, 185, 129, 0.3)',
+      bottomColor: 'rgba(16, 185, 129, 0.0)',
+      lineWidth: 2,
+      priceFormat: { type: 'custom', formatter: (v: number) => `${v.toFixed(2)}%` },
+    })
+
+    chartRef.current = chart
+    seriesRef.current = series
+
+    const ro = new ResizeObserver(() => {
+      chart.applyOptions({ width: el.clientWidth })
+    })
+    ro.observe(el)
+
+    return () => {
+      ro.disconnect()
+      chart.remove()
+      chartRef.current = null
+      seriesRef.current = null
+    }
+  }, [theme])
+
+  useEffect(() => {
+    if (!seriesRef.current || !chartRef.current) return
+    seriesRef.current.setData(data)
+    chartRef.current.timeScale().fitContent()
+  }, [data])
+
+  return (
+    <div ref={containerRef} className="w-full h-[160px] rounded-lg border border-border overflow-hidden" />
   )
 }
 
@@ -2072,10 +2172,20 @@ function AdminPanel({
 
   // Atlas Overview state
   const [adminStats, setAdminStats] = useState<AdminAggregatedStats | null>(null)
-  const [adminConfig, setAdminConfig] = useState<AdminConfig>({ atlasFeePercent: 0, partnerProgramSharePercent: 0 })
+  const [adminConfig, setAdminConfig] = useState<AdminConfig>({ atlasFeePercent: 0, partnerProgramSharePercent: 0, eligibilityRequirements: [] })
+  const [savedConfig, setSavedConfig] = useState<AdminConfig>({ atlasFeePercent: 0, partnerProgramSharePercent: 0, eligibilityRequirements: [] })
+  const [feeBreakdown, setFeeBreakdown] = useState<TreasuryFeeBreakdown>({ atlasFeesTotal: 0, privateFeesTotal: 0, nexusFeesTotal: 0, nexusPartnerPaymentsTotal: 0 })
   const [treasury, setTreasury] = useState<TreasuryState>({ balance: 100000, entries: [] })
   const [configSaving, setConfigSaving] = useState(false)
   const [treasuryPeriod, setTreasuryPeriod] = useState<'1D' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL'>('ALL')
+
+  // Eligibility requirements state
+  const [eligibilityRequirements, setEligibilityRequirements] = useState<EligibilityRequirement[]>([])
+  const [liveMonthsValue, setLiveMonthsValue] = useState(0)
+  const [newMetric, setNewMetric] = useState<EligibilityMetric>('cagr')
+  const [newComparison, setNewComparison] = useState<'at_least' | 'at_most'>('at_least')
+  const [newMetricValue, setNewMetricValue] = useState(0)
+  const [eligibilitySaving, setEligibilitySaving] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -2201,12 +2311,17 @@ function AdminPanel({
 
         if (cancelled) return
 
-        const statsData = (await statsRes.json()) as { stats: AdminAggregatedStats; config: AdminConfig } | { error: string }
+        const statsData = (await statsRes.json()) as { stats: AdminAggregatedStats; config: AdminConfig; feeBreakdown: TreasuryFeeBreakdown } | { error: string }
         const treasuryData = (await treasuryRes.json()) as { treasury: TreasuryState } | { error: string }
 
         if (statsRes.ok && 'stats' in statsData) {
           setAdminStats(statsData.stats)
-          setAdminConfig(statsData.config || { atlasFeePercent: 0, partnerProgramSharePercent: 0 })
+          const config = statsData.config || { atlasFeePercent: 0, partnerProgramSharePercent: 0, eligibilityRequirements: [] }
+          setAdminConfig(config)
+          setSavedConfig(config)
+          if (statsData.feeBreakdown) {
+            setFeeBreakdown(statsData.feeBreakdown)
+          }
         }
         if (treasuryRes.ok && 'treasury' in treasuryData) {
           setTreasury(treasuryData.treasury)
@@ -2235,12 +2350,93 @@ function AdminPanel({
         body: JSON.stringify(adminConfig)
       })
       if (!res.ok) throw new Error('Failed to save config')
+      setSavedConfig({ ...adminConfig })
     } catch (e) {
       console.error('Failed to save config:', e)
     } finally {
       setConfigSaving(false)
     }
   }, [adminConfig])
+
+  // Fetch eligibility requirements for Nexus Maintenance tab
+  useEffect(() => {
+    if (adminTab !== 'Nexus Maintenance') return
+    let cancelled = false
+
+    const fetchEligibility = async () => {
+      try {
+        const res = await fetch('/api/admin/eligibility')
+        if (!res.ok) return
+        const data = (await res.json()) as { eligibilityRequirements: EligibilityRequirement[] }
+        if (cancelled) return
+        setEligibilityRequirements(data.eligibilityRequirements || [])
+        // Set live months value from existing requirement
+        const liveMonthsReq = data.eligibilityRequirements.find(r => r.type === 'live_months')
+        if (liveMonthsReq) setLiveMonthsValue(liveMonthsReq.value)
+      } catch (e) {
+        console.error('Failed to fetch eligibility:', e)
+      }
+    }
+
+    fetchEligibility()
+    return () => { cancelled = true }
+  }, [adminTab])
+
+  const saveEligibilityRequirements = useCallback(async (reqs: EligibilityRequirement[]) => {
+    setEligibilitySaving(true)
+    try {
+      const res = await fetch('/api/admin/eligibility', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eligibilityRequirements: reqs })
+      })
+      if (!res.ok) throw new Error('Failed to save eligibility')
+      setEligibilityRequirements(reqs)
+    } catch (e) {
+      console.error('Failed to save eligibility:', e)
+    } finally {
+      setEligibilitySaving(false)
+    }
+  }, [])
+
+  const handleSaveLiveMonths = useCallback(() => {
+    const existingReqs = eligibilityRequirements.filter(r => r.type !== 'live_months')
+    const newReqs: EligibilityRequirement[] = [
+      { id: 'live_months', type: 'live_months', value: liveMonthsValue },
+      ...existingReqs
+    ]
+    saveEligibilityRequirements(newReqs)
+  }, [liveMonthsValue, eligibilityRequirements, saveEligibilityRequirements])
+
+  const handleAddMetricRequirement = useCallback(() => {
+    const newReq: EligibilityRequirement = {
+      id: `metric-${Date.now()}`,
+      type: 'metric',
+      metric: newMetric,
+      comparison: newComparison,
+      value: newMetricValue
+    }
+    const newReqs = [...eligibilityRequirements, newReq]
+    saveEligibilityRequirements(newReqs)
+  }, [newMetric, newComparison, newMetricValue, eligibilityRequirements, saveEligibilityRequirements])
+
+  const handleRemoveRequirement = useCallback((id: string) => {
+    const newReqs = eligibilityRequirements.filter(r => r.id !== id)
+    saveEligibilityRequirements(newReqs)
+  }, [eligibilityRequirements, saveEligibilityRequirements])
+
+  const METRIC_LABELS: Record<EligibilityMetric, string> = {
+    cagr: 'CAGR',
+    maxDrawdown: 'Max Drawdown',
+    calmar: 'Calmar Ratio',
+    sharpe: 'Sharpe Ratio',
+    sortino: 'Sortino Ratio',
+    treynor: 'Treynor Ratio',
+    vol: 'Volatility',
+    winRate: 'Win Rate',
+    avgTurnover: 'Avg Turnover',
+    avgHoldings: 'Avg Holdings'
+  }
 
   useEffect(() => {
     if (!downloadJob?.id) return
@@ -2322,22 +2518,10 @@ function AdminPanel({
         <div className="space-y-6">
           <div className="font-black text-lg">Atlas Overview</div>
 
-          {/* Stats Section */}
+          {/* Fee Configuration Section */}
           <Card className="p-6">
-            <div className="font-bold mb-4">System Statistics</div>
+            <div className="font-bold mb-4">Fee Configuration</div>
             <div className="grid grid-cols-2 gap-6">
-              <div>
-                <div className="text-sm text-muted mb-1">Total Dollars In Accounts</div>
-                <div className="text-2xl font-black">
-                  {adminStats ? `$${adminStats.totalDollarsInAccounts.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-muted mb-1">Total Dollars Invested in Systems</div>
-                <div className="text-2xl font-black">
-                  {adminStats ? `$${adminStats.totalDollarsInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
-                </div>
-              </div>
               <div>
                 <div className="text-sm text-muted mb-1">Atlas Fee %</div>
                 <div className="flex items-center gap-2">
@@ -2362,6 +2546,9 @@ function AdminPanel({
                     {configSaving ? 'Saving...' : 'Save'}
                   </Button>
                 </div>
+                <div className="text-xs text-muted mt-1">
+                  Currently: {savedConfig.atlasFeePercent}%
+                </div>
               </div>
               <div>
                 <div className="text-sm text-muted mb-1">Partner Program Share %</div>
@@ -2379,6 +2566,53 @@ function AdminPanel({
                     className="w-20 px-2 py-1 rounded border border-border bg-background text-sm"
                   />
                   <span>%</span>
+                  <Button
+                    size="sm"
+                    onClick={() => void handleSaveConfig()}
+                    disabled={configSaving}
+                  >
+                    {configSaving ? 'Saving...' : 'Save'}
+                  </Button>
+                </div>
+                <div className="text-xs text-muted mt-1">
+                  Currently: {savedConfig.partnerProgramSharePercent}%
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* 5 Totals Grid */}
+          <Card className="p-6">
+            <div className="font-bold mb-4">System Statistics</div>
+            <div className="grid grid-cols-5 gap-4">
+              <div className="text-center p-4 bg-muted/30 rounded-lg">
+                <div className="text-xs text-muted mb-1">Total Portfolio Values</div>
+                <div className="text-lg font-black">
+                  ${(adminStats?.totalPortfolioValue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </div>
+              </div>
+              <div className="text-center p-4 bg-muted/30 rounded-lg">
+                <div className="text-xs text-muted mb-1">Total Invested (All)</div>
+                <div className="text-lg font-black">
+                  ${(adminStats?.totalDollarsInvested ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </div>
+              </div>
+              <div className="text-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/30">
+                <div className="text-xs text-muted mb-1">Invested in Atlas</div>
+                <div className="text-lg font-black text-blue-500">
+                  ${(adminStats?.totalInvestedAtlas ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </div>
+              </div>
+              <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/30">
+                <div className="text-xs text-muted mb-1">Invested in Nexus</div>
+                <div className="text-lg font-black text-purple-500">
+                  ${(adminStats?.totalInvestedNexus ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </div>
+              </div>
+              <div className="text-center p-4 bg-gray-500/10 rounded-lg border border-gray-500/30">
+                <div className="text-xs text-muted mb-1">Invested in Private</div>
+                <div className="text-lg font-black text-gray-400">
+                  ${(adminStats?.totalInvestedPrivate ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                 </div>
               </div>
             </div>
@@ -2418,6 +2652,34 @@ function AdminPanel({
             <div className="h-[200px] border border-border rounded-lg bg-muted/30 flex items-center justify-center text-muted text-sm mb-4">
               Treasury Equity Chart - Balance: ${treasury.balance.toLocaleString()}
               {treasury.entries.length > 0 && ` (${treasury.entries.length} entries)`}
+            </div>
+
+            {/* Fee Breakdowns */}
+            <div className="grid grid-cols-4 gap-4 mb-6">
+              <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/30">
+                <div className="text-xs text-muted mb-1">Returns from Atlas Fees</div>
+                <div className="text-lg font-bold text-emerald-500">
+                  +${feeBreakdown.atlasFeesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="p-3 bg-gray-500/10 rounded-lg border border-gray-500/30">
+                <div className="text-xs text-muted mb-1">Returns from Private Fees</div>
+                <div className="text-lg font-bold text-emerald-500">
+                  +${feeBreakdown.privateFeesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/30">
+                <div className="text-xs text-muted mb-1">Returns from Nexus Fees</div>
+                <div className="text-lg font-bold text-emerald-500">
+                  +${feeBreakdown.nexusFeesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="p-3 bg-red-500/10 rounded-lg border border-red-500/30">
+                <div className="text-xs text-muted mb-1">Nexus Partner Payments</div>
+                <div className="text-lg font-bold text-red-500">
+                  -${feeBreakdown.nexusPartnerPaymentsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
             </div>
 
             {/* Recent Fee Deposits */}
@@ -2461,8 +2723,111 @@ function AdminPanel({
       )}
 
       {adminTab === 'Nexus Maintenance' && (
-        <div>
-          <div className="font-black text-lg mb-4">Nexus Maintenance</div>
+        <div className="space-y-6">
+          <div className="font-black text-lg">Nexus Maintenance</div>
+
+          {/* Partner Program Eligibility Requirements */}
+          <Card className="p-6">
+            <div className="font-bold mb-4">Partner Program Eligibility Requirements</div>
+            <div className="grid grid-cols-2 gap-6">
+              {/* Left Half - Add/Edit Requirements */}
+              <div className="space-y-4">
+                {/* Live Months Requirement */}
+                <div className="p-4 bg-muted/30 rounded-lg">
+                  <div className="text-sm font-medium mb-2">Live Duration Requirement</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">Must Be Live for</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={liveMonthsValue}
+                      onChange={(e) => setLiveMonthsValue(parseInt(e.target.value) || 0)}
+                      className="w-16 px-2 py-1 rounded border border-border bg-background text-sm"
+                    />
+                    <span className="text-sm">Months</span>
+                    <Button
+                      size="sm"
+                      onClick={handleSaveLiveMonths}
+                      disabled={eligibilitySaving}
+                    >
+                      {eligibilitySaving ? 'Saving...' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Add Metric Requirement */}
+                <div className="p-4 bg-muted/30 rounded-lg">
+                  <div className="text-sm font-medium mb-2">Add Metric Requirement</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm">Must have</span>
+                    <select
+                      value={newMetric}
+                      onChange={(e) => setNewMetric(e.target.value as EligibilityMetric)}
+                      className="px-2 py-1 rounded border border-border bg-background text-sm"
+                    >
+                      {(Object.keys(METRIC_LABELS) as EligibilityMetric[]).map(m => (
+                        <option key={m} value={m}>{METRIC_LABELS[m]}</option>
+                      ))}
+                    </select>
+                    <span className="text-sm">of</span>
+                    <select
+                      value={newComparison}
+                      onChange={(e) => setNewComparison(e.target.value as 'at_least' | 'at_most')}
+                      className="px-2 py-1 rounded border border-border bg-background text-sm"
+                    >
+                      <option value="at_least">at least</option>
+                      <option value="at_most">at most</option>
+                    </select>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newMetricValue}
+                      onChange={(e) => setNewMetricValue(parseFloat(e.target.value) || 0)}
+                      className="w-20 px-2 py-1 rounded border border-border bg-background text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleAddMetricRequirement}
+                      disabled={eligibilitySaving}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Half - Saved Requirements List */}
+              <div className="p-4 bg-muted/30 rounded-lg">
+                <div className="text-sm font-medium mb-2">Current Requirements</div>
+                {eligibilityRequirements.length === 0 ? (
+                  <div className="text-sm text-muted">No requirements set</div>
+                ) : (
+                  <ol className="list-decimal list-inside space-y-2 text-sm">
+                    {eligibilityRequirements.map((req) => (
+                      <li key={req.id} className="flex items-center justify-between">
+                        <span>
+                          {req.type === 'live_months' ? (
+                            <>Must be live for {req.value} months</>
+                          ) : (
+                            <>Must have {METRIC_LABELS[req.metric!]} of {req.comparison === 'at_least' ? 'at least' : 'at most'} {req.value}</>
+                          )}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-red-500 hover:text-red-600"
+                          onClick={() => handleRemoveRequirement(req.id)}
+                        >
+                          ×
+                        </Button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            </div>
+          </Card>
+
           <div className="grid grid-cols-3 gap-4">
             {/* Top 500 Nexus Systems */}
             <Card className="p-4 flex flex-col">
@@ -6983,8 +7348,6 @@ function App() {
     column: 'ticker',
     dir: 'asc',
   })
-  const [partnerFundBacktests, setPartnerFundBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
-  const [partnerFundCollapsedById, setPartnerFundCollapsedById] = useState<Record<string, boolean>>({})
 
   const theme = userId ? uiState.theme : deviceTheme
 
@@ -7152,25 +7515,6 @@ function App() {
 
   const callChainsById = useMemo(() => new Map(callChains.map((c) => [c.id, c])), [callChains])
 
-  const partnerFunds = useMemo(() => {
-    const makeFund = (id: string, name: string, ticker: string) => {
-      const root = ensureSlots(createNode('basic'))
-      root.title = name
-      const pos = ensureSlots(createNode('position'))
-      pos.positions = [ticker]
-      pos.collapsed = true
-      root.children.next = [pos]
-      return { id, name, root }
-    }
-    return [
-      makeFund('fund-1', 'Fund #1', 'SPY'),
-      makeFund('fund-2', 'Fund #2', 'QQQ'),
-      makeFund('fund-3', 'Fund #3', 'TLT'),
-      makeFund('fund-4', 'Fund #4', 'IWM'),
-      makeFund('fund-5', 'Fund #5', 'GLD'),
-    ]
-  }, [])
-
   // Dashboard investment logic
   const eligibleBots = useMemo(() => {
     if (!userId) return []
@@ -7216,13 +7560,33 @@ function App() {
 
     const syncPortfolioSummary = async () => {
       try {
+        // Calculate categorized investments based on bot tags
+        let investedAtlas = 0
+        let investedNexus = 0
+        let investedPrivate = 0
+
+        dashboardInvestmentsWithPnl.forEach(inv => {
+          const bot = savedBots.find(b => b.id === inv.botId)
+          const tags = bot?.tags || []
+          if (tags.includes('Atlas')) {
+            investedAtlas += inv.currentValue
+          } else if (tags.includes('Nexus')) {
+            investedNexus += inv.currentValue
+          } else {
+            investedPrivate += inv.currentValue
+          }
+        })
+
         await fetch(`/api/user/${userId}/portfolio-summary`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             totalValue: dashboardTotalValue,
             totalInvested: dashboardTotalValue - dashboardCash,
-            investmentCount: dashboardInvestmentsWithPnl.length
+            investmentCount: dashboardInvestmentsWithPnl.length,
+            investedAtlas,
+            investedNexus,
+            investedPrivate
           })
         })
       } catch (e) {
@@ -7237,7 +7601,7 @@ function App() {
     // Also sync periodically (every 5 minutes)
     const interval = setInterval(syncPortfolioSummary, 300000)
     return () => clearInterval(interval)
-  }, [userId, dashboardTotalValue, dashboardCash, dashboardInvestmentsWithPnl.length])
+  }, [userId, dashboardTotalValue, dashboardCash, dashboardInvestmentsWithPnl, savedBots])
 
   const handleDashboardBuy = () => {
     if (!dashboardBuyBotId) return
@@ -8075,6 +8439,60 @@ function App() {
       try {
         const { result } = await runBacktestForNode(bot.payload)
         setAnalyzeBacktests((prev) => ({ ...prev, [bot.id]: { status: 'done', result } }))
+
+        // Auto eligibility tagging (only for regular users, not admin)
+        if (userId && userId !== 'admin' && result?.metrics) {
+          try {
+            // Fetch eligibility requirements
+            const eligRes = await fetch('/api/admin/eligibility')
+            if (eligRes.ok) {
+              const { eligibilityRequirements } = await eligRes.json() as { eligibilityRequirements: EligibilityRequirement[] }
+
+              // Check if bot is already in a Fund zone
+              const isInFundZone = Object.values(uiState.fundZones).includes(bot.id)
+
+              // Check live months requirement
+              const liveMonthsReq = eligibilityRequirements.find(r => r.type === 'live_months')
+              const botAgeMonths = (Date.now() - bot.createdAt) / (1000 * 60 * 60 * 24 * 30)
+              const passesLiveMonths = !liveMonthsReq || botAgeMonths >= liveMonthsReq.value
+
+              // Check metric requirements
+              const metricReqs = eligibilityRequirements.filter(r => r.type === 'metric')
+              const passesMetrics = metricReqs.every(req => {
+                const metricValue = result.metrics[req.metric as keyof typeof result.metrics]
+                if (typeof metricValue !== 'number' || !Number.isFinite(metricValue)) return false
+                if (req.comparison === 'at_least') return metricValue >= req.value
+                if (req.comparison === 'at_most') return metricValue <= req.value
+                return true
+              })
+
+              const passesAll = passesLiveMonths && passesMetrics
+
+              setSavedBots(prev => prev.map(b => {
+                if (b.id !== bot.id) return b
+                const currentTags = b.tags || []
+                const hasNexus = currentTags.includes('Nexus')
+                const hasNexusEligible = currentTags.includes('Nexus Eligible')
+
+                if (passesAll) {
+                  // If passes and not in fund zone, add Nexus Eligible (if not already Nexus)
+                  if (!isInFundZone && !hasNexus && !hasNexusEligible) {
+                    return { ...b, tags: [...currentTags, 'Nexus Eligible'] }
+                  }
+                } else {
+                  // If fails, remove both Nexus and Nexus Eligible tags
+                  if (hasNexus || hasNexusEligible) {
+                    const newTags = currentTags.filter(t => t !== 'Nexus' && t !== 'Nexus Eligible')
+                    return { ...b, tags: newTags }
+                  }
+                }
+                return b
+              }))
+            }
+          } catch (eligErr) {
+            console.warn('Failed to check eligibility:', eligErr)
+          }
+        }
       } catch (err) {
         let message = String((err as Error)?.message || err)
         if (isValidationError(err)) {
@@ -8083,7 +8501,7 @@ function App() {
         setAnalyzeBacktests((prev) => ({ ...prev, [bot.id]: { status: 'error', error: message } }))
       }
     },
-    [runBacktestForNode],
+    [runBacktestForNode, userId, uiState.fundZones],
   )
 
   const runAnalyzeTickerContribution = useCallback(
@@ -8178,26 +8596,6 @@ function App() {
       }
     },
     [backtestMode],
-  )
-
-  const runPartnerFundBacktest = useCallback(
-    async (fundId: string, root: FlowNode) => {
-      setPartnerFundBacktests((prev) => {
-        if (prev[fundId]?.status === 'loading') return prev
-        return { ...prev, [fundId]: { status: 'loading' } }
-      })
-      try {
-        const { result } = await runBacktestForNode(root)
-        setPartnerFundBacktests((prev) => ({ ...prev, [fundId]: { status: 'done', result } }))
-      } catch (err) {
-        let message = String((err as Error)?.message || err)
-        if (isValidationError(err)) {
-          message = err.errors.map((e: BacktestError) => e.message).join(', ')
-        }
-        setPartnerFundBacktests((prev) => ({ ...prev, [fundId]: { status: 'error', error: message } }))
-      }
-    },
-    [runBacktestForNode],
   )
 
   useEffect(() => {
@@ -9118,27 +9516,56 @@ function App() {
                               <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
                                 <div className="font-black text-center w-full">Base Stats</div>
                                 <div className="base-stats-grid w-full self-stretch grid grid-cols-1 grid-rows-[auto_auto_auto] gap-3">
-                                  <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
-                                    <div className="font-black mb-2 text-center">Live Stats</div>
-                                    <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
-                                      <div>
-                                        <div className="stat-label">Total Return</div>
-                                        <div className="stat-value">{formatPct(0)}</div>
+                                  {(() => {
+                                    // Get investment data for this bot from dashboard portfolio
+                                    const investment = dashboardInvestmentsWithPnl.find((inv) => inv.botId === b.id)
+                                    const isInvested = !!investment
+                                    const amountInvested = investment?.costBasis ?? 0
+                                    const currentValue = investment?.currentValue ?? 0
+                                    const pnlPct = investment?.pnlPercent ?? 0
+
+                                    // Calculate CAGR since investment if invested
+                                    let liveCagr = 0
+                                    if (investment) {
+                                      const daysSinceInvestment = (Date.now() - investment.buyDate) / (1000 * 60 * 60 * 24)
+                                      const yearsSinceInvestment = daysSinceInvestment / 365
+                                      if (yearsSinceInvestment > 0 && amountInvested > 0) {
+                                        liveCagr = (Math.pow(currentValue / amountInvested, 1 / yearsSinceInvestment) - 1)
+                                      }
+                                    }
+
+                                    return (
+                                      <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                        <div className="font-black mb-2 text-center">Live Stats</div>
+                                        {isInvested ? (
+                                          <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
+                                            <div>
+                                              <div className="stat-label">Invested</div>
+                                              <div className="stat-value">{formatUsd(amountInvested)}</div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Current Value</div>
+                                              <div className="stat-value">{formatUsd(currentValue)}</div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">P&L</div>
+                                              <div className={cn("stat-value", pnlPct >= 0 ? 'text-success' : 'text-danger')}>
+                                                {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">CAGR</div>
+                                              <div className={cn("stat-value", liveCagr >= 0 ? 'text-success' : 'text-danger')}>
+                                                {formatPct(liveCagr)}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="text-muted text-sm">Not invested in this bot. Buy from Dashboard to track live stats.</div>
+                                        )}
                                       </div>
-                                      <div>
-                                        <div className="stat-label">CAGR</div>
-                                        <div className="stat-value">{formatPct(0)}</div>
-                                      </div>
-                                      <div>
-                                        <div className="stat-label">Max Drawdown</div>
-                                        <div className="stat-value">{formatPct(0)}</div>
-                                      </div>
-                                      <div>
-                                        <div className="stat-label">Sharpe</div>
-                                        <div className="stat-value">{(0).toFixed(2)}</div>
-                                      </div>
-                                    </div>
-                                  </div>
+                                    )
+                                  })()}
 
                                   <div className="base-stats-card w-full min-w-0 text-center self-stretch">
                                     <div className="w-full">
@@ -9515,17 +9942,54 @@ function App() {
                   if (!bot) continue
                   const tagNames = (watchlistsByBotId.get(bot.id) ?? []).map((w) => w.name)
                   const tags = [bot.visibility === 'community' ? 'Community' : 'Private', `Builder: ${bot.builderId}`, ...tagNames]
+                  const metrics = analyzeBacktests[bot.id]?.result?.metrics
                   out.push({
                     id: bot.id,
                     name: bot.name,
                     tags,
-                    oosCagr: 0,
-                    oosMaxdd: 0,
-                    oosSharpe: 0,
+                    oosCagr: metrics?.cagr ?? 0,
+                    oosMaxdd: metrics?.maxDrawdown ?? 0,
+                    oosSharpe: metrics?.sharpe ?? 0,
                   })
                 }
                 return out
               }
+
+              // Generate rows for Nexus bots (bots with 'Nexus' tag from any account)
+              const communityBotRows: CommunityBotRow[] = savedBots
+                .filter((bot) => bot.tags?.includes('Nexus'))
+                .map((bot) => {
+                  const tagNames = (watchlistsByBotId.get(bot.id) ?? []).map((w) => w.name)
+                  const tags = ['Nexus', `Builder: ${bot.builderId}`, ...tagNames]
+                  const metrics = analyzeBacktests[bot.id]?.result?.metrics
+                  return {
+                    id: bot.id,
+                    name: bot.name,
+                    tags,
+                    oosCagr: metrics?.cagr ?? 0,
+                    oosMaxdd: metrics?.maxDrawdown ?? 0,
+                    oosSharpe: metrics?.sharpe ?? 0,
+                  }
+                })
+
+              // Top 10 by CAGR (descending)
+              const topByCagr = [...communityBotRows]
+                .sort((a, b) => b.oosCagr - a.oosCagr)
+                .slice(0, 10)
+
+              // Top 10 by Calmar (CAGR / MaxDD) - we'll compute Calmar from existing metrics
+              const topByCalmar = [...communityBotRows]
+                .map((r) => ({
+                  ...r,
+                  calmar: r.oosMaxdd !== 0 ? Math.abs(r.oosCagr / r.oosMaxdd) : 0,
+                }))
+                .sort((a, b) => b.calmar - a.calmar)
+                .slice(0, 10)
+
+              // Top 10 by Sharpe (descending)
+              const topBySharpe = [...communityBotRows]
+                .sort((a, b) => b.oosSharpe - a.oosSharpe)
+                .slice(0, 10)
 
               const sortRows = (rows: CommunityBotRow[], sort: CommunitySort): CommunityBotRow[] => {
                 const dir = sort.dir === 'asc' ? 1 : -1
@@ -9635,19 +10099,25 @@ function App() {
                       <Card className="flex-1 flex flex-col p-3 border-2">
                         <div className="font-bold text-center mb-2">Top community bots by CAGR</div>
                         <div className="flex-1 overflow-auto">
-                          {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
+                          {renderTable(topByCagr, communityTopSort, setCommunityTopSort, {
+                            emptyMessage: 'No community bots with backtest data.',
+                          })}
                         </div>
                       </Card>
                       <Card className="flex-1 flex flex-col p-3 border-2">
                         <div className="font-bold text-center mb-2">Top community bots by Calmar Ratio</div>
                         <div className="flex-1 overflow-auto">
-                          {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
+                          {renderTable(topByCalmar, communityTopSort, setCommunityTopSort, {
+                            emptyMessage: 'No community bots with backtest data.',
+                          })}
                         </div>
                       </Card>
                       <Card className="flex-1 flex flex-col p-3 border-2">
                         <div className="font-bold text-center mb-2">Top community bots by Sharpe Ratio</div>
                         <div className="flex-1 overflow-auto">
-                          {renderTable([], communityTopSort, setCommunityTopSort, { headerOnly: true })}
+                          {renderTable(topBySharpe, communityTopSort, setCommunityTopSort, {
+                            emptyMessage: 'No community bots with backtest data.',
+                          })}
                         </div>
                       </Card>
                     </div>
@@ -10196,119 +10666,225 @@ function App() {
                 </div>
               </div>
             ) : (
-              <div className="mt-3 grid gap-3">
-                <div className="grid gap-3">
-                  {partnerFunds.map((fund) => {
-                    const collapsed = partnerFundCollapsedById[fund.id] ?? true
-                    const state = partnerFundBacktests[fund.id]
+              <div className="mt-3 space-y-4">
+                {/* T-Bill Zone at Top with working equity chart */}
+                <Card className="p-4">
+                  <div className="font-black mb-3">T-Bill Performance</div>
+                  {(() => {
+                    // Calculate total gains from all funds
+                    const fundGains = ([1, 2, 3, 4, 5] as const).map(n => {
+                      const fundKey = `fund${n}` as keyof FundZones
+                      const botId = uiState.fundZones[fundKey]
+                      if (!botId) return 0
+                      const investment = dashboardPortfolio.investments.find(inv => inv.botId === botId)
+                      if (!investment) return 0
+                      const currentValue = analyzeBacktests[botId]?.result?.metrics?.cagr
+                        ? investment.costBasis * (1 + (analyzeBacktests[botId]?.result?.metrics?.cagr ?? 0))
+                        : investment.costBasis
+                      return currentValue - investment.costBasis
+                    })
+                    const totalGains = fundGains.reduce((sum, g) => sum + g, 0)
+
+                    // Generate equity curve data for T-Bill (simulated 4.5% annual return)
+                    const now = Date.now()
+                    const oneYearAgo = now - 365 * 24 * 60 * 60 * 1000
+                    const tBillEquityData: { time: UTCTimestamp; value: number }[] = []
+                    const startValue = 100000 // Starting with $100k
+                    const dailyReturn = Math.pow(1.045, 1/365) - 1 // 4.5% annual = daily compounded
+
+                    for (let d = 0; d <= 365; d += 7) { // Weekly data points
+                      const date = new Date(oneYearAgo + d * 24 * 60 * 60 * 1000)
+                      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+                      const value = startValue * Math.pow(1 + dailyReturn, d)
+                      tBillEquityData.push({
+                        time: dateStr as unknown as UTCTimestamp,
+                        value: ((value - startValue) / startValue) * 100 // % return
+                      })
+                    }
+
                     return (
-                      <div key={fund.id} className="saved-item grid gap-2.5">
-                        <div className="flex gap-2.5 items-center flex-wrap">
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              const next = !(partnerFundCollapsedById[fund.id] ?? true)
-                              setPartnerFundCollapsedById((prev) => ({ ...prev, [fund.id]: next }))
-                              if (!next && (!state || state.status === 'idle' || state.status === 'error')) {
-                                runPartnerFundBacktest(fund.id, fund.root)
-                              }
-                            }}
-                          >
-                            {collapsed ? 'Expand' : 'Collapse'}
-                          </Button>
-                          <div className="font-black">{fund.name}</div>
-                          <div className="ml-auto text-muted text-xs font-extrabold">
-                            Placeholder: Partner Program fund
+                      <>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/30">
+                            <div className="text-xs text-muted mb-1">T-Bill Yield (Annual)</div>
+                            <div className="text-xl font-black text-emerald-500">4.50%</div>
+                          </div>
+                          <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/30">
+                            <div className="text-xs text-muted mb-1">Total Fund Gains</div>
+                            <div className={cn("text-xl font-black", totalGains >= 0 ? "text-emerald-500" : "text-red-500")}>
+                              {totalGains >= 0 ? '+' : ''}{formatUsd(totalGains)}
+                            </div>
                           </div>
                         </div>
+                        <PartnerTBillChart data={tBillEquityData} theme={uiState.theme} />
+                      </>
+                    )
+                  })()}
+                </Card>
 
-                        {!collapsed ? (
-                          <div className="grid gap-3">
-                            {state?.status === 'loading' ? (
-                              <div className="text-muted">Running backtest…</div>
-                            ) : state?.status === 'error' ? (
-                              <div className="grid gap-2">
-                                <div className="text-danger font-extrabold">{state.error ?? 'Failed to run backtest.'}</div>
-                                <Button onClick={() => runPartnerFundBacktest(fund.id, fund.root)}>Retry</Button>
+                {/* 5 Fund Zones - Each as its own card */}
+                <div className="grid grid-cols-5 gap-3">
+                  {([1, 2, 3, 4, 5] as const).map(n => {
+                    const fundKey = `fund${n}` as keyof FundZones
+                    const botId = uiState.fundZones[fundKey]
+                    const bot = botId ? savedBots.find(b => b.id === botId) : null
+
+                    // Calculate fund gains
+                    let fundGain = 0
+                    let fundCagr = 0
+                    if (botId) {
+                      const investment = dashboardPortfolio.investments.find(inv => inv.botId === botId)
+                      const metrics = analyzeBacktests[botId]?.result?.metrics
+                      fundCagr = metrics?.cagr ?? 0
+                      if (investment) {
+                        const currentValue = metrics?.cagr
+                          ? investment.costBasis * (1 + metrics.cagr)
+                          : investment.costBasis
+                        fundGain = currentValue - investment.costBasis
+                      }
+                    }
+
+                    return (
+                      <Card key={n} className="p-3">
+                        <div className="text-xs font-bold text-muted mb-2">Fund #{n}</div>
+                        {bot ? (
+                          <div className="space-y-2">
+                            <div className="font-bold text-sm truncate" title={bot.name}>{bot.name}</div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full h-6 text-xs text-red-500 hover:text-red-600"
+                              onClick={() => {
+                                // Remove from fund, re-evaluate eligibility
+                                setUiState(prev => ({
+                                  ...prev,
+                                  fundZones: { ...prev.fundZones, [fundKey]: null }
+                                }))
+                                // Change tag from Nexus back to Nexus Eligible
+                                setSavedBots(prev => prev.map(b =>
+                                  b.id === botId
+                                    ? { ...b, tags: [...(b.tags || []).filter(t => t !== 'Nexus'), 'Nexus Eligible'] }
+                                    : b
+                                ))
+                              }}
+                            >
+                              Remove
+                            </Button>
+                            <div className="border-t border-border pt-2 mt-2">
+                              <div className="text-[10px] text-muted">Returns</div>
+                              <div className={cn("text-sm font-bold", fundGain >= 0 ? "text-emerald-500" : "text-red-500")}>
+                                {fundGain >= 0 ? '+' : ''}{formatUsd(fundGain)}
                               </div>
-                            ) : state?.status === 'done' ? (
-                              <>
-                                <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-2.5">
-                                  <div>
-                                    <div className="stat-label">CAGR</div>
-                                    <div className="stat-value">{formatPct(state.result?.metrics.cagr ?? NaN)}</div>
-                                  </div>
-                                  <div>
-                                    <div className="stat-label">Max DD</div>
-                                    <div className="stat-value">{formatPct(state.result?.metrics.maxDrawdown ?? NaN)}</div>
-                                  </div>
-                                  <div>
-                                    <div className="stat-label">Calmar Ratio</div>
-                                    <div className="stat-value">
-                                      {Number.isFinite(state.result?.metrics.calmar ?? NaN) ? (state.result?.metrics.calmar ?? 0).toFixed(2) : '—'}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="stat-label">Sharpe Ratio</div>
-                                    <div className="stat-value">
-                                      {Number.isFinite(state.result?.metrics.sharpe ?? NaN) ? (state.result?.metrics.sharpe ?? 0).toFixed(2) : '—'}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="stat-label">Sortino Ratio</div>
-                                    <div className="stat-value">
-                                      {Number.isFinite(state.result?.metrics.sortino ?? NaN) ? (state.result?.metrics.sortino ?? 0).toFixed(2) : '—'}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="stat-label">Treynor Ratio</div>
-                                    <div className="stat-value">
-                                      {Number.isFinite(state.result?.metrics.treynor ?? NaN) ? (state.result?.metrics.treynor ?? 0).toFixed(2) : '—'}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="stat-label">Volatility</div>
-                                    <div className="stat-value">{formatPct(state.result?.metrics.vol ?? NaN)}</div>
-                                  </div>
-                                  <div>
-                                    <div className="stat-label">Trading Days</div>
-                                    <div className="stat-value">{state.result?.metrics.days ?? '—'}</div>
-                                  </div>
-                                </div>
-                                <div className="text-xs text-muted">
-                                  Period: {state.result?.metrics.startDate ?? '—'} → {state.result?.metrics.endDate ?? '—'}
-                                </div>
-                                <EquityChart
-                                  points={state.result?.points ?? []}
-                                  benchmarkPoints={state.result?.benchmarkPoints}
-                                  markers={state.result?.markers ?? []}
-                                  logScale
-                                  showCursorStats={false}
-                                  heightPx={320}
-                                />
-                              </>
-                            ) : (
-                              <Button onClick={() => runPartnerFundBacktest(fund.id, fund.root)}>Run backtest</Button>
-                            )}
+                              <div className={cn("text-xs", fundCagr >= 0 ? "text-emerald-400" : "text-red-400")}>
+                                CAGR: {formatPct(fundCagr)}
+                              </div>
+                            </div>
                           </div>
-                        ) : null}
-                      </div>
+                        ) : (
+                          <div className="text-xs text-muted text-center py-6">
+                            Empty
+                          </div>
+                        )}
+                      </Card>
                     )
                   })}
                 </div>
 
-                <div className="saved-item grid gap-2">
-                  <div className="font-black">T-Bill Zone</div>
-                  <ul className="m-0 pl-[18px]">
-                    <li>T-Bill Bot</li>
-                    <li>Total gains for year</li>
-                    <li>Gains for Fund #1</li>
-                    <li>Gains for Fund #2</li>
-                    <li>Gains for Fund #3</li>
-                    <li>Gains for Fund #4</li>
-                    <li>Gains for Fund #5</li>
-                  </ul>
-                </div>
+                {/* Nexus Eligible Systems */}
+                <Card className="p-4">
+                  <div className="font-black mb-3">Nexus Eligible Systems</div>
+                  {(() => {
+                    // Filter bots owned by current user with Nexus or Nexus Eligible tags
+                    const eligibleBotsList = savedBots.filter(
+                      b => b.builderId === userId && (b.tags?.includes('Nexus') || b.tags?.includes('Nexus Eligible'))
+                    )
+
+                    if (eligibleBotsList.length === 0) {
+                      return (
+                        <div className="text-center text-muted py-8">
+                          No eligible bots. Bots become eligible when they meet the Partner Program requirements.
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div className="border border-border rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/50">
+                            <tr>
+                              <th className="text-left px-3 py-2 font-medium">Bot Name</th>
+                              <th className="text-left px-3 py-2 font-medium">Tags</th>
+                              <th className="text-right px-3 py-2 font-medium">CAGR</th>
+                              <th className="text-right px-3 py-2 font-medium">Sharpe</th>
+                              <th className="text-center px-3 py-2 font-medium">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {eligibleBotsList.map(bot => {
+                              const metrics = analyzeBacktests[bot.id]?.result?.metrics
+                              const isInFund = Object.values(uiState.fundZones).includes(bot.id)
+                              return (
+                                <tr key={bot.id} className="border-t border-border">
+                                  <td className="px-3 py-2 font-bold">{bot.name}</td>
+                                  <td className="px-3 py-2">
+                                    {bot.tags?.map(tag => (
+                                      <span key={tag} className={cn(
+                                        "inline-block px-1.5 py-0.5 text-xs rounded mr-1",
+                                        tag === 'Nexus' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
+                                      )}>
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">{formatPct(metrics?.cagr ?? NaN)}</td>
+                                  <td className="px-3 py-2 text-right">
+                                    {Number.isFinite(metrics?.sharpe) ? metrics!.sharpe.toFixed(2) : '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    {isInFund ? (
+                                      <span className="text-xs text-muted">In Fund</span>
+                                    ) : (
+                                      <select
+                                        className="text-xs px-2 py-1 rounded border border-border bg-background"
+                                        value=""
+                                        onChange={(e) => {
+                                          const fundSlot = e.target.value as keyof FundZones
+                                          if (!fundSlot) return
+                                          // Add to fund zone
+                                          setUiState(prev => ({
+                                            ...prev,
+                                            fundZones: { ...prev.fundZones, [fundSlot]: bot.id }
+                                          }))
+                                          // Change tag from Nexus Eligible to Nexus
+                                          setSavedBots(prev => prev.map(b =>
+                                            b.id === bot.id
+                                              ? { ...b, tags: [...(b.tags || []).filter(t => t !== 'Nexus Eligible'), 'Nexus'] }
+                                              : b
+                                          ))
+                                        }}
+                                      >
+                                        <option value="">Add to Fund...</option>
+                                        {([1, 2, 3, 4, 5] as const).map(n => {
+                                          const fundKey = `fund${n}` as keyof FundZones
+                                          const isEmpty = !uiState.fundZones[fundKey]
+                                          return (
+                                            <option key={n} value={fundKey} disabled={!isEmpty}>
+                                              Fund #{n} {isEmpty ? '' : '(occupied)'}
+                                            </option>
+                                          )
+                                        })}
+                                      </select>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })()}
+                </Card>
               </div>
             )}
             </CardContent>

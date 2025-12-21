@@ -412,11 +412,16 @@ const ADMIN_DATA_PATH = path.join(TICKER_DATA_ROOT, 'admin-data.json')
 async function readAdminData() {
   try {
     const raw = await fs.readFile(ADMIN_DATA_PATH, 'utf-8')
-    return JSON.parse(raw)
+    const data = JSON.parse(raw)
+    // Ensure eligibilityRequirements exists (migration for older data)
+    if (!data.config.eligibilityRequirements) {
+      data.config.eligibilityRequirements = []
+    }
+    return data
   } catch (e) {
     if (e.code === 'ENOENT') {
       return {
-        config: { atlasFeePercent: 0, partnerProgramSharePercent: 0 },
+        config: { atlasFeePercent: 0, partnerProgramSharePercent: 0, eligibilityRequirements: [] },
         treasury: { balance: 100000, entries: [] },
         userSummaries: {}
       }
@@ -461,7 +466,7 @@ app.put('/api/admin/config', async (req, res) => {
 app.post('/api/user/:userId/portfolio-summary', async (req, res) => {
   try {
     const userId = req.params.userId
-    const { totalValue, totalInvested, investmentCount } = req.body
+    const { totalValue, totalInvested, investmentCount, investedAtlas, investedNexus, investedPrivate } = req.body
 
     const data = await readAdminData()
     data.userSummaries = data.userSummaries || {}
@@ -470,6 +475,9 @@ app.post('/api/user/:userId/portfolio-summary', async (req, res) => {
       totalValue: Number(totalValue) || 0,
       totalInvested: Number(totalInvested) || 0,
       investmentCount: Number(investmentCount) || 0,
+      investedAtlas: Number(investedAtlas) || 0,
+      investedNexus: Number(investedNexus) || 0,
+      investedPrivate: Number(investedPrivate) || 0,
       lastUpdated: Date.now()
     }
     await writeAdminData(data)
@@ -485,14 +493,35 @@ app.get('/api/admin/aggregated-stats', async (req, res) => {
     const data = await readAdminData()
     const summaries = Object.values(data.userSummaries || {})
 
+    const totalPortfolioValue = summaries.reduce((sum, s) => sum + (s.totalValue || 0), 0)
+    const totalInvested = summaries.reduce((sum, s) => sum + (s.totalInvested || 0), 0)
+    const totalInvestedAtlas = summaries.reduce((sum, s) => sum + (s.investedAtlas || 0), 0)
+    const totalInvestedNexus = summaries.reduce((sum, s) => sum + (s.investedNexus || 0), 0)
+    const totalInvestedPrivate = summaries.reduce((sum, s) => sum + (s.investedPrivate || 0), 0)
+
+    // Calculate fee breakdowns based on invested amounts and fee percentages
+    const atlasFeeRate = (data.config.atlasFeePercent || 0) / 100
+    const partnerShareRate = (data.config.partnerProgramSharePercent || 0) / 100
+
+    const feeBreakdown = {
+      atlasFeesTotal: totalInvestedAtlas * atlasFeeRate,
+      privateFeesTotal: totalInvestedPrivate * atlasFeeRate,
+      nexusFeesTotal: totalInvestedNexus * atlasFeeRate,
+      nexusPartnerPaymentsTotal: totalInvestedNexus * atlasFeeRate * partnerShareRate
+    }
+
     const stats = {
-      totalDollarsInAccounts: summaries.reduce((sum, s) => sum + (s.totalValue || 0), 0),
-      totalDollarsInvested: summaries.reduce((sum, s) => sum + (s.totalInvested || 0), 0),
+      totalDollarsInAccounts: totalPortfolioValue,
+      totalDollarsInvested: totalInvested,
+      totalPortfolioValue,
+      totalInvestedAtlas,
+      totalInvestedNexus,
+      totalInvestedPrivate,
       userCount: summaries.length,
       lastUpdated: Date.now()
     }
 
-    res.json({ stats, config: data.config })
+    res.json({ stats, config: data.config, feeBreakdown })
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }
@@ -527,6 +556,33 @@ app.post('/api/admin/treasury/entry', async (req, res) => {
 
     await writeAdminData(data)
     res.json({ treasury: data.treasury })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// GET /api/admin/eligibility - Get eligibility requirements
+app.get('/api/admin/eligibility', async (req, res) => {
+  try {
+    const data = await readAdminData()
+    res.json({ eligibilityRequirements: data.config.eligibilityRequirements || [] })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// PUT /api/admin/eligibility - Save eligibility requirements
+app.put('/api/admin/eligibility', async (req, res) => {
+  try {
+    const data = await readAdminData()
+    const { eligibilityRequirements } = req.body
+
+    if (Array.isArray(eligibilityRequirements)) {
+      data.config.eligibilityRequirements = eligibilityRequirements
+    }
+
+    await writeAdminData(data)
+    res.json({ eligibilityRequirements: data.config.eligibilityRequirements })
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }
