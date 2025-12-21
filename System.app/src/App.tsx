@@ -7470,8 +7470,6 @@ function App() {
   const [callbackNodesCollapsed, setCallbackNodesCollapsed] = useState(true)
   const [customIndicatorsCollapsed, setCustomIndicatorsCollapsed] = useState(true)
   const [communityTopSort, setCommunityTopSort] = useState<CommunitySort>({ key: 'oosCagr', dir: 'desc' })
-  const [communityWatchlistSort1, setCommunityWatchlistSort1] = useState<CommunitySort>({ key: 'name', dir: 'asc' })
-  const [communityWatchlistSort2, setCommunityWatchlistSort2] = useState<CommunitySort>({ key: 'name', dir: 'asc' })
 
   // Dashboard state
   const [dashboardTimePeriod, setDashboardTimePeriod] = useState<DashboardTimePeriod>('1Y')
@@ -7487,6 +7485,11 @@ function App() {
   const [dashboardBuyMoreBotId, setDashboardBuyMoreBotId] = useState<string | null>(null)
   const [dashboardBuyMoreAmount, setDashboardBuyMoreAmount] = useState<string>('')
   const [dashboardBuyMoreMode, setDashboardBuyMoreMode] = useState<'$' | '%'>('$')
+
+  // Inline buy state for Nexus bots (in Analyze tab, Community Nexus, watchlists)
+  const [nexusBuyBotId, setNexusBuyBotId] = useState<string | null>(null)
+  const [nexusBuyAmount, setNexusBuyAmount] = useState<string>('')
+  const [nexusBuyMode, setNexusBuyMode] = useState<'$' | '%'>('$')
 
   const activeBot = useMemo(() => {
     return bots.find((b) => b.id === activeBotId) ?? bots[0]
@@ -7731,6 +7734,61 @@ function App() {
 
     setDashboardBuyMoreBotId(null)
     setDashboardBuyMoreAmount('')
+  }
+
+  // Handle buying Nexus bots from inline buy UI (Analyze tab, Community Nexus, watchlists)
+  const handleNexusBuy = (botId: string) => {
+    const bot = savedBots.find((b) => b.id === botId)
+    if (!bot) return
+
+    // Calculate amount
+    let amount = 0
+    if (nexusBuyMode === '$') {
+      amount = parseFloat(nexusBuyAmount) || 0
+    } else {
+      const pct = parseFloat(nexusBuyAmount) || 0
+      amount = (pct / 100) * dashboardCash
+    }
+
+    // Validate
+    if (amount < 100) {
+      alert('Minimum investment is $100')
+      return
+    }
+    if (amount > dashboardCash) {
+      alert('Insufficient cash')
+      return
+    }
+
+    // Check if already invested - if so, add to position
+    const existingInvestment = dashboardPortfolio.investments.find((inv) => inv.botId === botId)
+    if (existingInvestment) {
+      // Add to existing position
+      setDashboardPortfolio((prev) => ({
+        cash: prev.cash - amount,
+        investments: prev.investments.map((inv) =>
+          inv.botId === botId
+            ? { ...inv, costBasis: inv.costBasis + amount, buyDate: Date.now() }
+            : inv,
+        ),
+      }))
+    } else {
+      // Create new investment
+      const newInvestment: DashboardInvestment = {
+        botId: bot.id,
+        botName: bot.name,
+        buyDate: Date.now(),
+        costBasis: amount,
+      }
+      setDashboardPortfolio((prev) => ({
+        cash: prev.cash - amount,
+        investments: [...prev.investments, newInvestment],
+      }))
+    }
+
+    // Reset state
+    setNexusBuyBotId(null)
+    setNexusBuyAmount('')
   }
 
   // Bot colors for chart lines
@@ -8733,6 +8791,11 @@ function App() {
 
   const handleOpenSaved = useCallback(
     (bot: SavedBot) => {
+      // Block non-owners from opening Nexus bots (IP protection)
+      if (bot.tags?.includes('Nexus') && bot.builderId !== userId) {
+        alert('You cannot open other users\' Nexus bots.')
+        return
+      }
       if (bot.visibility === 'community') {
         alert('Community bots cannot be opened in Build.')
         return
@@ -8743,7 +8806,7 @@ function App() {
       setActiveBotId(session.id)
       setTab('Build')
     },
-    [setTab],
+    [setTab, userId],
   )
 
   const handleImport = useCallback(() => {
@@ -9535,9 +9598,10 @@ function App() {
                             ))}
                           </div>
                           <div className="ml-auto flex gap-2 flex-wrap">
-                            {b.visibility !== 'community' ? (
+                            {/* Only show Open in Build for bot owners (IP protection) */}
+                            {b.builderId === userId && b.visibility !== 'community' && (
                               <Button size="sm" onClick={() => handleOpenSaved(b)}>Open in Build</Button>
-                            ) : null}
+                            )}
                             <Button
                               size="sm"
                               onClick={() => {
@@ -9547,10 +9611,14 @@ function App() {
                             >
                               Add to Watchlist
                             </Button>
-                            {b.visibility !== 'community' ? (
+                            {/* Only show Copy for bot owners (IP protection) */}
+                            {b.builderId === userId && b.visibility !== 'community' && (
                               <Button size="sm" onClick={() => handleCopySaved(b)}>Copy</Button>
-                            ) : null}
-                            <Button variant="destructive" size="sm" onClick={() => handleDeleteSaved(b.id)}>Delete</Button>
+                            )}
+                            {/* Only show Delete for bot owners */}
+                            {b.builderId === userId && (
+                              <Button variant="destructive" size="sm" onClick={() => handleDeleteSaved(b.id)}>Delete</Button>
+                            )}
                           </div>
                         </div>
 
@@ -9593,7 +9661,53 @@ function App() {
                                   </div>
                                 ) : analyzeState?.status === 'done' ? (
                                   <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
-                                    <div className="font-black text-center w-full">Base Stats</div>
+                                    {/* Buy Bot Section */}
+                                    <div className="border-b border-border pb-3 mb-1">
+                                      <div className="font-bold mb-2">Buy Bot</div>
+                                      <div className="text-sm mb-2">
+                                        <span className="text-muted">Cash Available:</span>{' '}
+                                        <span className="font-bold">{formatUsd(dashboardCash)}</span>
+                                        {nexusBuyBotId === b.id && nexusBuyMode === '%' && nexusBuyAmount && (
+                                          <span className="text-muted"> · Amount: {formatUsd((parseFloat(nexusBuyAmount) / 100) * dashboardCash)}</span>
+                                        )}
+                                      </div>
+                                      <div className="flex gap-2 items-center">
+                                        <Button
+                                          size="sm"
+                                          onClick={() => handleNexusBuy(b.id)}
+                                          disabled={nexusBuyBotId !== b.id || !nexusBuyAmount}
+                                          className="h-8 px-4"
+                                        >
+                                          Buy
+                                        </Button>
+                                        <div className="flex gap-1">
+                                          <Button
+                                            size="sm"
+                                            variant={nexusBuyBotId === b.id && nexusBuyMode === '$' ? 'accent' : 'outline'}
+                                            className="h-8 w-8 p-0"
+                                            onClick={() => { setNexusBuyBotId(b.id); setNexusBuyMode('$') }}
+                                          >
+                                            $
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant={nexusBuyBotId === b.id && nexusBuyMode === '%' ? 'accent' : 'outline'}
+                                            className="h-8 w-8 p-0"
+                                            onClick={() => { setNexusBuyBotId(b.id); setNexusBuyMode('%') }}
+                                          >
+                                            %
+                                          </Button>
+                                        </div>
+                                        <Input
+                                          type="number"
+                                          placeholder={nexusBuyBotId === b.id && nexusBuyMode === '%' ? '% of cash' : 'Amount'}
+                                          value={nexusBuyBotId === b.id ? nexusBuyAmount : ''}
+                                          onChange={(e) => { setNexusBuyBotId(b.id); setNexusBuyAmount(e.target.value) }}
+                                          className="h-8 flex-1"
+                                        />
+                                      </div>
+                                    </div>
+
                                     <div className="base-stats-grid w-full self-stretch grid grid-cols-1 grid-rows-[auto_auto_auto] gap-3">
                                       {(() => {
                                         // Get investment data for this bot from dashboard portfolio
@@ -9745,6 +9859,7 @@ function App() {
                                 ) : (
                                   <button onClick={() => runAnalyzeBacktest(b)}>Run backtest</button>
                                 )}
+
                                 </div>
 
                                 <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
@@ -10004,43 +10119,6 @@ function App() {
           <Card className="h-full flex flex-col overflow-hidden m-4">
             <CardContent className="p-4 flex flex-col h-full overflow-auto">
             {(() => {
-              const firstWatchlistId = watchlists[0]?.id ?? null
-              const secondWatchlistId = watchlists[1]?.id ?? firstWatchlistId
-
-              const slot1Id =
-                uiState.communityWatchlistSlot1Id && watchlistsById.has(uiState.communityWatchlistSlot1Id)
-                  ? uiState.communityWatchlistSlot1Id
-                  : firstWatchlistId
-              const slot2Id =
-                uiState.communityWatchlistSlot2Id && watchlistsById.has(uiState.communityWatchlistSlot2Id)
-                  ? uiState.communityWatchlistSlot2Id
-                  : secondWatchlistId
-
-              const rowsForWatchlist = (watchlistId: string | null): CommunityBotRow[] => {
-                if (!watchlistId) return []
-                const wl = watchlistsById.get(watchlistId)
-                if (!wl) return []
-                const out: CommunityBotRow[] = []
-                for (const botId of wl.botIds || []) {
-                  const bot = savedBots.find((b) => b.id === botId)
-                  if (!bot) continue
-                  const tagNames = (watchlistsByBotId.get(bot.id) ?? []).map((w) => w.name)
-                  // Build tags array: primary tag (Nexus/Atlas/Private), optional Nexus Eligible, Builder, watchlists
-                  const primaryTag = bot.tags?.includes('Nexus') ? 'Nexus' : bot.tags?.includes('Atlas') ? 'Atlas' : 'Private'
-                  const tags = [primaryTag, ...(bot.tags?.includes('Nexus Eligible') ? ['Nexus Eligible'] : []), `Builder: ${bot.builderId}`, ...tagNames]
-                  const metrics = analyzeBacktests[bot.id]?.result?.metrics
-                  out.push({
-                    id: bot.id,
-                    name: bot.name,
-                    tags,
-                    oosCagr: metrics?.cagr ?? 0,
-                    oosMaxdd: metrics?.maxDrawdown ?? 0,
-                    oosSharpe: metrics?.sharpe ?? 0,
-                  })
-                }
-                return out
-              }
-
               // Helper to find fund slot from uiState.fundZones
               const getFundSlotForBot = (botId: string): number | null => {
                 for (let i = 1; i <= 5; i++) {
@@ -10181,7 +10259,10 @@ function App() {
                               ))}
                             </div>
                             <div className="ml-auto flex gap-2 flex-wrap">
-                              <Button size="sm" onClick={() => handleOpenSaved(b)}>Open in Build</Button>
+                              {/* Only show Open in Build for bot owners (IP protection) */}
+                              {b.builderId === userId && (
+                                <Button size="sm" onClick={() => handleOpenSaved(b)}>Open in Build</Button>
+                              )}
                               <Button
                                 size="sm"
                                 onClick={() => {
@@ -10196,263 +10277,218 @@ function App() {
 
                           {!collapsed && (
                             <div className="flex flex-col gap-2.5 w-full">
-                              {/* Tab Navigation */}
-                              <div className="flex gap-2 border-b border-border pb-2">
-                                <Button
-                                  size="sm"
-                                  variant={(uiState.analyzeBotCardTab[r.id] ?? 'overview') === 'overview' ? 'default' : 'outline'}
-                                  onClick={() => setUiState((prev) => ({
-                                    ...prev,
-                                    analyzeBotCardTab: { ...prev.analyzeBotCardTab, [r.id]: 'overview' },
-                                  }))}
-                                >
-                                  Overview
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant={(uiState.analyzeBotCardTab[r.id] ?? 'overview') === 'advanced' ? 'default' : 'outline'}
-                                  onClick={() => setUiState((prev) => ({
-                                    ...prev,
-                                    analyzeBotCardTab: { ...prev.analyzeBotCardTab, [r.id]: 'advanced' },
-                                  }))}
-                                >
-                                  Advanced
-                                </Button>
-                              </div>
-
-                              {/* Overview Tab Content */}
-                              {(uiState.analyzeBotCardTab[r.id] ?? 'overview') === 'overview' && (
-                                <div className="grid w-full max-w-full grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-2.5 items-stretch overflow-x-hidden">
-                                  <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
-                                    {analyzeState?.status === 'loading' ? (
-                                      <div className="text-muted">Running backtest…</div>
-                                    ) : analyzeState?.status === 'error' ? (
-                                      <div className="grid gap-2">
-                                        <div className="text-danger font-extrabold">{analyzeState.error ?? 'Failed to run backtest.'}</div>
-                                        <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>
+                              {/* Simplified view for Community Nexus - Base Stats only, no tabs, no Information */}
+                              <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
+                                {analyzeState?.status === 'loading' ? (
+                                  <div className="text-muted">Running backtest…</div>
+                                ) : analyzeState?.status === 'error' ? (
+                                  <div className="grid gap-2">
+                                    <div className="text-danger font-extrabold">{analyzeState.error ?? 'Failed to run backtest.'}</div>
+                                    <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>
+                                  </div>
+                                ) : analyzeState?.status === 'done' ? (
+                                  <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
+                                    {/* Buy Bot Section */}
+                                    <div className="border-b border-border pb-3 mb-1">
+                                      <div className="font-bold mb-2">Buy Bot</div>
+                                      <div className="text-sm mb-2">
+                                        <span className="text-muted">Cash Available:</span>{' '}
+                                        <span className="font-bold">{formatUsd(dashboardCash)}</span>
+                                        {nexusBuyBotId === b.id && nexusBuyMode === '%' && nexusBuyAmount && (
+                                          <span className="text-muted"> · Amount: {formatUsd((parseFloat(nexusBuyAmount) / 100) * dashboardCash)}</span>
+                                        )}
                                       </div>
-                                    ) : analyzeState?.status === 'done' ? (
-                                      <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
-                                        <div className="font-black text-center w-full">Base Stats</div>
-                                        <div className="base-stats-grid w-full self-stretch grid grid-cols-1 grid-rows-[auto_auto_auto] gap-3">
-                                          {(() => {
-                                            const investment = dashboardInvestmentsWithPnl.find((inv) => inv.botId === b.id)
-                                            const isInvested = !!investment
-                                            const amountInvested = investment?.costBasis ?? 0
-                                            const currentValue = investment?.currentValue ?? 0
-                                            const pnlPct = investment?.pnlPercent ?? 0
-                                            let liveCagr = 0
-                                            if (investment) {
-                                              const daysSinceInvestment = (Date.now() - investment.buyDate) / (1000 * 60 * 60 * 24)
-                                              const yearsSinceInvestment = daysSinceInvestment / 365
-                                              if (yearsSinceInvestment > 0 && amountInvested > 0) {
-                                                liveCagr = (Math.pow(currentValue / amountInvested, 1 / yearsSinceInvestment) - 1)
-                                              }
-                                            }
-                                            return (
-                                              <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
-                                                <div className="font-black mb-2 text-center">Live Stats</div>
-                                                {isInvested ? (
-                                                  <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
-                                                    <div>
-                                                      <div className="stat-label">Invested</div>
-                                                      <div className="stat-value">{formatUsd(amountInvested)}</div>
-                                                    </div>
-                                                    <div>
-                                                      <div className="stat-label">Current Value</div>
-                                                      <div className="stat-value">{formatUsd(currentValue)}</div>
-                                                    </div>
-                                                    <div>
-                                                      <div className="stat-label">P&L</div>
-                                                      <div className={cn("stat-value", pnlPct >= 0 ? 'text-success' : 'text-danger')}>
-                                                        {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
-                                                      </div>
-                                                    </div>
-                                                    <div>
-                                                      <div className="stat-label">CAGR</div>
-                                                      <div className={cn("stat-value", liveCagr >= 0 ? 'text-success' : 'text-danger')}>
-                                                        {formatPct(liveCagr)}
-                                                      </div>
-                                                    </div>
+                                      <div className="flex gap-2 items-center">
+                                        <Button
+                                          size="sm"
+                                          onClick={() => handleNexusBuy(b.id)}
+                                          disabled={nexusBuyBotId !== b.id || !nexusBuyAmount}
+                                          className="h-8 px-4"
+                                        >
+                                          Buy
+                                        </Button>
+                                        <div className="flex gap-1">
+                                          <Button
+                                            size="sm"
+                                            variant={nexusBuyBotId === b.id && nexusBuyMode === '$' ? 'accent' : 'outline'}
+                                            className="h-8 w-8 p-0"
+                                            onClick={() => { setNexusBuyBotId(b.id); setNexusBuyMode('$') }}
+                                          >
+                                            $
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant={nexusBuyBotId === b.id && nexusBuyMode === '%' ? 'accent' : 'outline'}
+                                            className="h-8 w-8 p-0"
+                                            onClick={() => { setNexusBuyBotId(b.id); setNexusBuyMode('%') }}
+                                          >
+                                            %
+                                          </Button>
+                                        </div>
+                                        <Input
+                                          type="number"
+                                          placeholder={nexusBuyBotId === b.id && nexusBuyMode === '%' ? '% of cash' : 'Amount'}
+                                          value={nexusBuyBotId === b.id ? nexusBuyAmount : ''}
+                                          onChange={(e) => { setNexusBuyBotId(b.id); setNexusBuyAmount(e.target.value) }}
+                                          className="h-8 flex-1"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="base-stats-grid w-full self-stretch grid grid-cols-1 grid-rows-[auto_auto_auto] gap-3">
+                                      {(() => {
+                                        const investment = dashboardInvestmentsWithPnl.find((inv) => inv.botId === b.id)
+                                        const isInvested = !!investment
+                                        const amountInvested = investment?.costBasis ?? 0
+                                        const currentValue = investment?.currentValue ?? 0
+                                        const pnlPct = investment?.pnlPercent ?? 0
+                                        let liveCagr = 0
+                                        if (investment) {
+                                          const daysSinceInvestment = (Date.now() - investment.buyDate) / (1000 * 60 * 60 * 24)
+                                          const yearsSinceInvestment = daysSinceInvestment / 365
+                                          if (yearsSinceInvestment > 0 && amountInvested > 0) {
+                                            liveCagr = (Math.pow(currentValue / amountInvested, 1 / yearsSinceInvestment) - 1)
+                                          }
+                                        }
+                                        return (
+                                          <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                            <div className="font-black mb-2 text-center">Live Stats</div>
+                                            {isInvested ? (
+                                              <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
+                                                <div>
+                                                  <div className="stat-label">Invested</div>
+                                                  <div className="stat-value">{formatUsd(amountInvested)}</div>
+                                                </div>
+                                                <div>
+                                                  <div className="stat-label">Current Value</div>
+                                                  <div className="stat-value">{formatUsd(currentValue)}</div>
+                                                </div>
+                                                <div>
+                                                  <div className="stat-label">P&L</div>
+                                                  <div className={cn("stat-value", pnlPct >= 0 ? 'text-success' : 'text-danger')}>
+                                                    {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
                                                   </div>
-                                                ) : (
-                                                  <div className="text-muted text-sm">Not invested in this bot. Buy from Dashboard to track live stats.</div>
-                                                )}
-                                              </div>
-                                            )
-                                          })()}
-
-                                          <div className="base-stats-card w-full min-w-0 text-center self-stretch">
-                                            <div className="w-full">
-                                              <div className="font-black mb-1.5">Backtest Snapshot</div>
-                                              <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
-                                              <div className="w-full max-w-full overflow-hidden">
-                                                <EquityChart
-                                                  points={analyzeState.result?.points ?? []}
-                                                  benchmarkPoints={analyzeState.result?.benchmarkPoints}
-                                                  markers={analyzeState.result?.markers ?? []}
-                                                  logScale
-                                                  showCursorStats={false}
-                                                  heightPx={390}
-                                                />
-                                              </div>
-                                              <div className="mt-2.5 w-full">
-                                                <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          <div className="base-stats-card w-full min-w-0 text-center self-stretch">
-                                            <div className="w-full">
-                                              <div className="font-black mb-2">Historical Stats</div>
-                                              <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
+                                                </div>
                                                 <div>
                                                   <div className="stat-label">CAGR</div>
-                                                  <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Max DD</div>
-                                                  <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Calmar Ratio</div>
-                                                  <div className="stat-value">
-                                                    {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
-                                                      ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
-                                                      : '--'}
+                                                  <div className={cn("stat-value", liveCagr >= 0 ? 'text-success' : 'text-danger')}>
+                                                    {formatPct(liveCagr)}
                                                   </div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Sharpe Ratio</div>
-                                                  <div className="stat-value">
-                                                    {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
-                                                      ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
-                                                      : '--'}
-                                                  </div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Sortino Ratio</div>
-                                                  <div className="stat-value">
-                                                    {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
-                                                      ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
-                                                      : '--'}
-                                                  </div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Treynor Ratio</div>
-                                                  <div className="stat-value">
-                                                    {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
-                                                      ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
-                                                      : '--'}
-                                                  </div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Volatility</div>
-                                                  <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Win Rate</div>
-                                                  <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Turnover</div>
-                                                  <div className="stat-value">{formatPct(analyzeState.result?.metrics.avgTurnover ?? NaN)}</div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Avg Holdings</div>
-                                                  <div className="stat-value">
-                                                    {Number.isFinite(analyzeState.result?.metrics.avgHoldings ?? NaN)
-                                                      ? (analyzeState.result?.metrics.avgHoldings ?? 0).toFixed(1)
-                                                      : '--'}
-                                                  </div>
-                                                </div>
-                                                <div>
-                                                  <div className="stat-label">Trading Days</div>
-                                                  <div className="stat-value">{analyzeState.result?.metrics.days ?? '--'}</div>
                                                 </div>
                                               </div>
-                                              <div className="mt-2 text-xs text-muted">
-                                                Period: {analyzeState.result?.metrics.startDate ?? '--'} to {analyzeState.result?.metrics.endDate ?? '--'}
-                                              </div>
-                                            </div>
+                                            ) : (
+                                              <div className="text-muted text-sm">Not invested in this bot. Buy from Dashboard to track live stats.</div>
+                                            )}
+                                          </div>
+                                        )
+                                      })()}
+
+                                      <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                        <div className="w-full">
+                                          <div className="font-black mb-1.5">Backtest Snapshot</div>
+                                          <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
+                                          <div className="w-full max-w-full overflow-hidden">
+                                            <EquityChart
+                                              points={analyzeState.result?.points ?? []}
+                                              benchmarkPoints={analyzeState.result?.benchmarkPoints}
+                                              markers={analyzeState.result?.markers ?? []}
+                                              logScale
+                                              showCursorStats={false}
+                                              heightPx={390}
+                                            />
+                                          </div>
+                                          <div className="mt-2.5 w-full">
+                                            <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
                                           </div>
                                         </div>
                                       </div>
-                                    ) : (
-                                      <button onClick={() => runAnalyzeBacktest(b)}>Run backtest</button>
-                                    )}
-                                  </div>
 
-                                  <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
-                                    <div className="font-black">Information</div>
-                                    <div className="text-xs text-muted font-extrabold">Placeholder text: Information, tickers, etc</div>
-                                  </div>
-                                </div>
-                              )}
+                                      <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                        <div className="w-full">
+                                          <div className="font-black mb-2">Historical Stats</div>
+                                          <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
+                                            <div>
+                                              <div className="stat-label">CAGR</div>
+                                              <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Max DD</div>
+                                              <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Calmar Ratio</div>
+                                              <div className="stat-value">
+                                                {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
+                                                  ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
+                                                  : '--'}
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Sharpe Ratio</div>
+                                              <div className="stat-value">
+                                                {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
+                                                  ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                                  : '--'}
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Sortino Ratio</div>
+                                              <div className="stat-value">
+                                                {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
+                                                  ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
+                                                  : '--'}
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Treynor Ratio</div>
+                                              <div className="stat-value">
+                                                {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
+                                                  ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
+                                                  : '--'}
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Volatility</div>
+                                              <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Win Rate</div>
+                                              <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Turnover</div>
+                                              <div className="stat-value">{formatPct(analyzeState.result?.metrics.avgTurnover ?? NaN)}</div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Avg Holdings</div>
+                                              <div className="stat-value">
+                                                {Number.isFinite(analyzeState.result?.metrics.avgHoldings ?? NaN)
+                                                  ? (analyzeState.result?.metrics.avgHoldings ?? 0).toFixed(1)
+                                                  : '--'}
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div className="stat-label">Trading Days</div>
+                                              <div className="stat-value">{analyzeState.result?.metrics.days ?? '--'}</div>
+                                            </div>
+                                          </div>
+                                          <div className="mt-2 text-xs text-muted">
+                                            Period: {analyzeState.result?.metrics.startDate ?? '--'} to {analyzeState.result?.metrics.endDate ?? '--'}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
 
-                              {/* Advanced Tab Content */}
-                              {(uiState.analyzeBotCardTab[r.id] ?? 'overview') === 'advanced' && (
-                                <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
-                                  <div className="flex items-center justify-between gap-2.5">
-                                    <div className="font-black">Advanced Stats</div>
-                                    <Button size="sm">Run</Button>
+                                    {/* Prompt to add to watchlist for more details */}
+                                    <div className="text-center text-xs text-muted mt-2">
+                                      Add to a watchlist to view more details in the Analyze tab.
+                                    </div>
                                   </div>
-                                  <div className="font-black">Comparison Table</div>
-                                  <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
-                                    {(() => {
-                                      const rows = [
-                                        'Monte Carlo Comparison',
-                                        'K-Fold Comparison',
-                                        'Null Set Comparison',
-                                        'Benchmark VTI',
-                                        'Benchmark SPY',
-                                        'Benchmark QQQ',
-                                        'Benchmark DIA',
-                                        'Benchmark DBC',
-                                        'Benchmark DBO',
-                                        'Benchmark GLD',
-                                        'Benchmark BND',
-                                        'Benchmark TLT',
-                                        'Benchmark GBTC',
-                                      ] as const
-                                      const cols = [
-                                        'CAGR-50',
-                                        'MaxDD-DD50',
-                                        'Tail Risk-DD95',
-                                        'Calmar Ratio-50',
-                                        'Calmar Ratio-95',
-                                        'Sharpe Ratio',
-                                        'Sortino Ratio',
-                                        'Treynor Ratio',
-                                        'Volatility',
-                                        'Win Rate',
-                                      ] as const
-                                      return (
-                                        <table className="analyze-compare-table">
-                                          <thead>
-                                            <tr>
-                                              <th>Comparison</th>
-                                              {cols.map((c) => (
-                                                <th key={c}>{c}</th>
-                                              ))}
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {rows.map((rowName) => (
-                                              <tr key={rowName}>
-                                                <td>{rowName}</td>
-                                                {cols.map((c) => (
-                                                  <td key={c}>0</td>
-                                                ))}
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
-                                      )
-                                    })()}
-                                  </div>
-                                </div>
-                              )}
+                                ) : (
+                                  <button onClick={() => runAnalyzeBacktest(b)}>Run backtest</button>
+                                )}
+                              </div>
+
                             </div>
                           )}
                         </Card>
@@ -10462,22 +10498,19 @@ function App() {
                 )
               }
 
-              const watchlistSelect = (currentId: string | null, onChange: (id: string | null) => void) => (
-                <Select
-                  value={currentId ?? ''}
-                  onChange={(e) => onChange(e.target.value ? e.target.value : null)}
-                >
-                  {watchlists.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </Select>
-              )
-
               return (
-                <div className="grid grid-cols-4 gap-4 min-h-[calc(100vh-260px)] items-stretch">
-                  {/* Left Column - Top Community Bots */}
+                <div className="grid grid-cols-2 gap-4 min-h-[calc(100vh-260px)] items-stretch">
+                  {/* Left Column - News and Search */}
+                  <Card className="flex flex-col gap-4 p-4">
+                    <Card className="flex-[2] flex items-center justify-center p-4 border-2">
+                      <div className="font-black text-center">News and Select Bots</div>
+                    </Card>
+                    <Card className="flex-1 flex items-center justify-center p-4 border-2">
+                      <div className="font-bold text-center text-muted">Search for other community bots by metrics or by Builder's names.</div>
+                    </Card>
+                  </Card>
+
+                  {/* Right Column - Top Community Bots */}
                   <Card className="flex flex-col p-4">
                     <div className="font-black text-center mb-4">Top Community Bots</div>
                     <div className="flex flex-col gap-4 flex-1">
@@ -10504,41 +10537,6 @@ function App() {
                             emptyMessage: 'No community bots with backtest data.',
                           })}
                         </div>
-                      </Card>
-                    </div>
-                  </Card>
-
-                  {/* Middle Column - News and Search */}
-                  <Card className="col-span-2 flex flex-col gap-4 p-4">
-                    <Card className="flex-[2] flex items-center justify-center p-4 border-2">
-                      <div className="font-black text-center">News and Select Bots</div>
-                    </Card>
-                    <Card className="flex-1 flex items-center justify-center p-4 border-2">
-                      <div className="font-bold text-center text-muted">Search for other community bots by metrics or by Builder's names.</div>
-                    </Card>
-                  </Card>
-
-                  {/* Right Column - Personal Watchlists */}
-                  <Card className="flex flex-col p-4">
-                    <div className="font-black text-center mb-4">Personal Watchlists</div>
-                    <div className="flex flex-col gap-4 flex-1">
-                      <Card className="flex-1 flex flex-col p-3 border-2 overflow-auto">
-                        <div className="flex items-center justify-center gap-2.5 mb-2">
-                          <div className="font-bold">Watchlist Zone #1</div>
-                          {watchlistSelect(slot1Id, (id) => setUiState((p) => ({ ...p, communityWatchlistSlot1Id: id })))}
-                        </div>
-                        {renderBotCards(rowsForWatchlist(slot1Id), communityWatchlistSort1, setCommunityWatchlistSort1, {
-                          emptyMessage: 'No bots in this watchlist.',
-                        })}
-                      </Card>
-                      <Card className="flex-1 flex flex-col p-3 border-2 overflow-auto">
-                        <div className="flex items-center justify-center gap-2.5 mb-2">
-                          <div className="font-bold">Watchlist Zone #2</div>
-                          {watchlistSelect(slot2Id, (id) => setUiState((p) => ({ ...p, communityWatchlistSlot2Id: id })))}
-                        </div>
-                        {renderBotCards(rowsForWatchlist(slot2Id), communityWatchlistSort2, setCommunityWatchlistSort2, {
-                          emptyMessage: 'No bots in this watchlist.',
-                        })}
                       </Card>
                     </div>
                   </Card>
@@ -11321,7 +11319,53 @@ function App() {
                                           </div>
                                         ) : analyzeState?.status === 'done' ? (
                                           <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
-                                            <div className="font-black text-center w-full">Base Stats</div>
+                                            {/* Buy Bot Section */}
+                                            <div className="border-b border-border pb-3 mb-1">
+                                              <div className="font-bold mb-2">Buy Bot</div>
+                                              <div className="text-sm mb-2">
+                                                <span className="text-muted">Cash Available:</span>{' '}
+                                                <span className="font-bold">{formatUsd(dashboardCash)}</span>
+                                                {nexusBuyBotId === b.id && nexusBuyMode === '%' && nexusBuyAmount && (
+                                                  <span className="text-muted"> · Amount: {formatUsd((parseFloat(nexusBuyAmount) / 100) * dashboardCash)}</span>
+                                                )}
+                                              </div>
+                                              <div className="flex gap-2 items-center">
+                                                <Button
+                                                  size="sm"
+                                                  onClick={() => handleNexusBuy(b.id)}
+                                                  disabled={nexusBuyBotId !== b.id || !nexusBuyAmount}
+                                                  className="h-8 px-4"
+                                                >
+                                                  Buy
+                                                </Button>
+                                                <div className="flex gap-1">
+                                                  <Button
+                                                    size="sm"
+                                                    variant={nexusBuyBotId === b.id && nexusBuyMode === '$' ? 'accent' : 'outline'}
+                                                    className="h-8 w-8 p-0"
+                                                    onClick={() => { setNexusBuyBotId(b.id); setNexusBuyMode('$') }}
+                                                  >
+                                                    $
+                                                  </Button>
+                                                  <Button
+                                                    size="sm"
+                                                    variant={nexusBuyBotId === b.id && nexusBuyMode === '%' ? 'accent' : 'outline'}
+                                                    className="h-8 w-8 p-0"
+                                                    onClick={() => { setNexusBuyBotId(b.id); setNexusBuyMode('%') }}
+                                                  >
+                                                    %
+                                                  </Button>
+                                                </div>
+                                                <Input
+                                                  type="number"
+                                                  placeholder={nexusBuyBotId === b.id && nexusBuyMode === '%' ? '% of cash' : 'Amount'}
+                                                  value={nexusBuyBotId === b.id ? nexusBuyAmount : ''}
+                                                  onChange={(e) => { setNexusBuyBotId(b.id); setNexusBuyAmount(e.target.value) }}
+                                                  className="h-8 flex-1"
+                                                />
+                                              </div>
+                                            </div>
+
                                             <div className="base-stats-grid w-full self-stretch grid grid-cols-1 grid-rows-[auto_auto_auto] gap-3">
                                               {(() => {
                                                 const investment = dashboardInvestmentsWithPnl.find((inv) => inv.botId === b.id)
