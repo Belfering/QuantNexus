@@ -275,8 +275,8 @@ const loadBotsFromApi = async (userId: UserId): Promise<SavedBot[]> => {
         weighting: 'equal' as const,
         collapsed: false,
       }
-      const ensured = ensureSlots(rawPayload)
-      const payload = hasLegacyIdsOrDuplicates(ensured) ? ensureSlots(regenerateIds(ensured)) : ensured
+      // Use single-pass normalization for better performance
+      const payload = normalizeForImport(rawPayload)
       return {
         id: bot.id,
         name: bot.name,
@@ -550,8 +550,8 @@ const loadUserData = (userId: UserId): UserData => {
               weighting: 'equal',
               collapsed: false,
             } as unknown as FlowNode)
-          const ensured = ensureSlots(rawPayload)
-          const payload = hasLegacyIdsOrDuplicates(ensured) ? ensureSlots(regenerateIds(ensured)) : ensured
+          // Use single-pass normalization for better performance
+          const payload = normalizeForImport(rawPayload)
           return {
             id: String(b.id || ''),
             name: String(b.name || 'Untitled'),
@@ -583,8 +583,8 @@ const loadUserData = (userId: UserId): UserData => {
               weighting: 'equal',
               collapsed: false,
             } as unknown as FlowNode)
-          const ensured = ensureSlots(rawRoot)
-          const root = hasLegacyIdsOrDuplicates(ensured) ? ensureSlots(regenerateIds(ensured)) : ensured
+          // Use single-pass normalization for better performance
+          const root = normalizeForImport(rawRoot)
           return {
             id: String(c.id || `call-${newKeyId()}`),
             name: String(c.name || 'Call'),
@@ -1030,13 +1030,15 @@ const mapComposerRank = (selectFn: string): RankChoice => {
   return selectFn === 'bottom' ? 'Bottom' : 'Top'
 }
 
-// ID generator for Composer imports
+// ID generator for Composer imports (performance optimized)
 const createComposerIdGenerator = () => {
-  let nodeCounter = 1
-  let condCounter = 1
+  let nodeCounter = 0
+  let condCounter = 0
+  const batchTs = Date.now()
+  const batchRand = Math.random().toString(36).slice(2, 10)
   return {
-    nodeId: () => `node-${Date.now()}-${nodeCounter++}-${Math.random().toString(36).slice(2, 6)}`,
-    condId: () => `cond-${condCounter++}`,
+    nodeId: () => `node-${batchTs}-${++nodeCounter}-${batchRand}`,
+    condId: () => `cond-${++condCounter}`,
   }
 }
 
@@ -1274,13 +1276,15 @@ const mapQuantMageIndicator = (type: string): MetricChoice => {
   return mapping[type] || 'Relative Strength Index'
 }
 
-// ID generator for QuantMage imports
+// ID generator for QuantMage imports (performance optimized)
 const createQuantMageIdGenerator = () => {
-  let nodeCounter = 1
-  let condCounter = 1
+  let nodeCounter = 0
+  let condCounter = 0
+  const batchTs = Date.now()
+  const batchRand = Math.random().toString(36).slice(2, 10)
   return {
-    nodeId: () => `node-${Date.now()}-${nodeCounter++}-${Math.random().toString(36).slice(2, 6)}`,
-    condId: () => `cond-${condCounter++}`,
+    nodeId: () => `node-${batchTs}-${++nodeCounter}-${batchRand}`,
+    condId: () => `cond-${++condCounter}`,
   }
 }
 
@@ -1602,13 +1606,21 @@ const parseQuantMageStrategy = (data: Record<string, unknown>): FlowNode => {
 // END QUANTMAGE IMPORT PARSER
 // ============================================
 
+// Performance optimization: Batch ID generation
+// Refreshes timestamp and random suffix every 1000 IDs instead of every call
 const newId = (() => {
-  let counter = 1
+  let counter = 0
+  let batchTs = Date.now()
+  let batchRand = Math.random().toString(36).slice(2, 10)
+
   return () => {
-    const rand = Math.random().toString(36).slice(2, 8)
-    const id = `node-${Date.now()}-${counter}-${rand}`
+    // Refresh batch values periodically to maintain uniqueness across sessions
+    if (counter % 1000 === 0) {
+      batchTs = Date.now()
+      batchRand = Math.random().toString(36).slice(2, 10)
+    }
     counter += 1
-    return id
+    return `node-${batchTs}-${counter}-${batchRand}`
   }
 })()
 
@@ -1747,34 +1759,52 @@ const ensureSlots = (node: FlowNode): FlowNode => {
   return { ...node, children }
 }
 
-const hasLegacyIdsOrDuplicates = (node: FlowNode): boolean => {
+// Performance optimization: Single-pass import normalization
+// Combines hasLegacyIdsOrDuplicates + ensureSlots + regenerateIds into one traversal
+const normalizeForImport = (node: FlowNode): FlowNode => {
   const seen = new Set<string>()
-  let legacy = false
-  const walk = (n: FlowNode) => {
-    if (/^node-\d+$/.test(n.id) || seen.has(n.id)) legacy = true
+  let needsNewIds = false
+
+  // First pass: detect if we need to regenerate IDs
+  const detectLegacy = (n: FlowNode) => {
+    if (/^node-\d+$/.test(n.id) || seen.has(n.id)) needsNewIds = true
     seen.add(n.id)
     SLOT_ORDER[n.kind].forEach((slot) => {
       n.children[slot]?.forEach((c) => {
-        if (c) walk(c)
+        if (c) detectLegacy(c)
       })
     })
   }
-  walk(node)
-  return legacy
+  detectLegacy(node)
+
+  // Second pass: normalize and optionally regenerate IDs
+  const walk = (n: FlowNode): FlowNode => {
+    const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+    SLOT_ORDER[n.kind].forEach((slot) => {
+      const arr = n.children[slot] ?? [null]
+      children[slot] = arr.map((c) => (c ? walk(c) : c))
+    })
+    return {
+      ...n,
+      id: needsNewIds ? newId() : n.id,
+      children,
+    }
+  }
+  return walk(node)
 }
 
-const regenerateIds = (node: FlowNode): FlowNode => {
-  const nextId = newId()
-  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
-  SLOT_ORDER[node.kind].forEach((slot) => {
-    const arr = node.children[slot]
-    children[slot] = arr ? arr.map((c) => (c ? regenerateIds(c) : null)) : [null]
-  })
-  return {
-    ...node,
-    id: nextId,
-    children,
+// Performance optimization: Single-pass clone + normalize + regenerate for paste operations
+// Always generates new IDs (used for paste/duplicate where we always need new IDs)
+const cloneAndNormalize = (node: FlowNode): FlowNode => {
+  const walk = (n: FlowNode): FlowNode => {
+    const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+    SLOT_ORDER[n.kind].forEach((slot) => {
+      const arr = n.children[slot] ?? [null]
+      children[slot] = arr.map((c) => (c ? walk(c) : c))
+    })
+    return { ...n, id: newId(), children }
   }
+  return walk(node)
 }
 
 function CandlesChart({ candles }: { candles: CandlestickData[] }) {
@@ -8054,6 +8084,9 @@ type IndicatorCache = {
   stdPrice: Map<string, Map<number, Array<number | null>>>
   cumRet: Map<string, Map<number, Array<number | null>>>
   smaRet: Map<string, Map<number, Array<number | null>>>
+  // Performance optimization: cache close and returns arrays to avoid rebuilding per-call
+  closeArrays: Map<string, number[]>
+  returnsArrays: Map<string, number[]>
 }
 
 const emptyCache = (): IndicatorCache => ({
@@ -8065,11 +8098,39 @@ const emptyCache = (): IndicatorCache => ({
   stdPrice: new Map(),
   cumRet: new Map(),
   smaRet: new Map(),
+  closeArrays: new Map(),
+  returnsArrays: new Map(),
 })
 
 const getSeriesKey = (ticker: string) => normalizeChoice(ticker)
 
-const buildCloseArray = (db: PriceDB, ticker: string) => (db.close[getSeriesKey(ticker)] || []).map((v) => (v == null ? NaN : v))
+// Cached version - avoids rebuilding array on every metricAt() call
+const getCachedCloseArray = (cache: IndicatorCache, db: PriceDB, ticker: string): number[] => {
+  const t = getSeriesKey(ticker)
+  const existing = cache.closeArrays.get(t)
+  if (existing) return existing
+  const arr = (db.close[t] || []).map((v) => (v == null ? NaN : v))
+  cache.closeArrays.set(t, arr)
+  return arr
+}
+
+// Cached returns array - avoids rebuilding for Standard Deviation calculations
+const getCachedReturnsArray = (cache: IndicatorCache, db: PriceDB, ticker: string): number[] => {
+  const t = getSeriesKey(ticker)
+  const existing = cache.returnsArrays.get(t)
+  if (existing) return existing
+  const closes = getCachedCloseArray(cache, db, t)
+  const returns = new Array(closes.length).fill(NaN)
+  for (let i = 1; i < closes.length; i++) {
+    const prev = closes[i - 1]
+    const cur = closes[i]
+    if (!Number.isNaN(prev) && !Number.isNaN(cur) && prev !== 0) {
+      returns[i] = cur / prev - 1
+    }
+  }
+  cache.returnsArrays.set(t, returns)
+  return returns
+}
 
 const rollingSma = (values: number[], period: number): Array<number | null> => {
   const out: Array<number | null> = new Array(values.length).fill(null)
@@ -8247,7 +8308,9 @@ const rollingStdDevOfPrices = (values: number[], period: number): Array<number |
   return rollingStdDev(values, period)
 }
 
-const getCachedSeries = (cache: IndicatorCache, kind: keyof IndicatorCache, ticker: string, period: number, compute: () => Array<number | null>) => {
+type IndicatorCacheSeriesKey = 'rsi' | 'sma' | 'ema' | 'std' | 'maxdd' | 'stdPrice' | 'cumRet' | 'smaRet'
+
+const getCachedSeries = (cache: IndicatorCache, kind: IndicatorCacheSeriesKey, ticker: string, period: number, compute: () => Array<number | null>) => {
   const t = getSeriesKey(ticker)
   const map = cache[kind]
   let byTicker = map.get(t)
@@ -8285,7 +8348,8 @@ const metricAt = (ctx: EvalCtx, ticker: string, metric: MetricChoice, window: nu
 
   const i = ctx.indicatorIndex
   if (i < 0) return null
-  const closes = buildCloseArray(ctx.db, t)
+  // Use cached close array to avoid rebuilding on every call
+  const closes = getCachedCloseArray(ctx.cache, ctx.db, t)
   const w = Math.max(1, Math.floor(Number(window || 0)))
 
   switch (metric) {
@@ -8302,12 +8366,8 @@ const metricAt = (ctx: EvalCtx, ticker: string, metric: MetricChoice, window: nu
       return series[i] ?? null
     }
     case 'Standard Deviation': {
-      const rets = closes.map((v, idx) => {
-        if (idx === 0) return NaN
-        const prev = closes[idx - 1]
-        if (Number.isNaN(prev) || Number.isNaN(v) || prev === 0) return NaN
-        return v / prev - 1
-      })
+      // Use cached returns array to avoid rebuilding on every call
+      const rets = getCachedReturnsArray(ctx.cache, ctx.db, t)
       const series = getCachedSeries(ctx.cache, 'std', t, w, () => rollingStdDev(rets, w))
       return series[i] ?? null
     }
@@ -10475,7 +10535,8 @@ function App() {
 
   const handlePaste = useCallback(
     (parentId: string, slot: SlotId, index: number, child: FlowNode) => {
-      const next = replaceSlot(current, parentId, slot, index, ensureSlots(regenerateIds(cloneNode(child))))
+      // Use single-pass clone + normalize for better performance
+      const next = replaceSlot(current, parentId, slot, index, cloneAndNormalize(child))
       push(next)
     },
     [current, push],
@@ -11590,8 +11651,8 @@ function App() {
         const hasTitle = Boolean(root0.title?.trim())
         const shouldInfer = !hasTitle || (root0.title.trim() === 'Algo Name Here' && inferredTitle && inferredTitle !== 'Algo Name Here')
         const root1 = shouldInfer ? { ...root0, title: inferredTitle || 'Imported System' } : root0
-        const ensured0 = ensureSlots(root1)
-        const ensured = hasLegacyIdsOrDuplicates(ensured0) ? ensureSlots(regenerateIds(ensured0)) : ensured0
+        // Use single-pass normalization for better performance
+        const ensured = normalizeForImport(root1)
         setBots((prev) =>
           prev.map((b) => (b.id === activeBot.id ? { ...b, history: [ensured], historyIndex: 0 } : b)),
         )
@@ -12153,7 +12214,8 @@ function App() {
                                   setClipboard(cloneNode(found))
                                 }}
                                 onPaste={(parentId, slot, index, child) => {
-                                  const next = replaceSlot(c.root, parentId, slot, index, ensureSlots(regenerateIds(cloneNode(child))))
+                                  // Use single-pass clone + normalize for better performance
+                                  const next = replaceSlot(c.root, parentId, slot, index, cloneAndNormalize(child))
                                   pushCallChain(c.id, next)
                                 }}
                                 onRename={(id, title) => {

@@ -266,6 +266,9 @@ const emptyCache = () => ({
   stdPrice: new Map(),
   cumRet: new Map(),
   smaRet: new Map(),
+  // Performance optimization: cache close and returns arrays
+  closeArrays: new Map(),
+  returnsArrays: new Map(),
 })
 
 const getCachedSeries = (cache, kind, ticker, period, compute) => {
@@ -334,7 +337,33 @@ const buildPriceDb = (series) => {
   return { dates, open, close }
 }
 
-const buildCloseArray = (db, ticker) => (db.close[getSeriesKey(ticker)] || []).map((v) => (v == null ? NaN : v))
+// Cached version - avoids rebuilding array on every metricAt() call
+const getCachedCloseArray = (cache, db, ticker) => {
+  const t = getSeriesKey(ticker)
+  const existing = cache.closeArrays.get(t)
+  if (existing) return existing
+  const arr = (db.close[t] || []).map((v) => (v == null ? NaN : v))
+  cache.closeArrays.set(t, arr)
+  return arr
+}
+
+// Cached returns array - avoids rebuilding for Standard Deviation calculations
+const getCachedReturnsArray = (cache, db, ticker) => {
+  const t = getSeriesKey(ticker)
+  const existing = cache.returnsArrays.get(t)
+  if (existing) return existing
+  const closes = getCachedCloseArray(cache, db, t)
+  const returns = new Array(closes.length).fill(NaN)
+  for (let i = 1; i < closes.length; i++) {
+    const prev = closes[i - 1]
+    const cur = closes[i]
+    if (!Number.isNaN(prev) && !Number.isNaN(cur) && prev !== 0) {
+      returns[i] = cur / prev - 1
+    }
+  }
+  cache.returnsArrays.set(t, returns)
+  return returns
+}
 
 // ============================================
 // METRIC CALCULATION
@@ -352,7 +381,8 @@ const metricAt = (ctx, ticker, metric, window) => {
 
   const i = ctx.indicatorIndex
   if (i < 0) return null
-  const closes = buildCloseArray(ctx.db, t)
+  // Use cached close array to avoid rebuilding on every call
+  const closes = getCachedCloseArray(ctx.cache, ctx.db, t)
   const w = Math.max(1, Math.floor(Number(window || 0)))
 
   switch (metric) {
@@ -369,12 +399,8 @@ const metricAt = (ctx, ticker, metric, window) => {
       return series[i] ?? null
     }
     case 'Standard Deviation': {
-      const rets = closes.map((v, idx) => {
-        if (idx === 0) return NaN
-        const prev = closes[idx - 1]
-        if (Number.isNaN(prev) || Number.isNaN(v) || prev === 0) return NaN
-        return v / prev - 1
-      })
+      // Use cached returns array to avoid rebuilding on every call
+      const rets = getCachedReturnsArray(ctx.cache, ctx.db, t)
       const series = getCachedSeries(ctx.cache, 'std', t, w, () => rollingStdDev(rets, w))
       return series[i] ?? null
     }
