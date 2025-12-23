@@ -961,6 +961,647 @@ const SLOT_ORDER: Record<BlockKind, SlotId[]> = {
   scaling: ['then', 'else'],
 }
 
+// ============================================
+// COMPOSER IMPORT PARSER (FRD-019)
+// ============================================
+
+type ImportFormat = 'atlas' | 'composer' | 'quantmage' | 'unknown'
+
+// Detect which format the imported JSON is in
+const detectImportFormat = (data: unknown): ImportFormat => {
+  if (!data || typeof data !== 'object') return 'unknown'
+  const obj = data as Record<string, unknown>
+
+  // Atlas format: has kind, id, children as object with slots
+  if (typeof obj.kind === 'string' && typeof obj.id === 'string' && typeof obj.children === 'object') {
+    return 'atlas'
+  }
+
+  // Composer format: has step field (root, wt-cash-equal, if, asset, filter, group)
+  if (typeof obj.step === 'string') {
+    return 'composer'
+  }
+
+  // Check if it's a wrapped format (e.g., { payload: FlowNode })
+  if (obj.payload && typeof obj.payload === 'object') {
+    const payload = obj.payload as Record<string, unknown>
+    if (typeof payload.kind === 'string') return 'atlas'
+    if (typeof payload.step === 'string') return 'composer'
+  }
+
+  // QuantMage format: has incantation field with incantation_type
+  if (obj.incantation && typeof obj.incantation === 'object') {
+    const inc = obj.incantation as Record<string, unknown>
+    if (typeof inc.incantation_type === 'string') return 'quantmage'
+  }
+
+  return 'unknown'
+}
+
+// Map Composer metric names to Atlas MetricChoice
+const mapComposerMetric = (fn: string): MetricChoice => {
+  const mapping: Record<string, MetricChoice> = {
+    'relative-strength-index': 'Relative Strength Index',
+    'simple-moving-average': 'Simple Moving Average',
+    'simple-moving-average-price': 'Simple Moving Average',
+    'moving-average-price': 'Simple Moving Average',
+    'exponential-moving-average': 'Exponential Moving Average',
+    'exponential-moving-average-price': 'Exponential Moving Average',
+    'cumulative-return': 'Cumulative Return',
+    'moving-average-return': 'Cumulative Return', // Map to closest equivalent
+    'current-price': 'Current Price',
+    'max-drawdown': 'Max Drawdown',
+    'standard-deviation-return': 'Standard Deviation',
+    'standard-deviation-price': 'Standard Deviation of Price',
+    'moving-average-deviation': 'Standard Deviation',
+  }
+  return mapping[fn] || 'Relative Strength Index'
+}
+
+// Map Composer comparators to Atlas
+const mapComposerComparator = (comp: string): ComparatorChoice => {
+  if (comp === 'gte') return 'gt'
+  if (comp === 'lte') return 'lt'
+  return (comp === 'gt' || comp === 'lt') ? comp : 'gt'
+}
+
+// Map Composer rank to Atlas
+const mapComposerRank = (selectFn: string): RankChoice => {
+  return selectFn === 'bottom' ? 'Bottom' : 'Top'
+}
+
+// ID generator for Composer imports
+const createComposerIdGenerator = () => {
+  let nodeCounter = 1
+  let condCounter = 1
+  return {
+    nodeId: () => `node-${Date.now()}-${nodeCounter++}-${Math.random().toString(36).slice(2, 6)}`,
+    condId: () => `cond-${condCounter++}`,
+  }
+}
+
+// Parse a Composer node recursively
+const parseComposerNode = (
+  node: Record<string, unknown>,
+  idGen: ReturnType<typeof createComposerIdGenerator>
+): FlowNode | null => {
+  const step = node.step as string
+
+  // Asset -> Position
+  if (step === 'asset') {
+    const ticker = (node.ticker as string) || 'SPY'
+    return {
+      id: idGen.nodeId(),
+      kind: 'position',
+      title: 'Position',
+      collapsed: false,
+      positions: [ticker as PositionChoice],
+      weighting: 'equal',
+      children: {},
+    }
+  }
+
+  // Filter -> Sort (function)
+  if (step === 'filter') {
+    const sortByFn = (node['sort-by-fn'] as string) || 'cumulative-return'
+    const sortByParams = (node['sort-by-fn-params'] as Record<string, unknown>) || {}
+    const selectFn = (node['select-fn'] as string) || 'top'
+    const selectN = parseInt(String(node['select-n'] || '1'), 10)
+    const children = (node.children as unknown[]) || []
+
+    const parsedChildren = children
+      .map((c) => parseComposerNode(c as Record<string, unknown>, idGen))
+      .filter((c): c is FlowNode => c !== null)
+
+    return {
+      id: idGen.nodeId(),
+      kind: 'function',
+      title: 'Sort',
+      collapsed: false,
+      weighting: 'equal',
+      metric: mapComposerMetric(sortByFn),
+      window: (sortByParams.window as number) || 14,
+      rank: mapComposerRank(selectFn),
+      bottom: selectN,
+      children: { next: parsedChildren },
+    }
+  }
+
+  // If -> Indicator
+  if (step === 'if') {
+    const ifChildren = (node.children as unknown[]) || []
+    let condition: ConditionLine | null = null
+    let thenBranch: FlowNode[] = []
+    let elseBranch: FlowNode[] = []
+
+    for (const child of ifChildren) {
+      const ifChild = child as Record<string, unknown>
+      if (ifChild.step !== 'if-child') continue
+
+      const isElse = ifChild['is-else-condition?'] === true
+      const childNodes = (ifChild.children as unknown[]) || []
+
+      if (!isElse && !condition) {
+        // This is the THEN branch with the condition
+        const lhsFn = (ifChild['lhs-fn'] as string) || 'relative-strength-index'
+        const lhsParams = (ifChild['lhs-fn-params'] as Record<string, unknown>) || {}
+        const lhsVal = (ifChild['lhs-val'] as string) || 'SPY'
+        const comparator = (ifChild.comparator as string) || 'gt'
+        const rhsFixedValue = ifChild['rhs-fixed-value?'] === true
+        const rhsVal = ifChild['rhs-val']
+        const rhsFn = ifChild['rhs-fn'] as string | undefined
+        const rhsParams = (ifChild['rhs-fn-params'] as Record<string, unknown>) || {}
+
+        condition = {
+          id: idGen.condId(),
+          type: 'if',
+          metric: mapComposerMetric(lhsFn),
+          window: (lhsParams.window as number) || 14,
+          ticker: lhsVal as PositionChoice,
+          comparator: mapComposerComparator(comparator),
+          threshold: rhsFixedValue ? parseFloat(String(rhsVal)) : 0,
+          expanded: !rhsFixedValue,
+          rightMetric: rhsFn ? mapComposerMetric(rhsFn) : undefined,
+          rightWindow: rhsFn ? ((rhsParams.window as number) || 14) : undefined,
+          rightTicker: !rhsFixedValue ? (rhsVal as PositionChoice) : undefined,
+        }
+
+        thenBranch = childNodes
+          .map((c) => parseComposerNode(c as Record<string, unknown>, idGen))
+          .filter((c): c is FlowNode => c !== null)
+      } else if (isElse) {
+        elseBranch = childNodes
+          .map((c) => parseComposerNode(c as Record<string, unknown>, idGen))
+          .filter((c): c is FlowNode => c !== null)
+      }
+    }
+
+    if (!condition) {
+      // Fallback if no condition found
+      condition = {
+        id: idGen.condId(),
+        type: 'if',
+        metric: 'Relative Strength Index',
+        window: 14,
+        ticker: 'SPY',
+        comparator: 'gt',
+        threshold: 50,
+        expanded: false,
+      }
+    }
+
+    return {
+      id: idGen.nodeId(),
+      kind: 'indicator',
+      title: 'Indicator',
+      collapsed: false,
+      weighting: 'equal',
+      weightingThen: 'equal',
+      weightingElse: 'equal',
+      conditions: [condition],
+      children: {
+        then: thenBranch.length > 0 ? thenBranch : [null],
+        else: elseBranch.length > 0 ? elseBranch : [null],
+        next: [null],
+      },
+    }
+  }
+
+  // Group / wt-cash-equal / wt-cash-specified / wt-inverse-vol / root -> Basic (container)
+  if (step === 'group' || step === 'wt-cash-equal' || step === 'wt-cash-specified' || step === 'wt-inverse-vol' || step === 'root') {
+    const name = (node.name as string) || 'Basic'
+    const children = (node.children as unknown[]) || []
+
+    // Determine weighting mode
+    // Note: wt-cash-specified has explicit weights but we can't transfer per-child weights
+    // Default to 'equal' for specified weights - user can adjust after import
+    let weighting: WeightMode = 'equal'
+    if (step === 'wt-inverse-vol') {
+      weighting = 'inverse'
+    }
+    // wt-cash-specified would be 'defined' but we default to 'equal' since we can't set per-child weights
+
+    // Flatten wt-cash-equal wrappers and collect weights for specified mode
+    const flattenedChildren: FlowNode[] = []
+    const specifiedWeights: number[] = []
+    for (const child of children) {
+      const childNode = child as Record<string, unknown>
+      // Extract weight for wt-cash-specified
+      if (step === 'wt-cash-specified' && childNode.weight) {
+        const w = childNode.weight as { num?: number | string; den?: number | string }
+        const num = parseFloat(String(w.num || 0))
+        const den = parseFloat(String(w.den || 100))
+        specifiedWeights.push(den > 0 ? (num / den) * 100 : 0)
+      }
+      if (childNode.step === 'wt-cash-equal' || childNode.step === 'wt-cash-specified' || childNode.step === 'wt-inverse-vol') {
+        // Unwrap and process inner children
+        const innerChildren = (childNode.children as unknown[]) || []
+        for (const inner of innerChildren) {
+          const parsed = parseComposerNode(inner as Record<string, unknown>, idGen)
+          if (parsed) flattenedChildren.push(parsed)
+        }
+      } else {
+        const parsed = parseComposerNode(childNode, idGen)
+        if (parsed) flattenedChildren.push(parsed)
+      }
+    }
+
+    // Note: 'defined' weighting requires per-child weight configuration in UI
+    // For now, import as 'defined' mode and user can set weights after import
+    const result: FlowNode = {
+      id: idGen.nodeId(),
+      kind: 'basic',
+      title: step === 'root' ? (name || 'Imported System') : (name || 'Basic'),
+      collapsed: false,
+      weighting,
+      children: { next: flattenedChildren.length > 0 ? flattenedChildren : [null] },
+    }
+
+    return result
+  }
+
+  // Unknown step type
+  console.warn(`[ComposerParser] Unknown step type: ${step}`)
+  return null
+}
+
+// Main entry point: parse entire Composer Symphony JSON
+const parseComposerSymphony = (data: Record<string, unknown>): FlowNode => {
+  const idGen = createComposerIdGenerator()
+  const name = (data.name as string) || 'Imported System'
+
+  // Parse starting from root
+  const parsed = parseComposerNode(data, idGen)
+
+  if (!parsed) {
+    // Return a basic fallback node
+    return {
+      id: idGen.nodeId(),
+      kind: 'basic',
+      title: name,
+      collapsed: false,
+      weighting: 'equal',
+      children: { next: [null] },
+    }
+  }
+
+  // Override title with the symphony name if it's the root
+  if (parsed.kind === 'basic' && name) {
+    parsed.title = name
+  }
+
+  return parsed
+}
+
+// ============================================
+// END COMPOSER IMPORT PARSER
+// ============================================
+
+// ============================================
+// QUANTMAGE IMPORT PARSER
+// ============================================
+
+// Map QuantMage indicator types to Atlas MetricChoice
+const mapQuantMageIndicator = (type: string): MetricChoice => {
+  const mapping: Record<string, MetricChoice> = {
+    'CurrentPrice': 'Current Price',
+    'MovingAverage': 'Simple Moving Average',
+    'ExponentialMovingAverage': 'Exponential Moving Average',
+    'RelativeStrengthIndex': 'Relative Strength Index',
+    'CumulativeReturn': 'Cumulative Return',
+    'Volatility': 'Standard Deviation',
+  }
+  return mapping[type] || 'Relative Strength Index'
+}
+
+// ID generator for QuantMage imports
+const createQuantMageIdGenerator = () => {
+  let nodeCounter = 1
+  let condCounter = 1
+  return {
+    nodeId: () => `node-${Date.now()}-${nodeCounter++}-${Math.random().toString(36).slice(2, 6)}`,
+    condId: () => `cond-${condCounter++}`,
+  }
+}
+
+// Parse a QuantMage condition into Atlas ConditionLine(s)
+const parseQuantMageCondition = (
+  condition: Record<string, unknown>,
+  idGen: ReturnType<typeof createQuantMageIdGenerator>
+): ConditionLine[] => {
+  const condType = condition.condition_type as string
+
+  if (condType === 'SingleCondition') {
+    const lhIndicator = condition.lh_indicator as { type: string; window: number } | undefined
+    const rhIndicator = condition.rh_indicator as { type: string; window: number } | undefined
+    const compType = condition.type as string // 'IndicatorAndNumber' or 'BothIndicators'
+    const greaterThan = condition.greater_than as boolean
+
+    const cond: ConditionLine = {
+      id: idGen.condId(),
+      type: 'if',
+      metric: lhIndicator ? mapQuantMageIndicator(lhIndicator.type) : 'Relative Strength Index',
+      window: lhIndicator?.window || 14,
+      ticker: (condition.lh_ticker_symbol as PositionChoice) || 'SPY',
+      comparator: greaterThan ? 'gt' : 'lt',
+      threshold: 0,
+      expanded: false,
+    }
+
+    if (compType === 'IndicatorAndNumber') {
+      // Threshold comparison
+      cond.threshold = parseFloat(String(condition.rh_value || 0))
+      cond.expanded = false
+    } else if (compType === 'BothIndicators') {
+      // Indicator vs indicator
+      cond.expanded = true
+      cond.rightMetric = rhIndicator ? mapQuantMageIndicator(rhIndicator.type) : 'Relative Strength Index'
+      cond.rightWindow = rhIndicator?.window || 14
+      cond.rightTicker = (condition.rh_ticker_symbol as PositionChoice) || 'SPY'
+    }
+
+    return [cond]
+  }
+
+  if (condType === 'AnyOf' || condType === 'AllOf') {
+    const conditions = (condition.conditions as Record<string, unknown>[]) || []
+    const result: ConditionLine[] = []
+
+    for (let i = 0; i < conditions.length; i++) {
+      const parsed = parseQuantMageCondition(conditions[i], idGen)
+      for (const cond of parsed) {
+        // Mark as 'and' for AllOf, 'or' for AnyOf (skip first)
+        if (i > 0 || result.length > 0) {
+          cond.type = condType === 'AllOf' ? 'and' : 'or'
+        }
+        result.push(cond)
+      }
+    }
+    return result
+  }
+
+  // Unknown condition type
+  return [{
+    id: idGen.condId(),
+    type: 'if',
+    metric: 'Relative Strength Index',
+    window: 14,
+    ticker: 'SPY',
+    comparator: 'gt',
+    threshold: 50,
+    expanded: false,
+  }]
+}
+
+// Parse a QuantMage incantation node recursively
+const parseQuantMageIncantation = (
+  node: Record<string, unknown>,
+  idGen: ReturnType<typeof createQuantMageIdGenerator>
+): FlowNode | null => {
+  const incType = node.incantation_type as string
+
+  // Ticker -> Position
+  if (incType === 'Ticker') {
+    const symbol = (node.symbol as string) || 'SPY'
+    return {
+      id: idGen.nodeId(),
+      kind: 'position',
+      title: 'Position',
+      collapsed: false,
+      positions: [symbol as PositionChoice],
+      weighting: 'equal',
+      children: {},
+    }
+  }
+
+  // IfElse -> Indicator
+  if (incType === 'IfElse') {
+    const condition = node.condition as Record<string, unknown> | undefined
+    const thenInc = node.then_incantation as Record<string, unknown> | undefined
+    const elseInc = node.else_incantation as Record<string, unknown> | undefined
+
+    const conditions = condition ? parseQuantMageCondition(condition, idGen) : [{
+      id: idGen.condId(),
+      type: 'if' as const,
+      metric: 'Relative Strength Index' as MetricChoice,
+      window: 14,
+      ticker: 'SPY' as PositionChoice,
+      comparator: 'gt' as ComparatorChoice,
+      threshold: 50,
+      expanded: false,
+    }]
+
+    const thenBranch = thenInc ? parseQuantMageIncantation(thenInc, idGen) : null
+    const elseBranch = elseInc ? parseQuantMageIncantation(elseInc, idGen) : null
+
+    return {
+      id: idGen.nodeId(),
+      kind: 'indicator',
+      title: (node.name as string) || 'Indicator',
+      collapsed: false,
+      weighting: 'equal',
+      weightingThen: 'equal',
+      weightingElse: 'equal',
+      conditions,
+      children: {
+        then: thenBranch ? [thenBranch] : [null],
+        else: elseBranch ? [elseBranch] : [null],
+        next: [null],
+      },
+    }
+  }
+
+  // Weighted -> Basic
+  if (incType === 'Weighted') {
+    const weightType = node.type as string // 'Equal' or 'InverseVolatility'
+    const incantations = (node.incantations as Record<string, unknown>[]) || []
+    // Note: node.weights exists but we can't transfer per-child weights to Atlas structure
+    // Default to 'equal' for now - user can adjust weights after import if needed
+    const weighting: WeightMode = weightType === 'InverseVolatility' ? 'inverse' : 'equal'
+
+    const children = incantations
+      .map((inc) => parseQuantMageIncantation(inc, idGen))
+      .filter((c): c is FlowNode => c !== null)
+
+    // Note: 'defined' weighting requires per-child weight configuration in UI
+    // For now, import as 'defined' mode and user can set weights after import
+    const result: FlowNode = {
+      id: idGen.nodeId(),
+      kind: 'basic',
+      title: (node.name as string) || 'Basic',
+      collapsed: false,
+      weighting,
+      children: { next: children.length > 0 ? children : [null] },
+    }
+
+    return result
+  }
+
+  // Filtered -> Sort (function)
+  if (incType === 'Filtered') {
+    const sortIndicator = node.sort_indicator as { type: string; window: number } | undefined
+    const count = (node.count as number) || 1
+    const bottom = (node.bottom as boolean) || false
+    const incantations = (node.incantations as Record<string, unknown>[]) || []
+
+    const children = incantations
+      .map((inc) => parseQuantMageIncantation(inc, idGen))
+      .filter((c): c is FlowNode => c !== null)
+
+    return {
+      id: idGen.nodeId(),
+      kind: 'function',
+      title: 'Sort',
+      collapsed: false,
+      weighting: 'equal',
+      metric: sortIndicator ? mapQuantMageIndicator(sortIndicator.type) : 'Relative Strength Index',
+      window: sortIndicator?.window || 14,
+      rank: bottom ? 'Bottom' : 'Top',
+      bottom: count,
+      children: { next: children.length > 0 ? children : [null] },
+    }
+  }
+
+  // Switch -> Nested Indicators (case/when logic)
+  if (incType === 'Switch') {
+    const conditions = (node.conditions as Record<string, unknown>[]) || []
+    const incantations = (node.incantations as Record<string, unknown>[]) || []
+
+    // Convert Switch to nested if/else structure
+    // Last incantation is the "else" fallback if there are more incantations than conditions
+    const buildNestedIndicator = (idx: number): FlowNode | null => {
+      if (idx >= conditions.length) {
+        // No more conditions, return the fallback incantation if it exists
+        if (idx < incantations.length && incantations[idx]) {
+          return parseQuantMageIncantation(incantations[idx], idGen)
+        }
+        return null
+      }
+
+      const cond = conditions[idx]
+      const thenInc = incantations[idx]
+      const parsedConds = cond ? parseQuantMageCondition(cond, idGen) : [{
+        id: idGen.condId(),
+        type: 'if' as const,
+        metric: 'Relative Strength Index' as MetricChoice,
+        window: 14,
+        ticker: 'SPY' as PositionChoice,
+        comparator: 'gt' as ComparatorChoice,
+        threshold: 50,
+        expanded: false,
+      }]
+      const thenBranch = thenInc ? parseQuantMageIncantation(thenInc, idGen) : null
+      const elseBranch = buildNestedIndicator(idx + 1)
+
+      return {
+        id: idGen.nodeId(),
+        kind: 'indicator',
+        title: (node.name as string) || 'Switch Case',
+        collapsed: false,
+        weighting: 'equal',
+        weightingThen: 'equal',
+        weightingElse: 'equal',
+        conditions: parsedConds,
+        children: {
+          then: thenBranch ? [thenBranch] : [null],
+          else: elseBranch ? [elseBranch] : [null],
+          next: [null],
+        },
+      }
+    }
+
+    return buildNestedIndicator(0)
+  }
+
+  // Mixed -> Scaling
+  if (incType === 'Mixed') {
+    const indicator = node.indicator as { type: string; window: number } | undefined
+    const tickerSymbol = (node.ticker_symbol as string) || 'SPY'
+    const fromValue = (node.from_value as number) || 0
+    const toValue = (node.to_value as number) || 100
+    const fromInc = node.from_incantation as Record<string, unknown> | undefined
+    const toInc = node.to_incantation as Record<string, unknown> | undefined
+
+    const thenBranch = fromInc ? parseQuantMageIncantation(fromInc, idGen) : null
+    const elseBranch = toInc ? parseQuantMageIncantation(toInc, idGen) : null
+
+    // Create scaling condition
+    const condition: ConditionLine = {
+      id: idGen.condId(),
+      type: 'if',
+      metric: indicator ? mapQuantMageIndicator(indicator.type) : 'Relative Strength Index',
+      window: indicator?.window || 14,
+      ticker: tickerSymbol as PositionChoice,
+      comparator: 'gt',
+      threshold: 0,
+      expanded: false,
+    }
+
+    return {
+      id: idGen.nodeId(),
+      kind: 'scaling',
+      title: (node.name as string) || 'Scaling',
+      collapsed: false,
+      weighting: 'equal',
+      weightingThen: 'equal',
+      weightingElse: 'equal',
+      conditions: [condition],
+      scaleFrom: fromValue,
+      scaleTo: toValue,
+      children: {
+        then: thenBranch ? [thenBranch] : [null],
+        else: elseBranch ? [elseBranch] : [null],
+      },
+    }
+  }
+
+  // Unknown incantation type
+  console.warn(`[QuantMageParser] Unknown incantation_type: ${incType}`)
+  return null
+}
+
+// Main entry point: parse entire QuantMage strategy JSON
+const parseQuantMageStrategy = (data: Record<string, unknown>): FlowNode => {
+  const idGen = createQuantMageIdGenerator()
+  const name = (data.name as string) || 'Imported System'
+  const incantation = data.incantation as Record<string, unknown> | undefined
+
+  if (!incantation) {
+    return {
+      id: idGen.nodeId(),
+      kind: 'basic',
+      title: name,
+      collapsed: false,
+      weighting: 'equal',
+      children: { next: [null] },
+    }
+  }
+
+  const parsed = parseQuantMageIncantation(incantation, idGen)
+
+  if (!parsed) {
+    return {
+      id: idGen.nodeId(),
+      kind: 'basic',
+      title: name,
+      collapsed: false,
+      weighting: 'equal',
+      children: { next: [null] },
+    }
+  }
+
+  // Override title with the strategy name if it's the root
+  if (parsed.kind === 'basic' && name) {
+    parsed.title = name
+  }
+
+  return parsed
+}
+
+// ============================================
+// END QUANTMAGE IMPORT PARSER
+// ============================================
+
 const newId = (() => {
   let counter = 1
   return () => {
@@ -7023,10 +7664,19 @@ const renderMonthlyHeatmap = (
   monthly: Array<{ year: number; month: number; value: number }>,
   days: BacktestDayRow[],
 ) => {
+  const safeGetYear = (ts: number) => {
+    const ms = Number(ts) * 1000
+    if (!Number.isFinite(ms)) return NaN
+    try {
+      return new Date(ms).getUTCFullYear()
+    } catch {
+      return NaN
+    }
+  }
   const years = Array.from(
     new Set(
       (days || [])
-        .map((d) => new Date(Number(d.time) * 1000).getUTCFullYear())
+        .map((d) => safeGetYear(d.time))
         .filter((y) => Number.isFinite(y)),
     ),
   ).sort((a, b) => a - b)
@@ -7061,7 +7711,7 @@ const renderMonthlyHeatmap = (
 
   const yearStats = new Map<number, { cagr: number; maxDD: number } | null>()
   for (const y of years) {
-    const rows = (days || []).filter((d) => new Date(Number(d.time) * 1000).getUTCFullYear() === y)
+    const rows = (days || []).filter((d) => safeGetYear(d.time) === y)
     if (rows.length < 2) {
       yearStats.set(y, null)
       continue
@@ -7173,7 +7823,15 @@ const mergeAlloc = (base: Allocation, add: Allocation, scale: number) => {
   }
 }
 
-const isoFromUtcSeconds = (t: number) => new Date(Number(t) * 1000).toISOString().slice(0, 10)
+const isoFromUtcSeconds = (t: number) => {
+  const ms = Number(t) * 1000
+  if (!Number.isFinite(ms)) return '1970-01-01'
+  try {
+    return new Date(ms).toISOString().slice(0, 10)
+  } catch {
+    return '1970-01-01'
+  }
+}
 
 type TickerRef = { nodeId: string; field: string }
 
@@ -8522,8 +9180,11 @@ function BacktesterPanel({
       return
     }
 
-    const endTime = visibleRange?.to ?? points[points.length - 1].time
-    const endDate = new Date(Number(endTime) * 1000)
+    try {
+      const endTime = visibleRange?.to ?? points[points.length - 1].time
+      const endMs = Number(endTime) * 1000
+      if (!Number.isFinite(endMs)) return
+      const endDate = new Date(endMs)
     let startDate: Date
     switch (preset) {
       case '1m':
@@ -8559,6 +9220,9 @@ function BacktesterPanel({
       }
     }
     setSelectedRange(clampVisibleRangeToPoints(points, { from: startTime, to: endTime }))
+    } catch {
+      // Invalid date - ignore preset
+    }
   }
 
   const handleChartVisibleRangeChange = useCallback(
@@ -10391,15 +11055,25 @@ function App() {
 
           // Convert equity curve from server format to frontend format
           // Convert date strings to Unix timestamps (seconds) for Lightweight Charts
-          const points: EquityPoint[] = (equityCurve || []).map((p) => ({
-            time: (new Date(p.date).getTime() / 1000) as UTCTimestamp,
-            value: p.equity,
-          }))
+          const safeParseDate = (dateStr: string | undefined): number => {
+            if (!dateStr) return 0
+            const d = new Date(dateStr)
+            const t = d.getTime()
+            return Number.isFinite(t) ? t / 1000 : 0
+          }
+          const points: EquityPoint[] = (equityCurve || [])
+            .filter((p) => p.date && !isNaN(new Date(p.date).getTime()))
+            .map((p) => ({
+              time: safeParseDate(p.date) as UTCTimestamp,
+              value: p.equity,
+            }))
           // Convert benchmark curve (SPY) to frontend format
-          const benchmarkPoints: EquityPoint[] = (benchmarkCurve || []).map((p) => ({
-            time: (new Date(p.date).getTime() / 1000) as UTCTimestamp,
-            value: p.equity,
-          }))
+          const benchmarkPoints: EquityPoint[] = (benchmarkCurve || [])
+            .filter((p) => p.date && !isNaN(new Date(p.date).getTime()))
+            .map((p) => ({
+              time: safeParseDate(p.date) as UTCTimestamp,
+              value: p.equity,
+            }))
           // Compute drawdown points from equity curve
           let peak = 1
           const drawdownPoints: EquityPoint[] = points.map((p) => {
@@ -10872,27 +11546,47 @@ function App() {
         const text = await file.text()
         const parsed = JSON.parse(text) as unknown
 
-        const isFlowNodeLike = (v: unknown): v is FlowNode => {
-          if (!v || typeof v !== 'object') return false
-          const o = v as Partial<FlowNode>
-          return typeof o.id === 'string' && typeof o.kind === 'string' && typeof o.title === 'string' && typeof o.children === 'object'
-        }
+        // Detect import format (Atlas, Composer, QuantMage)
+        const format = detectImportFormat(parsed)
+        console.log(`[Import] Detected format: ${format}`)
 
-        const extractRoot = (v: unknown): FlowNode => {
-          if (isFlowNodeLike(v)) return v
-          if (v && typeof v === 'object') {
-            const o = v as { payload?: unknown; root?: unknown; name?: unknown }
-            if (isFlowNodeLike(o.payload)) {
-              const name = typeof o.name === 'string' ? o.name.trim() : ''
-              return name ? { ...o.payload, title: name } : o.payload
-            }
-            if (isFlowNodeLike(o.root)) return o.root
+        let root0: FlowNode
+
+        if (format === 'composer') {
+          // Parse Composer Symphony format
+          root0 = parseComposerSymphony(parsed as Record<string, unknown>)
+          console.log('[Import] Parsed Composer Symphony:', root0)
+        } else if (format === 'quantmage') {
+          // Parse QuantMage strategy format
+          root0 = parseQuantMageStrategy(parsed as Record<string, unknown>)
+          console.log('[Import] Parsed QuantMage Strategy:', root0)
+        } else if (format === 'atlas') {
+          // Atlas native format - use existing extraction logic
+          const isFlowNodeLike = (v: unknown): v is FlowNode => {
+            if (!v || typeof v !== 'object') return false
+            const o = v as Partial<FlowNode>
+            return typeof o.id === 'string' && typeof o.kind === 'string' && typeof o.title === 'string' && typeof o.children === 'object'
           }
-          throw new Error('Invalid JSON shape for bot import.')
+
+          const extractRoot = (v: unknown): FlowNode => {
+            if (isFlowNodeLike(v)) return v
+            if (v && typeof v === 'object') {
+              const o = v as { payload?: unknown; root?: unknown; name?: unknown }
+              if (isFlowNodeLike(o.payload)) {
+                const name = typeof o.name === 'string' ? o.name.trim() : ''
+                return name ? { ...o.payload, title: name } : o.payload
+              }
+              if (isFlowNodeLike(o.root)) return o.root
+            }
+            throw new Error('Invalid JSON shape for bot import.')
+          }
+          root0 = extractRoot(parsed)
+        } else {
+          alert('Unknown import format. Please use Atlas, Composer, or QuantMage JSON files.')
+          return
         }
 
         const inferredTitle = file.name.replace(/\.json$/i, '').replace(/_/g, ' ').trim()
-        const root0 = extractRoot(parsed)
         const hasTitle = Boolean(root0.title?.trim())
         const shouldInfer = !hasTitle || (root0.title.trim() === 'Algo Name Here' && inferredTitle && inferredTitle !== 'Algo Name Here')
         const root1 = shouldInfer ? { ...root0, title: inferredTitle || 'Imported System' } : root0
@@ -10902,7 +11596,9 @@ function App() {
           prev.map((b) => (b.id === activeBot.id ? { ...b, history: [ensured], historyIndex: 0 } : b)),
         )
         setClipboard(null)
-      } catch {
+        console.log(`[Import] Successfully imported ${format} format as: ${ensured.title}`)
+      } catch (err) {
+        console.error('[Import] Error:', err)
         alert('Failed to Import due to an error in the JSON')
       }
     }

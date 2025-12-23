@@ -15,6 +15,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const PARQUET_DIR = process.env.PARQUET_DIR || path.join(__dirname, '..', 'ticker-data', 'data', 'ticker_data_parquet')
 
+// Safe date formatter - avoids "Invalid time value" errors
+const safeIsoDate = (ts) => {
+  try {
+    const ms = Number(ts) * 1000
+    if (!Number.isFinite(ms)) return '1970-01-01'
+    return new Date(ms).toISOString().split('T')[0]
+  } catch {
+    return '1970-01-01'
+  }
+}
+
 const duckDbPromise = new Promise((resolve, reject) => {
   const db = new duckdb.Database(':memory:')
   db.all('SELECT 1', (err) => {
@@ -302,7 +313,16 @@ const buildPriceDb = (series) => {
     common = new Set([...common].filter((d) => datesByTicker[i].has(d)))
   }
   const dates = [...common].sort((a, b) => a - b)
-  console.log(`[buildPriceDb] Common dates: ${dates.length}, first: ${new Date(dates[0] * 1000).toISOString()}, last: ${new Date(dates[dates.length - 1] * 1000).toISOString()}`)
+  const safeDate = (ts) => {
+    try {
+      const ms = Number(ts) * 1000
+      if (!Number.isFinite(ms)) return '1970-01-01'
+      return new Date(ms).toISOString()
+    } catch {
+      return '1970-01-01'
+    }
+  }
+  console.log(`[buildPriceDb] Common dates: ${dates.length}, first: ${safeDate(dates[0])}, last: ${safeDate(dates[dates.length - 1])}`)
 
   const open = {}
   const close = {}
@@ -744,7 +764,7 @@ export async function runBacktest(payload, options = {}) {
     holdingsCount++
 
     // Store daily allocation for allocations tab
-    const dateStr = new Date(db.dates[start] * 1000).toISOString().split('T')[0]
+    const dateStr = safeIsoDate(db.dates[start])
     dailyAllocations.push({ date: dateStr, alloc: { ...alloc } })
 
     let gross = 0
@@ -866,8 +886,8 @@ export async function runBacktest(payload, options = {}) {
       worstDay: worstDay === Infinity ? 0 : worstDay,
       tradingDays: metrics.days,
     },
-    equityCurve: points.map(p => ({ date: new Date(p.time * 1000).toISOString().split('T')[0], equity: p.value })),
-    benchmarkCurve: benchmarkPoints.map(p => ({ date: new Date(p.time * 1000).toISOString().split('T')[0], equity: p.value })),
+    equityCurve: points.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
+    benchmarkCurve: benchmarkPoints.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
     // Include daily allocations for the Allocations tab (sample every N days to reduce payload size)
     allocations: dailyAllocations.filter((_, i) => i % 5 === 0 || i === dailyAllocations.length - 1),
   }
