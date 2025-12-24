@@ -368,7 +368,8 @@ app.get('/api/candles/:ticker', async (req, res) => {
         "Open"  AS open,
         "High"  AS high,
         "Low"   AS low,
-        "Close" AS close
+        "Close" AS close,
+        "Adj Close" AS adjClose
       FROM ${tableName}
       WHERE "Open" IS NOT NULL AND "High" IS NOT NULL AND "Low" IS NOT NULL AND "Close" IS NOT NULL
       ORDER BY "Date" DESC
@@ -391,6 +392,7 @@ app.get('/api/candles/:ticker', async (req, res) => {
         high: Number(r.high),
         low: Number(r.low),
         close: Number(r.close),
+        adjClose: Number(r.adjClose),
       }))
       const preview = ordered.slice(-50).map((r) => ({
         Date: new Date(Number(r.ts_ms)).toISOString(),

@@ -8566,6 +8566,7 @@ type PriceDB = {
   dates: UTCTimestamp[]
   open: Record<string, Array<number | null>>
   close: Record<string, Array<number | null>>
+  adjClose: Record<string, Array<number | null>>  // For indicator calculations
   high?: Record<string, Array<number | null>>   // For Aroon indicators
   low?: Record<string, Array<number | null>>    // For Aroon indicators
   limitingTicker?: string // Ticker with fewest data points that limits the intersection
@@ -8626,6 +8627,7 @@ const getSeriesKey = (ticker: string) => normalizeChoice(ticker)
 
 // Cached version - avoids rebuilding array on every metricAt() call
 // Handles ratio tickers like "JNK/XLP" by computing numerator / denominator prices
+// IMPORTANT: Uses adjClose for all indicator calculations (accurate historical signals)
 const getCachedCloseArray = (cache: IndicatorCache, db: PriceDB, ticker: string): number[] => {
   const t = getSeriesKey(ticker)
   const existing = cache.closeArrays.get(t)
@@ -8634,14 +8636,14 @@ const getCachedCloseArray = (cache: IndicatorCache, db: PriceDB, ticker: string)
   // Check if this is a ratio ticker
   const ratio = parseRatioTicker(t)
   if (ratio) {
-    // Compute ratio prices from component tickers
-    const numClose = db.close[ratio.numerator] || []
-    const denClose = db.close[ratio.denominator] || []
-    const len = Math.max(numClose.length, denClose.length)
+    // Compute ratio prices from component tickers using adjClose for indicators
+    const numAdjClose = db.adjClose[ratio.numerator] || []
+    const denAdjClose = db.adjClose[ratio.denominator] || []
+    const len = Math.max(numAdjClose.length, denAdjClose.length)
     const arr = new Array(len).fill(NaN)
     for (let i = 0; i < len; i++) {
-      const num = numClose[i]
-      const den = denClose[i]
+      const num = numAdjClose[i]
+      const den = denAdjClose[i]
       if (num != null && den != null && den !== 0) {
         arr[i] = num / den
       }
@@ -8650,8 +8652,8 @@ const getCachedCloseArray = (cache: IndicatorCache, db: PriceDB, ticker: string)
     return arr
   }
 
-  // Regular ticker
-  const arr = (db.close[t] || []).map((v) => (v == null ? NaN : v))
+  // Regular ticker - use adjClose for indicator calculations
+  const arr = (db.adjClose[t] || []).map((v) => (v == null ? NaN : v))
   cache.closeArrays.set(t, arr)
   return arr
 }
@@ -10028,7 +10030,7 @@ const computeBacktestSummary = (points: EquityPoint[], drawdowns: number[], days
   }
 }
 
-const fetchOhlcSeries = async (ticker: string, limit: number): Promise<Array<{ time: UTCTimestamp; open: number; close: number }>> => {
+const fetchOhlcSeries = async (ticker: string, limit: number): Promise<Array<{ time: UTCTimestamp; open: number; close: number; adjClose: number }>> => {
   const t = encodeURIComponent(getSeriesKey(ticker))
   const res = await fetch(`/api/candles/${t}?limit=${encodeURIComponent(String(limit))}`)
   const text = await res.text()
@@ -10043,7 +10045,7 @@ const fetchOhlcSeries = async (ticker: string, limit: number): Promise<Array<{ t
     throw new Error(`Failed to load ${ticker} candles. ${err}`)
   }
   const candles = (payload as AdminCandlesResponse).candles || []
-  return candles.map((c) => ({ time: c.time as UTCTimestamp, open: Number(c.open), close: Number(c.close) }))
+  return candles.map((c) => ({ time: c.time as UTCTimestamp, open: Number(c.open), close: Number(c.close), adjClose: Number((c as unknown as { adjClose?: number }).adjClose ?? c.close) }))
 }
 
 // Build price database from series data
@@ -10051,10 +10053,10 @@ const fetchOhlcSeries = async (ticker: string, limit: number): Promise<Array<{ t
 // This allows indicator tickers (with longer history) to set the date range, while position tickers
 // (which may have shorter history) just get null values for dates before their data starts
 const buildPriceDb = (
-  series: Array<{ ticker: string; bars: Array<{ time: UTCTimestamp; open: number; close: number }> }>,
+  series: Array<{ ticker: string; bars: Array<{ time: UTCTimestamp; open: number; close: number; adjClose: number }> }>,
   dateIntersectionTickers?: string[]
 ): PriceDB => {
-  const byTicker = new Map<string, Map<number, { open: number; close: number }>>()
+  const byTicker = new Map<string, Map<number, { open: number; close: number; adjClose: number }>>()
   const tickerCounts: Record<string, number> = {}
   let overlapStart = 0
   let overlapEnd = Number.POSITIVE_INFINITY
@@ -10067,8 +10069,8 @@ const buildPriceDb = (
 
   for (const s of series) {
     const t = getSeriesKey(s.ticker)
-    const map = new Map<number, { open: number; close: number }>()
-    for (const b of s.bars) map.set(Number(b.time), { open: Number(b.open), close: Number(b.close) })
+    const map = new Map<number, { open: number; close: number; adjClose: number }>()
+    for (const b of s.bars) map.set(Number(b.time), { open: Number(b.open), close: Number(b.close), adjClose: Number(b.adjClose) })
     byTicker.set(t, map)
     tickerCounts[t] = s.bars.length
 
@@ -10086,7 +10088,7 @@ const buildPriceDb = (
     overlapEnd = Math.min(overlapEnd, times[times.length - 1])
   }
 
-  if (!(overlapEnd >= overlapStart)) return { dates: [], open: {}, close: {}, tickerCounts }
+  if (!(overlapEnd >= overlapStart)) return { dates: [], open: {}, close: {}, adjClose: {}, tickerCounts }
 
   // Build date intersection using only the intersection tickers (if provided)
   let intersection: Set<number> | null = null
@@ -10112,12 +10114,14 @@ const buildPriceDb = (
   // Non-intersection tickers may have nulls for dates before their data starts
   const open: Record<string, Array<number | null>> = {}
   const close: Record<string, Array<number | null>> = {}
+  const adjClose: Record<string, Array<number | null>> = {}
   for (const [ticker, map] of byTicker) {
     open[ticker] = dates.map((d) => (map.get(Number(d))?.open ?? null))
     close[ticker] = dates.map((d) => (map.get(Number(d))?.close ?? null))
+    adjClose[ticker] = dates.map((d) => (map.get(Number(d))?.adjClose ?? null))
   }
 
-  return { dates, open, close, limitingTicker, tickerCounts }
+  return { dates, open, close, adjClose, limitingTicker, tickerCounts }
 }
 
 const expandToNode = (node: FlowNode, targetId: string): { next: FlowNode; found: boolean } => {
@@ -12434,8 +12438,8 @@ function App() {
       })
       try {
         const bars = await fetchOhlcSeries(ticker, 20000)
-        const barMap = new Map<number, { open: number; close: number }>()
-        for (const b of bars) barMap.set(Number(b.time), { open: Number(b.open), close: Number(b.close) })
+        const barMap = new Map<number, { open: number; close: number; adjClose: number }>()
+        for (const b of bars) barMap.set(Number(b.time), { open: Number(b.open), close: Number(b.close), adjClose: Number(b.adjClose) })
 
         const days = botResult.days || []
         const points = botResult.points || []
@@ -12463,7 +12467,7 @@ function App() {
               : backtestMode === 'OO'
                 ? startBar?.open
                 : backtestMode === 'CC'
-                  ? startBar?.close
+                  ? startBar?.adjClose  // CC mode: use adjClose for dividend-adjusted returns
                   : backtestMode === 'CO'
                     ? startBar?.close
                     : startBar?.open
@@ -12473,7 +12477,7 @@ function App() {
               : backtestMode === 'OO'
                 ? endBar?.open
                 : backtestMode === 'CC'
-                  ? endBar?.close
+                  ? endBar?.adjClose  // CC mode: use adjClose for dividend-adjusted returns
                   : backtestMode === 'CO'
                     ? endBar?.open
                     : endBar?.close

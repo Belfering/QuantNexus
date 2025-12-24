@@ -46,6 +46,7 @@ async function fetchOhlcSeries(ticker, limit = 20000) {
         High AS high,
         Low AS low,
         Close AS close,
+        "Adj Close" AS adjClose,
         Volume AS volume
       FROM read_parquet('${filePath.replace(/\\/g, '/')}')
       ORDER BY Date DESC
@@ -63,6 +64,7 @@ async function fetchOhlcSeries(ticker, limit = 20000) {
           high: r.high == null ? null : Number(r.high),
           low: r.low == null ? null : Number(r.low),
           close: r.close == null ? null : Number(r.close),
+          adjClose: r.adjClose == null ? null : Number(r.adjClose),
           volume: r.volume == null ? null : Number(r.volume),
         }))
         .sort((a, b) => a.time - b.time)
@@ -559,7 +561,7 @@ const getCachedSeries = (cache, kind, ticker, period, compute) => {
 // If provided, only those tickers determine the common date range (allows longer history for indicators)
 // Position tickers get null values for dates before their data starts
 const buildPriceDb = (series, dateIntersectionTickers = null) => {
-  if (!series.length) return { dates: [], open: {}, close: {} }
+  if (!series.length) return { dates: [], open: {}, close: {}, adjClose: {} }
 
   // Build a map from ticker -> (time -> bar) for each series
   const barMaps = series.map((s) => {
@@ -609,16 +611,19 @@ const buildPriceDb = (series, dateIntersectionTickers = null) => {
 
   const open = {}
   const close = {}
+  const adjClose = {}
   for (const { ticker, byTime } of barMaps) {
     // All tickers get arrays aligned to dates, but may have null for dates before their data starts
     open[ticker] = dates.map((d) => byTime.get(d)?.open ?? null)
     close[ticker] = dates.map((d) => byTime.get(d)?.close ?? null)
+    adjClose[ticker] = dates.map((d) => byTime.get(d)?.adjClose ?? null)
   }
 
-  return { dates, open, close }
+  return { dates, open, close, adjClose }
 }
 
 // Cached version - handles ratio tickers like "SPY/XLU" by computing numerator/denominator prices
+// IMPORTANT: Uses adjClose for all indicator calculations (accurate historical signals)
 const getCachedCloseArray = (cache, db, ticker) => {
   const t = getSeriesKey(ticker)
   const existing = cache.closeArrays.get(t)
@@ -627,14 +632,14 @@ const getCachedCloseArray = (cache, db, ticker) => {
   // Check if this is a ratio ticker
   const ratio = parseRatioTicker(t)
   if (ratio) {
-    // Compute ratio prices from component tickers
-    const numClose = db.close[ratio.numerator] || []
-    const denClose = db.close[ratio.denominator] || []
-    const len = Math.max(numClose.length, denClose.length)
+    // Compute ratio prices from component tickers using adjClose for indicators
+    const numAdjClose = db.adjClose[ratio.numerator] || []
+    const denAdjClose = db.adjClose[ratio.denominator] || []
+    const len = Math.max(numAdjClose.length, denAdjClose.length)
     const arr = new Array(len).fill(NaN)
     for (let i = 0; i < len; i++) {
-      const num = numClose[i]
-      const den = denClose[i]
+      const num = numAdjClose[i]
+      const den = denAdjClose[i]
       if (num != null && den != null && den !== 0) {
         arr[i] = num / den
       }
@@ -643,8 +648,8 @@ const getCachedCloseArray = (cache, db, ticker) => {
     return arr
   }
 
-  // Regular ticker
-  const arr = (db.close[t] || []).map((v) => (v == null ? NaN : v))
+  // Regular ticker - use adjClose for indicator calculations
+  const arr = (db.adjClose[t] || []).map((v) => (v == null ? NaN : v))
   cache.closeArrays.set(t, arr)
   return arr
 }
@@ -1144,24 +1149,16 @@ const evaluateNode = (ctx, node) => {
 
   if (node.kind === 'numbered') {
     const items = node.numbered?.items || []
-    console.log(`[Numbered] Evaluating node "${node.title}" with ${items.length} items, quantifier=${node.numbered?.quantifier}`)
     // Evaluate each item's conditions
     const itemTruth = items.map((item, idx) => {
       const conditions = item.conditions || []
-      if (conditions.length === 0) {
-        console.log(`  Item ${idx}: no conditions → false`)
-        return false
-      }
+      if (conditions.length === 0) return false
       // Evaluate using standard boolean precedence: AND binds tighter than OR
       let currentAnd = null
       const orTerms = []
       for (const c of conditions) {
         const v = evaluateCondition(ctx, c)
-        console.log(`  Item ${idx} cond: ${c.ticker} ${c.metric} ${c.comparator} ${c.threshold} → ${v}`)
-        if (v == null) {
-          console.log(`  Item ${idx}: missing data → false`)
-          return false // Missing data = false
-        }
+        if (v == null) return false // Missing data = false
         const t = c.type === 'or' ? 'or' : c.type === 'and' ? 'and' : 'if'
         if (t === 'if') {
           if (currentAnd !== null) orTerms.push(currentAnd)
@@ -1184,9 +1181,7 @@ const evaluateNode = (ctx, node) => {
         currentAnd = v
       }
       if (currentAnd !== null) orTerms.push(currentAnd)
-      const result = orTerms.some(Boolean)
-      console.log(`  Item ${idx} result: ${result}`)
-      return result
+      return orTerms.some(Boolean)
     })
 
     const nTrue = itemTruth.filter(Boolean).length
@@ -1196,7 +1191,6 @@ const evaluateNode = (ctx, node) => {
     // Handle ladder mode: select ladder-N slot based on how many conditions are true
     if (q === 'ladder') {
       const slotKey = `ladder-${nTrue}`
-      console.log(`[Numbered] Ladder mode: nTrue=${nTrue}/${items.length} → slot=${slotKey}`)
       const children = (node.children?.[slotKey] || []).filter(Boolean)
       return evaluateChildren(ctx, node, slotKey, children)
     }
@@ -1647,18 +1641,23 @@ export async function runBacktest(payload, options = {}) {
       const t = getSeriesKey(ticker)
       const openArr = db.open[t]
       const closeArr = db.close[t]
+      const adjCloseArr = db.adjClose[t]
 
       let entry, exit
       if (backtestMode === 'OO') {
+        // OO mode: Use actual open prices
         entry = openArr?.[start]
         exit = openArr?.[end]
       } else if (backtestMode === 'CC') {
-        entry = closeArr?.[start]
-        exit = closeArr?.[end]
+        // CC mode: Use adjClose for dividend-adjusted returns
+        entry = adjCloseArr?.[start]
+        exit = adjCloseArr?.[end]
       } else if (backtestMode === 'CO') {
+        // CO mode: Use actual close/open prices
         entry = closeArr?.[start]
         exit = openArr?.[end]
       } else { // OC
+        // OC mode: Use actual open/close prices
         entry = openArr?.[start]
         exit = closeArr?.[start]
       }
@@ -1672,15 +1671,17 @@ export async function runBacktest(payload, options = {}) {
     // Calculate SPY return for Treynor ratio
     const spyOpen = db.open['SPY']
     const spyClose = db.close['SPY']
+    const spyAdjClose = db.adjClose['SPY']
     let spyRet = 0
-    if (spyOpen && spyClose) {
+    if (spyOpen && spyClose && spyAdjClose) {
       let spyEntry, spyExit
       if (backtestMode === 'OO') {
         spyEntry = spyOpen[start]
         spyExit = spyOpen[end]
       } else if (backtestMode === 'CC') {
-        spyEntry = spyClose[start]
-        spyExit = spyClose[end]
+        // CC mode: Use adjClose for dividend-adjusted benchmark
+        spyEntry = spyAdjClose[start]
+        spyExit = spyAdjClose[end]
       } else if (backtestMode === 'CO') {
         spyEntry = spyClose[start]
         spyExit = spyOpen[end]
@@ -1762,7 +1763,7 @@ export async function runBacktest(payload, options = {}) {
     },
     equityCurve: points.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
     benchmarkCurve: benchmarkPoints.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
-    // Include daily allocations for the Allocations tab (sample every N days to reduce payload size)
-    allocations: dailyAllocations.filter((_, i) => i % 5 === 0 || i === dailyAllocations.length - 1),
+    // Include daily allocations for the Allocations tab
+    allocations: dailyAllocations,
   }
 }

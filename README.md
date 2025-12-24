@@ -18,8 +18,11 @@ Atlas Engine enables users to visually design trading strategies by connecting d
   - **Position**: Leaf nodes holding actual ticker positions (BIL, SPY, or Empty)
 - **Strategy Import**: Import strategies from QuantMage and Composer JSON files
 - **Market Data Integration**: Download and query historical ticker data from Yahoo Finance
-- **Backtesting**: Run backtests with comprehensive metrics (CAGR, Sharpe, Sortino, Treynor, Calmar, Max Drawdown, etc.)
-- **Rich Indicator Library**: RSI, SMA, EMA, ROC, Volatility, Drawdown, Cumulative Return, and more
+- **Backtesting**: Run backtests with comprehensive metrics (CAGR, Sharpe, Sortino, Treynor, Calmar, Max Drawdown, Beta, etc.)
+- **Adjusted Close Pricing**: Uses Adj Close for all indicator calculations (accurate historical signals accounting for dividends/splits), with mode-appropriate execution prices:
+  - CC mode: Adj Close for both signals and execution (dividend-adjusted returns)
+  - OO/CO/OC modes: Adj Close for signals, actual Open/Close for execution
+- **Rich Indicator Library**: RSI, SMA, EMA, ROC, Volatility, Drawdown, Cumulative Return, 13612W Momentum, and more
 - **Undo/Redo**: Full history-based state management
 - **Copy/Paste**: Clone node subtrees with a single click
 - **Live Data Visualization**: View candlestick charts for tickers using DuckDB-powered queries
