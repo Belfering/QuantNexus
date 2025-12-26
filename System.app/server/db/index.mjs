@@ -6,6 +6,10 @@ import { fileURLToPath } from 'url'
 import { eq, desc, and, or, isNull, like } from 'drizzle-orm'
 import crypto from 'crypto'
 import fs from 'fs'
+import bcrypt from 'bcrypt'
+
+// Bcrypt configuration
+const SALT_ROUNDS = 10
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -180,13 +184,14 @@ export function initializeDatabase() {
   }
 
   // Seed default users (1, 3, 5, 7, 9, admin)
+  // Plain passwords - will be hashed below
   const defaultUsers = [
-    { id: '1', username: '1', passwordHash: '1', displayName: 'User 1', role: 'partner' },
-    { id: '3', username: '3', passwordHash: '3', displayName: 'User 3', role: 'partner' },
-    { id: '5', username: '5', passwordHash: '5', displayName: 'User 5', role: 'partner' },
-    { id: '7', username: '7', passwordHash: '7', displayName: 'User 7', role: 'partner' },
-    { id: '9', username: '9', passwordHash: '9', displayName: 'User 9', role: 'partner' },
-    { id: 'admin', username: 'admin', passwordHash: 'admin', displayName: 'Administrator', role: 'admin' },
+    { id: '1', username: '1', plainPassword: '1', displayName: 'User 1', role: 'partner' },
+    { id: '3', username: '3', plainPassword: '3', displayName: 'User 3', role: 'partner' },
+    { id: '5', username: '5', plainPassword: '5', displayName: 'User 5', role: 'partner' },
+    { id: '7', username: '7', plainPassword: '7', displayName: 'User 7', role: 'partner' },
+    { id: '9', username: '9', plainPassword: '9', displayName: 'User 9', role: 'partner' },
+    { id: 'admin', username: 'admin', plainPassword: 'admin', displayName: 'Administrator', role: 'admin' },
   ]
 
   const insertUser = sqlite.prepare(`
@@ -211,13 +216,15 @@ export function initializeDatabase() {
 
   const now = Date.now()
   for (const user of defaultUsers) {
-    insertUser.run(user.id, user.username, user.passwordHash, user.displayName, user.role, user.role === 'partner' ? 1 : 0, now, now)
+    // Hash passwords using bcrypt (sync for initialization)
+    const passwordHash = bcrypt.hashSync(user.plainPassword, SALT_ROUNDS)
+    insertUser.run(user.id, user.username, passwordHash, user.displayName, user.role, user.role === 'partner' ? 1 : 0, now, now)
     insertPortfolio.run(`portfolio-${user.id}`, user.id, 100000, now, now)
     insertWatchlist.run(`watchlist-${user.id}-default`, user.id, 'My Watchlist', 1, now, now)
     insertPreferences.run(user.id, 'dark', 'sapphire', '{}', now)
   }
 
-  console.log('[DB] Database initialized')
+  console.log('[DB] Database initialized with bcrypt password hashing')
 }
 
 // ============================================
@@ -225,6 +232,46 @@ export function initializeDatabase() {
 // ============================================
 export function generateId() {
   return crypto.randomUUID()
+}
+
+/**
+ * Hash a password using bcrypt
+ * @param {string} plainPassword - Plain text password
+ * @returns {Promise<string>} - Bcrypt hash
+ */
+export async function hashPassword(plainPassword) {
+  return bcrypt.hash(plainPassword, SALT_ROUNDS)
+}
+
+/**
+ * Migrate existing plain-text passwords to bcrypt hashes
+ * Detects plain-text passwords (not starting with $2b$) and hashes them
+ * @returns {Promise<{migrated: number, alreadyHashed: number}>}
+ */
+export async function migratePasswordsToBcrypt() {
+  const users = await db.select().from(schema.users)
+  let migrated = 0
+  let alreadyHashed = 0
+
+  for (const user of users) {
+    // Bcrypt hashes start with $2b$ (or $2a$, $2y$)
+    if (user.passwordHash && user.passwordHash.startsWith('$2')) {
+      alreadyHashed++
+      continue
+    }
+
+    // Plain text password - hash it
+    // For existing users, their password is their username (1, 3, 5, 7, 9, admin)
+    const newHash = await bcrypt.hash(user.passwordHash, SALT_ROUNDS)
+    await db.update(schema.users)
+      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(schema.users.id, user.id))
+    migrated++
+    console.log(`[DB] Migrated password for user: ${user.username}`)
+  }
+
+  console.log(`[DB] Password migration complete: ${migrated} migrated, ${alreadyHashed} already hashed`)
+  return { migrated, alreadyHashed }
 }
 
 // ============================================
@@ -245,8 +292,11 @@ export async function getUserByUsername(username) {
 export async function validateUser(username, password) {
   const user = await getUserByUsername(username)
   if (!user) return null
-  // Simple password check (in production, use bcrypt)
-  if (user.passwordHash !== password) return null
+
+  // Compare password with bcrypt hash
+  const isValid = await bcrypt.compare(password, user.passwordHash)
+  if (!isValid) return null
+
   // Update last login
   await db.update(schema.users)
     .set({ lastLoginAt: new Date() })

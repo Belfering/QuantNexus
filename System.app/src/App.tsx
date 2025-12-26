@@ -4040,7 +4040,7 @@ function AdminPanel({
               </div>
 
               <div className="text-xs text-muted">
-                Atlas systems appear in the "Select Systems" section of Community Nexus. Unlike Nexus systems, Atlas systems do not require eligibility metrics.
+                Atlas systems appear in the "Select Systems" section of Nexus. Unlike Nexus systems, Atlas systems do not require eligibility metrics.
               </div>
             </div>
           </Card>
@@ -11257,7 +11257,7 @@ function App() {
   const [analyzeBacktests, setAnalyzeBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
   const [analyzeTickerContrib, setAnalyzeTickerContrib] = useState<Record<string, TickerContributionState>>({})
 
-  // Cross-user Nexus bots for Community Nexus tab (populated via API in useEffect)
+  // Cross-user Nexus bots for Nexus tab (populated via API in useEffect)
   const [allNexusBots, setAllNexusBots] = useState<SavedBot[]>([])
   const [analyzeTickerSort, setAnalyzeTickerSort] = useState<{ column: string; dir: 'asc' | 'desc' }>({
     column: 'ticker',
@@ -11631,7 +11631,7 @@ function App() {
   const [clipboard, setClipboard] = useState<FlowNode | null>(null)
   const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null) // Track original node ID that was copied
   const [isImporting, setIsImporting] = useState(false)
-  const [tab, setTab] = useState<'Dashboard' | 'Community Nexus' | 'Analyze' | 'Build' | 'Help/Support' | 'Admin' | 'Databases'>('Build')
+  const [tab, setTab] = useState<'Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'>('Model')
   const [dashboardSubtab, setDashboardSubtab] = useState<'Portfolio' | 'Partner Program'>('Portfolio')
   const [analyzeSubtab, setAnalyzeSubtab] = useState<'Systems' | 'Correlation Tool'>('Systems')
   const [adminTab, setAdminTab] = useState<'Atlas Overview' | 'Nexus Maintenance' | 'Ticker Data'>('Atlas Overview')
@@ -11663,7 +11663,7 @@ function App() {
   const [dashboardBuyMoreAmount, setDashboardBuyMoreAmount] = useState<string>('')
   const [dashboardBuyMoreMode, setDashboardBuyMoreMode] = useState<'$' | '%'>('$')
 
-  // Inline buy state for Nexus bots (in Analyze tab, Community Nexus, watchlists)
+  // Inline buy state for Nexus bots (in Analyze tab, Nexus, watchlists)
   const [nexusBuyBotId, setNexusBuyBotId] = useState<string | null>(null)
   const [nexusBuyAmount, setNexusBuyAmount] = useState<string>('')
   const [nexusBuyMode, setNexusBuyMode] = useState<'$' | '%'>('$')
@@ -11979,7 +11979,7 @@ function App() {
     }
   }
 
-  // Handle buying Nexus bots from inline buy UI (Analyze tab, Community Nexus, watchlists)
+  // Handle buying Nexus bots from inline buy UI (Analyze tab, Nexus, watchlists)
   const handleNexusBuy = async (botId: string) => {
     if (!userId) return
     // Look in both savedBots and allNexusBots to find the bot
@@ -13326,7 +13326,7 @@ function App() {
       }
       setBots((prev) => [...prev, session])
       setActiveBotId(session.id)
-      setTab('Build')
+      setTab('Model')
     },
     [userId, setTab],
   )
@@ -13362,7 +13362,7 @@ function App() {
       const session: BotSession = { id: `bot-${newId()}`, history: [payload], historyIndex: 0, savedBotId: bot.id }
       setBots((prev) => [...prev, session])
       setActiveBotId(session.id)
-      setTab('Build')
+      setTab('Model')
     },
     [setTab, userId],
   )
@@ -13690,7 +13690,7 @@ function App() {
     // Portfolio will be loaded from database API via useEffect when userId changes
     setDashboardPortfolio(defaultDashboardPortfolio())
     setAnalyzeBacktests({})
-    setTab('Build')
+    setTab('Model')
   }
 
   const handleLogout = () => {
@@ -13706,14 +13706,14 @@ function App() {
     setUiState(defaultUiState())
     setDashboardPortfolio(defaultDashboardPortfolio())
     setAnalyzeBacktests({})
-    setTab('Build')
+    setTab('Model')
     setSaveMenuOpen(false)
     setAddToWatchlistBotId(null)
   }
 
   const colorTheme = uiState.colorTheme ?? 'slate'
 
-  // Helper to find fund slot from uiState.fundZones (used in Dashboard and Community Nexus)
+  // Helper to find fund slot from uiState.fundZones (used in Dashboard and Nexus)
   const getFundSlotForBot = (botId: string): number | null => {
     for (let i = 1; i <= 5; i++) {
       const key = `fund${i}` as keyof FundZones
@@ -13769,7 +13769,7 @@ function App() {
             </div>
           </div>
           <div className="flex gap-2 mt-3">
-            {(['Dashboard', 'Community Nexus', 'Analyze', 'Build', 'Help/Support', ...(userId === 'admin' ? ['Admin', 'Databases'] : [])] as ('Dashboard' | 'Community Nexus' | 'Analyze' | 'Build' | 'Help/Support' | 'Admin' | 'Databases')[]).map((t) => (
+            {(['Dashboard', 'Nexus', 'Analyze', 'Model', 'Help/Support', ...(userId === 'admin' ? ['Admin', 'Databases'] : [])] as ('Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases')[]).map((t) => (
               <Button
                 key={t}
                 variant={tab === t ? 'accent' : 'secondary'}
@@ -13779,7 +13779,7 @@ function App() {
               </Button>
             ))}
           </div>
-          {tab === 'Build' && (
+          {tab === 'Model' && (
             <div className="flex gap-2 mt-3">
               <Button onClick={handleNewBot}>New System</Button>
               <div className="relative inline-block">
@@ -13838,7 +13838,7 @@ function App() {
               <Button onClick={handleExport}>Export</Button>
             </div>
           )}
-          {tab === 'Build' && (
+          {tab === 'Model' && (
             <div className="flex gap-2 mt-3">
               {bots.map((b) => {
                 const root = b.history[b.historyIndex] ?? b.history[0]
@@ -13906,7 +13906,7 @@ function App() {
       )}
       <TickerDatalist id={TICKER_DATALIST_ID} options={tickerOptions} />
       <main className="flex-1 overflow-hidden min-h-0">
-        {tab === 'Build' ? (
+        {tab === 'Model' ? (
           <Card className="h-full flex flex-col overflow-hidden m-4">
             <CardContent className="flex-1 flex flex-col gap-4 p-4 overflow-auto min-h-0">
               {/* Top Zone - Backtester */}
@@ -14943,7 +14943,7 @@ function App() {
             )}
             </CardContent>
           </Card>
-        ) : tab === 'Community Nexus' ? (
+        ) : tab === 'Nexus' ? (
           <Card className="h-full flex flex-col overflow-hidden m-4">
             <CardContent className="p-4 flex flex-col h-full overflow-auto">
             {(() => {
@@ -15188,7 +15188,7 @@ function App() {
 
                           {!collapsed && (
                             <div className="flex flex-col gap-2.5 w-full">
-                              {/* Simplified view for Community Nexus - Base Stats only, no tabs, no Information */}
+                              {/* Simplified view for Nexus - Base Stats only, no tabs, no Information */}
                               <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
                                 {analyzeState?.status === 'loading' ? (
                                   <div className="text-muted">Running backtest…</div>
@@ -15579,12 +15579,12 @@ function App() {
                     </Card>
                   </Card>
 
-                  {/* Right Column - Top Nexus Systems */}
+                  {/* Right Column - Nexus Select Zone */}
                   <Card className="flex flex-col p-4">
-                    <div className="font-black text-center mb-4">Top Nexus Systems</div>
+                    <div className="font-black text-center mb-4">Nexus Select Zone</div>
                     <div className="flex flex-col gap-4 flex-1">
                       <Card className="flex-1 flex flex-col p-3 border-2">
-                        <div className="font-bold text-center mb-2">Top Nexus Systems by CAGR</div>
+                        <div className="font-bold text-center mb-2">Top Systems by CAGR</div>
                         <div className="flex-1 overflow-auto max-h-[400px]">
                           {renderBotCards(topByCagr, communityTopSort, setCommunityTopSort, {
                             emptyMessage: 'No Nexus systems with backtest data.',
@@ -15592,7 +15592,7 @@ function App() {
                         </div>
                       </Card>
                       <Card className="flex-1 flex flex-col p-3 border-2">
-                        <div className="font-bold text-center mb-2">Top Nexus Systems by Calmar Ratio</div>
+                        <div className="font-bold text-center mb-2">Top Systems by Calmar Ratio</div>
                         <div className="flex-1 overflow-auto max-h-[400px]">
                           {renderBotCards(topByCalmar, communityTopSort, setCommunityTopSort, {
                             emptyMessage: 'No Nexus systems with backtest data.',
@@ -15600,7 +15600,7 @@ function App() {
                         </div>
                       </Card>
                       <Card className="flex-1 flex flex-col p-3 border-2">
-                        <div className="font-bold text-center mb-2">Top Nexus Systems by Sharpe Ratio</div>
+                        <div className="font-bold text-center mb-2">Top Systems by Sharpe Ratio</div>
                         <div className="flex-1 overflow-auto max-h-[400px]">
                           {renderBotCards(topBySharpe, communityTopSort, setCommunityTopSort, {
                             emptyMessage: 'No Nexus systems with backtest data.',
@@ -15844,7 +15844,7 @@ function App() {
                     {/* Divider */}
                     <div className="border-t border-border my-3" />
 
-                    {/* Systems Invested In Section - Uses same card format as Community Nexus */}
+                    {/* Systems Invested In Section - Uses same card format as Nexus */}
                     <div className="font-black mb-3">Systems Invested In ({dashboardInvestmentsWithPnl.length})</div>
                     {dashboardInvestmentsWithPnl.length === 0 ? (
                       <div className="text-muted text-center py-4">No investments yet.</div>
@@ -16014,7 +16014,7 @@ function App() {
                                 </div>
                               )}
 
-                              {/* Expanded view - same format as Community Nexus cards */}
+                              {/* Expanded view - same format as Nexus cards */}
                               {isExpanded && !isSelling && !isBuyingMore && (
                                 <div className="flex flex-col gap-2.5 w-full">
                                   <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">

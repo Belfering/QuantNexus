@@ -825,16 +825,29 @@ h1 {
   justify-content: flex-start;
   gap: 8px;
   margin-bottom: 8px;
-  background: var(--color-surface-2);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-2) 92%);
   border-radius: 10px;
   padding: 6px 10px;
   margin: -4px -6px 8px -6px;
   cursor: pointer;
   transition: background 0.15s;
+  border-left: 3px solid var(--color-accent);
 }
 
 .node-head:hover {
+  background: color-mix(in srgb, var(--color-accent) 15%, var(--color-surface) 85%);
+}
+
+.node-id-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted-foreground);
   background: var(--color-surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  opacity: 0.7;
 }
 
 .node-title {
@@ -844,14 +857,16 @@ h1 {
 }
 
 .title-input {
-  font-weight: 800;
-  font-size: 15px;
-  padding: 6px 8px;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 4px 6px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  width: 180px;
+  border-radius: 6px;
+  width: 160px;
   background: var(--color-surface);
   color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .head-actions {
@@ -960,13 +975,14 @@ h1 {
 }
 
 .inline-number {
-  width: 54px;
-  padding: 2px 6px;
-  margin: 0 4px;
+  width: 48px;
+  padding: 2px 4px;
+  margin: 0 3px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--color-surface);
   color: var(--color-text);
+  font-size: 12px;
 }
 
 .alloc-input {
@@ -1106,13 +1122,13 @@ h1 {
 }
 
 .insert-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  border: 1px solid var(--color-accent);
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 2px solid var(--color-accent);
   background: var(--color-surface);
   color: var(--color-accent);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
   cursor: pointer;
   display: flex;

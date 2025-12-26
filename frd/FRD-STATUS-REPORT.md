@@ -1,17 +1,32 @@
 # FRD Status Report
-Generated: 2025-12-22 (Updated)
+Generated: 2025-12-26 (Updated)
 
 ## Executive Summary
 
-**Total FRDs**: 15 active documents
-**Completed**: 12 (FRD-001, FRD-002, FRD-004, FRD-005, FRD-006, FRD-012, FRD-013, FRD-014, FRD-016, FRD-018, FRD-019, Admin features)
+**Total FRDs**: 23 active documents
+**Completed**: 17 (FRD-001 through FRD-008, FRD-012-014, FRD-016, FRD-018-019, FRD-021, FRD-024, Admin features)
 **In Progress**: 0
-**Deferred (OFF)**: 1 (FRD-011)
-**Blocked/Awaiting Decisions**: 3 (FRD-003, FRD-007, FRD-008)
-**Pending**: 1 (FRD-017)
-**Completion Rate**: 80%
+**Deferred (OFF)**: 4 (FRD-011, FRD-022, FRD-026, FRD-027)
+**Ongoing**: 1 (FRD-020)
+**Pending**: 2 (FRD-017, FRD-023, FRD-025)
+**Completion Rate**: 74%
 
-### Latest Updates (2025-12-22)
+### Latest Updates (2025-12-26)
+- **COMPLETED**: FRD-021 (Model Tab UI) - Renamed Build→Model, 60px insert button, accent-tinted bars, fixed font sizes
+- **COMPLETED**: FRD-024 (Nexus Rename) - Community Nexus→Nexus, Top Nexus Systems→Nexus Select Zone
+- **ADDED**: FRD-020 (QuantMage Verification) - ONGOING manual verification
+- **ADDED**: FRD-022 (Extended Indicators) - OFF, future implementation
+- **ADDED**: FRD-023 (Separate Atlas Database) - PENDING
+- **ADDED**: FRD-025 (Atlas Zone Improvements) - PENDING
+- **ADDED**: FRD-026 (Advanced Analytics) - OFF, future implementation
+- **ADDED**: FRD-027 (Tiingo Data Pipeline) - OFF, future implementation
+
+### Session 2 Updates (2025-12-26)
+- **COMPLETED**: FRD-003 (Testing) - Vitest framework with 34 tests for AND/OR/IF conditional logic
+- **COMPLETED**: FRD-008 (Password Hashing) - bcrypt implementation with auto-migration of existing passwords
+- **COMPLETED**: FRD-007 (Database Migration) - Full migration complete, deprecated localStorage code removed
+
+### Previous Updates (2025-12-22)
 - **COMPLETED**: FRD-018 (Alt Exit & Scaling) - Two new node types with stateful/gradient allocation
 - **COMPLETED**: FRD-019 (Auto-Detect Import) - Unified import with Atlas/Composer/QuantMage detection
 - **COMPLETED**: FRD-012 (Fund Lock) - Published systems are immutable, "Copy to New" available
@@ -226,6 +241,103 @@ Generated: 2025-12-22 (Updated)
 
 ---
 
+### FRD-007: Database Architecture & Migration
+**Status**: COMPLETE
+**Priority**: Critical
+
+#### What Was Completed:
+- SQLite + Drizzle ORM architecture implemented
+- Database schema: users, bots, watchlists, portfolios, positions, metrics, call_chains, user_preferences
+- CRUD API endpoints for all entities
+- Server-side backtest with IP protection
+- Full migration from localStorage to database:
+  - Portfolios with positions load/save via API
+  - Watchlists with bot associations via API
+  - User preferences (theme, color scheme) via API
+  - Call chains via API with debounced auto-save
+- Deprecated localStorage code removed (~115 lines)
+- Automatic migration of legacy localStorage data on first login
+
+---
+
+### FRD-003: Conditional Logic Validation (AND/IF, OR/IF)
+**Status**: COMPLETE
+**Priority**: #3
+
+#### What Was Completed:
+- Vitest testing framework installed and configured
+- Test files located in `__tests__/` directory
+- 34 automated tests covering:
+  - Basic AND/OR operations
+  - Boolean precedence: `A OR B AND C` = `A OR (B AND C)` (standard precedence)
+  - Mixed AND/OR with precedence verification
+  - Complex nested expressions
+  - Null propagation handling
+  - IF type handling (starts new condition chains)
+- Run tests with `npm run test` or `npm run test:run`
+
+---
+
+### FRD-008: User Data Security Best Practices
+**Status**: COMPLETE
+**Priority**: High
+
+#### What Was Completed:
+- bcrypt password hashing with 10 salt rounds
+- Secure password comparison using `bcrypt.compare()`
+- Auto-migration of existing plain-text passwords to bcrypt hashes on server startup
+- Passwords in database now stored as `$2b$10$...` bcrypt hashes
+- `hashPassword()` utility function exported for future use
+- Login continues to work seamlessly (passwords: 1/1, 3/3, 5/5, 7/7, 9/9, admin/admin)
+
+---
+
+### FRD-021: Model Tab UI Improvements
+**Status**: COMPLETE
+**Priority**: Medium
+
+#### What Was Completed:
+- **Tab Rename**: "Build" tab renamed to "Model" throughout App.tsx
+- **Insert Button**: Enlarged from 20px to 60px (3x larger) for better usability
+  - Border-radius increased to 12px
+  - Font size increased to 32px
+- **Node Head Theming**: Added subtle accent tint using CSS `color-mix()`
+  - Base: 8% accent color + 92% surface-2
+  - Hover: 15% accent color + 85% surface
+  - Left border: 3px solid accent color
+- **Font Fixes**: Reduced oversized fonts
+  - `.title-input`: font-size 13px, padding 4px 6px, width 160px
+  - `.inline-number`: font-size 12px, width 48px, padding 2px 4px
+
+---
+
+### FRD-024: Nexus Label Rename
+**Status**: COMPLETE
+**Priority**: Low
+
+#### What Was Completed:
+- "Community Nexus" tab renamed to "Nexus"
+- "Top Nexus Systems" zone renamed to "Nexus Select Zone"
+- All references updated in App.tsx type annotations and conditionals
+
+---
+
+## ONGOING FRDs
+
+### FRD-020: QuantMage Block Verification
+**Status**: ONGOING (manual verification)
+**Priority**: Low
+
+#### Description:
+Manual verification that QuantMage import nodes are transferring correctly to Atlas Engine node structure.
+
+#### Notes:
+- User manually verifies imported strategies
+- No automated implementation needed
+- Track issues as they arise
+
+---
+
 ## DEFERRED FRDs (OFF)
 
 ### FRD-011: Atlas Sponsored Systems
@@ -246,49 +358,66 @@ Generated: 2025-12-22 (Updated)
 
 ---
 
-## BLOCKED FRDs (Awaiting User Decisions)
+### FRD-022: Extended Indicator Support
+**Status**: OFF (Deferred)
+**Priority**: Medium
 
-### FRD-003: Conditional Logic Validation (AND/IF, OR/IF)
-**Status**: BLOCKED - Needs test framework decision
-**Priority**: #3
+#### Current Indicators (22 total):
+SMA, EMA, RSI (Wilder's), Standard Deviation, Max Drawdown, Cumulative Return, SMA of Returns, Aroon Up/Down/Oscillator, Trend Clarity, Ultimate Smoother, 13612W/U Momentum, Drawdown, Current Price, MACD Histogram, PPO Histogram
 
-#### What's Blocking:
-1. **Test Framework Selection**: Need to decide between Vitest, Jest, or Mocha
-2. **Test Location**: Where to place test files (`__tests__/`, `*.test.ts`?)
-3. **Boolean Precedence Rules**: Confirm `A OR B AND C` = `A OR (B AND C)`
+#### Proposed New Indicators:
+- **RSI Variants**: Volume Weighted RSI, Laguerre RSI, RSI (SMA/EMA/Hull smoothing)
+- **Moving Averages**: Hull MA, Wilders MA, Weighted MA
+- **Volatility**: Bollinger Bands (Upper, Lower, %B, Bandwidth)
+- **Momentum**: Rate of Change, Money Flow Index (requires volume)
+- **Other**: Stochastic (Fast/Slow), ADX, ATR, OBV, CCI, Williams %R
 
-#### Ready to Implement Once Decisions Made:
-- Automated tests for AND/IF logic
-- Automated tests for OR/IF logic
-- Validation of nested AND/OR combinations
-- Debug overlay for condition evaluation (optional)
-
----
-
-### FRD-007: Database Architecture & Migration
-**Status**: PARTIALLY COMPLETE
-**Priority**: Critical
-
-#### What Was Completed:
-- SQLite + Drizzle ORM architecture implemented
-- Database schema: users, bots, watchlists, portfolios, positions, metrics
-- CRUD API endpoints for all entities
-- Server-side backtest with IP protection
-
-#### What's Blocking Full Completion:
-- Migration strategy for existing localStorage data
-- Decision on sync frequency (currently manual)
+#### Implementation Notes:
+- Add to `backtest.mjs` indicator functions section
+- Add to `emptyCache()` and `metricAt()` switch
+- Update frontend dropdown menus in NodeCard
 
 ---
 
-### FRD-008: User Data Security Best Practices
-**Status**: BLOCKED - Depends on FRD-007
-**Priority**: High
-**Dependencies**: FRD-007 (Database Architecture)
+### FRD-026: Advanced Analytics Suite
+**Status**: OFF (Deferred)
+**Priority**: Future
 
-#### What's Blocking:
-- Need to finalize authentication strategy
-- Need to implement proper password hashing (currently plain text for dev)
+#### Planned Analytics:
+1. **Monte Carlo Simulation** - Randomize trade order for robustness testing
+2. **K-Folds Cross Validation** - Split backtest into K periods
+3. **Sub-Period Consistency** - Yearly/quarterly performance breakdown
+4. **Top Concentration/Consistency** - Return from top N trades analysis
+5. **Hit Rate vs Payoff Asymmetry** - Expectancy analysis
+6. **Sharpe vs Benchmark (SPY)** - Information ratio
+7. **Smoothness vs Randomness (MC Block=1)** - Equity curve analysis
+8. **Thinning Sensitivity** - Test with subset of signals
+
+#### Notes:
+- Will add to Analyze tab as new subtab
+- Consider caching results like backtests
+
+---
+
+### FRD-027: Tiingo API Integration & Data Pipeline
+**Status**: OFF (Deferred)
+**Priority**: High (when ready)
+
+#### Current State:
+- Yahoo Finance via Python `yfinance` library
+- Individual Parquet files per ticker
+- DuckDB queries parquet files
+
+#### Proposed Architecture:
+- **Primary Source**: Tiingo API (daily batch download)
+- **Fallback**: Yahoo Finance
+- **Storage**: Unified SQLite database instead of parquet files
+
+#### Performance Optimizations:
+1. LRU cache for frequently-used tickers
+2. Pre-calculate common indicators on download
+3. Date range indexing for fast queries
+4. Incremental updates (only download new data)
 
 ---
 
@@ -310,28 +439,73 @@ Generated: 2025-12-22 (Updated)
 
 ---
 
+### FRD-023: Separate Atlas Database
+**Status**: PENDING
+**Priority**: High
+
+#### Current State:
+- Atlas bots stored in same `bots` table as user bots
+- Distinguished only by `visibility: 'atlas'` and `tags: ['Atlas']`
+- All owned by `admin` user
+
+#### Proposed Changes:
+1. **Create new `atlas_bots` table** - Same schema but separate storage
+2. **Add "Live Stats" display** - CAGR, Sharpe, MaxDD, Sortino in all bot views
+3. **Click-to-sort all columns** - A-Z/Z-A for text, High-Low for numbers
+4. **Add "Export JSON" button** - Admin/owner-only export
+5. **Add "Open Model" button** - Opens bot in Model tab (respects IP protection)
+
+#### Files to Modify:
+- `System.app/server/db/schema.mjs` - New atlas_bots table
+- `System.app/server/db/index.mjs` - CRUD for atlas_bots
+- `System.app/server/index.mjs` - New API endpoints
+- `System.app/src/App.tsx` - UI for Live Stats, sorting, buttons
+
+---
+
+### FRD-025: Atlas Zone Improvements
+**Status**: PENDING
+**Priority**: Medium
+
+#### Requirements:
+1. **Expandable cards** - Show full stats when expanded, keep CAGR/Sharpe/MaxDD visible collapsed
+2. **"Add to Watchlist" button** - Allow users to track Atlas systems in personal watchlists
+3. **Verify IP protection** - Users cannot copy or see bot code for Atlas bots
+
+#### Files to Modify:
+- `System.app/src/App.tsx` - Card expansion, buttons
+- Verify `getNexusBots()` strips payload (currently at db/index.mjs lines 348-374)
+
+---
+
 ## Summary
 
-### What Was Done Today (2025-12-22):
-1. **FRD-014**: Implemented backtest caching with separate SQLite database
-   - Cache check/store logic in backtest endpoint
-   - Daily refresh on first login of the day
-   - Admin endpoints for cache management
-2. **FRD-012**: Fund Lock already complete (hide edit for published systems)
-3. **FRD-013**: Rename to Systems already complete
-4. **FRD-016**: Beta metric already complete
+### What Was Done Today (2025-12-26 Session 3):
+1. **FRD-021 (Model Tab UI)**: Complete UI improvements
+   - Renamed "Build" tab to "Model" throughout App.tsx
+   - Enlarged insert (+) button from 20px to 60px (3x larger)
+   - Added subtle accent tint to node-head using CSS color-mix()
+   - Fixed oversized fonts in .title-input (13px) and .inline-number (12px)
+2. **FRD-024 (Nexus Rename)**: Label updates
+   - "Community Nexus" tab → "Nexus"
+   - "Top Nexus Systems" → "Nexus Select Zone"
 
-### Files Created:
-- `System.app/server/db/cache.mjs` - Backtest cache database module
+### What Was Done (2025-12-26 Session 2):
+1. **FRD-003 (Testing)**: Vitest framework with 34 tests for AND/OR/IF logic
+2. **FRD-008 (Password Hashing)**: bcrypt with auto-migration
+3. **FRD-007 (Database Migration)**: Full migration, deprecated code removed
 
-### Files Modified:
-- `System.app/server/index.mjs` - Added cache integration to backtest endpoint
+### Files Modified Today:
+- `System.app/src/App.tsx` - Tab renames (Build→Model, Community Nexus→Nexus), label updates
+- `System.app/src/App.css` - Insert button sizing, node-head theming, font fixes
+- `frd/FRD-STATUS-REPORT.md` - Added 8 new FRDs (FRD-020 through FRD-027)
 
-### What Requires User Decisions:
-1. **FRD-003**: Which test framework? (Vitest recommended)
-2. **FRD-011**: Debug why admin systems don't appear in Atlas dropdown
+### Pending FRDs (Next Steps):
+1. **FRD-023** (Separate Atlas Database) - High priority
+2. **FRD-025** (Atlas Zone Improvements) - Medium priority
+3. **FRD-017** (Payload Storage Optimization) - Low priority
 
-### Recommended Next Steps:
-1. Test the backtest caching by running a backtest twice (second should be instant)
-2. Choose Vitest for testing → unblock FRD-003
-3. Debug FRD-011 Atlas dropdown issue
+### Deferred FRDs (OFF - Future Implementation):
+- **FRD-022**: Extended Indicators (full list to be implemented later)
+- **FRD-026**: Advanced Analytics Suite (Monte Carlo, K-Folds, etc.)
+- **FRD-027**: Tiingo Data Pipeline (replace Yahoo Finance)
