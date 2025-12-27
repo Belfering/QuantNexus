@@ -1092,6 +1092,11 @@ const emptyCache = () => ({
   // High/Low arrays cache (for indicators needing OHLC)
   highArrays: new Map(),
   lowArrays: new Map(),
+  // Volume arrays cache (for volume-based indicators)
+  volumeArrays: new Map(),
+  mfi: new Map(),
+  obv: new Map(),
+  vwapRatio: new Map(),
 })
 
 const getCachedSeries = (cache, kind, ticker, period, compute) => {
@@ -1118,7 +1123,7 @@ const getCachedSeries = (cache, kind, ticker, period, compute) => {
 // If provided, only those tickers determine the common date range (allows longer history for indicators)
 // Position tickers get null values for dates before their data starts
 const buildPriceDb = (series, dateIntersectionTickers = null) => {
-  if (!series.length) return { dates: [], open: {}, high: {}, low: {}, close: {}, adjClose: {} }
+  if (!series.length) return { dates: [], open: {}, high: {}, low: {}, close: {}, adjClose: {}, volume: {} }
 
   // Build a map from ticker -> (time -> bar) for each series
   const barMaps = series.map((s) => {
@@ -1157,6 +1162,7 @@ const buildPriceDb = (series, dateIntersectionTickers = null) => {
   const low = {}
   const close = {}
   const adjClose = {}
+  const volume = {}
   for (const { ticker, byTime } of barMaps) {
     // All tickers get arrays aligned to dates, but may have null for dates before their data starts
     open[ticker] = dates.map((d) => byTime.get(d)?.open ?? null)
@@ -1164,9 +1170,10 @@ const buildPriceDb = (series, dateIntersectionTickers = null) => {
     low[ticker] = dates.map((d) => byTime.get(d)?.low ?? null)
     close[ticker] = dates.map((d) => byTime.get(d)?.close ?? null)
     adjClose[ticker] = dates.map((d) => byTime.get(d)?.adjClose ?? null)
+    volume[ticker] = dates.map((d) => byTime.get(d)?.volume ?? null)
   }
 
-  return { dates, open, high, low, close, adjClose }
+  return { dates, open, high, low, close, adjClose, volume }
 }
 
 // Cached version - handles ratio tickers like "SPY/XLU" by computing numerator/denominator prices
@@ -1237,6 +1244,117 @@ const getCachedLowArray = (cache, db, ticker) => {
   const arr = (db.low?.[t] || []).map((v) => (v == null ? NaN : v))
   cache.lowArrays.set(t, arr)
   return arr
+}
+
+// Cached volume array for volume-based indicators
+const getCachedVolumeArray = (cache, db, ticker) => {
+  const t = getSeriesKey(ticker)
+  const existing = cache.volumeArrays.get(t)
+  if (existing) return existing
+  const arr = (db.volume?.[t] || []).map((v) => (v == null ? NaN : v))
+  cache.volumeArrays.set(t, arr)
+  return arr
+}
+
+// ============================================
+// VOLUME-BASED INDICATORS
+// ============================================
+
+// Money Flow Index (MFI) - like RSI but weighted by volume
+// Measures buying/selling pressure with volume confirmation
+const rollingMfi = (highs, lows, closes, volumes, window) => {
+  const n = closes.length
+  const result = new Array(n).fill(NaN)
+
+  // Calculate typical price for each bar
+  const typicalPrices = new Array(n)
+  for (let i = 0; i < n; i++) {
+    typicalPrices[i] = (highs[i] + lows[i] + closes[i]) / 3
+  }
+
+  // Calculate raw money flow
+  const rawMoneyFlow = new Array(n)
+  for (let i = 0; i < n; i++) {
+    rawMoneyFlow[i] = typicalPrices[i] * volumes[i]
+  }
+
+  // Calculate MFI for each window
+  for (let i = window; i < n; i++) {
+    let positiveFlow = 0
+    let negativeFlow = 0
+
+    for (let j = i - window + 1; j <= i; j++) {
+      if (typicalPrices[j] > typicalPrices[j - 1]) {
+        positiveFlow += rawMoneyFlow[j]
+      } else if (typicalPrices[j] < typicalPrices[j - 1]) {
+        negativeFlow += rawMoneyFlow[j]
+      }
+    }
+
+    if (negativeFlow === 0) {
+      result[i] = 100
+    } else {
+      const moneyRatio = positiveFlow / negativeFlow
+      result[i] = 100 - (100 / (1 + moneyRatio))
+    }
+  }
+
+  return result
+}
+
+// On-Balance Volume Rate of Change - momentum of cumulative volume
+// Positive when price up, negative when price down
+const rollingObvRoc = (closes, volumes, window) => {
+  const n = closes.length
+  const result = new Array(n).fill(NaN)
+
+  // Build cumulative OBV
+  const obv = new Array(n)
+  obv[0] = 0
+  for (let i = 1; i < n; i++) {
+    if (closes[i] > closes[i - 1]) {
+      obv[i] = obv[i - 1] + volumes[i]
+    } else if (closes[i] < closes[i - 1]) {
+      obv[i] = obv[i - 1] - volumes[i]
+    } else {
+      obv[i] = obv[i - 1]
+    }
+  }
+
+  // Calculate ROC of OBV
+  for (let i = window; i < n; i++) {
+    const prev = obv[i - window]
+    if (prev !== 0) {
+      result[i] = ((obv[i] - prev) / Math.abs(prev)) * 100
+    }
+  }
+
+  return result
+}
+
+// Volume-Weighted Average Price Ratio
+// Current price vs VWAP for the window period (as percentage)
+const rollingVwapRatio = (closes, volumes, window) => {
+  const n = closes.length
+  const result = new Array(n).fill(NaN)
+
+  for (let i = window - 1; i < n; i++) {
+    let sumPV = 0  // price * volume
+    let sumV = 0   // volume
+
+    for (let j = i - window + 1; j <= i; j++) {
+      sumPV += closes[j] * volumes[j]
+      sumV += volumes[j]
+    }
+
+    if (sumV > 0) {
+      const vwap = sumPV / sumV
+      // Return percentage of price vs VWAP (100 = at VWAP)
+      result[i] = (closes[i] / vwap) * 100
+    }
+  }
+
+  return result
 }
 
 // ============================================
@@ -1491,6 +1609,29 @@ const metricAt = (ctx, ticker, metric, window) => {
       const series = getCachedSeries(ctx.cache, 'priceVsSma', t, w, () => rollingPriceVsSma(closes, w))
       return series[i] ?? null
     }
+    // ============================================
+    // VOLUME-BASED INDICATORS
+    // ============================================
+    case 'Money Flow Index': {
+      const highs = getCachedHighArray(ctx.cache, ctx.db, t)
+      const lows = getCachedLowArray(ctx.cache, ctx.db, t)
+      const volumes = getCachedVolumeArray(ctx.cache, ctx.db, t)
+      if (!highs.length || !lows.length || !volumes.length) return null
+      const series = getCachedSeries(ctx.cache, 'mfi', t, w, () => rollingMfi(highs, lows, closes, volumes, w))
+      return series[i] ?? null
+    }
+    case 'OBV Rate of Change': {
+      const volumes = getCachedVolumeArray(ctx.cache, ctx.db, t)
+      if (!volumes.length) return null
+      const series = getCachedSeries(ctx.cache, 'obv', t, w, () => rollingObvRoc(closes, volumes, w))
+      return series[i] ?? null
+    }
+    case 'VWAP Ratio': {
+      const volumes = getCachedVolumeArray(ctx.cache, ctx.db, t)
+      if (!volumes.length) return null
+      const series = getCachedSeries(ctx.cache, 'vwapRatio', t, w, () => rollingVwapRatio(closes, volumes, w))
+      return series[i] ?? null
+    }
   }
   return null
 }
@@ -1739,6 +1880,29 @@ const metricAtIndex = (ctx, ticker, metric, window, index) => {
     }
     case 'Price vs SMA': {
       const series = getCachedSeries(ctx.cache, 'priceVsSma', t, w, () => rollingPriceVsSma(closes, w))
+      return series[index] ?? null
+    }
+    // ============================================
+    // VOLUME-BASED INDICATORS
+    // ============================================
+    case 'Money Flow Index': {
+      const highs = getCachedHighArray(ctx.cache, ctx.db, t)
+      const lows = getCachedLowArray(ctx.cache, ctx.db, t)
+      const volumes = getCachedVolumeArray(ctx.cache, ctx.db, t)
+      if (!highs.length || !lows.length || !volumes.length) return null
+      const series = getCachedSeries(ctx.cache, 'mfi', t, w, () => rollingMfi(highs, lows, closes, volumes, w))
+      return series[index] ?? null
+    }
+    case 'OBV Rate of Change': {
+      const volumes = getCachedVolumeArray(ctx.cache, ctx.db, t)
+      if (!volumes.length) return null
+      const series = getCachedSeries(ctx.cache, 'obv', t, w, () => rollingObvRoc(closes, volumes, w))
+      return series[index] ?? null
+    }
+    case 'VWAP Ratio': {
+      const volumes = getCachedVolumeArray(ctx.cache, ctx.db, t)
+      if (!volumes.length) return null
+      const series = getCachedSeries(ctx.cache, 'vwapRatio', t, w, () => rollingVwapRatio(closes, volumes, w))
       return series[index] ?? null
     }
   }

@@ -15,7 +15,9 @@ Generated: 2025-12-26 (Updated)
 - **COMPLETED**: FRD-017 (Payload Compression) - Gzip compression for payloads >1MB, automatic decompress on read
 - **COMPLETED**: FRD-023 (Atlas Improvements) - Sort dropdowns, Export JSON, Open Model buttons, collapsed stats preview
 - **COMPLETED**: FRD-025 (Atlas Zone) - Expandable cards, Add to Watchlist, IP protection verified
-- **COMPLETED**: FRD-022 (Extended Indicators) - 40+ indicators already implemented (Hull MA, Bollinger, Stochastic, ADX, ATR, etc.)
+- **COMPLETED**: FRD-022 (Extended Indicators) - 43+ indicators now available:
+  - 40+ already implemented (Hull MA, Bollinger, Stochastic, ADX, ATR, etc.)
+  - Added Volume-based: Money Flow Index, OBV Rate of Change, VWAP Ratio
 
 ### Latest Updates (2025-12-26)
 - **COMPLETED**: FRD-021 (Model Tab UI) - Renamed Build→Model, 60px insert button, accent-tinted bars, fixed font sizes

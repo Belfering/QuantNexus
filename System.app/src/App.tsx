@@ -100,6 +100,10 @@ type MetricChoice =
   // MACD/PPO
   | 'MACD Histogram'           // Fixed 12/26/9
   | 'PPO Histogram'            // Percentage version of MACD
+  // Volume-based indicators
+  | 'Money Flow Index'         // Volume-weighted RSI (0-100)
+  | 'OBV Rate of Change'       // Momentum of On-Balance Volume
+  | 'VWAP Ratio'               // Price vs VWAP (100 = at VWAP)
 type RankChoice = 'Bottom' | 'Top'
 type ComparatorChoice = 'lt' | 'gt'
 
@@ -210,6 +214,11 @@ const INDICATOR_INFO: Record<MetricChoice, { desc: string; formula: string }> = 
   // MACD/PPO
   'MACD Histogram': { desc: 'MACD minus signal line', formula: 'Hist = (EMA12 - EMA26) - EMA9(EMA12 - EMA26)' },
   'PPO Histogram': { desc: 'Percentage Price Oscillator histogram', formula: 'PPO = ((EMA12 - EMA26) / EMA26) × 100' },
+
+  // Volume-based
+  'Money Flow Index': { desc: 'Volume-weighted RSI, measures buying/selling pressure', formula: 'MFI = 100 - 100/(1 + PosMF/NegMF)' },
+  'OBV Rate of Change': { desc: 'Momentum of cumulative On-Balance Volume', formula: 'OBV ROC = (OBV - OBV_N) / |OBV_N| × 100' },
+  'VWAP Ratio': { desc: 'Price vs Volume-Weighted Avg Price (100 = at VWAP)', formula: 'Ratio = Close / VWAP × 100' },
 }
 
 // Indicator categories for submenu dropdown
@@ -272,6 +281,11 @@ const INDICATOR_CATEGORIES: Record<string, MetricChoice[]> = {
   'MACD/PPO': [
     'MACD Histogram',
     'PPO Histogram',
+  ],
+  'Volume': [
+    'Money Flow Index',
+    'OBV Rate of Change',
+    'VWAP Ratio',
   ],
 }
 
@@ -3279,15 +3293,15 @@ function EquityChart({
     }
 
     // Helper to get a contrasting color for the right indicator
-    const getContrastingColor = (color) => {
-      const colorPairs = {
-        '#f59e0b': '#8b5cf6', // Amber -> Violet
-        '#10b981': '#ec4899', // Emerald -> Pink
-        '#8b5cf6': '#f59e0b', // Violet -> Amber
-        '#ec4899': '#10b981', // Pink -> Emerald
-        '#06b6d4': '#f97316', // Cyan -> Orange
-        '#f97316': '#06b6d4', // Orange -> Cyan
-      }
+    const colorPairs: Record<string, string> = {
+      '#f59e0b': '#8b5cf6', // Amber -> Violet
+      '#10b981': '#ec4899', // Emerald -> Pink
+      '#8b5cf6': '#f59e0b', // Violet -> Amber
+      '#ec4899': '#10b981', // Pink -> Emerald
+      '#06b6d4': '#f97316', // Cyan -> Orange
+      '#f97316': '#06b6d4', // Orange -> Cyan
+    }
+    const getContrastingColor = (color: string): string => {
       return colorPairs[color] || '#8b5cf6'
     }
 
@@ -8616,6 +8630,9 @@ const NodeCard = ({
                       <option value="PPO Histogram">PPO Histogram</option>
                       <option value="Trend Clarity">Trend Clarity</option>
                       <option value="Ultimate Smoother">Ultimate Smoother</option>
+                      <option value="Money Flow Index">Money Flow Index</option>
+                      <option value="OBV Rate of Change">OBV Rate of Change</option>
+                      <option value="VWAP Ratio">VWAP Ratio</option>
                     </Select>
                     {' of '}
                     <Select
@@ -8836,6 +8853,9 @@ const NodeCard = ({
                             <option value="PPO Histogram">PPO Histogram</option>
                             <option value="Trend Clarity">Trend Clarity</option>
                             <option value="Ultimate Smoother">Ultimate Smoother</option>
+                            <option value="Money Flow Index">Money Flow Index</option>
+                            <option value="OBV Rate of Change">OBV Rate of Change</option>
+                            <option value="VWAP Ratio">VWAP Ratio</option>
                           </Select>
                           {isWindowlessIndicator(node.metric ?? 'Relative Strength Index') ? ' pick the ' : 's pick the '}
                           <Select
@@ -15074,7 +15094,7 @@ function App() {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ root: JSON.stringify(updatedRoot) })
-                        }).then(() => refreshCallChains())
+                        }).then(() => loadCallChainsFromApi(userId).then(setCallChains))
                       } catch { /* ignore parse errors */ }
                     })
                   }
@@ -16403,8 +16423,8 @@ function App() {
                                   <span className={r.oosSharpe >= 1 ? 'text-success' : 'text-muted'}>
                                     Sharpe: {r.oosSharpe?.toFixed(2) ?? '--'}
                                   </span>
-                                  <span className={r.oosMaxDD > -0.2 ? 'text-success' : 'text-danger'}>
-                                    MaxDD: {(r.oosMaxDD * 100).toFixed(1)}%
+                                  <span className={(r.oosMaxdd ?? 0) > -0.2 ? 'text-success' : 'text-danger'}>
+                                    MaxDD: {((r.oosMaxdd ?? 0) * 100).toFixed(1)}%
                                   </span>
                                 </div>
                               )}
@@ -16434,7 +16454,6 @@ function App() {
                                   onClick={() => {
                                     try {
                                       const parsed = typeof b.payload === 'string' ? JSON.parse(b.payload) : b.payload
-                                      setRoot(parsed)
                                       push(parsed)
                                       setTab('Model')
                                     } catch (e) {
