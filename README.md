@@ -276,7 +276,7 @@ Feature Requirements Documents live in `frd/`.
 - Name FRDs with a sortable prefix when order matters (example: `frd/001-some-feature.md`).
 - Include `Status` + `Depends on` in the FRD header so ordering isn't only implied by filenames.
 
-### Completed FRDs (20 total)
+### Completed FRDs (21 total)
 - FRD-001: Analyze Tab with collapsible bot cards
 - FRD-002: Community Nexus tab with top bots tables
 - FRD-003: Conditional logic testing (34 Vitest tests for AND/OR/IF)
@@ -296,13 +296,13 @@ Feature Requirements Documents live in `frd/`.
 - FRD-023: Atlas UI improvements (sort dropdowns, Export JSON, Open Model, collapsed stats)
 - FRD-024: Nexus label rename (Community Nexus -> Nexus)
 - FRD-025: Atlas zone improvements (expandable cards, watchlist buttons, IP protection)
+- FRD-022: Extended indicators (40+ indicators - Hull MA, Bollinger, Stochastic, ADX, ATR, etc.)
 
 ### Pending (0 total)
 All pending FRDs have been completed!
 
-### Deferred/Future (4 total)
+### Deferred/Future (3 total)
 - FRD-011: Atlas Sponsored Systems (blocked - needs investigation)
-- FRD-022: Extended Indicator Support (RSI variants, Hull MA, Bollinger, etc.)
 - FRD-026: Advanced Analytics Suite (Monte Carlo, K-Folds, etc.)
 - FRD-027: Tiingo API Integration (replace Yahoo Finance)
 
