@@ -91,10 +91,19 @@ export function initializeCacheDatabase() {
 
 /**
  * Generate SHA-256 hash of payload for change detection
+ * @param {object|string} payload - Bot payload
+ * @param {object} [options] - Optional backtest settings to include in hash
+ * @param {string} [options.mode] - Backtest mode (OC, CC, OO, CO)
+ * @param {number} [options.costBps] - Transaction cost in basis points
  */
-export function hashPayload(payload) {
-  const str = typeof payload === 'string' ? payload : JSON.stringify(payload)
-  return crypto.createHash('sha256').update(str).digest('hex')
+export function hashPayload(payload, options = {}) {
+  const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload)
+  // Include mode and costBps in hash so different settings create different cache entries
+  // Default to CC/5 to match frontend defaults
+  const optionsStr = options.mode || options.costBps !== undefined
+    ? `|mode=${options.mode || 'CC'}|cost=${options.costBps ?? 5}`
+    : ''
+  return crypto.createHash('sha256').update(payloadStr + optionsStr).digest('hex')
 }
 
 // ============================================

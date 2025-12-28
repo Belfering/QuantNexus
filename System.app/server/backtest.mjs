@@ -2931,5 +2931,7 @@ export async function runBacktest(payload, options = {}) {
     allocations: dailyAllocations,
     // Include indicator overlay series if requested
     indicatorOverlays: overlaySeriesResult.length > 0 ? overlaySeriesResult : undefined,
+    // Include daily returns for sanity report
+    dailyReturns: returns,
   }
 }

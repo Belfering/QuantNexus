@@ -62,3 +62,4 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+nul

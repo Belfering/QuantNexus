@@ -511,6 +511,8 @@ const loadBotsFromApi = async (userId: UserId): Promise<SavedBot[]> => {
       visibility: string
       tags: string | null
       fundSlot: number | null
+      backtestMode: string | null
+      backtestCostBps: number | null
       createdAt: string
       metrics?: {
         cagr?: number
@@ -546,6 +548,8 @@ const loadBotsFromApi = async (userId: UserId): Promise<SavedBot[]> => {
         tags: bot.tags ? JSON.parse(bot.tags) : undefined,
         createdAt: new Date(bot.createdAt).getTime(),
         fundSlot: bot.fundSlot ?? undefined,
+        backtestMode: (bot.backtestMode as BacktestMode) || 'CC',
+        backtestCostBps: bot.backtestCostBps ?? 5,
         backtestResult: bot.metrics ? {
           cagr: bot.metrics.cagr ?? 0,
           maxDrawdown: bot.metrics.maxDrawdown ?? 0,
@@ -585,6 +589,8 @@ const createBotInApi = async (userId: UserId, bot: SavedBot): Promise<string | n
         visibility,
         tags,
         fundSlot: bot.fundSlot,
+        backtestMode: bot.backtestMode || 'CC',
+        backtestCostBps: bot.backtestCostBps ?? 5,
       }),
     })
     if (!res.ok) return null
@@ -613,6 +619,8 @@ const updateBotInApi = async (userId: UserId, bot: SavedBot): Promise<boolean> =
         visibility,
         tags,
         fundSlot: bot.fundSlot,
+        backtestMode: bot.backtestMode,
+        backtestCostBps: bot.backtestCostBps,
       }),
     })
     return res.ok
@@ -1390,6 +1398,8 @@ type SavedSystem = {
   createdAt: number
   tags?: string[] // e.g., ['Atlas', 'Nexus']
   fundSlot?: 1 | 2 | 3 | 4 | 5 | null // Which fund slot this system is in (for Nexus systems)
+  backtestMode?: BacktestMode // Official backtest mode for this system (default: 'CC')
+  backtestCostBps?: number // Official transaction cost in bps for this system (default: 5)
   backtestResult?: { // Cached metrics from API for cross-user Nexus systems
     cagr: number
     maxDrawdown: number
@@ -2506,6 +2516,7 @@ function CandlesChart({ candles }: { candles: CandlestickData[] }) {
       grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
       rightPriceScale: { borderColor: '#cbd5e1' },
       timeScale: { borderColor: '#cbd5e1' },
+      handleScroll: { mouseWheel: false }, // Disable scroll-to-zoom so page scrolling works
     })
     const series = chart.addSeries(CandlestickSeries)
     chartRef.current = chart
@@ -4171,7 +4182,6 @@ function AdminPanel({
   const [cacheRefreshing, setCacheRefreshing] = useState(false)
   const [prewarmRunning, setPrewarmRunning] = useState(false)
   const [prewarmProgress, setPrewarmProgress] = useState<{ processed: number; cached: number; sanityCached?: number; errors: number; total: number } | null>(null)
-  const [prewarmIncludeSanity, setPrewarmIncludeSanity] = useState(true) // Include MC/KF sanity reports
 
   useEffect(() => {
     let cancelled = false
@@ -5208,24 +5218,24 @@ function AdminPanel({
               Refresh Stats
             </Button>
             <Button
-              variant="default"
+              variant="destructive"
               size="sm"
               disabled={cacheRefreshing}
               onClick={async () => {
-                if (!confirm('This will clear all cached backtest results and force recalculation on next access. Continue?')) return
+                if (!confirm('This will clear all cached backtest and sanity report results. They will be recalculated on next access. Continue?')) return
                 setCacheRefreshing(true)
                 try {
-                  const res = await fetch(`${API_BASE}/admin/cache/refresh`, { method: 'POST' })
+                  const res = await fetch(`${API_BASE}/admin/cache/invalidate`, { method: 'POST' })
                   if (res.ok) {
                     const result = await res.json()
-                    alert(`Cache cleared! ${result.invalidatedCount} entries removed. New refresh date: ${result.newRefreshDate}`)
+                    alert(`Cache cleared! ${result.invalidatedCount} entries removed.`)
                     // Refresh stats
                     const statsRes = await fetch(`${API_BASE}/admin/cache/stats`)
                     if (statsRes.ok) {
                       setCacheStats(await statsRes.json())
                     }
                   } else {
-                    alert('Failed to refresh cache')
+                    alert('Failed to clear cache')
                   }
                 } catch (e) {
                   alert(`Error: ${e}`)
@@ -5234,28 +5244,26 @@ function AdminPanel({
                 }
               }}
             >
-              {cacheRefreshing ? 'Refreshing...' : 'Force Daily Refresh'}
+              {cacheRefreshing ? 'Clearing...' : 'Clear Data'}
             </Button>
             <Button
               variant="default"
               size="sm"
               disabled={prewarmRunning}
               onClick={async () => {
-                const sanityNote = prewarmIncludeSanity ? ' AND run Monte Carlo/K-Fold analysis (200 iterations each)' : ''
-                if (!confirm(`This will run backtests for ALL systems in the database${sanityNote} and cache the results. This may take several minutes. Continue?`)) return
+                if (!confirm('This will run backtests AND Monte Carlo/K-Fold analysis for ALL systems in the database. This may take several minutes. Continue?')) return
                 setPrewarmRunning(true)
                 setPrewarmProgress(null)
                 try {
                   const res = await fetch(`${API_BASE}/admin/cache/prewarm`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ includeSanity: prewarmIncludeSanity })
+                    body: JSON.stringify({ includeSanity: true })
                   })
                   if (res.ok) {
                     const result = await res.json()
                     setPrewarmProgress(result)
-                    const sanityMsg = prewarmIncludeSanity ? `\nSanity reports cached: ${result.sanityCached || 0}` : ''
-                    alert(`Pre-warm complete!\n\nProcessed: ${result.processed} systems\nBacktests cached: ${result.cached}${sanityMsg}\nErrors: ${result.errors}`)
+                    alert(`Run Data complete!\n\nProcessed: ${result.processed} systems\nBacktests cached: ${result.cached}\nSanity reports cached: ${result.sanityCached || 0}\nErrors: ${result.errors}`)
                     // Refresh stats
                     const statsRes = await fetch(`${API_BASE}/admin/cache/stats`)
                     if (statsRes.ok) {
@@ -5263,7 +5271,7 @@ function AdminPanel({
                     }
                   } else {
                     const err = await res.json()
-                    alert(`Failed to pre-warm cache: ${err.error || 'Unknown error'}`)
+                    alert(`Failed to run data: ${err.error || 'Unknown error'}`)
                   }
                 } catch (e) {
                   alert(`Error: ${e}`)
@@ -5272,31 +5280,18 @@ function AdminPanel({
                 }
               }}
             >
-              {prewarmRunning ? 'Pre-warming...' : 'Pre-warm All Caches'}
+              {prewarmRunning ? 'Running...' : 'Run Data'}
             </Button>
-          </div>
-
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="prewarm-include-sanity"
-              checked={prewarmIncludeSanity}
-              onChange={(e) => setPrewarmIncludeSanity(e.target.checked)}
-              className="w-4 h-4"
-            />
-            <label htmlFor="prewarm-include-sanity" className="text-sm">
-              Include Monte Carlo & K-Fold analysis (Advanced/Robustness tabs)
-            </label>
           </div>
 
           {prewarmProgress && (
             <div className="mt-3 p-2 bg-muted rounded text-sm">
-              <strong>Last pre-warm results:</strong> {prewarmProgress.processed} processed, {prewarmProgress.cached} backtests cached{prewarmProgress.sanityCached !== undefined ? `, ${prewarmProgress.sanityCached} sanity reports cached` : ''}, {prewarmProgress.errors} errors
+              <strong>Last run results:</strong> {prewarmProgress.processed} processed, {prewarmProgress.cached} backtests cached, {prewarmProgress.sanityCached || 0} sanity reports cached, {prewarmProgress.errors} errors
             </div>
           )}
 
           <div className="mt-3 text-xs text-muted">
-            Cache is automatically cleared on first login each day. Use "Force Daily Refresh" to manually trigger this. Use "Pre-warm All Caches" to run and cache backtests (and optionally MC/K-Fold analysis) for all systems.</div>
+            Cache is automatically cleared on first login each day. Use "Clear Data" to manually clear all cached results. Use "Run Data" to pre-compute backtests and Monte Carlo/K-Fold analysis for all systems.</div>
         </div>
 
         {/* Divider */}
@@ -13890,6 +13885,8 @@ function App() {
           visibility: 'private',
           createdAt: now,
           tags: defaultTags,
+          backtestMode,
+          backtestCostBps,
         }
         // Save to API first (database is source of truth)
         const createdId = await createBotInApi(userId, entry)
@@ -13907,6 +13904,8 @@ function App() {
           payload,
           name: current.title || existingBot?.name || 'Algo',
           builderId: existingBot?.builderId ?? userId,
+          backtestMode,
+          backtestCostBps,
         }
         // Save to API first
         await updateBotInApi(userId, updatedBot)
@@ -13926,7 +13925,7 @@ function App() {
         setAnalyzeBacktests((prev) => ({ ...prev, [savedBotId]: { status: 'idle' } }))
       }
     },
-    [current, activeBotId, activeSavedBotId, resolveWatchlistId, addBotToWatchlist, userId, savedBots],
+    [current, activeBotId, activeSavedBotId, resolveWatchlistId, addBotToWatchlist, userId, savedBots, backtestMode, backtestCostBps],
   )
 
   const handleConfirmAddToWatchlist = useCallback(
@@ -13952,7 +13951,7 @@ function App() {
         const res = await fetch(`${API_BASE}/bots/${bot.id}/run-backtest`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: backtestMode, costBps: backtestCostBps }),
+          body: JSON.stringify({ mode: bot.backtestMode || 'CC', costBps: bot.backtestCostBps ?? 5 }),
         })
 
         if (res.ok) {
@@ -14211,7 +14210,7 @@ function App() {
         const res = await fetch(`${API_BASE}/bots/${bot.id}/sanity-report`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: backtestMode, costBps: backtestCostBps }),
+          body: JSON.stringify({ mode: bot.backtestMode || 'CC', costBps: bot.backtestCostBps ?? 5 }),
         })
 
         if (res.ok) {
@@ -14354,13 +14353,23 @@ function App() {
   useEffect(() => {
     savedBots.forEach((bot) => {
       if (uiState.analyzeCollapsedByBotId[bot.id] === false) {
+        // Auto-run backtest when card is expanded
         const state = analyzeBacktests[bot.id]
         if (!state || state.status === 'idle' || state.status === 'error') {
           runAnalyzeBacktest(bot)
         }
+        // Also auto-fetch sanity report (MC/KF) when card is expanded
+        const sanityState = sanityReports[bot.id]
+        if (!sanityState || sanityState.status === 'idle' || sanityState.status === 'error') {
+          runSanityReport(bot)
+        }
       }
     })
-  }, [savedBots, uiState.analyzeCollapsedByBotId, analyzeBacktests, runAnalyzeBacktest])
+    // Also fetch benchmark metrics if not already loaded (needed for comparison table)
+    if (benchmarkMetrics.status === 'idle') {
+      fetchBenchmarkMetrics()
+    }
+  }, [savedBots, uiState.analyzeCollapsedByBotId, analyzeBacktests, runAnalyzeBacktest, sanityReports, runSanityReport, benchmarkMetrics.status, fetchBenchmarkMetrics])
 
   // Auto-run backtests for invested bots so their equity curves show in portfolio chart
   useEffect(() => {
@@ -14465,6 +14474,8 @@ function App() {
         builderId: userId,
         createdAt: Date.now(),
         fundSlot: undefined,
+        backtestMode: bot.backtestMode || 'CC',
+        backtestCostBps: bot.backtestCostBps ?? 5,
       }
 
       // Add to savedBots and sync to API

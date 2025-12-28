@@ -101,6 +101,8 @@ export function initializeDatabase() {
       tags TEXT,
       payload TEXT NOT NULL,
       fund_slot INTEGER,
+      backtest_mode TEXT DEFAULT 'CC',
+      backtest_cost_bps INTEGER DEFAULT 5,
       created_at INTEGER,
       updated_at INTEGER,
       published_at INTEGER,
@@ -219,6 +221,20 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_equity_bot ON bot_equity_curves(bot_id, date);
     CREATE INDEX IF NOT EXISTS idx_call_chains_owner ON call_chains(owner_id);
   `)
+
+  // Migration: Add backtest_mode and backtest_cost_bps columns to bots table
+  try {
+    const cols = sqlite.prepare("PRAGMA table_info(bots)").all()
+    const hasBacktestMode = cols.some(c => c.name === 'backtest_mode')
+    if (!hasBacktestMode) {
+      console.log('[DB] Migrating bots table: adding backtest_mode and backtest_cost_bps columns...')
+      sqlite.exec("ALTER TABLE bots ADD COLUMN backtest_mode TEXT DEFAULT 'CC'")
+      sqlite.exec("ALTER TABLE bots ADD COLUMN backtest_cost_bps INTEGER DEFAULT 5")
+      console.log('[DB] Migration complete: backtest settings columns added')
+    }
+  } catch (e) {
+    // Columns might already exist
+  }
 
   // Clean up duplicate watchlist_bots entries (keep only the first entry)
   const duplicates = sqlite.prepare(`
@@ -549,6 +565,8 @@ export async function createBot(data) {
     visibility: data.visibility || 'private',
     tags: data.tags ? JSON.stringify(data.tags) : null,
     fundSlot: data.fundSlot,
+    backtestMode: data.backtestMode || 'CC',
+    backtestCostBps: data.backtestCostBps ?? 5,
     createdAt: now,
     updatedAt: now,
   })
@@ -572,6 +590,8 @@ export async function updateBot(id, ownerId, data) {
   if (data.visibility !== undefined) updateData.visibility = data.visibility
   if (data.tags !== undefined) updateData.tags = JSON.stringify(data.tags)
   if (data.fundSlot !== undefined) updateData.fundSlot = data.fundSlot
+  if (data.backtestMode !== undefined) updateData.backtestMode = data.backtestMode
+  if (data.backtestCostBps !== undefined) updateData.backtestCostBps = data.backtestCostBps
 
   await db.update(schema.bots)
     .set(updateData)

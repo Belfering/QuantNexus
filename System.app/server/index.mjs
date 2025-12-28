@@ -1244,14 +1244,17 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
     }
 
     // FRD-014: Calculate payload hash and get current data date
-    const payloadHash = backtestCache.hashPayload(bot.payload)
+    // Include mode and costBps in hash so different settings create different cache entries
+    const mode = req.body.mode || 'CC'
+    const costBps = req.body.costBps ?? 5
+    const payloadHash = backtestCache.hashPayload(bot.payload, { mode, costBps })
     const dataDate = await getLatestTickerDataDate()
 
     // FRD-014: Check cache first (unless force refresh requested)
     if (!forceRefresh) {
       const cached = backtestCache.getCachedBacktest(botId, payloadHash, dataDate)
       if (cached) {
-        console.log(`[Backtest] Cache hit for bot ${botId} (${bot.name})`)
+        console.log(`[Backtest] Cache hit for bot ${botId} (${bot.name}) mode=${mode} costBps=${costBps}`)
 
         // Still update metrics in main DB (in case they were cleared)
         await database.updateBotMetrics(botId, cached.metrics)
@@ -1268,14 +1271,11 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
       }
     }
 
-    console.log(`[Backtest] Running backtest for bot ${botId} (${bot.name})${forceRefresh ? ' (force refresh)' : ''}...`)
+    console.log(`[Backtest] Running backtest for bot ${botId} (${bot.name}) mode=${mode} costBps=${costBps}${forceRefresh ? ' (force refresh)' : ''}...`)
     const startTime = Date.now()
 
     // Run backtest on server
-    const result = await runBacktest(bot.payload, {
-      mode: req.body.mode || 'OC',
-      costBps: req.body.costBps ?? 0,
-    })
+    const result = await runBacktest(bot.payload, { mode, costBps })
 
     const elapsed = Date.now() - startTime
     console.log(`[Backtest] Completed in ${elapsed}ms - CAGR: ${(result.metrics.cagr * 100).toFixed(2)}%`)
@@ -1355,18 +1355,26 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
     await ensureDbInitialized()
     const botId = req.params.id
 
-    // Get bot with payload
-    const bot = await database.getBotById(botId, true)
-    if (!bot) {
+    // Get bot with payload and stored backtest settings
+    const botRow = database.sqlite.prepare(`
+      SELECT id, name, payload, backtest_mode, backtest_cost_bps
+      FROM bots WHERE id = ? AND deleted_at IS NULL
+    `).get(botId)
+
+    if (!botRow) {
       return res.status(404).json({ error: 'Bot not found' })
     }
 
-    if (!bot.payload) {
+    if (!botRow.payload) {
       return res.status(400).json({ error: 'Bot has no payload' })
     }
 
-    // Check cache first
-    const payloadHash = backtestCache.hashPayload(bot.payload)
+    // Use bot's stored settings or defaults
+    const botMode = botRow.backtest_mode || 'CC'
+    const botCostBps = botRow.backtest_cost_bps ?? 5
+
+    // Check cache first - include mode/costBps in hash since daily returns depend on them
+    const payloadHash = backtestCache.hashPayload(botRow.payload, { mode: botMode, costBps: botCostBps })
     const dataDate = await getLatestTickerDataDate()
 
     const cached = backtestCache.getCachedSanityReport(botId, payloadHash, dataDate)
@@ -1380,13 +1388,13 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
       })
     }
 
-    // Run backtest to get daily returns
-    console.log(`[SanityReport] Running backtest for bot ${botId} (${bot.name})...`)
+    // Run backtest to get daily returns using bot's stored settings
+    console.log(`[SanityReport] Running backtest for bot ${botId} (${botRow.name}) with mode=${botMode}, costBps=${botCostBps}...`)
     const startTime = Date.now()
 
-    const backtestResult = await runBacktest(bot.payload, {
-      mode: req.body.mode || 'OC',
-      costBps: req.body.costBps ?? 0,
+    const backtestResult = await runBacktest(botRow.payload, {
+      mode: botMode,
+      costBps: botCostBps,
     })
 
     if (!backtestResult.dailyReturns || backtestResult.dailyReturns.length < 50) {
@@ -1648,9 +1656,10 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
     // Option to include sanity reports (expensive, so opt-in)
     const includeSanity = req.body.includeSanity === true
 
-    // Get all bots from database
+    // Get all bots from database (including backtest settings)
     const allBots = database.sqlite.prepare(`
-      SELECT id, name, payload FROM bots WHERE deleted_at IS NULL AND payload IS NOT NULL
+      SELECT id, name, payload, backtest_mode, backtest_cost_bps
+      FROM bots WHERE deleted_at IS NULL AND payload IS NOT NULL
     `).all()
 
     if (allBots.length === 0) {
@@ -1669,7 +1678,10 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
     for (const bot of allBots) {
       processed++
       try {
-        const payloadHash = backtestCache.hashPayload(bot.payload)
+        // Use bot's stored backtest settings (defaults to CC/5 if not set)
+        const botMode = bot.backtest_mode || 'CC'
+        const botCostBps = bot.backtest_cost_bps ?? 5
+        const payloadHash = backtestCache.hashPayload(bot.payload, { mode: botMode, costBps: botCostBps })
 
         // Check if backtest already cached
         const existingBacktest = backtestCache.getCachedBacktest(bot.id, payloadHash, dataDate)
@@ -1677,11 +1689,11 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
 
         if (existingBacktest) {
           cached++
-          console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Backtest already cached`)
+          console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Backtest already cached (mode=${botMode}, cost=${botCostBps}bps)`)
         } else {
-          // Run backtest
-          console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Running backtest...`)
-          result = await runBacktest(bot.payload, { mode: 'OC', costBps: 0 })
+          // Run backtest with bot's stored settings
+          console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Running backtest (mode=${botMode}, cost=${botCostBps}bps)...`)
+          result = await runBacktest(bot.payload, { mode: botMode, costBps: botCostBps })
 
           // Store in cache
           backtestCache.setCachedBacktest(bot.id, payloadHash, dataDate, {
@@ -1698,8 +1710,9 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
           console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Backtest cached (CAGR: ${(result.metrics.cagr * 100).toFixed(2)}%)`)
         }
 
-        // Sanity report (if requested)
+        // Sanity report (if requested) - uses same payload hash WITH mode/costBps since daily returns depend on them
         if (includeSanity) {
+          // Sanity reports DO depend on mode/costBps because the backtest daily returns change with different settings
           const existingSanity = backtestCache.getCachedSanityReport(bot.id, payloadHash, dataDate)
           if (existingSanity) {
             sanityCached++
@@ -1707,7 +1720,7 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
           } else {
             // Need backtest result for daily returns
             if (!result) {
-              result = await runBacktest(bot.payload, { mode: 'OC', costBps: 0 })
+              result = await runBacktest(bot.payload, { mode: botMode, costBps: botCostBps })
             }
 
             if (result.dailyReturns && result.dailyReturns.length >= 50) {

@@ -28,6 +28,8 @@ export const bots = sqliteTable('bots', {
   tags: text('tags'),
   payload: text('payload').notNull(),
   fundSlot: integer('fund_slot'),
+  backtestMode: text('backtest_mode').default('CC'), // OO, CC, CO, OC
+  backtestCostBps: integer('backtest_cost_bps').default(5), // Transaction cost in basis points
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   publishedAt: integer('published_at', { mode: 'timestamp' }),
