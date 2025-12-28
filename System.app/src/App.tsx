@@ -15838,7 +15838,7 @@ function App() {
                                   analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'advanced' },
                                 }))}
                               >
-                                Advanced
+                                Benchmarks
                               </Button>
                               <Button
                                 size="sm"
@@ -16432,13 +16432,13 @@ function App() {
 
                                       {sanityState.status === 'done' && sanityState.report && (
                                         <>
-                                          {/* 3-Column Grid Layout */}
-                                          <div className="grid grid-cols-3 gap-3">
+                                          {/* 4-Column Grid Layout */}
+                                          <div className="grid grid-cols-4 gap-3 w-full h-full">
                                             {/* Left Card: Summary & Fragility */}
-                                            <div className="border border-border rounded-xl p-3 flex flex-col gap-3">
+                                            <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
                                               {/* Summary */}
                                               <div>
-                                                <div className="text-xs font-bold mb-1.5">Summary</div>
+                                                <div className="text-xs font-bold mb-1.5 text-center">Summary</div>
                                                 {sanityState.report.summary.length > 0 ? (
                                                   <ul className="text-xs space-y-0.5">
                                                     {sanityState.report.summary.map((s, i) => (
@@ -16455,7 +16455,7 @@ function App() {
 
                                               {/* Fragility Table (Condensed) */}
                                               <div>
-                                                <div className="text-xs font-bold mb-1.5">Fragility Fingerprints</div>
+                                                <div className="text-xs font-bold mb-1.5 text-center">Fragility Fingerprints</div>
                                                 <div className="space-y-1">
                                                   {[
                                                     { name: 'Sub-Period', data: sanityState.report.fragility.subPeriodStability, tooltip: 'Consistency of returns across different time periods. Low = stable across all periods.' },
@@ -16475,7 +16475,7 @@ function App() {
 
                                               {/* DD Probabilities */}
                                               <div>
-                                                <div className="text-xs font-bold mb-1.5">DD Probability</div>
+                                                <div className="text-xs font-bold mb-1.5 text-center">DD Probability</div>
                                                 <div className="space-y-0.5 text-xs">
                                                   <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt20)}</span> chance of 20% DD</div>
                                                   <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt30)}</span> chance of 30% DD</div>
@@ -16486,12 +16486,12 @@ function App() {
                                             </div>
 
                                             {/* Middle Card: Monte Carlo */}
-                                            <div className="border border-border rounded-xl p-3">
-                                              <div className="text-xs font-bold mb-2">Monte Carlo (1000 years)</div>
+                                            <div className="border border-border rounded-xl p-3 flex flex-col h-full">
+                                              <div className="text-xs font-bold mb-2 text-center">Monte Carlo (2000 years)</div>
 
                                               {/* MC Drawdown Distribution */}
                                               <div className="mb-3">
-                                                <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of maximum drawdowns across 200 simulated 5-year paths. Shows worst-case (P5), median, and best-case (P95) scenarios.">Max Drawdown Distribution</div>
+                                                <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of maximum drawdowns across 400 simulated 5-year paths (2000 total years). Shows worst-case (P5), median, and best-case (P95) scenarios.">Max Drawdown Distribution</div>
                                                 {(() => {
                                                   const dd = sanityState.report.pathRisk.monteCarlo.drawdowns
                                                   // Drawdowns are negative: p95 is worst (most negative), p5 is best (least negative)
@@ -16515,9 +16515,9 @@ function App() {
                                                         />
                                                       </div>
                                                       <div className="flex justify-between text-xs mt-0.5">
-                                                        <span className="text-danger">Worst: {formatDDPct(dd.p5)}</span>
-                                                        <span className="font-semibold">Median: {formatDDPct(dd.p50)}</span>
-                                                        <span className="text-success">Best: {formatDDPct(dd.p95)}</span>
+                                                        <span className="text-danger">P95: {formatDDPct(dd.p5)}</span>
+                                                        <span className="font-semibold">P50: {formatDDPct(dd.p50)}</span>
+                                                        <span className="text-success">P5: {formatDDPct(dd.p95)}</span>
                                                       </div>
                                                     </>
                                                   )
@@ -16526,7 +16526,7 @@ function App() {
 
                                               {/* MC CAGR Distribution */}
                                               <div>
-                                                <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of annualized returns (CAGR) across 200 simulated 5-year paths. P5 is worst, P95 is best expected returns.">CAGR Distribution</div>
+                                                <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of annualized returns (CAGR) across 200 simulated 5-year paths. P5 is worst, P95 is best expected returns.">CAGR Distribution</div>
                                                 {(() => {
                                                   const cagr = sanityState.report.pathRisk.monteCarlo.cagrs
                                                   const minVal = Math.min(cagr.p5, cagr.p95)
@@ -16556,15 +16556,160 @@ function App() {
                                                   )
                                                 })()}
                                               </div>
+
+                                              {/* MC Sharpe Distribution */}
+                                              {sanityState.report.pathRisk.monteCarlo.sharpes && (
+                                                <div className="mb-3">
+                                                  <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of Sharpe ratios across Monte Carlo simulations. Higher is better.">Sharpe Distribution</div>
+                                                  {(() => {
+                                                    const sh = sanityState.report.pathRisk.monteCarlo.sharpes
+                                                    // Sharpe: higher is better, so P5 (worst) on left, P95 (best) on right
+                                                    const minVal = sh.p5
+                                                    const maxVal = sh.p95
+                                                    const range = maxVal - minVal || 0.01
+                                                    const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                    const hasP25P75 = sh.p25 != null && sh.p75 != null
+                                                    return (
+                                                      <>
+                                                        <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                          {/* P25-P75 range (green for good Sharpe) - only if we have p25/p75 */}
+                                                          {hasP25P75 && (
+                                                            <div
+                                                              className="absolute h-full bg-success/40"
+                                                              style={{ left: `${toPos(sh.p25)}%`, width: `${toPos(sh.p75) - toPos(sh.p25)}%` }}
+                                                            />
+                                                          )}
+                                                          {/* P50 marker */}
+                                                          <div
+                                                            className="absolute h-full w-0.5 bg-success"
+                                                            style={{ left: `${toPos(sh.p50)}%` }}
+                                                          />
+                                                        </div>
+                                                        <div className="flex justify-between text-xs mt-0.5">
+                                                          <span className="text-danger">P5: {sh.p5?.toFixed(2) ?? '-'}</span>
+                                                          <span className="font-semibold">P50: {sh.p50?.toFixed(2) ?? '-'}</span>
+                                                          <span className="text-success">P95: {sh.p95?.toFixed(2) ?? '-'}</span>
+                                                        </div>
+                                                      </>
+                                                    )
+                                                  })()}
+                                                </div>
+                                              )}
+
+                                              {/* MC Volatility Distribution */}
+                                              {sanityState.report.pathRisk.monteCarlo.volatilities && (
+                                                <div>
+                                                  <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of annualized volatility across Monte Carlo simulations. Lower is generally better.">Volatility Distribution</div>
+                                                  {(() => {
+                                                    const vol = sanityState.report.pathRisk.monteCarlo.volatilities
+                                                    // Volatility: lower is better, so flip - P95 (worst/high vol) on left, P5 (best/low vol) on right
+                                                    const minVal = vol.p95 // High vol = left side (bad)
+                                                    const maxVal = vol.p5  // Low vol = right side (good)
+                                                    const range = maxVal - minVal || 0.01
+                                                    const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                    const hasP25P75 = vol.p25 != null && vol.p75 != null
+                                                    return (
+                                                      <>
+                                                        <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                          {/* P25-P75 range (red for volatility since it's bad) - only if we have p25/p75 */}
+                                                          {hasP25P75 && (
+                                                            <div
+                                                              className="absolute h-full bg-danger/40"
+                                                              style={{ left: `${toPos(vol.p75)}%`, width: `${toPos(vol.p25) - toPos(vol.p75)}%` }}
+                                                            />
+                                                          )}
+                                                          {/* P50 marker */}
+                                                          <div
+                                                            className="absolute h-full w-0.5 bg-danger"
+                                                            style={{ left: `${toPos(vol.p50)}%` }}
+                                                          />
+                                                        </div>
+                                                        <div className="flex justify-between text-xs mt-0.5">
+                                                          <span className="text-danger">P95: {formatDDPct(vol.p95)}</span>
+                                                          <span className="font-semibold">P50: {formatDDPct(vol.p50)}</span>
+                                                          <span className="text-success">P5: {formatDDPct(vol.p5)}</span>
+                                                        </div>
+                                                      </>
+                                                    )
+                                                  })()}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            {/* Distribution Curves Card */}
+                                            <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
+                                              <div className="text-xs font-bold mb-1 text-center">Distribution Curves</div>
+
+                                              {/* CAGR Distribution Bar Chart */}
+                                              <div>
+                                                <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of CAGR values across 200 Monte Carlo simulations. Each bar represents a bucket of CAGR values.">CAGR Distribution</div>
+                                                {(() => {
+                                                  const histogram = sanityState.report.pathRisk.monteCarlo.cagrs.histogram
+                                                  if (!histogram || histogram.length === 0) return <div className="text-xs text-muted">No histogram data</div>
+                                                  const maxCount = Math.max(...histogram.map((b: { count: number }) => b.count))
+                                                  return (
+                                                    <div className="flex items-end gap-px h-16">
+                                                      {histogram.map((bucket: { midpoint: number; count: number; min: number; max: number }, i: number) => {
+                                                        const heightPct = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0
+                                                        const isPositive = bucket.midpoint >= 0
+                                                        return (
+                                                          <div
+                                                            key={i}
+                                                            className={`flex-1 rounded-t ${isPositive ? 'bg-success/60' : 'bg-danger/60'}`}
+                                                            style={{ height: `${heightPct}%`, minHeight: bucket.count > 0 ? '2px' : '0' }}
+                                                            title={`${(bucket.min * 100).toFixed(1)}% to ${(bucket.max * 100).toFixed(1)}%: ${bucket.count} sims`}
+                                                          />
+                                                        )
+                                                      })}
+                                                    </div>
+                                                  )
+                                                })()}
+                                                <div className="flex justify-between text-xs mt-0.5">
+                                                  <span className="text-muted">{((sanityState.report.pathRisk.monteCarlo.cagrs.histogram?.[0]?.min ?? 0) * 100).toFixed(0)}%</span>
+                                                  <span className="text-muted">{((sanityState.report.pathRisk.monteCarlo.cagrs.histogram?.[sanityState.report.pathRisk.monteCarlo.cagrs.histogram.length - 1]?.max ?? 0) * 100).toFixed(0)}%</span>
+                                                </div>
+                                              </div>
+
+                                              {/* MaxDD Distribution Bar Chart */}
+                                              <div>
+                                                <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of Max Drawdown values across 200 Monte Carlo simulations. Each bar represents a bucket of drawdown values.">Max Drawdown Distribution</div>
+                                                {(() => {
+                                                  const histogram = sanityState.report.pathRisk.monteCarlo.drawdowns.histogram
+                                                  if (!histogram || histogram.length === 0) return <div className="text-xs text-muted">No histogram data</div>
+                                                  const maxCount = Math.max(...histogram.map((b: { count: number }) => b.count))
+                                                  return (
+                                                    <div className="flex items-end gap-px h-16">
+                                                      {histogram.map((bucket: { midpoint: number; count: number; min: number; max: number }, i: number) => {
+                                                        const heightPct = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0
+                                                        // Drawdowns are all negative, use gradient from danger to warning
+                                                        const severity = Math.abs(bucket.midpoint)
+                                                        const bgClass = severity > 0.4 ? 'bg-danger/80' : severity > 0.25 ? 'bg-danger/60' : 'bg-warning/60'
+                                                        return (
+                                                          <div
+                                                            key={i}
+                                                            className={`flex-1 rounded-t ${bgClass}`}
+                                                            style={{ height: `${heightPct}%`, minHeight: bucket.count > 0 ? '2px' : '0' }}
+                                                            title={`${(bucket.min * 100).toFixed(1)}% to ${(bucket.max * 100).toFixed(1)}%: ${bucket.count} sims`}
+                                                          />
+                                                        )
+                                                      })}
+                                                    </div>
+                                                  )
+                                                })()}
+                                                <div className="flex justify-between text-xs mt-0.5">
+                                                  <span className="text-muted">{((sanityState.report.pathRisk.monteCarlo.drawdowns.histogram?.[0]?.min ?? 0) * 100).toFixed(0)}%</span>
+                                                  <span className="text-muted">{((sanityState.report.pathRisk.monteCarlo.drawdowns.histogram?.[sanityState.report.pathRisk.monteCarlo.drawdowns.histogram.length - 1]?.max ?? 0) * 100).toFixed(0)}%</span>
+                                                </div>
+                                              </div>
                                             </div>
 
                                             {/* Right Card: K-Fold */}
-                                            <div className="border border-border rounded-xl p-3">
-                                              <div className="text-xs font-bold mb-2">K-Fold (200 Folds)</div>
+                                            <div className="border border-border rounded-xl p-3 flex flex-col h-full">
+                                              <div className="text-xs font-bold mb-2 text-center">K-Fold (200 Folds)</div>
 
                                               {/* KF Drawdown Distribution */}
                                               <div className="mb-3">
-                                                <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of maximum drawdowns across 200 K-Fold subsets (90% of data each). Tests stability when portions of history are removed.">Max Drawdown Distribution</div>
+                                                <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of maximum drawdowns across 200 K-Fold subsets (90% of data each). Tests stability when portions of history are removed.">Max Drawdown Distribution</div>
                                                 {(() => {
                                                   const dd = sanityState.report.pathRisk.kfold.drawdowns
                                                   // Drawdowns are negative: p95 is worst (most negative), p5 is best (least negative)
@@ -16588,9 +16733,9 @@ function App() {
                                                         />
                                                       </div>
                                                       <div className="flex justify-between text-xs mt-0.5">
-                                                        <span className="text-danger">Worst: {formatDDPct(dd.p5)}</span>
-                                                        <span className="font-semibold">Median: {formatDDPct(dd.p50)}</span>
-                                                        <span className="text-success">Best: {formatDDPct(dd.p95)}</span>
+                                                        <span className="text-danger">P95: {formatDDPct(dd.p5)}</span>
+                                                        <span className="font-semibold">P50: {formatDDPct(dd.p50)}</span>
+                                                        <span className="text-success">P5: {formatDDPct(dd.p95)}</span>
                                                       </div>
                                                     </>
                                                   )
@@ -16599,7 +16744,7 @@ function App() {
 
                                               {/* KF CAGR Distribution */}
                                               <div>
-                                                <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of annualized returns across 200 K-Fold subsets. Tests how consistent CAGR is when portions of history are removed.">CAGR Distribution</div>
+                                                <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of annualized returns across 200 K-Fold subsets. Tests how consistent CAGR is when portions of history are removed.">CAGR Distribution</div>
                                                 {(() => {
                                                   const cagr = sanityState.report.pathRisk.kfold.cagrs
                                                   const minVal = Math.min(cagr.p5, cagr.p95)
@@ -16629,13 +16774,85 @@ function App() {
                                                   )
                                                 })()}
                                               </div>
+
+                                              {/* KF Sharpe Distribution */}
+                                              {sanityState.report.pathRisk.kfold.sharpes && (
+                                                <div className="mb-3">
+                                                  <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of Sharpe ratios across K-Fold subsets. Higher is better.">Sharpe Distribution</div>
+                                                  {(() => {
+                                                    const sh = sanityState.report.pathRisk.kfold.sharpes
+                                                    // Sharpe: higher is better, so P5 (worst) on left, P95 (best) on right
+                                                    const minVal = sh.p5
+                                                    const maxVal = sh.p95
+                                                    const range = maxVal - minVal || 0.01
+                                                    const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                    const hasP25P75 = sh.p25 != null && sh.p75 != null
+                                                    return (
+                                                      <>
+                                                        <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                          {/* P25-P75 range (green for good Sharpe) - only if we have p25/p75 */}
+                                                          {hasP25P75 && (
+                                                            <div
+                                                              className="absolute h-full bg-success/40"
+                                                              style={{ left: `${toPos(sh.p25)}%`, width: `${toPos(sh.p75) - toPos(sh.p25)}%` }}
+                                                            />
+                                                          )}
+                                                          <div
+                                                            className="absolute h-full w-0.5 bg-success"
+                                                            style={{ left: `${toPos(sh.p50)}%` }}
+                                                          />
+                                                        </div>
+                                                        <div className="flex justify-between text-xs mt-0.5">
+                                                          <span className="text-danger">P5: {sh.p5?.toFixed(2) ?? '-'}</span>
+                                                          <span className="font-semibold">P50: {sh.p50?.toFixed(2) ?? '-'}</span>
+                                                          <span className="text-success">P95: {sh.p95?.toFixed(2) ?? '-'}</span>
+                                                        </div>
+                                                      </>
+                                                    )
+                                                  })()}
+                                                </div>
+                                              )}
+
+                                              {/* KF Volatility Distribution */}
+                                              {sanityState.report.pathRisk.kfold.volatilities && (
+                                                <div>
+                                                  <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of annualized volatility across K-Fold subsets. Lower is generally better.">Volatility Distribution</div>
+                                                  {(() => {
+                                                    const vol = sanityState.report.pathRisk.kfold.volatilities
+                                                    // Volatility: lower is better, so flip - P95 (worst/high vol) on left, P5 (best/low vol) on right
+                                                    const minVal = vol.p95 // High vol = left side (bad)
+                                                    const maxVal = vol.p5  // Low vol = right side (good)
+                                                    const range = maxVal - minVal || 0.01
+                                                    const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                    const hasP25P75 = vol.p25 != null && vol.p75 != null
+                                                    return (
+                                                      <>
+                                                        <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                          {/* P25-P75 range (red for volatility since it's bad) - only if we have p25/p75 */}
+                                                          {hasP25P75 && (
+                                                            <div
+                                                              className="absolute h-full bg-danger/40"
+                                                              style={{ left: `${toPos(vol.p75)}%`, width: `${toPos(vol.p25) - toPos(vol.p75)}%` }}
+                                                            />
+                                                          )}
+                                                          <div
+                                                            className="absolute h-full w-0.5 bg-danger"
+                                                            style={{ left: `${toPos(vol.p50)}%` }}
+                                                          />
+                                                        </div>
+                                                        <div className="flex justify-between text-xs mt-0.5">
+                                                          <span className="text-danger">P95: {formatDDPct(vol.p95)}</span>
+                                                          <span className="font-semibold">P50: {formatDDPct(vol.p50)}</span>
+                                                          <span className="text-success">P5: {formatDDPct(vol.p5)}</span>
+                                                        </div>
+                                                      </>
+                                                    )
+                                                  })()}
+                                                </div>
+                                              )}
                                             </div>
                                           </div>
 
-                                          {/* Meta Footer */}
-                                          <div className="text-xs text-muted text-center mt-2">
-                                            Generated {sanityState.report.meta.generatedAt} with {sanityState.report.meta.mcSimulations} MC + {sanityState.report.meta.kfFolds} K-Fold iterations over {sanityState.report.original.tradingDays} days
-                                          </div>
                                         </>
                                       )}
                                     </>
@@ -18298,7 +18515,7 @@ function App() {
                                         analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'advanced' },
                                       }))}
                                     >
-                                      Advanced
+                                      Benchmarks
                                     </Button>
                                     <Button
                                       size="sm"
@@ -18592,13 +18809,13 @@ function App() {
 
                                             {sanityState.status === 'done' && sanityState.report && (
                                               <>
-                                                {/* 3-Column Grid Layout */}
-                                                <div className="grid grid-cols-3 gap-3">
+                                                {/* 4-Column Grid Layout */}
+                                                <div className="grid grid-cols-4 gap-3 w-full h-full">
                                                   {/* Left Card: Summary & Fragility */}
-                                                  <div className="border border-border rounded-xl p-3 flex flex-col gap-3">
+                                                  <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
                                                     {/* Summary */}
                                                     <div>
-                                                      <div className="text-xs font-bold mb-1.5">Summary</div>
+                                                      <div className="text-xs font-bold mb-1.5 text-center">Summary</div>
                                                       {sanityState.report.summary.length > 0 ? (
                                                         <ul className="text-xs space-y-0.5">
                                                           {sanityState.report.summary.map((s, i) => (
@@ -18615,7 +18832,7 @@ function App() {
 
                                                     {/* Fragility Table (Condensed) */}
                                                     <div>
-                                                      <div className="text-xs font-bold mb-1.5">Fragility Fingerprints</div>
+                                                      <div className="text-xs font-bold mb-1.5 text-center">Fragility Fingerprints</div>
                                                       <div className="space-y-1">
                                                         {[
                                                           { name: 'Sub-Period', data: sanityState.report.fragility.subPeriodStability, tooltip: 'Consistency of returns across different time periods. Low = stable across all periods.' },
@@ -18635,7 +18852,7 @@ function App() {
 
                                                     {/* DD Probabilities */}
                                                     <div>
-                                                      <div className="text-xs font-bold mb-1.5">DD Probability</div>
+                                                      <div className="text-xs font-bold mb-1.5 text-center">DD Probability</div>
                                                       <div className="space-y-0.5 text-xs">
                                                         <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt20)}</span> chance of 20% DD</div>
                                                         <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt30)}</span> chance of 30% DD</div>
@@ -18646,12 +18863,12 @@ function App() {
                                                   </div>
 
                                                   {/* Middle Card: Monte Carlo */}
-                                                  <div className="border border-border rounded-xl p-3">
-                                                    <div className="text-xs font-bold mb-2">Monte Carlo (1000 years)</div>
+                                                  <div className="border border-border rounded-xl p-3 flex flex-col h-full">
+                                                    <div className="text-xs font-bold mb-2 text-center">Monte Carlo (2000 years)</div>
 
                                                     {/* MC Drawdown Distribution */}
                                                     <div className="mb-3">
-                                                      <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of maximum drawdowns across 200 simulated 5-year paths. Shows worst-case (P5), median, and best-case (P95) scenarios.">Max Drawdown Distribution</div>
+                                                      <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of maximum drawdowns across 400 simulated 5-year paths (2000 total years). Shows worst-case (P5), median, and best-case (P95) scenarios.">Max Drawdown Distribution</div>
                                                       {(() => {
                                                         const dd = sanityState.report.pathRisk.monteCarlo.drawdowns
                                                         // Drawdowns are negative: p95 is worst (most negative), p5 is best (least negative)
@@ -18675,9 +18892,9 @@ function App() {
                                                               />
                                                             </div>
                                                             <div className="flex justify-between text-xs mt-0.5">
-                                                              <span className="text-danger">Worst: {formatDDPct(dd.p5)}</span>
-                                                              <span className="font-semibold">Median: {formatDDPct(dd.p50)}</span>
-                                                              <span className="text-success">Best: {formatDDPct(dd.p95)}</span>
+                                                              <span className="text-danger">P95: {formatDDPct(dd.p5)}</span>
+                                                              <span className="font-semibold">P50: {formatDDPct(dd.p50)}</span>
+                                                              <span className="text-success">P5: {formatDDPct(dd.p95)}</span>
                                                             </div>
                                                           </>
                                                         )
@@ -18686,7 +18903,7 @@ function App() {
 
                                                     {/* MC CAGR Distribution */}
                                                     <div>
-                                                      <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of annualized returns (CAGR) across 200 simulated 5-year paths. P5 is worst, P95 is best expected returns.">CAGR Distribution</div>
+                                                      <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of annualized returns (CAGR) across 200 simulated 5-year paths. P5 is worst, P95 is best expected returns.">CAGR Distribution</div>
                                                       {(() => {
                                                         const cagr = sanityState.report.pathRisk.monteCarlo.cagrs
                                                         const minVal = Math.min(cagr.p5, cagr.p95)
@@ -18716,15 +18933,142 @@ function App() {
                                                         )
                                                       })()}
                                                     </div>
+
+                                                    {/* MC Sharpe Distribution */}
+                                                    {sanityState.report.pathRisk.monteCarlo.sharpes && (
+                                                      <div className="mb-3">
+                                                        <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of Sharpe ratios across Monte Carlo simulations. Higher is better.">Sharpe Distribution</div>
+                                                        {(() => {
+                                                          const sh = sanityState.report.pathRisk.monteCarlo.sharpes
+                                                          // Sharpe: higher is better, so P5 (worst) on left, P95 (best) on right
+                                                          const minVal = sh.p5
+                                                          const maxVal = sh.p95
+                                                          const range = maxVal - minVal || 0.01
+                                                          const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                          const hasP25P75 = sh.p25 != null && sh.p75 != null
+                                                          return (
+                                                            <>
+                                                              <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                                {/* P25-P75 range (green for good Sharpe) - only if we have p25/p75 */}
+                                                                {hasP25P75 && <div className="absolute h-full bg-success/40" style={{ left: `${toPos(sh.p25)}%`, width: `${toPos(sh.p75) - toPos(sh.p25)}%` }} />}
+                                                                <div className="absolute h-full w-0.5 bg-success" style={{ left: `${toPos(sh.p50)}%` }} />
+                                                              </div>
+                                                              <div className="flex justify-between text-xs mt-0.5">
+                                                                <span className="text-danger">P5: {sh.p5?.toFixed(2) ?? '-'}</span>
+                                                                <span className="font-semibold">P50: {sh.p50?.toFixed(2) ?? '-'}</span>
+                                                                <span className="text-success">P95: {sh.p95?.toFixed(2) ?? '-'}</span>
+                                                              </div>
+                                                            </>
+                                                          )
+                                                        })()}
+                                                      </div>
+                                                    )}
+
+                                                    {/* MC Volatility Distribution */}
+                                                    {sanityState.report.pathRisk.monteCarlo.volatilities && (
+                                                      <div>
+                                                        <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of annualized volatility across Monte Carlo simulations. Lower is generally better.">Volatility Distribution</div>
+                                                        {(() => {
+                                                          const vol = sanityState.report.pathRisk.monteCarlo.volatilities
+                                                          // Volatility: lower is better, so flip - P95 (worst/high vol) on left, P5 (best/low vol) on right
+                                                          const minVal = vol.p95 // High vol = left side (bad)
+                                                          const maxVal = vol.p5  // Low vol = right side (good)
+                                                          const range = maxVal - minVal || 0.01
+                                                          const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                          const hasP25P75 = vol.p25 != null && vol.p75 != null
+                                                          return (
+                                                            <>
+                                                              <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                                {/* P25-P75 range (red for volatility since it's bad) - only if we have p25/p75 */}
+                                                                {hasP25P75 && <div className="absolute h-full bg-danger/40" style={{ left: `${toPos(vol.p75)}%`, width: `${toPos(vol.p25) - toPos(vol.p75)}%` }} />}
+                                                                <div className="absolute h-full w-0.5 bg-danger" style={{ left: `${toPos(vol.p50)}%` }} />
+                                                              </div>
+                                                              <div className="flex justify-between text-xs mt-0.5">
+                                                                <span className="text-danger">P95: {formatDDPct(vol.p95)}</span>
+                                                                <span className="font-semibold">P50: {formatDDPct(vol.p50)}</span>
+                                                                <span className="text-success">P5: {formatDDPct(vol.p5)}</span>
+                                                              </div>
+                                                            </>
+                                                          )
+                                                        })()}
+                                                      </div>
+                                                    )}
+                                                  </div>
+
+                                                  {/* Distribution Curves Card */}
+                                                  <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
+                                                    <div className="text-xs font-bold mb-1 text-center">Distribution Curves</div>
+
+                                                    {/* CAGR Distribution Bar Chart */}
+                                                    <div>
+                                                      <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of CAGR values across 200 Monte Carlo simulations. Each bar represents a bucket of CAGR values.">CAGR Distribution</div>
+                                                      {(() => {
+                                                        const histogram = sanityState.report.pathRisk.monteCarlo.cagrs.histogram
+                                                        if (!histogram || histogram.length === 0) return <div className="text-xs text-muted">No histogram data</div>
+                                                        const maxCount = Math.max(...histogram.map((b: { count: number }) => b.count))
+                                                        return (
+                                                          <div className="flex items-end gap-px h-16">
+                                                            {histogram.map((bucket: { midpoint: number; count: number; min: number; max: number }, i: number) => {
+                                                              const heightPct = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0
+                                                              const isPositive = bucket.midpoint >= 0
+                                                              return (
+                                                                <div
+                                                                  key={i}
+                                                                  className={`flex-1 rounded-t ${isPositive ? 'bg-success/60' : 'bg-danger/60'}`}
+                                                                  style={{ height: `${heightPct}%`, minHeight: bucket.count > 0 ? '2px' : '0' }}
+                                                                  title={`${(bucket.min * 100).toFixed(1)}% to ${(bucket.max * 100).toFixed(1)}%: ${bucket.count} sims`}
+                                                                />
+                                                              )
+                                                            })}
+                                                          </div>
+                                                        )
+                                                      })()}
+                                                      <div className="flex justify-between text-xs mt-0.5">
+                                                        <span className="text-muted">{((sanityState.report.pathRisk.monteCarlo.cagrs.histogram?.[0]?.min ?? 0) * 100).toFixed(0)}%</span>
+                                                        <span className="text-muted">{((sanityState.report.pathRisk.monteCarlo.cagrs.histogram?.[sanityState.report.pathRisk.monteCarlo.cagrs.histogram.length - 1]?.max ?? 0) * 100).toFixed(0)}%</span>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* MaxDD Distribution Bar Chart */}
+                                                    <div>
+                                                      <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of Max Drawdown values across 200 Monte Carlo simulations. Each bar represents a bucket of drawdown values.">Max Drawdown Distribution</div>
+                                                      {(() => {
+                                                        const histogram = sanityState.report.pathRisk.monteCarlo.drawdowns.histogram
+                                                        if (!histogram || histogram.length === 0) return <div className="text-xs text-muted">No histogram data</div>
+                                                        const maxCount = Math.max(...histogram.map((b: { count: number }) => b.count))
+                                                        return (
+                                                          <div className="flex items-end gap-px h-16">
+                                                            {histogram.map((bucket: { midpoint: number; count: number; min: number; max: number }, i: number) => {
+                                                              const heightPct = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0
+                                                              // Drawdowns are all negative, use gradient from danger to warning
+                                                              const severity = Math.abs(bucket.midpoint)
+                                                              const bgClass = severity > 0.4 ? 'bg-danger/80' : severity > 0.25 ? 'bg-danger/60' : 'bg-warning/60'
+                                                              return (
+                                                                <div
+                                                                  key={i}
+                                                                  className={`flex-1 rounded-t ${bgClass}`}
+                                                                  style={{ height: `${heightPct}%`, minHeight: bucket.count > 0 ? '2px' : '0' }}
+                                                                  title={`${(bucket.min * 100).toFixed(1)}% to ${(bucket.max * 100).toFixed(1)}%: ${bucket.count} sims`}
+                                                                />
+                                                              )
+                                                            })}
+                                                          </div>
+                                                        )
+                                                      })()}
+                                                      <div className="flex justify-between text-xs mt-0.5">
+                                                        <span className="text-muted">{((sanityState.report.pathRisk.monteCarlo.drawdowns.histogram?.[0]?.min ?? 0) * 100).toFixed(0)}%</span>
+                                                        <span className="text-muted">{((sanityState.report.pathRisk.monteCarlo.drawdowns.histogram?.[sanityState.report.pathRisk.monteCarlo.drawdowns.histogram.length - 1]?.max ?? 0) * 100).toFixed(0)}%</span>
+                                                      </div>
+                                                    </div>
                                                   </div>
 
                                                   {/* Right Card: K-Fold */}
-                                                  <div className="border border-border rounded-xl p-3">
-                                                    <div className="text-xs font-bold mb-2">K-Fold (200 Folds)</div>
+                                                  <div className="border border-border rounded-xl p-3 flex flex-col h-full">
+                                                    <div className="text-xs font-bold mb-2 text-center">K-Fold (200 Folds)</div>
 
                                                     {/* KF Drawdown Distribution */}
                                                     <div className="mb-3">
-                                                      <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of maximum drawdowns across 200 K-Fold subsets (90% of data each). Tests stability when portions of history are removed.">Max Drawdown Distribution</div>
+                                                      <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of maximum drawdowns across 200 K-Fold subsets (90% of data each). Tests stability when portions of history are removed.">Max Drawdown Distribution</div>
                                                       {(() => {
                                                         const dd = sanityState.report.pathRisk.kfold.drawdowns
                                                         // Drawdowns are negative: p95 is worst (most negative), p5 is best (least negative)
@@ -18748,9 +19092,9 @@ function App() {
                                                               />
                                                             </div>
                                                             <div className="flex justify-between text-xs mt-0.5">
-                                                              <span className="text-danger">Worst: {formatDDPct(dd.p5)}</span>
-                                                              <span className="font-semibold">Median: {formatDDPct(dd.p50)}</span>
-                                                              <span className="text-success">Best: {formatDDPct(dd.p95)}</span>
+                                                              <span className="text-danger">P95: {formatDDPct(dd.p5)}</span>
+                                                              <span className="font-semibold">P50: {formatDDPct(dd.p50)}</span>
+                                                              <span className="text-success">P5: {formatDDPct(dd.p95)}</span>
                                                             </div>
                                                           </>
                                                         )
@@ -18759,7 +19103,7 @@ function App() {
 
                                                     {/* KF CAGR Distribution */}
                                                     <div>
-                                                      <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of annualized returns across 200 K-Fold subsets. Tests how consistent CAGR is when portions of history are removed.">CAGR Distribution</div>
+                                                      <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of annualized returns across 200 K-Fold subsets. Tests how consistent CAGR is when portions of history are removed.">CAGR Distribution</div>
                                                       {(() => {
                                                         const cagr = sanityState.report.pathRisk.kfold.cagrs
                                                         const minVal = Math.min(cagr.p5, cagr.p95)
@@ -18789,13 +19133,69 @@ function App() {
                                                         )
                                                       })()}
                                                     </div>
+
+                                                    {/* KF Sharpe Distribution */}
+                                                    {sanityState.report.pathRisk.kfold.sharpes && (
+                                                      <div className="mb-3">
+                                                        <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of Sharpe ratios across K-Fold subsets. Higher is better.">Sharpe Distribution</div>
+                                                        {(() => {
+                                                          const sh = sanityState.report.pathRisk.kfold.sharpes
+                                                          // Sharpe: higher is better, so P5 (worst) on left, P95 (best) on right
+                                                          const minVal = sh.p5
+                                                          const maxVal = sh.p95
+                                                          const range = maxVal - minVal || 0.01
+                                                          const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                          const hasP25P75 = sh.p25 != null && sh.p75 != null
+                                                          return (
+                                                            <>
+                                                              <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                                {/* P25-P75 range (green for good Sharpe) - only if we have p25/p75 */}
+                                                                {hasP25P75 && <div className="absolute h-full bg-success/40" style={{ left: `${toPos(sh.p25)}%`, width: `${toPos(sh.p75) - toPos(sh.p25)}%` }} />}
+                                                                <div className="absolute h-full w-0.5 bg-success" style={{ left: `${toPos(sh.p50)}%` }} />
+                                                              </div>
+                                                              <div className="flex justify-between text-xs mt-0.5">
+                                                                <span className="text-danger">P5: {sh.p5?.toFixed(2) ?? '-'}</span>
+                                                                <span className="font-semibold">P50: {sh.p50?.toFixed(2) ?? '-'}</span>
+                                                                <span className="text-success">P95: {sh.p95?.toFixed(2) ?? '-'}</span>
+                                                              </div>
+                                                            </>
+                                                          )
+                                                        })()}
+                                                      </div>
+                                                    )}
+
+                                                    {/* KF Volatility Distribution */}
+                                                    {sanityState.report.pathRisk.kfold.volatilities && (
+                                                      <div>
+                                                        <div className="text-xs text-muted mb-1 cursor-help text-center" title="Distribution of annualized volatility across K-Fold subsets. Lower is generally better.">Volatility Distribution</div>
+                                                        {(() => {
+                                                          const vol = sanityState.report.pathRisk.kfold.volatilities
+                                                          // Volatility: lower is better, so flip - P95 (worst/high vol) on left, P5 (best/low vol) on right
+                                                          const minVal = vol.p95 // High vol = left side (bad)
+                                                          const maxVal = vol.p5  // Low vol = right side (good)
+                                                          const range = maxVal - minVal || 0.01
+                                                          const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                          const hasP25P75 = vol.p25 != null && vol.p75 != null
+                                                          return (
+                                                            <>
+                                                              <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                                {/* P25-P75 range (red for volatility since it's bad) - only if we have p25/p75 */}
+                                                                {hasP25P75 && <div className="absolute h-full bg-danger/40" style={{ left: `${toPos(vol.p75)}%`, width: `${toPos(vol.p25) - toPos(vol.p75)}%` }} />}
+                                                                <div className="absolute h-full w-0.5 bg-danger" style={{ left: `${toPos(vol.p50)}%` }} />
+                                                              </div>
+                                                              <div className="flex justify-between text-xs mt-0.5">
+                                                                <span className="text-danger">P95: {formatDDPct(vol.p95)}</span>
+                                                                <span className="font-semibold">P50: {formatDDPct(vol.p50)}</span>
+                                                                <span className="text-success">P5: {formatDDPct(vol.p5)}</span>
+                                                              </div>
+                                                            </>
+                                                          )
+                                                        })()}
+                                                      </div>
+                                                    )}
                                                   </div>
                                                 </div>
 
-                                                {/* Meta Footer */}
-                                                <div className="text-xs text-muted text-center mt-2">
-                                                  Generated {sanityState.report.meta.generatedAt} with {sanityState.report.meta.mcSimulations} MC + {sanityState.report.meta.kfFolds} K-Fold iterations over {sanityState.report.original.tradingDays} days
-                                                </div>
                                               </>
                                             )}
                                           </>

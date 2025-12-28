@@ -74,6 +74,34 @@ function percentile(sortedArr, p) {
 }
 
 /**
+ * Create histogram buckets from sorted array
+ * Returns array of { min, max, count } for display in bar chart
+ */
+function createHistogram(sortedArr, numBuckets = 20) {
+  if (sortedArr.length === 0) return []
+  const min = sortedArr[0]
+  const max = sortedArr[sortedArr.length - 1]
+  const range = max - min
+  if (range === 0) {
+    return [{ min, max, count: sortedArr.length, midpoint: min }]
+  }
+  const bucketSize = range / numBuckets
+  const buckets = []
+  for (let i = 0; i < numBuckets; i++) {
+    const bucketMin = min + i * bucketSize
+    const bucketMax = min + (i + 1) * bucketSize
+    const count = sortedArr.filter(v => v >= bucketMin && (i === numBuckets - 1 ? v <= bucketMax : v < bucketMax)).length
+    buckets.push({
+      min: bucketMin,
+      max: bucketMax,
+      midpoint: (bucketMin + bucketMax) / 2,
+      count
+    })
+  }
+  return buckets
+}
+
+/**
  * Fisher-Yates shuffle (in place)
  */
 function shuffleArray(arr, rng) {
@@ -405,7 +433,7 @@ function mean(arr) {
  */
 export function computePathRisk(returns, options = {}, spyReturns = null) {
   const {
-    mcSimulations = 200,
+    mcSimulations = 400,
     kfFolds = 200,
     years = 5,
     blockSize = 7,
@@ -427,6 +455,12 @@ export function computePathRisk(returns, options = {}, spyReturns = null) {
   const kfResults = runKfold(returns, { folds: kfFolds, shards, seed }, spyReturns)
   const kfDrawdowns = kfResults.map(r => r.maxDd).sort((a, b) => a - b)
   const kfCagrs = kfResults.map(r => r.cagr).sort((a, b) => a - b)
+
+  // Sort sharpe and volatility for percentile distributions
+  const mcSharpes = mcResults.map(r => r.sharpe).sort((a, b) => a - b)
+  const mcVolatilities = mcResults.map(r => r.volatility).sort((a, b) => a - b)
+  const kfSharpes = kfResults.map(r => r.sharpe).sort((a, b) => a - b)
+  const kfVolatilities = kfResults.map(r => r.volatility).sort((a, b) => a - b)
 
   // Aggregate additional metrics for comparison table
   const mcComparisonMetrics = {
@@ -468,14 +502,30 @@ export function computePathRisk(returns, options = {}, spyReturns = null) {
         p25: percentile(mcDrawdowns, 0.25),
         p50: percentile(mcDrawdowns, 0.50),
         p75: percentile(mcDrawdowns, 0.75),
-        p95: percentile(mcDrawdowns, 0.95)
+        p95: percentile(mcDrawdowns, 0.95),
+        histogram: createHistogram(mcDrawdowns, 20)
       },
       cagrs: {
         p5: percentile(mcCagrs, 0.05),
         p25: percentile(mcCagrs, 0.25),
         p50: percentile(mcCagrs, 0.50),
         p75: percentile(mcCagrs, 0.75),
-        p95: percentile(mcCagrs, 0.95)
+        p95: percentile(mcCagrs, 0.95),
+        histogram: createHistogram(mcCagrs, 20)
+      },
+      sharpes: {
+        p5: percentile(mcSharpes, 0.05),
+        p25: percentile(mcSharpes, 0.25),
+        p50: percentile(mcSharpes, 0.50),
+        p75: percentile(mcSharpes, 0.75),
+        p95: percentile(mcSharpes, 0.95)
+      },
+      volatilities: {
+        p5: percentile(mcVolatilities, 0.05),
+        p25: percentile(mcVolatilities, 0.25),
+        p50: percentile(mcVolatilities, 0.50),
+        p75: percentile(mcVolatilities, 0.75),
+        p95: percentile(mcVolatilities, 0.95)
       }
     },
     kfold: {
@@ -492,6 +542,20 @@ export function computePathRisk(returns, options = {}, spyReturns = null) {
         p50: percentile(kfCagrs, 0.50),
         p75: percentile(kfCagrs, 0.75),
         p95: percentile(kfCagrs, 0.95)
+      },
+      sharpes: {
+        p5: percentile(kfSharpes, 0.05),
+        p25: percentile(kfSharpes, 0.25),
+        p50: percentile(kfSharpes, 0.50),
+        p75: percentile(kfSharpes, 0.75),
+        p95: percentile(kfSharpes, 0.95)
+      },
+      volatilities: {
+        p5: percentile(kfVolatilities, 0.05),
+        p25: percentile(kfVolatilities, 0.25),
+        p50: percentile(kfVolatilities, 0.50),
+        p75: percentile(kfVolatilities, 0.75),
+        p95: percentile(kfVolatilities, 0.95)
       }
     },
     drawdownProbabilities: {
@@ -788,7 +852,7 @@ export function generateSummary(pathRisk, fragility) {
  */
 export function generateSanityReport(returns, options = {}, spyReturns = null) {
   const {
-    mcSimulations = 200,
+    mcSimulations = 400,
     kfFolds = 200,
     years = 5,
     blockSize = 7,
