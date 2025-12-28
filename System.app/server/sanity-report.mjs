@@ -1,0 +1,881 @@
+/**
+ * Sanity & Risk Report Module
+ *
+ * Provides statistical analysis for backtest results without pretending to validate overfitting.
+ * Two categories of analysis:
+ * 1. Path Risk - "If the edge were real, how dangerous is the ride?"
+ * 2. Fragility Fingerprints - "Does this curve look suspiciously lucky?"
+ *
+ * Adapted from Python implementation: C:\Users\Trader\Desktop\New\src\rsi_engine\eval\mckf.py
+ */
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+/**
+ * Seeded random number generator (mulberry32) for reproducibility
+ */
+function mulberry32(seed) {
+  return function() {
+    let t = seed += 0x6D2B79F5
+    t = Math.imul(t ^ t >>> 15, t | 1)
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61)
+    return ((t ^ t >>> 14) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * Compute max drawdown from equity curve array
+ * Returns negative value (e.g., -0.25 for 25% drawdown)
+ */
+function computeMaxDrawdown(equity) {
+  let peak = -Infinity
+  let maxDd = 0
+  for (const v of equity) {
+    if (v > peak) peak = v
+    if (peak > 0) {
+      const dd = v / peak - 1
+      if (dd < maxDd) maxDd = dd
+    }
+  }
+  return maxDd
+}
+
+/**
+ * Compute CAGR from equity array
+ */
+function computeCagr(equity, days) {
+  if (days <= 0 || equity.length < 2) return 0
+  const final = equity[equity.length - 1]
+  const initial = equity[0]
+  if (initial <= 0 || final <= 0) return 0
+  return Math.pow(final / initial, 252 / days) - 1
+}
+
+/**
+ * Build equity curve from daily returns
+ */
+function buildEquityCurve(returns) {
+  const equity = [1]
+  for (const r of returns) {
+    equity.push(equity[equity.length - 1] * (1 + r))
+  }
+  return equity
+}
+
+/**
+ * Compute percentile from sorted array
+ */
+function percentile(sortedArr, p) {
+  if (sortedArr.length === 0) return 0
+  const idx = Math.max(0, Math.min(sortedArr.length - 1, Math.floor(p * sortedArr.length)))
+  return sortedArr[idx]
+}
+
+/**
+ * Fisher-Yates shuffle (in place)
+ */
+function shuffleArray(arr, rng) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
+/**
+ * Compute annualized volatility from daily returns
+ */
+function computeVolatility(returns) {
+  if (returns.length < 2) return 0
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length
+  const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (returns.length - 1)
+  const dailyVol = Math.sqrt(variance)
+  return dailyVol * Math.sqrt(252) // Annualized
+}
+
+/**
+ * Compute win rate (% of positive return days)
+ */
+function computeWinRate(returns) {
+  if (returns.length === 0) return 0
+  const winners = returns.filter(r => r > 0).length
+  return winners / returns.length
+}
+
+/**
+ * Compute Sharpe ratio (assumes risk-free rate of 0)
+ */
+function computeSharpe(returns) {
+  if (returns.length < 2) return 0
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length
+  const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (returns.length - 1)
+  const dailyVol = Math.sqrt(variance)
+  if (dailyVol === 0) return 0
+  // Annualized Sharpe
+  return (mean / dailyVol) * Math.sqrt(252)
+}
+
+/**
+ * Compute Sortino ratio (downside deviation only)
+ */
+function computeSortino(returns) {
+  if (returns.length < 2) return 0
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length
+  const downside = returns.filter(r => r < 0)
+  if (downside.length === 0) return mean > 0 ? Infinity : 0
+
+  const downsideVariance = downside.reduce((sum, r) => sum + Math.pow(r, 2), 0) / downside.length
+  const downsideVol = Math.sqrt(downsideVariance)
+  if (downsideVol === 0) return 0
+  // Annualized Sortino
+  return (mean / downsideVol) * Math.sqrt(252)
+}
+
+/**
+ * Compute just beta vs a benchmark (simpler version for multi-benchmark comparison)
+ * @param {number[]} strategyReturns - Strategy daily returns
+ * @param {number[]} benchmarkReturns - Benchmark daily returns
+ */
+export function computeBeta(strategyReturns, benchmarkReturns) {
+  if (strategyReturns.length < 2 || benchmarkReturns.length < 2) {
+    return 0
+  }
+
+  const len = Math.min(strategyReturns.length, benchmarkReturns.length)
+  const r = strategyReturns.slice(0, len)
+  const b = benchmarkReturns.slice(0, len)
+
+  const meanR = r.reduce((a, v) => a + v, 0) / len
+  const meanB = b.reduce((a, v) => a + v, 0) / len
+
+  let covariance = 0
+  let varB = 0
+  for (let i = 0; i < len; i++) {
+    covariance += (r[i] - meanR) * (b[i] - meanB)
+    varB += Math.pow(b[i] - meanB, 2)
+  }
+  covariance /= (len - 1)
+  varB /= (len - 1)
+
+  return varB > 0 ? covariance / varB : 0
+}
+
+/**
+ * Compute Beta and Treynor ratio vs benchmark returns
+ * @param {number[]} returns - Strategy returns
+ * @param {number[]} benchmarkReturns - Benchmark (SPY) returns, same length
+ */
+function computeBetaTreynor(returns, benchmarkReturns) {
+  if (returns.length < 2 || benchmarkReturns.length < 2) {
+    return { beta: 0, treynor: 0 }
+  }
+
+  // Align lengths
+  const len = Math.min(returns.length, benchmarkReturns.length)
+  const r = returns.slice(0, len)
+  const b = benchmarkReturns.slice(0, len)
+
+  // Compute means
+  const meanR = r.reduce((a, v) => a + v, 0) / len
+  const meanB = b.reduce((a, v) => a + v, 0) / len
+
+  // Compute covariance and variance of benchmark
+  let covariance = 0
+  let varB = 0
+  for (let i = 0; i < len; i++) {
+    covariance += (r[i] - meanR) * (b[i] - meanB)
+    varB += Math.pow(b[i] - meanB, 2)
+  }
+  covariance /= (len - 1)
+  varB /= (len - 1)
+
+  const beta = varB > 0 ? covariance / varB : 0
+
+  // Treynor = (Return - Rf) / Beta, using annualized CAGR
+  // Simplified: mean daily return * 252 / beta
+  const annualizedReturn = meanR * 252
+  const treynor = beta !== 0 ? annualizedReturn / beta : 0
+
+  return { beta, treynor }
+}
+
+// ============================================
+// BLOCK-BASED MONTE CARLO (from mckf.py)
+// ============================================
+
+/**
+ * Create overlapping blocks from returns array
+ * @param {number[]} returns - Daily returns
+ * @param {number} blockSize - Size of each block (default 7, must divide 252)
+ */
+function makeBlocks(returns, blockSize) {
+  const n = returns.length
+  if (n < blockSize) return []
+  const blocks = []
+  for (let i = 0; i <= n - blockSize; i++) {
+    blocks.push(returns.slice(i, i + blockSize))
+  }
+  return blocks
+}
+
+/**
+ * Build a Monte Carlo path by sampling blocks
+ * @param {number[]} returns - Original daily returns
+ * @param {number} years - Number of years to simulate
+ * @param {number} blockSize - Block size (must divide 252)
+ * @param {function} rng - Random number generator
+ */
+function buildMcPath(returns, years, blockSize, rng) {
+  const blocks = makeBlocks(returns, blockSize)
+  if (blocks.length === 0) {
+    throw new Error(`Not enough data for block size ${blockSize}`)
+  }
+
+  const blocksPerYear = Math.floor(252 / blockSize)
+  const totalBlocks = years * blocksPerYear
+
+  const sampledReturns = []
+  for (let i = 0; i < totalBlocks; i++) {
+    const idx = Math.floor(rng() * blocks.length)
+    sampledReturns.push(...blocks[idx])
+  }
+
+  return sampledReturns
+}
+
+/**
+ * Run Monte Carlo simulations
+ * @param {number[]} returns - Strategy daily returns
+ * @param {Object} options - Configuration options
+ * @param {number[]} [spyReturns] - SPY returns for beta/treynor calculation
+ */
+function runMonteCarlo(returns, options = {}, spyReturns = null) {
+  const {
+    simulations = 50,
+    years = 5,
+    blockSize = 7,
+    seed = 42
+  } = options
+
+  const rng = mulberry32(seed)
+  const results = []
+
+  for (let i = 0; i < simulations; i++) {
+    try {
+      const mcReturns = buildMcPath(returns, years, blockSize, rng)
+      const equity = buildEquityCurve(mcReturns)
+      const maxDd = computeMaxDrawdown(equity)
+      const cagr = computeCagr(equity, mcReturns.length)
+      const sharpe = computeSharpe(mcReturns)
+      const sortino = computeSortino(mcReturns)
+      const volatility = computeVolatility(mcReturns)
+      const winRate = computeWinRate(mcReturns)
+
+      // Compute beta/treynor if SPY returns provided
+      let beta = 0, treynor = 0
+      if (spyReturns && spyReturns.length > 0) {
+        // Build corresponding SPY path using same seed/block selection
+        const spyRng = mulberry32(seed + i) // Use same randomness pattern
+        const spyMcReturns = buildMcPath(spyReturns, years, blockSize, spyRng)
+        const bt = computeBetaTreynor(mcReturns, spyMcReturns)
+        beta = bt.beta
+        treynor = bt.treynor
+      }
+
+      results.push({ maxDd, cagr, sharpe, sortino, volatility, winRate, beta, treynor })
+    } catch (e) {
+      // Skip if not enough data
+    }
+  }
+
+  return results
+}
+
+// ============================================
+// K-FOLD DROP-1 (from mckf.py)
+// ============================================
+
+/**
+ * Split array into N shards
+ */
+function makeShards(returns, numShards, rng) {
+  const n = returns.length
+  if (n === 0) return []
+
+  const shards = Math.max(1, Math.min(numShards, n))
+
+  // Random starting rotation
+  const startIdx = Math.floor(rng() * n)
+  const rotated = [...returns.slice(startIdx), ...returns.slice(0, startIdx)]
+
+  const base = Math.floor(n / shards)
+  const rem = n % shards
+
+  const result = []
+  let cur = 0
+  for (let i = 0; i < shards; i++) {
+    const size = base + (i < rem ? 1 : 0)
+    result.push(rotated.slice(cur, cur + size))
+    cur += size
+  }
+
+  return result
+}
+
+/**
+ * Build K-Fold drop-1 sample
+ * Returns the concatenated returns with one shard dropped
+ */
+function buildKfoldDrop1(returns, numShards, rng, shuffleRemaining = true) {
+  const shards = makeShards(returns, numShards, rng)
+  if (shards.length === 0) return returns.slice()
+
+  const dropIdx = Math.floor(rng() * shards.length)
+  const keep = shards.filter((_, i) => i !== dropIdx)
+
+  if (shuffleRemaining && keep.length > 1) {
+    shuffleArray(keep, rng)
+  }
+
+  return keep.flat()
+}
+
+/**
+ * Run K-Fold validation
+ * @param {number[]} returns - Strategy daily returns
+ * @param {Object} options - Configuration options
+ * @param {number[]} [spyReturns] - SPY returns for beta/treynor calculation
+ */
+function runKfold(returns, options = {}, spyReturns = null) {
+  const {
+    folds = 50,
+    shards = 10,
+    seed = 42
+  } = options
+
+  const rng = mulberry32(seed + 1000) // Different seed from MC
+  const results = []
+
+  for (let i = 0; i < folds; i++) {
+    const kfReturns = buildKfoldDrop1(returns, shards, rng, true)
+    const equity = buildEquityCurve(kfReturns)
+    const maxDd = computeMaxDrawdown(equity)
+    const cagr = computeCagr(equity, kfReturns.length)
+    const sharpe = computeSharpe(kfReturns)
+    const sortino = computeSortino(kfReturns)
+    const volatility = computeVolatility(kfReturns)
+    const winRate = computeWinRate(kfReturns)
+
+    // Compute beta/treynor if SPY returns provided
+    let beta = 0, treynor = 0
+    if (spyReturns && spyReturns.length > 0) {
+      // Build corresponding SPY K-Fold path using same pattern
+      const spyRng = mulberry32(seed + 1000 + i)
+      const spyKfReturns = buildKfoldDrop1(spyReturns, shards, spyRng, true)
+      const bt = computeBetaTreynor(kfReturns, spyKfReturns)
+      beta = bt.beta
+      treynor = bt.treynor
+    }
+
+    results.push({ maxDd, cagr, sharpe, sortino, volatility, winRate, beta, treynor })
+  }
+
+  return results
+}
+
+// ============================================
+// PATH RISK ANALYSIS
+// ============================================
+
+/**
+ * Helper to compute mean of an array
+ */
+function mean(arr) {
+  if (arr.length === 0) return 0
+  return arr.reduce((a, b) => a + b, 0) / arr.length
+}
+
+/**
+ * Compute path risk metrics using Monte Carlo and K-Fold
+ * @param {number[]} returns - Strategy daily returns
+ * @param {Object} options - Configuration options
+ * @param {number[]} [spyReturns] - SPY returns for beta/treynor calculation
+ */
+export function computePathRisk(returns, options = {}, spyReturns = null) {
+  const {
+    mcSimulations = 200,
+    kfFolds = 200,
+    years = 5,
+    blockSize = 7,
+    shards = 10,
+    seed = 42
+  } = options
+
+  // Monte Carlo results
+  const mcResults = runMonteCarlo(returns, {
+    simulations: mcSimulations,
+    years,
+    blockSize,
+    seed
+  }, spyReturns)
+  const mcDrawdowns = mcResults.map(r => r.maxDd).sort((a, b) => a - b)
+  const mcCagrs = mcResults.map(r => r.cagr).sort((a, b) => a - b)
+
+  // K-Fold results
+  const kfResults = runKfold(returns, { folds: kfFolds, shards, seed }, spyReturns)
+  const kfDrawdowns = kfResults.map(r => r.maxDd).sort((a, b) => a - b)
+  const kfCagrs = kfResults.map(r => r.cagr).sort((a, b) => a - b)
+
+  // Aggregate additional metrics for comparison table
+  const mcComparisonMetrics = {
+    cagr50: percentile(mcCagrs, 0.50),
+    maxdd50: percentile(mcDrawdowns, 0.50),
+    maxdd95: percentile(mcDrawdowns, 0.05), // p5 is worst (most negative)
+    calmar50: Math.abs(percentile(mcDrawdowns, 0.50)) > 0
+      ? percentile(mcCagrs, 0.50) / Math.abs(percentile(mcDrawdowns, 0.50)) : 0,
+    calmar95: Math.abs(percentile(mcDrawdowns, 0.05)) > 0
+      ? percentile(mcCagrs, 0.50) / Math.abs(percentile(mcDrawdowns, 0.05)) : 0,
+    sharpe: mean(mcResults.map(r => r.sharpe)),
+    sortino: mean(mcResults.map(r => r.sortino)),
+    volatility: mean(mcResults.map(r => r.volatility)),
+    winRate: mean(mcResults.map(r => r.winRate)),
+    beta: mean(mcResults.map(r => r.beta)),
+    treynor: mean(mcResults.map(r => r.treynor))
+  }
+
+  const kfComparisonMetrics = {
+    cagr50: percentile(kfCagrs, 0.50),
+    maxdd50: percentile(kfDrawdowns, 0.50),
+    maxdd95: percentile(kfDrawdowns, 0.05), // p5 is worst (most negative)
+    calmar50: Math.abs(percentile(kfDrawdowns, 0.50)) > 0
+      ? percentile(kfCagrs, 0.50) / Math.abs(percentile(kfDrawdowns, 0.50)) : 0,
+    calmar95: Math.abs(percentile(kfDrawdowns, 0.05)) > 0
+      ? percentile(kfCagrs, 0.50) / Math.abs(percentile(kfDrawdowns, 0.05)) : 0,
+    sharpe: mean(kfResults.map(r => r.sharpe)),
+    sortino: mean(kfResults.map(r => r.sortino)),
+    volatility: mean(kfResults.map(r => r.volatility)),
+    winRate: mean(kfResults.map(r => r.winRate)),
+    beta: mean(kfResults.map(r => r.beta)),
+    treynor: mean(kfResults.map(r => r.treynor))
+  }
+
+  return {
+    monteCarlo: {
+      drawdowns: {
+        p5: percentile(mcDrawdowns, 0.05),
+        p25: percentile(mcDrawdowns, 0.25),
+        p50: percentile(mcDrawdowns, 0.50),
+        p75: percentile(mcDrawdowns, 0.75),
+        p95: percentile(mcDrawdowns, 0.95)
+      },
+      cagrs: {
+        p5: percentile(mcCagrs, 0.05),
+        p25: percentile(mcCagrs, 0.25),
+        p50: percentile(mcCagrs, 0.50),
+        p75: percentile(mcCagrs, 0.75),
+        p95: percentile(mcCagrs, 0.95)
+      }
+    },
+    kfold: {
+      drawdowns: {
+        p5: percentile(kfDrawdowns, 0.05),
+        p25: percentile(kfDrawdowns, 0.25),
+        p50: percentile(kfDrawdowns, 0.50),
+        p75: percentile(kfDrawdowns, 0.75),
+        p95: percentile(kfDrawdowns, 0.95)
+      },
+      cagrs: {
+        p5: percentile(kfCagrs, 0.05),
+        p25: percentile(kfCagrs, 0.25),
+        p50: percentile(kfCagrs, 0.50),
+        p75: percentile(kfCagrs, 0.75),
+        p95: percentile(kfCagrs, 0.95)
+      }
+    },
+    drawdownProbabilities: {
+      gt20: mcDrawdowns.filter(d => d < -0.20).length / mcDrawdowns.length,
+      gt30: mcDrawdowns.filter(d => d < -0.30).length / mcDrawdowns.length,
+      gt40: mcDrawdowns.filter(d => d < -0.40).length / mcDrawdowns.length,
+      gt50: mcDrawdowns.filter(d => d < -0.50).length / mcDrawdowns.length
+    },
+    comparisonMetrics: {
+      monteCarlo: mcComparisonMetrics,
+      kfold: kfComparisonMetrics
+    }
+  }
+}
+
+// ============================================
+// FRAGILITY / OVERFIT FINGERPRINTS
+// ============================================
+
+/**
+ * Sub-period stability: split history into N blocks and check concentration
+ */
+function computeSubPeriodStability(returns, numBlocks = 4) {
+  const n = returns.length
+  const blockSize = Math.floor(n / numBlocks)
+
+  if (blockSize < 20) {
+    return {
+      level: 'Insufficient Data',
+      detail: 'Need more trading days for sub-period analysis',
+      concentrationPct: 0,
+      blockReturns: []
+    }
+  }
+
+  const blockReturns = []
+  for (let i = 0; i < numBlocks; i++) {
+    const start = i * blockSize
+    const end = i === numBlocks - 1 ? n : (i + 1) * blockSize
+    const blockRets = returns.slice(start, end)
+
+    // Total return for this block
+    let equity = 1
+    for (const r of blockRets) {
+      equity *= (1 + r)
+    }
+    blockReturns.push(equity - 1)
+  }
+
+  // Check concentration
+  const totalReturn = blockReturns.reduce((a, b) => a + b, 0)
+  const maxBlockReturn = Math.max(...blockReturns)
+  const maxBlockIdx = blockReturns.indexOf(maxBlockReturn)
+
+  let concentrationPct = totalReturn > 0 ? maxBlockReturn / totalReturn : 0
+  if (concentrationPct < 0 || !isFinite(concentrationPct)) concentrationPct = 0
+
+  let level = 'Low'
+  if (concentrationPct > 0.7) level = 'High'
+  else if (concentrationPct > 0.5) level = 'Medium'
+
+  return {
+    level,
+    concentrationPct,
+    maxBlockIndex: maxBlockIdx,
+    detail: concentrationPct > 0.4
+      ? `${(concentrationPct * 100).toFixed(0)}% of returns from period ${maxBlockIdx + 1}/${numBlocks}`
+      : 'Returns distributed across periods',
+    blockReturns
+  }
+}
+
+/**
+ * Profit concentration: what % of total P&L comes from top N days?
+ */
+function computeProfitConcentration(returns) {
+  const n = returns.length
+  if (n < 20) {
+    return {
+      level: 'Insufficient Data',
+      top5DaysPct: 0,
+      top10DaysPct: 0,
+      detail: 'Need more trading days'
+    }
+  }
+
+  const totalPnL = returns.reduce((a, b) => a + b, 0)
+  if (totalPnL <= 0) {
+    return {
+      level: 'N/A',
+      top5DaysPct: 0,
+      top10DaysPct: 0,
+      detail: 'Strategy has zero or negative total returns'
+    }
+  }
+
+  // Sort descending (best days first)
+  const sorted = [...returns].sort((a, b) => b - a)
+
+  const top5Sum = sorted.slice(0, 5).reduce((a, b) => a + b, 0)
+  const top10Sum = sorted.slice(0, 10).reduce((a, b) => a + b, 0)
+
+  const top5Pct = top5Sum / totalPnL
+  const top10Pct = top10Sum / totalPnL
+
+  let level = 'Low'
+  if (top5Pct > 0.7) level = 'High'
+  else if (top5Pct > 0.4) level = 'Medium'
+
+  return {
+    level,
+    top5DaysPct: top5Pct,
+    top10DaysPct: top10Pct,
+    detail: top5Pct > 0.4
+      ? `Top 5 days account for ${(top5Pct * 100).toFixed(0)}% of total returns`
+      : 'Profits reasonably distributed'
+  }
+}
+
+/**
+ * Smoothness score: compare actual MaxDD vs shuffled returns distribution
+ */
+function computeSmoothnessScore(returns, iterations = 100, seed = 42) {
+  const rng = mulberry32(seed + 2000)
+  const n = returns.length
+
+  if (n < 50) {
+    return {
+      level: 'Insufficient Data',
+      actualMaxDD: 0,
+      shuffledP50: 0,
+      ratio: 1,
+      detail: 'Need more trading days'
+    }
+  }
+
+  // Actual max drawdown
+  const actualEquity = buildEquityCurve(returns)
+  const actualMaxDD = computeMaxDrawdown(actualEquity)
+
+  // Shuffled returns max drawdowns
+  const shuffledDrawdowns = []
+  for (let i = 0; i < iterations; i++) {
+    const shuffled = [...returns]
+    shuffleArray(shuffled, rng)
+    const equity = buildEquityCurve(shuffled)
+    shuffledDrawdowns.push(computeMaxDrawdown(equity))
+  }
+
+  shuffledDrawdowns.sort((a, b) => a - b)
+  const shuffledP50 = percentile(shuffledDrawdowns, 0.50)
+  const shuffledP25 = percentile(shuffledDrawdowns, 0.25)
+
+  // If actual is much smaller (closer to 0) than shuffled, that's suspicious
+  // Both are negative, so we compare absolute values
+  const ratio = Math.abs(actualMaxDD) / Math.abs(shuffledP50)
+
+  let level = 'Normal'
+  if (ratio < 0.5) {
+    level = 'Suspicious'
+  } else if (ratio < 0.7) {
+    level = 'Slightly Suspicious'
+  }
+
+  return {
+    level,
+    actualMaxDD,
+    shuffledP25,
+    shuffledP50,
+    shuffledP75: percentile(shuffledDrawdowns, 0.75),
+    ratio,
+    detail: level !== 'Normal'
+      ? `Actual MaxDD (${(actualMaxDD * 100).toFixed(1)}%) much better than shuffled median (${(shuffledP50 * 100).toFixed(1)}%)`
+      : 'Drawdown profile consistent with return distribution'
+  }
+}
+
+/**
+ * Thinning fragility: use K-Fold drop-1 to measure CAGR sensitivity
+ */
+function computeThinningFragility(returns, options = {}) {
+  const { folds = 50, shards = 10, seed = 42 } = options
+  const n = returns.length
+
+  if (n < 100) {
+    return {
+      level: 'Insufficient Data',
+      originalCagr: 0,
+      medianThinnedCagr: 0,
+      cagrDrop: 0,
+      detail: 'Need more trading days'
+    }
+  }
+
+  // Original CAGR
+  const originalEquity = buildEquityCurve(returns)
+  const originalCagr = computeCagr(originalEquity, n)
+
+  // K-Fold CAGRs (dropping 10% each time)
+  const kfResults = runKfold(returns, { folds, shards, seed })
+  const kfCagrs = kfResults.map(r => r.cagr).sort((a, b) => a - b)
+  const medianThinnedCagr = percentile(kfCagrs, 0.50)
+
+  // How much does CAGR drop?
+  const cagrDrop = originalCagr > 0
+    ? (originalCagr - medianThinnedCagr) / originalCagr
+    : 0
+
+  let level = 'Robust'
+  if (cagrDrop > 0.5) level = 'Fragile'
+  else if (cagrDrop > 0.25) level = 'Moderate'
+
+  return {
+    level,
+    originalCagr,
+    medianThinnedCagr,
+    cagrDrop,
+    detail: cagrDrop > 0.2
+      ? `Dropping 10% of days reduces CAGR by ${(cagrDrop * 100).toFixed(0)}%`
+      : 'Strategy robust to data removal'
+  }
+}
+
+/**
+ * Compute all fragility metrics
+ */
+export function computeFragility(returns, options = {}) {
+  const { seed = 42 } = options
+
+  return {
+    subPeriodStability: computeSubPeriodStability(returns, 4),
+    profitConcentration: computeProfitConcentration(returns),
+    smoothnessScore: computeSmoothnessScore(returns, 100, seed),
+    thinningFragility: computeThinningFragility(returns, { folds: 50, shards: 10, seed })
+  }
+}
+
+// ============================================
+// SUMMARY GENERATION
+// ============================================
+
+/**
+ * Generate human-readable summary of findings
+ */
+export function generateSummary(pathRisk, fragility) {
+  const warnings = []
+
+  // Path Risk warnings
+  if (pathRisk.drawdownProbabilities.gt40 > 0.25) {
+    warnings.push(`${(pathRisk.drawdownProbabilities.gt40 * 100).toFixed(0)}% probability of >40% drawdown in Monte Carlo.`)
+  }
+  if (pathRisk.monteCarlo.drawdowns.p50 < -0.30) {
+    warnings.push(`Median simulated max drawdown is ${(pathRisk.monteCarlo.drawdowns.p50 * 100).toFixed(1)}%.`)
+  }
+
+  // K-Fold vs original comparison
+  if (pathRisk.kfold.cagrs.p50 < pathRisk.monteCarlo.cagrs.p50 * 0.7) {
+    warnings.push('K-Fold CAGR significantly lower than Monte Carlo - possible overfitting.')
+  }
+
+  // Fragility warnings
+  if (fragility.subPeriodStability.level === 'High') {
+    warnings.push(fragility.subPeriodStability.detail)
+  }
+
+  if (fragility.profitConcentration.level === 'High') {
+    warnings.push(`Top 5 trading days account for ${(fragility.profitConcentration.top5DaysPct * 100).toFixed(0)}% of total returns.`)
+  }
+
+  if (fragility.smoothnessScore.level === 'Suspicious') {
+    warnings.push('Equity curve is suspiciously smoother than random shuffles would suggest.')
+  }
+
+  if (fragility.thinningFragility.level === 'Fragile') {
+    warnings.push(`Strategy is fragile: dropping 10% of days reduces CAGR by ${(fragility.thinningFragility.cagrDrop * 100).toFixed(0)}%.`)
+  }
+
+  if (warnings.length === 0) {
+    warnings.push('No major red flags detected. Strategy appears reasonably robust to statistical tests.')
+  }
+
+  return warnings
+}
+
+// ============================================
+// MAIN EXPORT
+// ============================================
+
+/**
+ * Generate complete sanity & risk report
+ * @param {number[]} returns - Array of daily returns
+ * @param {Object} options - Configuration options
+ * @param {number[]} [spyReturns] - SPY returns for beta/treynor calculation
+ */
+export function generateSanityReport(returns, options = {}, spyReturns = null) {
+  const {
+    mcSimulations = 200,
+    kfFolds = 200,
+    years = 5,
+    blockSize = 7,
+    shards = 10,
+    seed = 42
+  } = options
+
+  // Compute original metrics for reference
+  const originalEquity = buildEquityCurve(returns)
+  const originalCagr = computeCagr(originalEquity, returns.length)
+  const originalMaxDD = computeMaxDrawdown(originalEquity)
+
+  const pathRisk = computePathRisk(returns, {
+    mcSimulations,
+    kfFolds,
+    years,
+    blockSize,
+    shards,
+    seed
+  }, spyReturns)
+
+  const fragility = computeFragility(returns, { seed })
+
+  const summary = generateSummary(pathRisk, fragility)
+
+  return {
+    original: {
+      cagr: originalCagr,
+      maxDD: originalMaxDD,
+      tradingDays: returns.length
+    },
+    pathRisk,
+    fragility,
+    summary,
+    meta: {
+      mcSimulations,
+      kfFolds,
+      years,
+      blockSize,
+      shards,
+      seed,
+      generatedAt: new Date().toISOString()
+    }
+  }
+}
+
+// ============================================
+// BENCHMARK METRICS COMPUTATION
+// ============================================
+
+/**
+ * Compute metrics for a single ticker's returns (for benchmark comparison)
+ * @param {number[]} returns - Daily returns array
+ * @param {number[]} [spyReturns] - SPY returns for beta/treynor (null if computing SPY itself)
+ */
+export function computeBenchmarkMetrics(returns, spyReturns = null) {
+  if (!returns || returns.length < 50) {
+    return null
+  }
+
+  const equity = buildEquityCurve(returns)
+  const cagr = computeCagr(equity, returns.length)
+  const maxDd = computeMaxDrawdown(equity)
+  const sharpe = computeSharpe(returns)
+  const sortino = computeSortino(returns)
+  const volatility = computeVolatility(returns)
+  const winRate = computeWinRate(returns)
+
+  let beta = 0, treynor = 0
+  if (spyReturns && spyReturns.length > 0) {
+    const bt = computeBetaTreynor(returns, spyReturns)
+    beta = bt.beta
+    treynor = bt.treynor
+  }
+
+  return {
+    cagr50: cagr,  // For benchmarks, single value = the "p50"
+    maxdd50: maxDd,
+    maxdd95: maxDd, // Same as maxdd50 for single series
+    calmar50: Math.abs(maxDd) > 0 ? cagr / Math.abs(maxDd) : 0,
+    calmar95: Math.abs(maxDd) > 0 ? cagr / Math.abs(maxDd) : 0,
+    sharpe,
+    sortino,
+    volatility,
+    winRate,
+    beta,
+    treynor,
+    tradingDays: returns.length
+  }
+}

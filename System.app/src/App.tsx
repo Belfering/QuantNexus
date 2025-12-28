@@ -1504,7 +1504,7 @@ type UserUiState = {
   colorTheme: ColorTheme
   analyzeCollapsedByBotId: Record<string, boolean>
   communityCollapsedByBotId: Record<string, boolean>
-  analyzeBotCardTab: Record<string, 'overview' | 'advanced'>
+  analyzeBotCardTab: Record<string, 'overview' | 'advanced' | 'robustness'>
   analyzeFilterWatchlistId: string | null
   communitySelectedWatchlistId: string | null
   communityWatchlistSlot1Id: string | null
@@ -2804,6 +2804,42 @@ type CommunityBotRow = {
   oosMaxdd: number
   oosSharpe: number
 }
+
+// Sanity & Risk Report Types
+type SanityReportPercentiles = { p5: number; p25: number; p50: number; p75: number; p95: number }
+type ComparisonMetrics = {
+  cagr50: number
+  maxdd50: number
+  maxdd95: number
+  calmar50: number
+  calmar95: number
+  sharpe: number
+  sortino: number
+  volatility: number
+  winRate: number
+  beta: number
+  treynor: number
+}
+type SanityReportPathRisk = {
+  monteCarlo: { drawdowns: SanityReportPercentiles; cagrs: SanityReportPercentiles }
+  kfold: { drawdowns: SanityReportPercentiles; cagrs: SanityReportPercentiles }
+  drawdownProbabilities: { gt20: number; gt30: number; gt40: number; gt50: number }
+  comparisonMetrics?: { monteCarlo: ComparisonMetrics; kfold: ComparisonMetrics }
+}
+type SanityReportFragility = {
+  subPeriodStability: { level: string; concentrationPct: number; detail: string; blockReturns: number[] }
+  profitConcentration: { level: string; top5DaysPct: number; top10DaysPct: number; detail: string }
+  smoothnessScore: { level: string; actualMaxDD: number; shuffledP50: number; ratio: number; detail: string }
+  thinningFragility: { level: string; originalCagr: number; medianThinnedCagr: number; cagrDrop: number; detail: string }
+}
+type SanityReport = {
+  original: { cagr: number; maxDD: number; tradingDays: number }
+  pathRisk: SanityReportPathRisk
+  fragility: SanityReportFragility
+  summary: string[]
+  meta: { mcSimulations: number; kfFolds: number; generatedAt: string }
+}
+type SanityReportState = { status: 'idle' | 'loading' | 'done' | 'error'; report?: SanityReport; error?: string }
 
 const toUtcSeconds = (t: Time | null | undefined): UTCTimestamp | null => {
   if (t == null) return null
@@ -4134,7 +4170,8 @@ function AdminPanel({
   const [cacheStats, setCacheStats] = useState<{ entryCount: number; totalSizeBytes: number; lastRefreshDate: string | null; currentDataDate: string } | null>(null)
   const [cacheRefreshing, setCacheRefreshing] = useState(false)
   const [prewarmRunning, setPrewarmRunning] = useState(false)
-  const [prewarmProgress, setPrewarmProgress] = useState<{ processed: number; cached: number; errors: number; total: number } | null>(null)
+  const [prewarmProgress, setPrewarmProgress] = useState<{ processed: number; cached: number; sanityCached?: number; errors: number; total: number } | null>(null)
+  const [prewarmIncludeSanity, setPrewarmIncludeSanity] = useState(true) // Include MC/KF sanity reports
 
   useEffect(() => {
     let cancelled = false
@@ -5204,15 +5241,21 @@ function AdminPanel({
               size="sm"
               disabled={prewarmRunning}
               onClick={async () => {
-                if (!confirm('This will run backtests for ALL systems in the database and cache the results. This may take several minutes. Continue?')) return
+                const sanityNote = prewarmIncludeSanity ? ' AND run Monte Carlo/K-Fold analysis (200 iterations each)' : ''
+                if (!confirm(`This will run backtests for ALL systems in the database${sanityNote} and cache the results. This may take several minutes. Continue?`)) return
                 setPrewarmRunning(true)
                 setPrewarmProgress(null)
                 try {
-                  const res = await fetch(`${API_BASE}/admin/cache/prewarm`, { method: 'POST' })
+                  const res = await fetch(`${API_BASE}/admin/cache/prewarm`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ includeSanity: prewarmIncludeSanity })
+                  })
                   if (res.ok) {
                     const result = await res.json()
                     setPrewarmProgress(result)
-                    alert(`Pre-warm complete!\n\nProcessed: ${result.processed} systems\nAlready cached: ${result.cached}\nNew backtests: ${result.processed - result.cached - result.errors}\nErrors: ${result.errors}`)
+                    const sanityMsg = prewarmIncludeSanity ? `\nSanity reports cached: ${result.sanityCached || 0}` : ''
+                    alert(`Pre-warm complete!\n\nProcessed: ${result.processed} systems\nBacktests cached: ${result.cached}${sanityMsg}\nErrors: ${result.errors}`)
                     // Refresh stats
                     const statsRes = await fetch(`${API_BASE}/admin/cache/stats`)
                     if (statsRes.ok) {
@@ -5229,19 +5272,31 @@ function AdminPanel({
                 }
               }}
             >
-              {prewarmRunning ? 'Pre-warming...' : 'Pre-warm All Backtests'}
+              {prewarmRunning ? 'Pre-warming...' : 'Pre-warm All Caches'}
             </Button>
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="prewarm-include-sanity"
+              checked={prewarmIncludeSanity}
+              onChange={(e) => setPrewarmIncludeSanity(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="prewarm-include-sanity" className="text-sm">
+              Include Monte Carlo & K-Fold analysis (Advanced/Robustness tabs)
+            </label>
           </div>
 
           {prewarmProgress && (
             <div className="mt-3 p-2 bg-muted rounded text-sm">
-              <strong>Last pre-warm results:</strong> {prewarmProgress.processed} processed, {prewarmProgress.cached} already cached, {prewarmProgress.errors} errors
+              <strong>Last pre-warm results:</strong> {prewarmProgress.processed} processed, {prewarmProgress.cached} backtests cached{prewarmProgress.sanityCached !== undefined ? `, ${prewarmProgress.sanityCached} sanity reports cached` : ''}, {prewarmProgress.errors} errors
             </div>
           )}
 
           <div className="mt-3 text-xs text-muted">
-            Cache is automatically cleared on first login each day. Use "Force Daily Refresh" to manually trigger this. Use "Pre-warm All Backtests" to run and cache backtests for all systems in the database.
-          </div>
+            Cache is automatically cleared on first login each day. Use "Force Daily Refresh" to manually trigger this. Use "Pre-warm All Caches" to run and cache backtests (and optionally MC/K-Fold analysis) for all systems.</div>
         </div>
 
         {/* Divider */}
@@ -12165,6 +12220,14 @@ function App() {
   const [_portfolioLoading, setPortfolioLoading] = useState(false) // TODO: show loading state in UI
   const [analyzeBacktests, setAnalyzeBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
   const [analyzeTickerContrib, setAnalyzeTickerContrib] = useState<Record<string, TickerContributionState>>({})
+  const [sanityReports, setSanityReports] = useState<Record<string, SanityReportState>>({})
+
+  // Benchmark metrics state (fetched once, reused across all cards)
+  const [benchmarkMetrics, setBenchmarkMetrics] = useState<{
+    status: 'idle' | 'loading' | 'done' | 'error'
+    data?: Record<string, ComparisonMetrics>
+    error?: string
+  }>({ status: 'idle' })
 
   // Cross-user Nexus bots for Nexus tab (populated via API in useEffect)
   const [allNexusBots, setAllNexusBots] = useState<SavedBot[]>([])
@@ -14137,6 +14200,63 @@ function App() {
     [runBacktestForNode, userId, uiState.fundZones, backtestMode, backtestCostBps],
   )
 
+  const runSanityReport = useCallback(
+    async (bot: SavedBot) => {
+      setSanityReports((prev) => {
+        if (prev[bot.id]?.status === 'loading') return prev
+        return { ...prev, [bot.id]: { status: 'loading' } }
+      })
+
+      try {
+        const res = await fetch(`${API_BASE}/bots/${bot.id}/sanity-report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: backtestMode, costBps: backtestCostBps }),
+        })
+
+        if (res.ok) {
+          const data = await res.json() as { success: boolean; report: SanityReport; cached: boolean; cachedAt?: number }
+          setSanityReports((prev) => ({
+            ...prev,
+            [bot.id]: { status: 'done', report: data.report },
+          }))
+          return
+        }
+
+        const errorData = await res.json().catch(() => ({ error: 'Server sanity report failed' }))
+        setSanityReports((prev) => ({
+          ...prev,
+          [bot.id]: { status: 'error', error: errorData.error || 'Failed to generate sanity report' },
+        }))
+      } catch (err) {
+        const message = String((err as Error)?.message || err)
+        setSanityReports((prev) => ({ ...prev, [bot.id]: { status: 'error', error: message } }))
+      }
+    },
+    [backtestMode, backtestCostBps],
+  )
+
+  // Fetch benchmark metrics (called from Advanced tab Run button)
+  const fetchBenchmarkMetrics = useCallback(async () => {
+    if (benchmarkMetrics.status === 'loading') return // Already loading
+
+    setBenchmarkMetrics({ status: 'loading' })
+
+    try {
+      const res = await fetch(`${API_BASE}/benchmarks/metrics`)
+      if (res.ok) {
+        const data = await res.json() as { success: boolean; benchmarks: Record<string, ComparisonMetrics>; errors?: string[] }
+        setBenchmarkMetrics({ status: 'done', data: data.benchmarks })
+      } else {
+        const errorData = await res.json().catch(() => ({ error: 'Failed to fetch benchmarks' }))
+        setBenchmarkMetrics({ status: 'error', error: errorData.error || 'Failed to fetch benchmark metrics' })
+      }
+    } catch (err) {
+      const message = String((err as Error)?.message || err)
+      setBenchmarkMetrics({ status: 'error', error: message })
+    }
+  }, [benchmarkMetrics.status])
+
   const runAnalyzeTickerContribution = useCallback(
     async (key: string, ticker: string, botResult: BacktestResult) => {
       setAnalyzeTickerContrib((prev) => {
@@ -15709,6 +15829,16 @@ function App() {
                               >
                                 Advanced
                               </Button>
+                              <Button
+                                size="sm"
+                                variant={(uiState.analyzeBotCardTab[b.id] ?? 'overview') === 'robustness' ? 'default' : 'outline'}
+                                onClick={() => setUiState((prev) => ({
+                                  ...prev,
+                                  analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'robustness' },
+                                }))}
+                              >
+                                Robustness
+                              </Button>
                             </div>
 
                             {/* Overview Tab Content */}
@@ -16117,56 +16247,115 @@ function App() {
                               <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
                                 <div className="flex items-center justify-between gap-2.5">
                                   <div className="font-black">Advanced Stats</div>
-                                  <Button size="sm">Run</Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      // Run both sanity report (for MC/KF) and benchmark fetch
+                                      runSanityReport(b)
+                                      fetchBenchmarkMetrics()
+                                    }}
+                                    disabled={sanityReports[b.id]?.status === 'loading' || benchmarkMetrics.status === 'loading'}
+                                  >
+                                    {sanityReports[b.id]?.status === 'loading' || benchmarkMetrics.status === 'loading' ? 'Running...' : 'Run'}
+                                  </Button>
                                 </div>
                                 <div className="font-black">Comparison Table</div>
                                 <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
                                   {(() => {
-                                    const rows = [
-                                      'Monte Carlo Comparison',
-                                      'K-Fold Comparison',
-                                      'Null Set Comparison',
-                                      'Benchmark VTI',
-                                      'Benchmark SPY',
-                                      'Benchmark QQQ',
-                                      'Benchmark DIA',
-                                      'Benchmark DBC',
-                                      'Benchmark DBO',
-                                      'Benchmark GLD',
-                                      'Benchmark BND',
-                                      'Benchmark TLT',
-                                      'Benchmark GBTC',
-                                    ] as const
-                                    const cols = [
-                                      'CAGR-50',
-                                      'MaxDD-DD50',
-                                      'Tail Risk-DD95',
-                                      'Calmar Ratio-50',
-                                      'Calmar Ratio-95',
-                                      'Sharpe Ratio',
-                                      'Sortino Ratio',
-                                      'Treynor Ratio',
-                                      'Beta',
-                                      'Volatility',
-                                      'Win Rate',
-                                    ] as const
+                                    const sanityState = sanityReports[b.id]
+                                    const mcMetrics = sanityState?.report?.pathRisk?.comparisonMetrics?.monteCarlo
+                                    const kfMetrics = sanityState?.report?.pathRisk?.comparisonMetrics?.kfold
+                                    const benchmarks = benchmarkMetrics.data ?? {}
+                                    // Strategy betas vs each benchmark ticker
+                                    const strategyBetas: Record<string, number> = (sanityState?.report as { strategyBetas?: Record<string, number> })?.strategyBetas ?? {}
+
+                                    // Helper to format metrics for display
+                                    const fmt = (v: number | undefined, isPct = false, isRatio = false) => {
+                                      if (v === undefined || !Number.isFinite(v)) return '—'
+                                      if (isPct) return `${(v * 100).toFixed(1)}%`
+                                      if (isRatio) return v.toFixed(2)
+                                      return v.toFixed(2)
+                                    }
+
+                                    // Helper to format alpha difference with color
+                                    // MC is the baseline - shows how much better MC is vs the row
+                                    // For "higher is better" metrics: if MC > row, green (strategy beats benchmark)
+                                    // For "lower is better" metrics: if MC < row, green (strategy beats benchmark)
+                                    const fmtAlpha = (mcVal: number | undefined, rowVal: number | undefined, isPct = false, isHigherBetter = true) => {
+                                      if (mcVal === undefined || rowVal === undefined || !Number.isFinite(mcVal) || !Number.isFinite(rowVal)) return null
+                                      const diff = mcVal - rowVal // MC minus row value
+                                      // Green when MC is better: higher for "higher is better", lower for "lower is better"
+                                      const mcIsBetter = isHigherBetter ? diff > 0 : diff < 0
+                                      const color = mcIsBetter ? 'text-success' : diff === 0 ? 'text-muted' : 'text-danger'
+                                      const sign = diff > 0 ? '+' : ''
+                                      const formatted = isPct ? `${sign}${(diff * 100).toFixed(1)}%` : `${sign}${diff.toFixed(2)}`
+                                      return <span className={`${color} text-xs ml-1`}>({formatted})</span>
+                                    }
+
+                                    // Build row data - MC is baseline (no alpha), all others show alpha vs MC
+                                    type RowData = { label: string; metrics: ComparisonMetrics | undefined; isBaseline?: boolean; ticker?: string }
+                                    const rowData: RowData[] = [
+                                      { label: 'Monte Carlo Comparison', metrics: mcMetrics, isBaseline: true },
+                                      { label: 'K-Fold Comparison', metrics: kfMetrics },
+                                      { label: 'Null Set Comparison', metrics: undefined }, // Skip null set
+                                      { label: 'Benchmark VTI', metrics: benchmarks['VTI'], ticker: 'VTI' },
+                                      { label: 'Benchmark SPY', metrics: benchmarks['SPY'], ticker: 'SPY' },
+                                      { label: 'Benchmark QQQ', metrics: benchmarks['QQQ'], ticker: 'QQQ' },
+                                      { label: 'Benchmark DIA', metrics: benchmarks['DIA'], ticker: 'DIA' },
+                                      { label: 'Benchmark DBC', metrics: benchmarks['DBC'], ticker: 'DBC' },
+                                      { label: 'Benchmark DBO', metrics: benchmarks['DBO'], ticker: 'DBO' },
+                                      { label: 'Benchmark GLD', metrics: benchmarks['GLD'], ticker: 'GLD' },
+                                      { label: 'Benchmark BND', metrics: benchmarks['BND'], ticker: 'BND' },
+                                      { label: 'Benchmark TLT', metrics: benchmarks['TLT'], ticker: 'TLT' },
+                                      { label: 'Benchmark GBTC', metrics: benchmarks['GBTC'], ticker: 'GBTC' },
+                                    ]
+
+                                    // Define columns with "higher is better" flag for alpha coloring
+                                    const cols: { key: keyof ComparisonMetrics; label: string; isPct?: boolean; isRatio?: boolean; higherBetter?: boolean }[] = [
+                                      { key: 'cagr50', label: 'CAGR-50', isPct: true, higherBetter: true },
+                                      { key: 'maxdd50', label: 'MaxDD-DD50', isPct: true, higherBetter: false }, // Less negative is better
+                                      { key: 'maxdd95', label: 'Tail Risk-DD95', isPct: true, higherBetter: false },
+                                      { key: 'calmar50', label: 'Calmar Ratio-50', isRatio: true, higherBetter: true },
+                                      { key: 'calmar95', label: 'Calmar Ratio-95', isRatio: true, higherBetter: true },
+                                      { key: 'sharpe', label: 'Sharpe Ratio', isRatio: true, higherBetter: true },
+                                      { key: 'sortino', label: 'Sortino Ratio', isRatio: true, higherBetter: true },
+                                      { key: 'treynor', label: 'Treynor Ratio', isRatio: true, higherBetter: true },
+                                      { key: 'beta', label: 'Beta', isRatio: true, higherBetter: false }, // Lower beta = less volatile
+                                      { key: 'volatility', label: 'Volatility', isPct: true, higherBetter: false }, // Lower vol is better
+                                      { key: 'winRate', label: 'Win Rate', isPct: true, higherBetter: true },
+                                    ]
+
                                     return (
                                       <table className="analyze-compare-table">
                                         <thead>
                                           <tr>
                                             <th>Comparison</th>
                                             {cols.map((c) => (
-                                              <th key={c}>{c}</th>
+                                              <th key={c.key}>{c.label}</th>
                                             ))}
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          {rows.map((r) => (
-                                            <tr key={r}>
-                                              <td>{r}</td>
-                                              {cols.map((c) => (
-                                                <td key={c}>0</td>
-                                              ))}
+                                          {rowData.map((row) => (
+                                            <tr key={row.label}>
+                                              <td>{row.label}</td>
+                                              {cols.map((c) => {
+                                                // For Beta column in benchmark rows, show strategy beta vs that ticker
+                                                let val = row.metrics?.[c.key]
+                                                if (c.key === 'beta' && row.ticker && strategyBetas[row.ticker] !== undefined) {
+                                                  val = strategyBetas[row.ticker]
+                                                }
+                                                // Show alpha vs MC for all non-baseline rows
+                                                const showAlpha = !row.isBaseline && mcMetrics
+                                                const mcVal = mcMetrics?.[c.key]
+                                                const alpha = showAlpha ? fmtAlpha(mcVal, val, c.isPct ?? false, c.higherBetter ?? true) : null
+                                                return (
+                                                  <td key={c.key}>
+                                                    {fmt(val, c.isPct ?? false, c.isRatio ?? false)}
+                                                    {alpha}
+                                                  </td>
+                                                )
+                                              })}
                                             </tr>
                                           ))}
                                         </tbody>
@@ -16174,6 +16363,274 @@ function App() {
                                     )
                                   })()}
                                 </div>
+                              </div>
+                            )}
+
+                            {/* Robustness Tab Content */}
+                            {(uiState.analyzeBotCardTab[b.id] ?? 'overview') === 'robustness' && (
+                              <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
+                                {(() => {
+                                  const sanityState = sanityReports[b.id] ?? { status: 'idle' as const }
+                                  const getLevelColor = (level: string) => {
+                                    if (level === 'Low') return 'text-success'
+                                    if (level === 'Medium') return 'text-warning'
+                                    if (level === 'High' || level === 'Fragile') return 'text-danger'
+                                    return 'text-muted'
+                                  }
+                                  const getLevelIcon = (level: string) => {
+                                    if (level === 'Low') return '🟢'
+                                    if (level === 'Medium') return '🟡'
+                                    if (level === 'High' || level === 'Fragile') return '🔴'
+                                    return '⚪'
+                                  }
+                                  const formatPctVal = (v: number) => Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '--'
+                                  const formatDDPct = (v: number) => Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '--'
+
+                                  return (
+                                    <>
+                                      <div className="flex items-center justify-between gap-2.5">
+                                        <div className="font-black">Robustness Analysis</div>
+                                        <Button
+                                          size="sm"
+                                          onClick={() => runSanityReport(b)}
+                                          disabled={sanityState.status === 'loading'}
+                                        >
+                                          {sanityState.status === 'loading' ? 'Running...' : sanityState.status === 'done' ? 'Re-run' : 'Generate'}
+                                        </Button>
+                                      </div>
+
+                                      {sanityState.status === 'idle' && (
+                                        <div className="text-muted text-sm p-4 border border-border rounded-xl text-center">
+                                          Click "Generate" to run bootstrap simulations and fragility analysis.
+                                          <br />
+                                          <span className="text-xs">This may take 10-30 seconds.</span>
+                                        </div>
+                                      )}
+
+                                      {sanityState.status === 'loading' && (
+                                        <div className="text-muted text-sm p-4 border border-border rounded-xl text-center">
+                                          <div className="animate-pulse">Running bootstrap simulations...</div>
+                                          <div className="text-xs mt-1">Monte Carlo + K-Fold analysis in progress</div>
+                                        </div>
+                                      )}
+
+                                      {sanityState.status === 'error' && (
+                                        <div className="text-danger text-sm p-4 border border-danger rounded-xl">
+                                          Error: {sanityState.error}
+                                        </div>
+                                      )}
+
+                                      {sanityState.status === 'done' && sanityState.report && (
+                                        <>
+                                          {/* 3-Column Grid Layout */}
+                                          <div className="grid grid-cols-3 gap-3">
+                                            {/* Left Card: Summary & Fragility */}
+                                            <div className="border border-border rounded-xl p-3 flex flex-col gap-3">
+                                              {/* Summary */}
+                                              <div>
+                                                <div className="text-xs font-bold mb-1.5">Summary</div>
+                                                {sanityState.report.summary.length > 0 ? (
+                                                  <ul className="text-xs space-y-0.5">
+                                                    {sanityState.report.summary.map((s, i) => (
+                                                      <li key={i} className="flex items-start gap-1.5">
+                                                        <span className="text-warning">•</span>
+                                                        <span>{s}</span>
+                                                      </li>
+                                                    ))}
+                                                  </ul>
+                                                ) : (
+                                                  <div className="text-xs text-muted">No major red flags detected.</div>
+                                                )}
+                                              </div>
+
+                                              {/* Fragility Table (Condensed) */}
+                                              <div>
+                                                <div className="text-xs font-bold mb-1.5">Fragility Fingerprints</div>
+                                                <div className="space-y-1">
+                                                  {[
+                                                    { name: 'Sub-Period', data: sanityState.report.fragility.subPeriodStability, tooltip: 'Consistency of returns across different time periods. Low = stable across all periods.' },
+                                                    { name: 'Profit Conc.', data: sanityState.report.fragility.profitConcentration, tooltip: 'How concentrated profits are in a few big days. Low = profits spread evenly.' },
+                                                    { name: 'Smoothness', data: sanityState.report.fragility.smoothnessScore, tooltip: 'How smooth the equity curve is. Normal = acceptable volatility in growth.' },
+                                                    { name: 'Thinning', data: sanityState.report.fragility.thinningFragility, tooltip: 'Sensitivity to removing random trades. Robust = performance holds when trades removed.' },
+                                                  ].map(({ name, data, tooltip }) => (
+                                                    <div key={name} className="flex items-center gap-2 text-xs" title={tooltip}>
+                                                      <span className="w-20 truncate text-muted cursor-help">{name}</span>
+                                                      <span className={cn("w-16", getLevelColor(data.level))}>
+                                                        {getLevelIcon(data.level)} {data.level}
+                                                      </span>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </div>
+
+                                              {/* DD Probabilities */}
+                                              <div>
+                                                <div className="text-xs font-bold mb-1.5">DD Probability</div>
+                                                <div className="space-y-0.5 text-xs">
+                                                  <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt20)}</span> chance of 20% DD</div>
+                                                  <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt30)}</span> chance of 30% DD</div>
+                                                  <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt40)}</span> chance of 40% DD</div>
+                                                  <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt50)}</span> chance of 50% DD</div>
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            {/* Middle Card: Monte Carlo */}
+                                            <div className="border border-border rounded-xl p-3">
+                                              <div className="text-xs font-bold mb-2">Monte Carlo (1000 years)</div>
+
+                                              {/* MC Drawdown Distribution */}
+                                              <div className="mb-3">
+                                                <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of maximum drawdowns across 200 simulated 5-year paths. Shows worst-case (P5), median, and best-case (P95) scenarios.">Max Drawdown Distribution</div>
+                                                {(() => {
+                                                  const dd = sanityState.report.pathRisk.monteCarlo.drawdowns
+                                                  // Drawdowns are negative: p95 is worst (most negative), p5 is best (least negative)
+                                                  // Scale: worst (p95) on left at 0%, best (p5) on right at 100%
+                                                  const minVal = dd.p95 // Most negative = left side
+                                                  const maxVal = dd.p5  // Least negative = right side
+                                                  const range = maxVal - minVal || 0.01
+                                                  const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                  return (
+                                                    <>
+                                                      <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                        {/* P25-P75 range */}
+                                                        <div
+                                                          className="absolute h-full bg-danger/40"
+                                                          style={{ left: `${toPos(dd.p75)}%`, width: `${Math.abs(toPos(dd.p25) - toPos(dd.p75))}%` }}
+                                                        />
+                                                        {/* P50 marker */}
+                                                        <div
+                                                          className="absolute h-full w-0.5 bg-danger"
+                                                          style={{ left: `${toPos(dd.p50)}%` }}
+                                                        />
+                                                      </div>
+                                                      <div className="flex justify-between text-xs mt-0.5">
+                                                        <span className="text-danger">Worst: {formatDDPct(dd.p5)}</span>
+                                                        <span className="font-semibold">Median: {formatDDPct(dd.p50)}</span>
+                                                        <span className="text-success">Best: {formatDDPct(dd.p95)}</span>
+                                                      </div>
+                                                    </>
+                                                  )
+                                                })()}
+                                              </div>
+
+                                              {/* MC CAGR Distribution */}
+                                              <div>
+                                                <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of annualized returns (CAGR) across 200 simulated 5-year paths. P5 is worst, P95 is best expected returns.">CAGR Distribution</div>
+                                                {(() => {
+                                                  const cagr = sanityState.report.pathRisk.monteCarlo.cagrs
+                                                  const minVal = Math.min(cagr.p5, cagr.p95)
+                                                  const maxVal = Math.max(cagr.p5, cagr.p95)
+                                                  const range = maxVal - minVal || 1
+                                                  const toPos = (v: number) => ((v - minVal) / range) * 100
+                                                  return (
+                                                    <>
+                                                      <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                        {/* P25-P75 range */}
+                                                        <div
+                                                          className="absolute h-full bg-success/40"
+                                                          style={{ left: `${toPos(cagr.p25)}%`, width: `${toPos(cagr.p75) - toPos(cagr.p25)}%` }}
+                                                        />
+                                                        {/* P50 marker */}
+                                                        <div
+                                                          className="absolute h-full w-0.5 bg-success"
+                                                          style={{ left: `${toPos(cagr.p50)}%` }}
+                                                        />
+                                                      </div>
+                                                      <div className="flex justify-between text-xs mt-0.5">
+                                                        <span className="text-danger">P5: {formatDDPct(cagr.p5)}</span>
+                                                        <span className="font-semibold">P50: {formatDDPct(cagr.p50)}</span>
+                                                        <span className="text-success">P95: {formatDDPct(cagr.p95)}</span>
+                                                      </div>
+                                                    </>
+                                                  )
+                                                })()}
+                                              </div>
+                                            </div>
+
+                                            {/* Right Card: K-Fold */}
+                                            <div className="border border-border rounded-xl p-3">
+                                              <div className="text-xs font-bold mb-2">K-Fold (200 Folds)</div>
+
+                                              {/* KF Drawdown Distribution */}
+                                              <div className="mb-3">
+                                                <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of maximum drawdowns across 200 K-Fold subsets (90% of data each). Tests stability when portions of history are removed.">Max Drawdown Distribution</div>
+                                                {(() => {
+                                                  const dd = sanityState.report.pathRisk.kfold.drawdowns
+                                                  // Drawdowns are negative: p95 is worst (most negative), p5 is best (least negative)
+                                                  // Scale: worst (p95) on left at 0%, best (p5) on right at 100%
+                                                  const minVal = dd.p95 // Most negative = left side
+                                                  const maxVal = dd.p5  // Least negative = right side
+                                                  const range = maxVal - minVal || 0.01
+                                                  const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                  return (
+                                                    <>
+                                                      <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                        {/* P25-P75 range */}
+                                                        <div
+                                                          className="absolute h-full bg-danger/40"
+                                                          style={{ left: `${toPos(dd.p75)}%`, width: `${Math.abs(toPos(dd.p25) - toPos(dd.p75))}%` }}
+                                                        />
+                                                        {/* P50 marker */}
+                                                        <div
+                                                          className="absolute h-full w-0.5 bg-danger"
+                                                          style={{ left: `${toPos(dd.p50)}%` }}
+                                                        />
+                                                      </div>
+                                                      <div className="flex justify-between text-xs mt-0.5">
+                                                        <span className="text-danger">Worst: {formatDDPct(dd.p5)}</span>
+                                                        <span className="font-semibold">Median: {formatDDPct(dd.p50)}</span>
+                                                        <span className="text-success">Best: {formatDDPct(dd.p95)}</span>
+                                                      </div>
+                                                    </>
+                                                  )
+                                                })()}
+                                              </div>
+
+                                              {/* KF CAGR Distribution */}
+                                              <div>
+                                                <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of annualized returns across 200 K-Fold subsets. Tests how consistent CAGR is when portions of history are removed.">CAGR Distribution</div>
+                                                {(() => {
+                                                  const cagr = sanityState.report.pathRisk.kfold.cagrs
+                                                  const minVal = Math.min(cagr.p5, cagr.p95)
+                                                  const maxVal = Math.max(cagr.p5, cagr.p95)
+                                                  const range = maxVal - minVal || 1
+                                                  const toPos = (v: number) => ((v - minVal) / range) * 100
+                                                  return (
+                                                    <>
+                                                      <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                        {/* P25-P75 range */}
+                                                        <div
+                                                          className="absolute h-full bg-success/40"
+                                                          style={{ left: `${toPos(cagr.p25)}%`, width: `${toPos(cagr.p75) - toPos(cagr.p25)}%` }}
+                                                        />
+                                                        {/* P50 marker */}
+                                                        <div
+                                                          className="absolute h-full w-0.5 bg-success"
+                                                          style={{ left: `${toPos(cagr.p50)}%` }}
+                                                        />
+                                                      </div>
+                                                      <div className="flex justify-between text-xs mt-0.5">
+                                                        <span className="text-danger">P5: {formatDDPct(cagr.p5)}</span>
+                                                        <span className="font-semibold">P50: {formatDDPct(cagr.p50)}</span>
+                                                        <span className="text-success">P95: {formatDDPct(cagr.p95)}</span>
+                                                      </div>
+                                                    </>
+                                                  )
+                                                })()}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Meta Footer */}
+                                          <div className="text-xs text-muted text-center mt-2">
+                                            Generated {sanityState.report.meta.generatedAt} with {sanityState.report.meta.mcSimulations} MC + {sanityState.report.meta.kfFolds} K-Fold iterations over {sanityState.report.original.tradingDays} days
+                                          </div>
+                                        </>
+                                      )}
+                                    </>
+                                  )
+                                })()}
                               </div>
                             )}
                           </div>
@@ -17833,6 +18290,16 @@ function App() {
                                     >
                                       Advanced
                                     </Button>
+                                    <Button
+                                      size="sm"
+                                      variant={(uiState.analyzeBotCardTab[b.id] ?? 'overview') === 'robustness' ? 'default' : 'outline'}
+                                      onClick={() => setUiState((prev) => ({
+                                        ...prev,
+                                        analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'robustness' },
+                                      }))}
+                                    >
+                                      Robustness
+                                    </Button>
                                   </div>
 
                                   {/* Overview Tab Content */}
@@ -18059,68 +18526,271 @@ function App() {
                                     </div>
                                   )}
 
-                                  {/* Advanced Tab Content */}
-                                  {(uiState.analyzeBotCardTab[b.id] ?? 'overview') === 'advanced' && (
+                                  {/* Robustness Tab Content */}
+                                  {(uiState.analyzeBotCardTab[b.id] ?? 'overview') === 'robustness' && (
                                     <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
-                                      <div className="flex items-center justify-between gap-2.5">
-                                        <div className="font-black">Advanced Stats</div>
-                                        <Button size="sm">Run</Button>
-                                      </div>
-                                      <div className="font-black">Comparison Table</div>
-                                      <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
-                                        {(() => {
-                                          const rows = [
-                                            'Monte Carlo Comparison',
-                                            'K-Fold Comparison',
-                                            'Null Set Comparison',
-                                            'Benchmark VTI',
-                                            'Benchmark SPY',
-                                            'Benchmark QQQ',
-                                            'Benchmark DIA',
-                                            'Benchmark DBC',
-                                            'Benchmark DBO',
-                                            'Benchmark GLD',
-                                            'Benchmark BND',
-                                            'Benchmark TLT',
-                                            'Benchmark GBTC',
-                                          ] as const
-                                          const cols = [
-                                            'CAGR-50',
-                                            'MaxDD-DD50',
-                                            'Tail Risk-DD95',
-                                            'Calmar Ratio-50',
-                                            'Calmar Ratio-95',
-                                            'Sharpe Ratio',
-                                            'Sortino Ratio',
-                                            'Treynor Ratio',
-                                            'Beta',
-                                            'Volatility',
-                                            'Win Rate',
-                                          ] as const
-                                          return (
-                                            <table className="analyze-compare-table">
-                                              <thead>
-                                                <tr>
-                                                  <th>Comparison</th>
-                                                  {cols.map((c) => (
-                                                    <th key={c}>{c}</th>
-                                                  ))}
-                                                </tr>
-                                              </thead>
-                                              <tbody>
-                                                {rows.map((rowName) => (
-                                                  <tr key={rowName}>
-                                                    <td>{rowName}</td>
-                                                    {cols.map((c) => (
-                                                      <td key={c}>0</td>
-                                                    ))}
-                                                  </tr>
-                                                ))}
-                                              </tbody>
-                                            </table>
-                                          )
-                                        })()}
-                                      </div>
+                                      {(() => {
+                                        const sanityState = sanityReports[b.id] ?? { status: 'idle' as const }
+                                        const getLevelColor = (level: string) => {
+                                          if (level === 'Low') return 'text-success'
+                                          if (level === 'Medium') return 'text-warning'
+                                          if (level === 'High' || level === 'Fragile') return 'text-danger'
+                                          return 'text-muted'
+                                        }
+                                        const getLevelIcon = (level: string) => {
+                                          if (level === 'Low') return '🟢'
+                                          if (level === 'Medium') return '🟡'
+                                          if (level === 'High' || level === 'Fragile') return '🔴'
+                                          return '⚪'
+                                        }
+                                        const formatPctVal = (v: number) => Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '--'
+                                        const formatDDPct = (v: number) => Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '--'
+
+                                        return (
+                                          <>
+                                            <div className="flex items-center justify-between gap-2.5">
+                                              <div className="font-black">Robustness Analysis</div>
+                                              <Button
+                                                size="sm"
+                                                onClick={() => runSanityReport(b)}
+                                                disabled={sanityState.status === 'loading'}
+                                              >
+                                                {sanityState.status === 'loading' ? 'Running...' : sanityState.status === 'done' ? 'Re-run' : 'Generate'}
+                                              </Button>
+                                            </div>
+
+                                            {sanityState.status === 'idle' && (
+                                              <div className="text-muted text-sm p-4 border border-border rounded-xl text-center">
+                                                Click "Generate" to run bootstrap simulations and fragility analysis.
+                                                <br />
+                                                <span className="text-xs">This may take 10-30 seconds.</span>
+                                              </div>
+                                            )}
+
+                                            {sanityState.status === 'loading' && (
+                                              <div className="text-muted text-sm p-4 border border-border rounded-xl text-center">
+                                                <div className="animate-pulse">Running bootstrap simulations...</div>
+                                                <div className="text-xs mt-1">Monte Carlo + K-Fold analysis in progress</div>
+                                              </div>
+                                            )}
+
+                                            {sanityState.status === 'error' && (
+                                              <div className="text-danger text-sm p-4 border border-danger rounded-xl">
+                                                Error: {sanityState.error}
+                                              </div>
+                                            )}
+
+                                            {sanityState.status === 'done' && sanityState.report && (
+                                              <>
+                                                {/* 3-Column Grid Layout */}
+                                                <div className="grid grid-cols-3 gap-3">
+                                                  {/* Left Card: Summary & Fragility */}
+                                                  <div className="border border-border rounded-xl p-3 flex flex-col gap-3">
+                                                    {/* Summary */}
+                                                    <div>
+                                                      <div className="text-xs font-bold mb-1.5">Summary</div>
+                                                      {sanityState.report.summary.length > 0 ? (
+                                                        <ul className="text-xs space-y-0.5">
+                                                          {sanityState.report.summary.map((s, i) => (
+                                                            <li key={i} className="flex items-start gap-1.5">
+                                                              <span className="text-warning">•</span>
+                                                              <span>{s}</span>
+                                                            </li>
+                                                          ))}
+                                                        </ul>
+                                                      ) : (
+                                                        <div className="text-xs text-muted">No major red flags detected.</div>
+                                                      )}
+                                                    </div>
+
+                                                    {/* Fragility Table (Condensed) */}
+                                                    <div>
+                                                      <div className="text-xs font-bold mb-1.5">Fragility Fingerprints</div>
+                                                      <div className="space-y-1">
+                                                        {[
+                                                          { name: 'Sub-Period', data: sanityState.report.fragility.subPeriodStability, tooltip: 'Consistency of returns across different time periods. Low = stable across all periods.' },
+                                                          { name: 'Profit Conc.', data: sanityState.report.fragility.profitConcentration, tooltip: 'How concentrated profits are in a few big days. Low = profits spread evenly.' },
+                                                          { name: 'Smoothness', data: sanityState.report.fragility.smoothnessScore, tooltip: 'How smooth the equity curve is. Normal = acceptable volatility in growth.' },
+                                                          { name: 'Thinning', data: sanityState.report.fragility.thinningFragility, tooltip: 'Sensitivity to removing random trades. Robust = performance holds when trades removed.' },
+                                                        ].map(({ name, data, tooltip }) => (
+                                                          <div key={name} className="flex items-center gap-2 text-xs" title={tooltip}>
+                                                            <span className="w-20 truncate text-muted cursor-help">{name}</span>
+                                                            <span className={cn("w-16", getLevelColor(data.level))}>
+                                                              {getLevelIcon(data.level)} {data.level}
+                                                            </span>
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    </div>
+
+                                                    {/* DD Probabilities */}
+                                                    <div>
+                                                      <div className="text-xs font-bold mb-1.5">DD Probability</div>
+                                                      <div className="space-y-0.5 text-xs">
+                                                        <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt20)}</span> chance of 20% DD</div>
+                                                        <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt30)}</span> chance of 30% DD</div>
+                                                        <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt40)}</span> chance of 40% DD</div>
+                                                        <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt50)}</span> chance of 50% DD</div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Middle Card: Monte Carlo */}
+                                                  <div className="border border-border rounded-xl p-3">
+                                                    <div className="text-xs font-bold mb-2">Monte Carlo (1000 years)</div>
+
+                                                    {/* MC Drawdown Distribution */}
+                                                    <div className="mb-3">
+                                                      <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of maximum drawdowns across 200 simulated 5-year paths. Shows worst-case (P5), median, and best-case (P95) scenarios.">Max Drawdown Distribution</div>
+                                                      {(() => {
+                                                        const dd = sanityState.report.pathRisk.monteCarlo.drawdowns
+                                                        // Drawdowns are negative: p95 is worst (most negative), p5 is best (least negative)
+                                                        // Scale: worst (p95) on left at 0%, best (p5) on right at 100%
+                                                        const minVal = dd.p95 // Most negative = left side
+                                                        const maxVal = dd.p5  // Least negative = right side
+                                                        const range = maxVal - minVal || 0.01
+                                                        const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                        return (
+                                                          <>
+                                                            <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                              {/* P25-P75 range */}
+                                                              <div
+                                                                className="absolute h-full bg-danger/40"
+                                                                style={{ left: `${toPos(dd.p75)}%`, width: `${Math.abs(toPos(dd.p25) - toPos(dd.p75))}%` }}
+                                                              />
+                                                              {/* P50 marker */}
+                                                              <div
+                                                                className="absolute h-full w-0.5 bg-danger"
+                                                                style={{ left: `${toPos(dd.p50)}%` }}
+                                                              />
+                                                            </div>
+                                                            <div className="flex justify-between text-xs mt-0.5">
+                                                              <span className="text-danger">Worst: {formatDDPct(dd.p5)}</span>
+                                                              <span className="font-semibold">Median: {formatDDPct(dd.p50)}</span>
+                                                              <span className="text-success">Best: {formatDDPct(dd.p95)}</span>
+                                                            </div>
+                                                          </>
+                                                        )
+                                                      })()}
+                                                    </div>
+
+                                                    {/* MC CAGR Distribution */}
+                                                    <div>
+                                                      <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of annualized returns (CAGR) across 200 simulated 5-year paths. P5 is worst, P95 is best expected returns.">CAGR Distribution</div>
+                                                      {(() => {
+                                                        const cagr = sanityState.report.pathRisk.monteCarlo.cagrs
+                                                        const minVal = Math.min(cagr.p5, cagr.p95)
+                                                        const maxVal = Math.max(cagr.p5, cagr.p95)
+                                                        const range = maxVal - minVal || 1
+                                                        const toPos = (v: number) => ((v - minVal) / range) * 100
+                                                        return (
+                                                          <>
+                                                            <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                              {/* P25-P75 range */}
+                                                              <div
+                                                                className="absolute h-full bg-success/40"
+                                                                style={{ left: `${toPos(cagr.p25)}%`, width: `${toPos(cagr.p75) - toPos(cagr.p25)}%` }}
+                                                              />
+                                                              {/* P50 marker */}
+                                                              <div
+                                                                className="absolute h-full w-0.5 bg-success"
+                                                                style={{ left: `${toPos(cagr.p50)}%` }}
+                                                              />
+                                                            </div>
+                                                            <div className="flex justify-between text-xs mt-0.5">
+                                                              <span className="text-danger">P5: {formatDDPct(cagr.p5)}</span>
+                                                              <span className="font-semibold">P50: {formatDDPct(cagr.p50)}</span>
+                                                              <span className="text-success">P95: {formatDDPct(cagr.p95)}</span>
+                                                            </div>
+                                                          </>
+                                                        )
+                                                      })()}
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Right Card: K-Fold */}
+                                                  <div className="border border-border rounded-xl p-3">
+                                                    <div className="text-xs font-bold mb-2">K-Fold (200 Folds)</div>
+
+                                                    {/* KF Drawdown Distribution */}
+                                                    <div className="mb-3">
+                                                      <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of maximum drawdowns across 200 K-Fold subsets (90% of data each). Tests stability when portions of history are removed.">Max Drawdown Distribution</div>
+                                                      {(() => {
+                                                        const dd = sanityState.report.pathRisk.kfold.drawdowns
+                                                        // Drawdowns are negative: p95 is worst (most negative), p5 is best (least negative)
+                                                        // Scale: worst (p95) on left at 0%, best (p5) on right at 100%
+                                                        const minVal = dd.p95 // Most negative = left side
+                                                        const maxVal = dd.p5  // Least negative = right side
+                                                        const range = maxVal - minVal || 0.01
+                                                        const toPos = (v: number) => Math.max(0, Math.min(100, ((v - minVal) / range) * 100))
+                                                        return (
+                                                          <>
+                                                            <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                              {/* P25-P75 range */}
+                                                              <div
+                                                                className="absolute h-full bg-danger/40"
+                                                                style={{ left: `${toPos(dd.p75)}%`, width: `${Math.abs(toPos(dd.p25) - toPos(dd.p75))}%` }}
+                                                              />
+                                                              {/* P50 marker */}
+                                                              <div
+                                                                className="absolute h-full w-0.5 bg-danger"
+                                                                style={{ left: `${toPos(dd.p50)}%` }}
+                                                              />
+                                                            </div>
+                                                            <div className="flex justify-between text-xs mt-0.5">
+                                                              <span className="text-danger">Worst: {formatDDPct(dd.p5)}</span>
+                                                              <span className="font-semibold">Median: {formatDDPct(dd.p50)}</span>
+                                                              <span className="text-success">Best: {formatDDPct(dd.p95)}</span>
+                                                            </div>
+                                                          </>
+                                                        )
+                                                      })()}
+                                                    </div>
+
+                                                    {/* KF CAGR Distribution */}
+                                                    <div>
+                                                      <div className="text-xs text-muted mb-1 cursor-help" title="Distribution of annualized returns across 200 K-Fold subsets. Tests how consistent CAGR is when portions of history are removed.">CAGR Distribution</div>
+                                                      {(() => {
+                                                        const cagr = sanityState.report.pathRisk.kfold.cagrs
+                                                        const minVal = Math.min(cagr.p5, cagr.p95)
+                                                        const maxVal = Math.max(cagr.p5, cagr.p95)
+                                                        const range = maxVal - minVal || 1
+                                                        const toPos = (v: number) => ((v - minVal) / range) * 100
+                                                        return (
+                                                          <>
+                                                            <div className="relative h-4 bg-muted/30 rounded overflow-hidden">
+                                                              {/* P25-P75 range */}
+                                                              <div
+                                                                className="absolute h-full bg-success/40"
+                                                                style={{ left: `${toPos(cagr.p25)}%`, width: `${toPos(cagr.p75) - toPos(cagr.p25)}%` }}
+                                                              />
+                                                              {/* P50 marker */}
+                                                              <div
+                                                                className="absolute h-full w-0.5 bg-success"
+                                                                style={{ left: `${toPos(cagr.p50)}%` }}
+                                                              />
+                                                            </div>
+                                                            <div className="flex justify-between text-xs mt-0.5">
+                                                              <span className="text-danger">P5: {formatDDPct(cagr.p5)}</span>
+                                                              <span className="font-semibold">P50: {formatDDPct(cagr.p50)}</span>
+                                                              <span className="text-success">P95: {formatDDPct(cagr.p95)}</span>
+                                                            </div>
+                                                          </>
+                                                        )
+                                                      })()}
+                                                    </div>
+                                                  </div>
+                                                </div>
+
+                                                {/* Meta Footer */}
+                                                <div className="text-xs text-muted text-center mt-2">
+                                                  Generated {sanityState.report.meta.generatedAt} with {sanityState.report.meta.mcSimulations} MC + {sanityState.report.meta.kfFolds} K-Fold iterations over {sanityState.report.original.tradingDays} days
+                                                </div>
+                                              </>
+                                            )}
+                                          </>
+                                        )
+                                      })()}
                                     </div>
                                   )}
                                 </div>

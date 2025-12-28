@@ -603,6 +603,7 @@ app.put('/api/admin/eligibility', async (req, res) => {
 // ============================================================================
 import * as database from './db/index.mjs'
 import { runBacktest } from './backtest.mjs'
+import { generateSanityReport, computeBenchmarkMetrics, computeBeta } from './sanity-report.mjs'
 import * as backtestCache from './db/cache.mjs'
 
 // Initialize database on startup
@@ -1305,6 +1306,218 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
   }
 })
 
+// ============================================================================
+// Helper: Get daily returns for a ticker from parquet data
+// ============================================================================
+async function getTickerReturns(ticker) {
+  const tableName = `ticker_${ticker.replace(/[^A-Z0-9]/g, '_')}`
+
+  if (!loadedTickers.has(ticker)) {
+    return null // Ticker not loaded
+  }
+
+  return new Promise((resolve, reject) => {
+    const sql = `
+      SELECT "Date", "Adj Close" as adjClose
+      FROM ${tableName}
+      WHERE "Adj Close" IS NOT NULL
+      ORDER BY "Date" ASC
+    `
+    conn.all(sql, (err, rows) => {
+      if (err) {
+        reject(err)
+        return
+      }
+      if (!rows || rows.length < 2) {
+        resolve(null)
+        return
+      }
+
+      // Compute daily returns from adjusted close prices
+      const returns = []
+      for (let i = 1; i < rows.length; i++) {
+        const prev = rows[i - 1].adjClose
+        const curr = rows[i].adjClose
+        if (prev > 0 && curr > 0) {
+          returns.push((curr - prev) / prev)
+        }
+      }
+      resolve(returns)
+    })
+  })
+}
+
+// POST /api/bots/:id/sanity-report - Generate sanity & risk report
+// Runs Monte Carlo and K-Fold analysis on daily returns
+// Results are cached and invalidated on payload/data changes
+app.post('/api/bots/:id/sanity-report', async (req, res) => {
+  try {
+    await ensureDbInitialized()
+    const botId = req.params.id
+
+    // Get bot with payload
+    const bot = await database.getBotById(botId, true)
+    if (!bot) {
+      return res.status(404).json({ error: 'Bot not found' })
+    }
+
+    if (!bot.payload) {
+      return res.status(400).json({ error: 'Bot has no payload' })
+    }
+
+    // Check cache first
+    const payloadHash = backtestCache.hashPayload(bot.payload)
+    const dataDate = await getLatestTickerDataDate()
+
+    const cached = backtestCache.getCachedSanityReport(botId, payloadHash, dataDate)
+    if (cached) {
+      console.log(`[SanityReport] Cache hit for bot ${botId}`)
+      return res.json({
+        success: true,
+        report: cached.report,
+        cached: true,
+        cachedAt: cached.cachedAt,
+      })
+    }
+
+    // Run backtest to get daily returns
+    console.log(`[SanityReport] Running backtest for bot ${botId} (${bot.name})...`)
+    const startTime = Date.now()
+
+    const backtestResult = await runBacktest(bot.payload, {
+      mode: req.body.mode || 'OC',
+      costBps: req.body.costBps ?? 0,
+    })
+
+    if (!backtestResult.dailyReturns || backtestResult.dailyReturns.length < 50) {
+      return res.status(400).json({
+        error: `Insufficient data: need at least 50 trading days, got ${backtestResult.dailyReturns?.length || 0}`
+      })
+    }
+
+    // Get SPY returns for beta/treynor calculation
+    let spyReturns = null
+    if (loadedTickers.has('SPY')) {
+      try {
+        spyReturns = await getTickerReturns('SPY')
+      } catch (e) {
+        console.warn('[SanityReport] Failed to get SPY returns:', e.message)
+      }
+    }
+
+    // Generate sanity report (uses default 200 iterations from sanity-report.mjs)
+    const report = generateSanityReport(backtestResult.dailyReturns, {
+      years: req.body.years || 5,
+      blockSize: req.body.blockSize || 7,
+      shards: req.body.shards || 10,
+      seed: req.body.seed || 42,
+    }, spyReturns)
+
+    // Compute strategy beta vs each benchmark ticker
+    const benchmarkTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
+    const strategyBetas = {}
+    for (const ticker of benchmarkTickers) {
+      if (loadedTickers.has(ticker)) {
+        try {
+          const benchReturns = await getTickerReturns(ticker)
+          if (benchReturns && benchReturns.length > 0) {
+            strategyBetas[ticker] = computeBeta(backtestResult.dailyReturns, benchReturns)
+          }
+        } catch (e) {
+          // Skip this ticker if we can't get returns
+        }
+      }
+    }
+    report.strategyBetas = strategyBetas
+
+    // Store in cache
+    backtestCache.setCachedSanityReport(botId, payloadHash, dataDate, report)
+
+    const elapsed = Date.now() - startTime
+    console.log(`[SanityReport] Completed for bot ${botId} in ${elapsed}ms (200 MC + 200 K-Fold iterations)`)
+
+    res.json({
+      success: true,
+      report,
+      cached: false,
+    })
+  } catch (e) {
+    console.error('[SanityReport] Error:', e)
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// ============================================================================
+// Benchmark Metrics Endpoint
+// ============================================================================
+
+// GET /api/benchmarks/metrics - Get metrics for benchmark tickers
+// Returns cached results when available, computes and caches on miss
+app.get('/api/benchmarks/metrics', async (req, res) => {
+  try {
+    await ensureDbInitialized()
+
+    // Default benchmark tickers
+    const defaultTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
+    const requestedTickers = req.query.tickers
+      ? String(req.query.tickers).split(',').map(t => t.trim().toUpperCase()).filter(Boolean)
+      : defaultTickers
+
+    const dataDate = await getLatestTickerDataDate()
+
+    // First, get SPY returns (needed for beta/treynor calculation)
+    let spyReturns = null
+    if (loadedTickers.has('SPY')) {
+      spyReturns = await getTickerReturns('SPY')
+    }
+
+    const results = {}
+    const errors = []
+
+    for (const ticker of requestedTickers) {
+      try {
+        // Check cache first
+        const cached = backtestCache.getCachedBenchmarkMetrics(ticker, dataDate)
+        if (cached) {
+          results[ticker] = cached.metrics
+          continue
+        }
+
+        // Cache miss - compute metrics
+        const returns = await getTickerReturns(ticker)
+        if (!returns || returns.length < 50) {
+          errors.push(`${ticker}: insufficient data (${returns?.length || 0} days)`)
+          continue
+        }
+
+        // Compute metrics (pass SPY returns for beta/treynor, except for SPY itself)
+        const benchmarkSpyReturns = ticker === 'SPY' ? null : spyReturns
+        const metrics = computeBenchmarkMetrics(returns, benchmarkSpyReturns)
+
+        if (metrics) {
+          // Cache the result
+          backtestCache.setCachedBenchmarkMetrics(ticker, dataDate, metrics)
+          results[ticker] = metrics
+        } else {
+          errors.push(`${ticker}: failed to compute metrics`)
+        }
+      } catch (err) {
+        errors.push(`${ticker}: ${err.message}`)
+      }
+    }
+
+    res.json({
+      success: true,
+      dataDate,
+      benchmarks: results,
+      errors: errors.length > 0 ? errors : undefined
+    })
+  } catch (e) {
+    console.error('[Benchmarks] Error:', e)
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
 // POST /api/indicator-series - Get indicator time series for chart overlay
 // Takes conditions and returns indicator values for each date
 app.post('/api/indicator-series', async (req, res) => {
@@ -1427,10 +1640,13 @@ app.post('/api/admin/cache/refresh', async (req, res) => {
   }
 })
 
-// POST /api/admin/cache/prewarm - Run backtests for all systems to pre-warm cache
+// POST /api/admin/cache/prewarm - Run backtests and sanity reports for all systems to pre-warm cache
 app.post('/api/admin/cache/prewarm', async (req, res) => {
   try {
     await ensureDbInitialized()
+
+    // Option to include sanity reports (expensive, so opt-in)
+    const includeSanity = req.body.includeSanity === true
 
     // Get all bots from database
     const allBots = database.sqlite.prepare(`
@@ -1438,14 +1654,15 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
     `).all()
 
     if (allBots.length === 0) {
-      return res.json({ success: true, processed: 0, cached: 0, errors: 0, message: 'No systems found' })
+      return res.json({ success: true, processed: 0, cached: 0, sanity: 0, errors: 0, message: 'No systems found' })
     }
 
-    console.log(`[Cache Prewarm] Starting pre-warm for ${allBots.length} systems...`)
+    console.log(`[Cache Prewarm] Starting pre-warm for ${allBots.length} systems (sanity: ${includeSanity})...`)
 
     const dataDate = await getLatestTickerDataDate()
     let processed = 0
     let cached = 0
+    let sanityCached = 0
     let errors = 0
     const errorList = []
 
@@ -1454,31 +1671,85 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
       try {
         const payloadHash = backtestCache.hashPayload(bot.payload)
 
-        // Check if already cached
-        const existing = backtestCache.getCachedBacktest(bot.id, payloadHash, dataDate)
-        if (existing) {
+        // Check if backtest already cached
+        const existingBacktest = backtestCache.getCachedBacktest(bot.id, payloadHash, dataDate)
+        let result
+
+        if (existingBacktest) {
           cached++
-          console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Already cached`)
-          continue
+          console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Backtest already cached`)
+        } else {
+          // Run backtest
+          console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Running backtest...`)
+          result = await runBacktest(bot.payload, { mode: 'OC', costBps: 0 })
+
+          // Store in cache
+          backtestCache.setCachedBacktest(bot.id, payloadHash, dataDate, {
+            metrics: result.metrics,
+            equityCurve: result.equityCurve,
+            benchmarkCurve: result.benchmarkCurve,
+            allocations: result.allocations,
+          })
+
+          // Also update metrics in main DB
+          await database.updateBotMetrics(bot.id, result.metrics)
+
+          cached++
+          console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Backtest cached (CAGR: ${(result.metrics.cagr * 100).toFixed(2)}%)`)
         }
 
-        // Run backtest
-        console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Running backtest...`)
-        const result = await runBacktest(bot.payload, { mode: 'OC', costBps: 0 })
+        // Sanity report (if requested)
+        if (includeSanity) {
+          const existingSanity = backtestCache.getCachedSanityReport(bot.id, payloadHash, dataDate)
+          if (existingSanity) {
+            sanityCached++
+            console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Sanity report already cached`)
+          } else {
+            // Need backtest result for daily returns
+            if (!result) {
+              result = await runBacktest(bot.payload, { mode: 'OC', costBps: 0 })
+            }
 
-        // Store in cache
-        backtestCache.setCachedBacktest(bot.id, payloadHash, dataDate, {
-          metrics: result.metrics,
-          equityCurve: result.equityCurve,
-          benchmarkCurve: result.benchmarkCurve,
-          allocations: result.allocations,
-        })
+            if (result.dailyReturns && result.dailyReturns.length >= 50) {
+              console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Running sanity report (200 MC + 200 K-Fold)...`)
 
-        // Also update metrics in main DB
-        await database.updateBotMetrics(bot.id, result.metrics)
+              // Get SPY returns for beta/treynor calculation
+              let spyReturns = null
+              if (loadedTickers.has('SPY')) {
+                try {
+                  spyReturns = await getTickerReturns('SPY')
+                } catch (e) {
+                  // Continue without SPY
+                }
+              }
 
-        cached++
-        console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Cached (CAGR: ${(result.metrics.cagr * 100).toFixed(2)}%)`)
+              const report = generateSanityReport(result.dailyReturns, {}, spyReturns)
+
+              // Compute strategy beta vs each benchmark ticker
+              const benchmarkTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
+              const strategyBetas = {}
+              for (const ticker of benchmarkTickers) {
+                if (loadedTickers.has(ticker)) {
+                  try {
+                    const benchReturns = await getTickerReturns(ticker)
+                    if (benchReturns && benchReturns.length > 0) {
+                      strategyBetas[ticker] = computeBeta(result.dailyReturns, benchReturns)
+                    }
+                  } catch (e) {
+                    // Skip this ticker
+                  }
+                }
+              }
+              report.strategyBetas = strategyBetas
+
+              backtestCache.setCachedSanityReport(bot.id, payloadHash, dataDate, report)
+              sanityCached++
+              console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Sanity report cached`)
+            } else {
+              console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Skipping sanity (insufficient data)`)
+            }
+          }
+        }
       } catch (err) {
         errors++
         const errorMsg = `${bot.name}: ${err.message || err}`
@@ -1487,12 +1758,13 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
       }
     }
 
-    console.log(`[Cache Prewarm] Complete: ${cached} cached, ${errors} errors out of ${processed} systems`)
+    console.log(`[Cache Prewarm] Complete: ${cached} backtests, ${sanityCached} sanity reports, ${errors} errors out of ${processed} systems`)
 
     res.json({
       success: true,
       processed,
       cached,
+      sanityCached,
       errors,
       errorList: errorList.slice(0, 10), // Only return first 10 errors
     })

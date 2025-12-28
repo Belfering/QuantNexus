@@ -19,6 +19,13 @@ Atlas Engine enables users to visually design trading strategies by connecting d
 - **Strategy Import**: Import strategies from QuantMage and Composer JSON files
 - **Market Data Integration**: Download and query historical ticker data from Yahoo Finance
 - **Backtesting**: Run backtests with comprehensive metrics (CAGR, Sharpe, Sortino, Treynor, Calmar, Max Drawdown, Beta, etc.)
+- **Advanced Analytics** (Analyze Tab):
+  - **Monte Carlo Simulation**: 200 block-resampled paths (5 years × 7-day blocks) to estimate CAGR/MaxDD distributions
+  - **K-Fold Cross-Validation**: 200 drop-1 shuffled folds for robustness testing
+  - **Comparison Table**: Side-by-side metrics vs 10 benchmark tickers (VTI, SPY, QQQ, DIA, DBC, DBO, GLD, BND, TLT, GBTC)
+  - **Alpha Indicators**: Color-coded performance difference vs benchmarks
+  - **Fragility Analysis**: Sub-period stability, top concentration, thinning sensitivity
+  - **Cache Pre-warming**: Admin can pre-compute all analytics for instant loading
 - **Adjusted Close Pricing**: Uses Adj Close for all indicator calculations (accurate historical signals accounting for dividends/splits), with mode-appropriate execution prices:
   - CC mode: Adj Close for both signals and execution (dividend-adjusted returns)
   - OO/CO/OC modes: Adj Close for signals, actual Open/Close for execution
@@ -194,6 +201,10 @@ The backend provides the following REST API endpoints:
 - `GET /api/candles/:ticker?limit=N` - Fetch OHLC candlestick data
 - `POST /api/download` - Start Python download job for ticker data
 
+### Sanity Reports & Benchmarks
+- `POST /api/bots/:id/sanity-report` - Run Monte Carlo & K-Fold analysis (cached)
+- `GET /api/benchmarks/metrics` - Get metrics for benchmark tickers (cached)
+
 ### Admin
 - `GET /api/admin/config` - Get fee configuration
 - `PUT /api/admin/config` - Update fee configuration
@@ -201,6 +212,12 @@ The backend provides the following REST API endpoints:
 - `GET /api/admin/eligibility` - Get partner eligibility requirements
 - `PUT /api/admin/eligibility` - Update eligibility requirements
 - `GET /api/db/admin/stats` - Get database-backed aggregated stats
+
+### Cache Management (Admin)
+- `GET /api/admin/cache/stats` - Get cache statistics
+- `POST /api/admin/cache/invalidate` - Invalidate all cache entries
+- `POST /api/admin/cache/refresh` - Force daily cache refresh
+- `POST /api/admin/cache/prewarm` - Pre-compute backtests & sanity reports for all systems
 
 ## Building for Production
 
@@ -276,7 +293,7 @@ Feature Requirements Documents live in `frd/`.
 - Name FRDs with a sortable prefix when order matters (example: `frd/001-some-feature.md`).
 - Include `Status` + `Depends on` in the FRD header so ordering isn't only implied by filenames.
 
-### Completed FRDs (21 total)
+### Completed FRDs (22 total)
 - FRD-001: Analyze Tab with collapsible bot cards
 - FRD-002: Community Nexus tab with top bots tables
 - FRD-003: Conditional logic testing (34 Vitest tests for AND/OR/IF)
@@ -293,17 +310,17 @@ Feature Requirements Documents live in `frd/`.
 - FRD-018: Alt Exit & Scaling node types
 - FRD-019: Auto-detect import (Atlas/Composer/QuantMage)
 - FRD-021: Model Tab UI improvements (60px insert button, accent-tinted nodes)
+- FRD-022: Extended indicators (40+ indicators - Hull MA, Bollinger, Stochastic, ADX, ATR, etc.)
 - FRD-023: Atlas UI improvements (sort dropdowns, Export JSON, Open Model, collapsed stats)
 - FRD-024: Nexus label rename (Community Nexus -> Nexus)
 - FRD-025: Atlas zone improvements (expandable cards, watchlist buttons, IP protection)
-- FRD-022: Extended indicators (40+ indicators - Hull MA, Bollinger, Stochastic, ADX, ATR, etc.)
+- FRD-026: Advanced Analytics Suite (Monte Carlo 200 sims, K-Fold 200 folds, comparison table, benchmark metrics, cache pre-warming)
 
 ### Pending (0 total)
 All pending FRDs have been completed!
 
-### Deferred/Future (3 total)
+### Deferred/Future (2 total)
 - FRD-011: Atlas Sponsored Systems (blocked - needs investigation)
-- FRD-026: Advanced Analytics Suite (Monte Carlo, K-Folds, etc.)
 - FRD-027: Tiingo API Integration (replace Yahoo Finance)
 
 
