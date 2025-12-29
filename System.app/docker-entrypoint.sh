@@ -5,5 +5,5 @@
 mkdir -p /app/server/data
 mkdir -p /app/ticker-data/data/ticker_data_parquet
 
-# Start the server
-exec node server/index.mjs
+# Start the server with boot wrapper for debug logging
+exec node server/boot.mjs
