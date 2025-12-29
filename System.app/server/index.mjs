@@ -33,6 +33,11 @@ if (isProduction) {
 
 const app = express()
 
+// Trust proxy for Railway/reverse proxy environments (required for rate limiting)
+if (isProduction) {
+  app.set('trust proxy', 1)
+}
+
 // ============================================================================
 // Security Middleware
 // ============================================================================
