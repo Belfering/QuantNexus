@@ -6,6 +6,8 @@ console.log('[boot] JWT_SECRET exists:', !!process.env.JWT_SECRET)
 console.log('[boot] JWT_SECRET length:', process.env.JWT_SECRET?.length || 0)
 console.log('[boot] REFRESH_SECRET exists:', !!process.env.REFRESH_SECRET)
 console.log('[boot] REFRESH_SECRET length:', process.env.REFRESH_SECRET?.length || 0)
+console.log('[boot] RESEND_API_KEY exists:', !!process.env.RESEND_API_KEY)
+console.log('[boot] RESEND_API_KEY prefix:', process.env.RESEND_API_KEY?.substring(0, 6) || 'NOT SET')
 
 process.on('uncaughtException', (err) => {
   console.error('[boot] UNCAUGHT EXCEPTION:', err.message)
