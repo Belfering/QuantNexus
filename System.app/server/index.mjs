@@ -1122,10 +1122,12 @@ import { runBacktest } from './backtest.mjs'
 import { generateSanityReport, computeBenchmarkMetrics, computeBeta } from './sanity-report.mjs'
 import * as backtestCache from './db/cache.mjs'
 import authRoutes from './routes/auth.mjs'
+import passwordResetRoutes from './routes/password-reset.mjs'
 import adminInviteRoutes from './routes/admin-invites.mjs'
 
 // Register auth routes
 app.use('/api/auth', authRoutes)
+app.use('/api/auth', passwordResetRoutes)
 app.use('/api/admin/invites', adminInviteRoutes)
 
 // Initialize database on startup

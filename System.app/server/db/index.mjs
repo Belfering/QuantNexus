@@ -259,6 +259,15 @@ export function initializeDatabase() {
       last_used_at INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      used_at TEXT
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_id);
     CREATE INDEX IF NOT EXISTS idx_bots_visibility ON bots(visibility);

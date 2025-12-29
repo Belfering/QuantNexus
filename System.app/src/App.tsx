@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
+import { LoginScreen } from '@/components/LoginScreen'
 import { cn } from '@/lib/utils'
 import {
   AreaSeries,
@@ -289,7 +290,7 @@ const INDICATOR_CATEGORIES: Record<string, MetricChoice[]> = {
   ],
 }
 
-type UserId = '1' | '3' | '5' | '7' | '9' | 'admin'
+type UserId = string
 type ThemeMode = 'light' | 'dark'
 type ColorTheme = 'slate' | 'ocean' | 'emerald' | 'violet' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'lime' | 'fuchsia'
 
@@ -1303,47 +1304,6 @@ function FlowchartScrollWrapper({
   )
 }
 
-function LoginScreen({ onLogin }: { onLogin: (userId: UserId) => void }) {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  const submit = () => {
-    const u = String(username || '').trim()
-    const p = String(password || '')
-    const ok = (u === '1' && p === '1') || (u === '3' && p === '3') || (u === '5' && p === '5') || (u === '7' && p === '7') || (u === '9' && p === '9') || (u === 'admin' && p === 'admin')
-    if (!ok) {
-      setError('Invalid username/password.')
-      return
-    }
-    setError(null)
-    onLogin(u as UserId)
-  }
-
-  return (
-    <div className="p-6">
-      <Card className="max-w-sm mx-auto mt-16">
-        <CardHeader>
-          <div className="text-xs tracking-widest uppercase text-muted mb-1">Admin Login</div>
-          <h1 className="m-0 my-1.5 text-2xl font-extrabold tracking-tight">Atlas Engine</h1>
-        </CardHeader>
-        <CardContent className="grid gap-2.5">
-          <label className="grid gap-1.5">
-            <div className="font-bold text-xs">Username</div>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
-          </label>
-          <label className="grid gap-1.5">
-            <div className="font-bold text-xs">Password</div>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
-          </label>
-          {error ? <div className="text-danger font-bold">{error}</div> : null}
-          <Button onClick={submit}>Login</Button>
-          <div className="text-xs text-muted">Valid accounts: 1/1, 3/3, 5/5, 7/7, 9/9.</div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
 
 type BotBacktestState = {
   status: 'idle' | 'running' | 'done' | 'error'
