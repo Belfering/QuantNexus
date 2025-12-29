@@ -36,9 +36,6 @@ WORKDIR /app
 # Install Python and glibc compatibility (DuckDB requires glibc, not musl)
 RUN apk add --no-cache python3 py3-pip libc6-compat
 
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
-
 # Copy built frontend
 COPY --from=builder /app/dist ./dist
 
@@ -56,13 +53,10 @@ RUN npm ci --only=production
 COPY --from=builder /app/docker-entrypoint.sh ./
 RUN chmod +x ./docker-entrypoint.sh
 
-# Create data directories and set ownership
-RUN mkdir -p ./server/data ./ticker-data/data/ticker_data_parquet && \
-    chown -R nodejs:nodejs /app
+# Create data directories
+RUN mkdir -p ./server/data ./ticker-data/data/ticker_data_parquet
 
-# Switch to non-root user
-USER nodejs
-
+# Note: Running as root for Railway volume compatibility
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8787}/api/status || exit 1
