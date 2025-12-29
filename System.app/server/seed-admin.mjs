@@ -1,4 +1,4 @@
-// server/seed-admin.mjs
+﻿// server/seed-admin.mjs
 // Creates an initial admin user on first boot if ADMIN_EMAIL and ADMIN_PASSWORD are set
 
 import bcrypt from 'bcrypt'
@@ -21,8 +21,14 @@ export async function seedAdminUser() {
     `).get()
 
     if (existingAdmin) {
-      console.log('[seed] Admin user already exists, skipping seed')
-      return false
+      // Update existing admin password and email to match env vars
+      const passwordHash = await bcrypt.hash(adminPassword, 12)
+      sqlite.prepare(`
+        UPDATE users SET password_hash = ?, email = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(passwordHash, adminEmail.toLowerCase(), existingAdmin.id)
+      console.log(`[seed] Admin user password updated for: ${adminEmail}`)
+      return true
     }
 
     // Check if email is already registered
