@@ -156,7 +156,14 @@ Navigate to Admin > Ticker Data tab and click "Download".
 The backend provides the following REST API endpoints:
 
 ### Authentication
-- `POST /api/auth/login` - Validate credentials and return user
+- `POST /api/auth/register` - Register new user (requires invite code)
+- `POST /api/auth/login` - Login and receive JWT tokens
+- `POST /api/auth/logout` - Invalidate refresh token
+- `POST /api/auth/refresh` - Refresh access token
+- `POST /api/auth/verify-email` - Verify email with token
+- `POST /api/auth/forgot-password` - Request password reset email
+- `POST /api/auth/reset-password` - Reset password with token
+- `GET /api/auth/me` - Get current user info (requires auth)
 
 ### Bots (User's Own)
 - `GET /api/bots?userId=X` - Get user's bots
@@ -233,14 +240,16 @@ npm run preview
 ```
 
 ### Authentication
-- On launch, a login prompt is shown
-- **Regular Users**: `1/1`, `3/3`, `5/5`, `7/7`, `9/9` (per-user data is isolated)
-- **Admin User**: `admin/admin` (has access to the Admin tab)
-- Current user displayed in header with Logout button
+- On launch, a login screen is shown with options to sign in, register, or reset password
+- **Registration**: Requires a valid invite code during beta period
+- **Admin User**: Created via environment variables (`ADMIN_EMAIL`, `ADMIN_PASSWORD`)
+- JWT-based authentication with access tokens (15min) and refresh tokens (7 days)
+- "Remember me" option persists sessions across browser restarts
 - Admin tab is only visible when logged in as admin
 
 ### User Roles
-- **Partner Users** (1, 3, 5, 7, 9): Can create bots, participate in Partner Program, add bots to Nexus
+- **Regular Users**: Can create bots, manage portfolios and watchlists
+- **Partner Users**: Can participate in Partner Program, add bots to Nexus
 - **Admin**: Full access to Atlas Overview, Nexus Maintenance, fee configuration
 
 ## Data Flow
@@ -279,12 +288,20 @@ npm run lint
 
 The backend supports these environment variables:
 
+**Required for Production:**
+- `JWT_SECRET` - Secret key for signing JWT access tokens
+- `REFRESH_SECRET` - Secret key for refresh tokens
+- `ADMIN_EMAIL` - Email for the initial admin user
+- `ADMIN_PASSWORD` - Password for the initial admin user (min 8 characters)
+
+**Optional:**
 - `DATABASE_PATH` - Override default database location (default: `server/data/atlas.db`)
 - `SYSTEM_TICKER_DATA_ROOT` or `TICKER_DATA_MINI_ROOT` - Override default ticker-data path
 - `TICKERS_PATH` - Override tickers.txt location
 - `PARQUET_DIR` - Override parquet data directory
 - `PYTHON` - Python executable (default: `python`)
 - `PORT` - API server port (default: 8787)
+- `NODE_ENV` - Set to `production` for production mode
 
 ## FRDs
 

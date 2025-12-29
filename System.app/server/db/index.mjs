@@ -388,49 +388,28 @@ export function initializeDatabase() {
     sqlite.prepare('INSERT INTO admin_config (key, value, updated_at) VALUES (?, ?, ?)').run('partner_share_percent', '50.0', now)
   }
 
-  // Seed default users (1, 3, 5, 7, 9, admin)
-  // Plain passwords - will be hashed below
-  const defaultUsers = [
-    { id: '1', username: '1', email: 'user1@quantnexus.io', plainPassword: '1', displayName: 'User 1', role: 'partner' },
-    { id: '3', username: '3', email: 'user3@quantnexus.io', plainPassword: '3', displayName: 'User 3', role: 'partner' },
-    { id: '5', username: '5', email: 'user5@quantnexus.io', plainPassword: '5', displayName: 'User 5', role: 'partner' },
-    { id: '7', username: '7', email: 'user7@quantnexus.io', plainPassword: '7', displayName: 'User 7', role: 'partner' },
-    { id: '9', username: '9', email: 'user9@quantnexus.io', plainPassword: '9', displayName: 'User 9', role: 'partner' },
-    { id: 'admin', username: 'admin', email: 'quantnexus.io@gmail.com', plainPassword: '7]NKw}QM77b9', displayName: 'Administrator', role: 'admin' },
-  ]
-
-  const insertUser = sqlite.prepare(`
-    INSERT OR IGNORE INTO users (id, username, email, password_hash, display_name, role, is_partner_eligible, email_verified, status, tier, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-
-  const insertPortfolio = sqlite.prepare(`
-    INSERT OR IGNORE INTO portfolios (id, owner_id, cash_balance, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-  `)
-
-  const insertWatchlist = sqlite.prepare(`
-    INSERT OR IGNORE INTO watchlists (id, owner_id, name, is_default, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `)
-
-  const insertPreferences = sqlite.prepare(`
-    INSERT OR IGNORE INTO user_preferences (user_id, theme, color_scheme, ui_state, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-  `)
-
-  const now = Date.now()
-  for (const user of defaultUsers) {
-    // Hash passwords using bcrypt (sync for initialization)
-    const passwordHash = bcrypt.hashSync(user.plainPassword, SALT_ROUNDS)
-    // (id, username, email, password_hash, display_name, role, is_partner_eligible, email_verified, status, tier, created_at, updated_at)
-    insertUser.run(user.id, user.username, user.email, passwordHash, user.displayName, user.role, user.role === 'partner' ? 1 : 0, 1, 'active', 'free', now, now)
-    insertPortfolio.run(`portfolio-${user.id}`, user.id, 100000, now, now)
-    insertWatchlist.run(`watchlist-${user.id}-default`, user.id, 'My Watchlist', 1, now, now)
-    insertPreferences.run(user.id, 'dark', 'sapphire', '{}', now)
+  // Seed beta invite code "Bkoz I can" (case-sensitive)
+  const existingInviteCode = sqlite.prepare('SELECT id FROM invite_codes WHERE code = ?').get('Bkoz I can')
+  if (!existingInviteCode) {
+    const now = Date.now()
+    sqlite.prepare(`
+      INSERT INTO invite_codes (code, max_uses, use_count, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run('Bkoz I can', 1000, 0, now)
+    console.log('[DB] Beta invite code "Bkoz I can" created')
   }
 
-  console.log('[DB] Database initialized with bcrypt password hashing')
+  // Clean up legacy demo users (1, 3, 5, 7, 9 and old admin)
+  // Admin is now created via seed-admin.mjs using env vars
+  const demoUserIds = ['1', '3', '5', '7', '9', 'admin']
+  const deletedDemoUsers = sqlite.prepare(`
+    DELETE FROM users WHERE id IN (${demoUserIds.map(() => '?').join(',')})
+  `).run(...demoUserIds)
+  if (deletedDemoUsers.changes > 0) {
+    console.log(`[DB] Cleaned up ${deletedDemoUsers.changes} legacy demo users`)
+  }
+
+  console.log('[DB] Database initialized')
 }
 
 // ============================================

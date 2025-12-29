@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardHeader, CardContent } from './ui/card'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -15,6 +15,18 @@ export function LoginScreen({ onLogin }: { onLogin: (userId: string) => void }) 
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
+
+  // Load remembered email on mount
+  useEffect(() => {
+    const remembered = localStorage.getItem('rememberedEmail')
+    if (remembered) {
+      setEmail(remembered)
+      setRememberMe(true)
+    }
+  }, [])
 
   const handleLogin = async () => {
     setError(null)
@@ -30,8 +42,17 @@ export function LoginScreen({ onLogin }: { onLogin: (userId: string) => void }) 
         setError(data.error || 'Login failed')
         return
       }
-      localStorage.setItem('accessToken', data.accessToken)
-      localStorage.setItem('refreshToken', data.refreshToken)
+      // Handle remember me
+      if (rememberMe) {
+        localStorage.setItem('rememberedEmail', email.trim())
+        localStorage.setItem('accessToken', data.accessToken)
+        localStorage.setItem('refreshToken', data.refreshToken)
+      } else {
+        localStorage.removeItem('rememberedEmail')
+        // Use sessionStorage for non-remembered sessions
+        sessionStorage.setItem('accessToken', data.accessToken)
+        sessionStorage.setItem('refreshToken', data.refreshToken)
+      }
       localStorage.setItem('user', JSON.stringify(data.user))
       onLogin(data.user.id)
     } catch {
@@ -144,13 +165,34 @@ export function LoginScreen({ onLogin }: { onLogin: (userId: string) => void }) 
           {mode !== 'forgot' && (
             <label className="grid gap-1.5">
               <div className="font-bold text-xs">Password</div>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setError(null) }}
-                placeholder="••••••••"
-                onKeyDown={(e) => e.key === 'Enter' && mode === 'login' && submit()}
-              />
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(null) }}
+                  placeholder="••••••••"
+                  onKeyDown={(e) => e.key === 'Enter' && mode === 'login' && submit()}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition-colors p-1"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                      <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  )}
+                </button>
+              </div>
             </label>
           )}
 
@@ -158,12 +200,33 @@ export function LoginScreen({ onLogin }: { onLogin: (userId: string) => void }) 
             <>
               <label className="grid gap-1.5">
                 <div className="font-bold text-xs">Confirm Password</div>
-                <Input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => { setConfirmPassword(e.target.value); setError(null) }}
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <Input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => { setConfirmPassword(e.target.value); setError(null) }}
+                    placeholder="••••••••"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition-colors p-1"
+                    tabIndex={-1}
+                  >
+                    {showConfirmPassword ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </label>
               <label className="grid gap-1.5">
                 <div className="font-bold text-xs">Invite Code</div>
@@ -175,6 +238,18 @@ export function LoginScreen({ onLogin }: { onLogin: (userId: string) => void }) 
                 />
               </label>
             </>
+          )}
+
+          {mode === 'login' && (
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+              />
+              <span className="text-sm text-muted">Remember me</span>
+            </label>
           )}
 
           {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
