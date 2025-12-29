@@ -4,14 +4,94 @@ import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 import duckdb from 'duckdb'
-
-const app = express()
-app.use(cors())
-app.use(express.json({ limit: '1mb' }))
+import { encrypt, decrypt } from './utils/crypto.mjs'
+import { seedAdminUser } from './seed-admin.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// ============================================================================
+// Production Security Validation
+// ============================================================================
+const isProduction = process.env.NODE_ENV === 'production'
+if (isProduction) {
+  const jwtSecret = process.env.JWT_SECRET
+  if (!jwtSecret || jwtSecret.includes('dev-') || jwtSecret.length < 32) {
+    console.error('FATAL: JWT_SECRET must be set to a secure value (min 32 chars) in production')
+    process.exit(1)
+  }
+  const refreshSecret = process.env.REFRESH_SECRET
+  if (!refreshSecret || refreshSecret.includes('dev-') || refreshSecret.length < 32) {
+    console.error('FATAL: REFRESH_SECRET must be set to a secure value (min 32 chars) in production')
+    process.exit(1)
+  }
+  console.log('[api] Production security checks passed')
+}
+
+const app = express()
+
+// ============================================================================
+// Security Middleware
+// ============================================================================
+
+// Helmet for security headers (CSP configured for SPA)
+app.use(helmet({
+  contentSecurityPolicy: isProduction ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"]
+    }
+  } : false
+}))
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : ['http://localhost:5173', 'http://localhost:8787'],
+  credentials: true
+}
+app.use(cors(corsOptions))
+
+// Rate limiting for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 requests per window
+  message: { error: 'Too many authentication attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+// General API rate limiter
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute
+  message: { error: 'Too many requests, please slow down' },
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+// Apply rate limiters
+app.use('/api/auth/login', authLimiter)
+app.use('/api/auth/register', authLimiter)
+app.use('/api/', apiLimiter)
+
+app.use(express.json({ limit: '1mb' }))
+
+// Serve static frontend in production
+if (isProduction) {
+  const distPath = path.resolve(__dirname, '..', 'dist')
+  app.use(express.static(distPath))
+}
 const DEFAULT_ROOT = path.resolve(__dirname, '..', 'ticker-data')
 const TICKER_DATA_ROOT = process.env.SYSTEM_TICKER_DATA_ROOT || process.env.TICKER_DATA_MINI_ROOT || DEFAULT_ROOT
 const TICKERS_PATH = process.env.TICKERS_PATH || path.join(TICKER_DATA_ROOT, 'tickers.txt')
@@ -161,13 +241,15 @@ app.post('/api/download', async (req, res) => {
   const jobId = newJobId()
   const startedAt = Date.now()
 
-  const batchSize = Math.max(1, Math.min(500, Number(req.body?.batchSize ?? 100)))
-  const sleepSeconds = Math.max(0, Math.min(60, Number(req.body?.sleepSeconds ?? 3)))
+  const source = String(req.body?.source || 'tiingo')  // 'tiingo' | 'yfinance' (default to tiingo)
+  const batchSize = Math.max(1, Math.min(500, Number(req.body?.batchSize ?? (source === 'tiingo' ? 50 : 100))))
+  const sleepSeconds = Math.max(0, Math.min(60, Number(req.body?.sleepSeconds ?? (source === 'tiingo' ? 0.2 : 3))))
   const maxRetries = Math.max(0, Math.min(10, Number(req.body?.maxRetries ?? 3)))
   const threads = Boolean(req.body?.threads ?? true)
   const limit = Math.max(0, Math.min(100000, Number(req.body?.limit ?? 0)))
 
-  const scriptPath = path.join(TICKER_DATA_ROOT, 'download.py')
+  const scriptName = source === 'tiingo' ? 'tiingo_download.py' : 'download.py'
+  const scriptPath = path.join(TICKER_DATA_ROOT, scriptName)
   const args = [
     '-u',
     scriptPath,
@@ -187,13 +269,21 @@ app.post('/api/download', async (req, res) => {
     String(limit),
   ]
 
+  // Add Tiingo API key if using Tiingo source
+  if (source === 'tiingo') {
+    const tiingoApiKey = await getTiingoApiKey(req.body?.tiingoApiKey)
+    if (tiingoApiKey) {
+      args.push('--api-key', String(tiingoApiKey))
+    }
+  }
+
   const job = {
     id: jobId,
     status: 'running',
     startedAt,
     finishedAt: null,
     error: null,
-    config: { batchSize, sleepSeconds, maxRetries, threads, limit },
+    config: { source, batchSize, sleepSeconds, maxRetries, threads, limit },
     events: [],
     logs: [],
   }
@@ -290,6 +380,257 @@ app.put('/api/tickers', async (req, res) => {
 app.get('/api/parquet-tickers', async (_req, res) => {
   try {
     res.json({ tickers: await listParquetTickers() })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// ============================================
+// TICKER REGISTRY ENDPOINTS
+// ============================================
+import * as tickerRegistry from './db/ticker-registry.mjs'
+
+// Get registry statistics
+app.get('/api/tickers/registry/stats', async (_req, res) => {
+  try {
+    await tickerRegistry.ensureTickerRegistryTable()
+    const stats = await tickerRegistry.getRegistryStats()
+    res.json(stats)
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// Sync ticker list from Tiingo
+app.post('/api/tickers/registry/sync', async (req, res) => {
+  const jobId = newJobId()
+  const startedAt = Date.now()
+
+  try {
+    await tickerRegistry.ensureTickerRegistryTable()
+
+    // Run sync_tickers.py to download Tiingo master list
+    const syncScript = path.join(TICKER_DATA_ROOT, 'sync_tickers.py')
+    const tickersJsonPath = path.join(TICKER_DATA_ROOT, 'tiingo_tickers.json')
+
+    const job = {
+      id: jobId,
+      type: 'registry_sync',
+      status: 'running',
+      phase: 'downloading_master_list',
+      startedAt,
+      finishedAt: null,
+      error: null,
+      progress: { downloaded: 0, imported: 0, total: 0 },
+      events: [],
+      logs: [],
+    }
+    jobs.set(jobId, job)
+
+    // Start the sync process
+    const syncArgs = ['-u', syncScript, '--output', tickersJsonPath, '--us-only', '--active-only']
+    const syncChild = spawn(PYTHON, syncArgs, { windowsHide: true })
+
+    syncChild.stdout.on('data', (buf) => {
+      const lines = String(buf).split(/\r?\n/).filter(Boolean)
+      for (const line of lines) {
+        job.logs.push(line)
+        if (job.logs.length > 400) job.logs.splice(0, job.logs.length - 400)
+      }
+    })
+
+    syncChild.stderr.on('data', (buf) => {
+      const lines = String(buf).split(/\r?\n/).filter(Boolean)
+      for (const line of lines) {
+        job.logs.push('[stderr] ' + line)
+      }
+    })
+
+    syncChild.on('close', async (code) => {
+      if (code !== 0) {
+        job.status = 'error'
+        job.error = `sync_tickers.py exited with code ${code}`
+        job.finishedAt = Date.now()
+        return
+      }
+
+      // Import the downloaded tickers into the database
+      job.phase = 'importing_to_database'
+      try {
+        const tickersData = JSON.parse(await fs.readFile(tickersJsonPath, 'utf-8'))
+        job.progress.downloaded = tickersData.length
+
+        const result = await tickerRegistry.importTickers(tickersData, { usOnly: true })
+        job.progress.imported = result.imported
+        job.progress.total = result.total
+
+        job.status = 'done'
+        job.phase = 'complete'
+        job.finishedAt = Date.now()
+      } catch (e) {
+        job.status = 'error'
+        job.error = String(e?.message || e)
+        job.finishedAt = Date.now()
+      }
+    })
+
+    res.json({ jobId })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// Start downloading OHLCV data for all registered tickers
+app.post('/api/tickers/registry/download', async (req, res) => {
+  const jobId = newJobId()
+  const startedAt = Date.now()
+  const today = new Date().toISOString().slice(0, 10)
+
+  try {
+    await tickerRegistry.ensureTickerRegistryTable()
+
+    // Get tickers needing sync
+    const incrementalOnly = req.body?.incrementalOnly !== false
+    const tickers = incrementalOnly
+      ? await tickerRegistry.getTickersNeedingSync(today)
+      : await tickerRegistry.getActiveUSTickers()
+
+    if (tickers.length === 0) {
+      res.json({ jobId: null, message: 'All tickers are already synced for today', synced: 0 })
+      return
+    }
+
+    // Write tickers to a temp JSON file for the download script
+    const tempTickersPath = path.join(TICKER_DATA_ROOT, '_pending_tickers.json')
+    await fs.writeFile(tempTickersPath, JSON.stringify(tickers), 'utf-8')
+
+    const batchSize = Math.max(1, Math.min(500, Number(req.body?.batchSize ?? 50)))
+    const sleepSeconds = Math.max(0, Math.min(60, Number(req.body?.sleepSeconds ?? 0.2)))
+    const limit = Math.max(0, Number(req.body?.limit ?? 0))
+
+    const scriptPath = path.join(TICKER_DATA_ROOT, 'tiingo_download.py')
+    const args = [
+      '-u',
+      scriptPath,
+      '--tickers-json',
+      tempTickersPath,
+      '--out-dir',
+      PARQUET_DIR,
+      '--batch-size',
+      String(batchSize),
+      '--sleep-seconds',
+      String(sleepSeconds),
+      '--max-retries',
+      '3',
+    ]
+
+    if (limit > 0) {
+      args.push('--limit', String(limit))
+    }
+
+    // Add Tiingo API key if available
+    const tiingoApiKey = await getTiingoApiKey(req.body?.tiingoApiKey)
+    if (tiingoApiKey) {
+      args.push('--api-key', String(tiingoApiKey))
+    }
+
+    const job = {
+      id: jobId,
+      type: 'registry_download',
+      status: 'running',
+      startedAt,
+      finishedAt: null,
+      error: null,
+      config: { batchSize, sleepSeconds, limit, incrementalOnly, tickerCount: tickers.length },
+      events: [],
+      logs: [],
+      syncedTickers: [],
+    }
+    jobs.set(jobId, job)
+
+    const child = spawn(PYTHON, args, { windowsHide: true })
+    job.pid = child.pid
+
+    child.stdout.on('data', (buf) => {
+      for (const line of String(buf).split(/\r?\n/)) {
+        const s = line.trimEnd()
+        if (!s) continue
+        job.logs.push(s)
+        if (job.logs.length > 400) job.logs.splice(0, job.logs.length - 400)
+        try {
+          const ev = JSON.parse(s)
+          if (ev && typeof ev === 'object') {
+            job.events.push(ev)
+            if (job.events.length > 400) job.events.splice(0, job.events.length - 400)
+            // Track synced tickers
+            if (ev.type === 'ticker_saved' && ev.ticker) {
+              job.syncedTickers.push(ev.ticker)
+              // Mark as synced in database
+              tickerRegistry.markTickerSynced(ev.ticker, today).catch(() => {})
+              // Update ticker metadata (name, description) if provided
+              if (ev.name || ev.description) {
+                tickerRegistry.updateTickerMetadata(ev.ticker, {
+                  name: ev.name,
+                  description: ev.description
+                }).catch(() => {})
+              }
+            }
+          }
+        } catch {
+          // ignore non-JSON lines
+        }
+      }
+    })
+
+    child.stderr.on('data', (buf) => {
+      for (const line of String(buf).split(/\r?\n/)) {
+        const s = line.trimEnd()
+        if (s) job.logs.push('[stderr] ' + s)
+      }
+    })
+
+    child.on('error', (err) => {
+      job.finishedAt = Date.now()
+      job.status = 'error'
+      job.error = String(err?.message || err)
+    })
+
+    child.on('close', (code) => {
+      job.finishedAt = Date.now()
+      if (code === 0) {
+        job.status = 'done'
+      } else {
+        job.status = 'error'
+        job.error = `Downloader exited with code ${code}`
+      }
+    })
+
+    res.json({ jobId, tickerCount: tickers.length })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// Search tickers in the registry
+app.get('/api/tickers/registry/search', async (req, res) => {
+  try {
+    await tickerRegistry.ensureTickerRegistryTable()
+    const query = String(req.query.q || '').trim()
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20))
+    const assetType = req.query.assetType || null  // 'Stock', 'ETF', or null for all
+    const results = await tickerRegistry.searchTickers(query, { limit, assetType })
+    res.json({ results })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// Get all ticker metadata (for ETFs Only mode filtering)
+app.get('/api/tickers/registry/metadata', async (req, res) => {
+  try {
+    await tickerRegistry.ensureTickerRegistryTable()
+    const allTickers = await tickerRegistry.getAllTickerMetadata()
+    res.json({ tickers: allTickers })
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }
@@ -472,6 +813,77 @@ app.put('/api/admin/config', async (req, res) => {
   }
 })
 
+// ============================================
+// TIINGO API KEY MANAGEMENT
+// ============================================
+
+// GET /api/admin/tiingo-key - Check if Tiingo API key is configured
+app.get('/api/admin/tiingo-key', async (req, res) => {
+  try {
+    const data = await readAdminData()
+    const hasKey = Boolean(data.tiingoApiKey)
+    res.json({ hasKey })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// POST /api/admin/tiingo-key - Save Tiingo API key (encrypted)
+app.post('/api/admin/tiingo-key', async (req, res) => {
+  try {
+    const { key } = req.body
+    if (!key || typeof key !== 'string') {
+      return res.status(400).json({ error: 'API key is required' })
+    }
+
+    const data = await readAdminData()
+    data.tiingoApiKey = encrypt(key)
+    await writeAdminData(data)
+
+    res.json({ success: true, hasKey: true })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// DELETE /api/admin/tiingo-key - Clear saved Tiingo API key
+app.delete('/api/admin/tiingo-key', async (req, res) => {
+  try {
+    const data = await readAdminData()
+    delete data.tiingoApiKey
+    await writeAdminData(data)
+
+    res.json({ success: true, hasKey: false })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+/**
+ * Get the Tiingo API key from various sources (priority order)
+ * 1. Request body (if provided)
+ * 2. Stored encrypted key in admin data
+ * 3. Environment variable
+ */
+async function getTiingoApiKey(requestKey) {
+  // Use request-provided key if available
+  if (requestKey) return requestKey
+
+  // Try to get stored encrypted key
+  try {
+    const data = await readAdminData()
+    if (data.tiingoApiKey) {
+      const decrypted = decrypt(data.tiingoApiKey)
+      if (decrypted) return decrypted
+    }
+  } catch {
+    // Ignore errors, fall through to env var
+  }
+
+  // Fallback to environment variable
+  return process.env.TIINGO_API_KEY || ''
+}
+
 // POST /api/user/:userId/portfolio-summary - Update user's portfolio summary
 app.post('/api/user/:userId/portfolio-summary', async (req, res) => {
   try {
@@ -599,12 +1011,122 @@ app.put('/api/admin/eligibility', async (req, res) => {
 })
 
 // ============================================================================
+// Waitlist API (Phase 1: Landing Page)
+// ============================================================================
+import crypto from 'node:crypto'
+
+// POST /api/waitlist/join - Join the waitlist
+app.post('/api/waitlist/join', async (req, res) => {
+  try {
+    // Lazy-load database module to avoid circular imports
+    const database = await import('./db/index.mjs')
+    database.initializeDatabase()
+
+    const { email, source } = req.body
+
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Valid email required' })
+    }
+
+    const normalizedEmail = email.toLowerCase().trim()
+
+    // Check if already on waitlist
+    const existing = database.sqlite.prepare(
+      'SELECT id, position, status FROM waitlist_entries WHERE email = ?'
+    ).get(normalizedEmail)
+
+    if (existing) {
+      return res.status(409).json({
+        error: 'Already on waitlist',
+        position: existing.position,
+        status: existing.status,
+      })
+    }
+
+    // Get next position
+    const maxResult = database.sqlite.prepare(
+      'SELECT COALESCE(MAX(position), 0) as max_pos FROM waitlist_entries'
+    ).get()
+    const position = (maxResult?.max_pos || 0) + 1
+
+    // Generate referral code
+    const referralCode = crypto.randomBytes(4).toString('hex').toUpperCase()
+
+    // Insert
+    const now = Date.now()
+    database.sqlite.prepare(`
+      INSERT INTO waitlist_entries (email, position, referral_code, status, source, created_at)
+      VALUES (?, ?, ?, 'pending', ?, ?)
+    `).run(normalizedEmail, position, referralCode, source || 'direct', now)
+
+    console.log(`[Waitlist] New signup: ${normalizedEmail} (#${position})`)
+
+    res.json({
+      success: true,
+      position,
+      referralCode,
+    })
+  } catch (e) {
+    console.error('[Waitlist] Join error:', e)
+    res.status(500).json({ error: 'Failed to join waitlist' })
+  }
+})
+
+// GET /api/waitlist/stats - Get waitlist count (public)
+app.get('/api/waitlist/stats', async (req, res) => {
+  try {
+    const database = await import('./db/index.mjs')
+    database.initializeDatabase()
+
+    const result = database.sqlite.prepare(
+      'SELECT COUNT(*) as count FROM waitlist_entries'
+    ).get()
+
+    res.json({ count: result?.count || 0 })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// GET /api/waitlist/position/:email - Check position by email
+app.get('/api/waitlist/position/:email', async (req, res) => {
+  try {
+    const database = await import('./db/index.mjs')
+    database.initializeDatabase()
+
+    const email = req.params.email.toLowerCase().trim()
+
+    const entry = database.sqlite.prepare(
+      'SELECT position, status, created_at FROM waitlist_entries WHERE email = ?'
+    ).get(email)
+
+    if (!entry) {
+      return res.status(404).json({ error: 'Not found on waitlist' })
+    }
+
+    res.json({
+      position: entry.position,
+      status: entry.status,
+      joinedAt: entry.created_at,
+    })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// ============================================================================
 // Database-Backed API (Scalable Architecture)
 // ============================================================================
 import * as database from './db/index.mjs'
 import { runBacktest } from './backtest.mjs'
 import { generateSanityReport, computeBenchmarkMetrics, computeBeta } from './sanity-report.mjs'
 import * as backtestCache from './db/cache.mjs'
+import authRoutes from './routes/auth.mjs'
+import adminInviteRoutes from './routes/admin-invites.mjs'
+
+// Register auth routes
+app.use('/api/auth', authRoutes)
+app.use('/api/admin/invites', adminInviteRoutes)
 
 // Initialize database on startup
 let dbInitialized = false
@@ -1994,11 +2516,22 @@ app.get('/api/admin/db/:table', async (req, res) => {
   }
 })
 
+// SPA fallback - serve index.html for any non-API routes in production
+if (isProduction) {
+  const indexPath = path.resolve(__dirname, '..', 'dist', 'index.html')
+  app.get('*', (req, res) => {
+    res.sendFile(indexPath)
+  })
+}
+
 const PORT = Number(process.env.PORT || 8787)
 app.listen(PORT, async () => {
   console.log(`[api] listening on http://localhost:${PORT}`)
   console.log(`[api] tickers: ${TICKERS_PATH}`)
   console.log(`[api] parquet:  ${PARQUET_DIR}`)
+
+  // Seed admin user if ADMIN_EMAIL and ADMIN_PASSWORD are set
+  await seedAdminUser()
 
   // TEMPORARY: Pre-load all parquet data for fast development
   await preloadParquetData()

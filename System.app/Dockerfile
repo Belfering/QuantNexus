@@ -2,6 +2,7 @@
 # QuantNexus Docker Image
 # Multi-stage build for production deployment
 # ============================================
+# Note: Build context is repo root, so paths use System.app/
 
 # ============================================
 # Stage 1: Build
@@ -13,14 +14,14 @@ WORKDIR /app
 # Install build dependencies for native modules
 RUN apk add --no-cache python3 py3-pip g++ make
 
-# Copy package files
-COPY package*.json ./
+# Copy package files from System.app
+COPY System.app/package*.json ./
 
 # Install ALL dependencies (including dev)
 RUN npm ci
 
-# Copy source files
-COPY . .
+# Copy source files from System.app
+COPY System.app/ .
 
 # Build the frontend (Vite)
 RUN npm run build
@@ -53,6 +54,9 @@ RUN npm ci --only=production
 
 # Create data directory for SQLite database
 RUN mkdir -p ./server/data && chown -R nodejs:nodejs ./server/data
+
+# Create ticker-data directory
+RUN mkdir -p ./ticker-data/data/ticker_data_parquet && chown -R nodejs:nodejs ./ticker-data
 
 # Switch to non-root user
 USER nodejs
