@@ -72,5 +72,5 @@ EXPOSE 8787
 ENV NODE_ENV=production
 ENV PORT=8787
 
-# Start the server
+# Start the server (v2 - force rebuild)
 CMD ["node", "server/index.mjs"]
