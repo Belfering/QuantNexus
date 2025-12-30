@@ -121,15 +121,36 @@ async function saveLastSyncInfo(database, info) {
 }
 
 /**
+ * Check if today is a weekday (Mon-Fri)
+ */
+function isWeekday(timezone) {
+  const now = new Date()
+  const dayFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone || 'America/New_York',
+    weekday: 'short',
+  })
+  const dayOfWeek = dayFormatter.format(now)
+  // Returns Mon, Tue, Wed, Thu, Fri, Sat, Sun
+  return !['Sat', 'Sun'].includes(dayOfWeek)
+}
+
+/**
  * Check if it's time to run the scheduled sync
  */
 function isTimeToRun(config) {
   if (!config.enabled) return false
 
+  const timezone = config.timezone || 'America/New_York'
+
+  // Only run on weekdays (Mon-Fri) - markets are closed on weekends
+  if (!isWeekday(timezone)) {
+    return false
+  }
+
   // Get current time in the configured timezone
   const now = new Date()
   const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: config.timezone || 'America/New_York',
+    timeZone: timezone,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -138,7 +159,7 @@ function isTimeToRun(config) {
 
   // Get current date in timezone
   const dateFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: config.timezone || 'America/New_York',
+    timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -363,6 +384,14 @@ export function startScheduler(options) {
   setTimeout(async () => {
     try {
       const config = await getScheduleConfig(database)
+      const timezone = config.timezone || 'America/New_York'
+
+      // Skip weekends - no need for catchup sync on Sat/Sun
+      if (!isWeekday(timezone)) {
+        console.log('[scheduler] Weekend - skipping startup catchup check')
+        return
+      }
+
       const lastSync = await getLastSyncInfo(database)
       const today = new Date().toISOString().slice(0, 10)
 
@@ -370,7 +399,7 @@ export function startScheduler(options) {
       if (config.enabled && lastSync?.date !== today) {
         const now = new Date()
         const formatter = new Intl.DateTimeFormat('en-US', {
-          timeZone: config.timezone || 'America/New_York',
+          timeZone: timezone,
           hour: '2-digit',
           minute: '2-digit',
           hour12: false,
