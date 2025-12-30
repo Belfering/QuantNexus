@@ -1057,21 +1057,22 @@ app.put('/api/admin/config', async (req, res) => {
 })
 
 // ============================================
-// TIINGO API KEY MANAGEMENT
+// TIINGO API KEY MANAGEMENT (persisted in database)
 // ============================================
 
 // GET /api/admin/tiingo-key - Check if Tiingo API key is configured
 app.get('/api/admin/tiingo-key', async (req, res) => {
   try {
-    const data = await readAdminData()
-    const hasKey = Boolean(data.tiingoApiKey)
+    await ensureDbInitialized()
+    const config = await database.getAdminConfig()
+    const hasKey = Boolean(config.tiingo_api_key)
     res.json({ hasKey })
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }
 })
 
-// POST /api/admin/tiingo-key - Save Tiingo API key (encrypted)
+// POST /api/admin/tiingo-key - Save Tiingo API key (encrypted, persisted in database)
 app.post('/api/admin/tiingo-key', async (req, res) => {
   try {
     const { key } = req.body
@@ -1079,9 +1080,10 @@ app.post('/api/admin/tiingo-key', async (req, res) => {
       return res.status(400).json({ error: 'API key is required' })
     }
 
-    const data = await readAdminData()
-    data.tiingoApiKey = encrypt(key)
-    await writeAdminData(data)
+    await ensureDbInitialized()
+    // Store encrypted key in admin_config table (persists across deploys)
+    const encryptedKey = encrypt(key)
+    await database.setAdminConfig('tiingo_api_key', encryptedKey)
 
     res.json({ success: true, hasKey: true })
   } catch (e) {
@@ -1092,9 +1094,9 @@ app.post('/api/admin/tiingo-key', async (req, res) => {
 // DELETE /api/admin/tiingo-key - Clear saved Tiingo API key
 app.delete('/api/admin/tiingo-key', async (req, res) => {
   try {
-    const data = await readAdminData()
-    delete data.tiingoApiKey
-    await writeAdminData(data)
+    await ensureDbInitialized()
+    // Remove from database by setting to empty string
+    await database.setAdminConfig('tiingo_api_key', '')
 
     res.json({ success: true, hasKey: false })
   } catch (e) {
@@ -1105,18 +1107,19 @@ app.delete('/api/admin/tiingo-key', async (req, res) => {
 /**
  * Get the Tiingo API key from various sources (priority order)
  * 1. Request body (if provided)
- * 2. Stored encrypted key in admin data
+ * 2. Stored encrypted key in database (persists across deploys)
  * 3. Environment variable
  */
 async function getTiingoApiKey(requestKey) {
   // Use request-provided key if available
   if (requestKey) return requestKey
 
-  // Try to get stored encrypted key
+  // Try to get stored encrypted key from database
   try {
-    const data = await readAdminData()
-    if (data.tiingoApiKey) {
-      const decrypted = decrypt(data.tiingoApiKey)
+    await ensureDbInitialized()
+    const config = await database.getAdminConfig()
+    if (config.tiingo_api_key) {
+      const decrypted = decrypt(config.tiingo_api_key)
       if (decrypted) return decrypted
     }
   } catch {
@@ -1226,28 +1229,37 @@ app.post('/api/admin/treasury/entry', async (req, res) => {
   }
 })
 
-// GET /api/admin/eligibility - Get eligibility requirements
+// GET /api/admin/eligibility - Get eligibility requirements (persisted in database)
 app.get('/api/admin/eligibility', async (req, res) => {
   try {
-    const data = await readAdminData()
-    res.json({ eligibilityRequirements: data.config.eligibilityRequirements || [] })
+    await ensureDbInitialized()
+    const config = await database.getAdminConfig()
+    let eligibilityRequirements = []
+    if (config.eligibility_requirements) {
+      try {
+        eligibilityRequirements = JSON.parse(config.eligibility_requirements)
+      } catch {
+        eligibilityRequirements = []
+      }
+    }
+    res.json({ eligibilityRequirements })
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }
 })
 
-// PUT /api/admin/eligibility - Save eligibility requirements
+// PUT /api/admin/eligibility - Save eligibility requirements (persisted in database)
 app.put('/api/admin/eligibility', async (req, res) => {
   try {
-    const data = await readAdminData()
+    await ensureDbInitialized()
     const { eligibilityRequirements } = req.body
 
     if (Array.isArray(eligibilityRequirements)) {
-      data.config.eligibilityRequirements = eligibilityRequirements
+      // Store as JSON string in admin_config table (persists across deploys)
+      await database.setAdminConfig('eligibility_requirements', JSON.stringify(eligibilityRequirements))
     }
 
-    await writeAdminData(data)
-    res.json({ eligibilityRequirements: data.config.eligibilityRequirements })
+    res.json({ eligibilityRequirements: eligibilityRequirements || [] })
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }
