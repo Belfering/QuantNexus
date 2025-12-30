@@ -563,6 +563,13 @@ app.post('/api/tickers/registry/download', async (req, res) => {
     // Pass skip-metadata list to avoid redundant API calls
     args.push('--skip-metadata-json', skipMetadataPath)
 
+    // For bulk downloads (>100 tickers), skip metadata entirely for speed
+    // Metadata can be fetched separately later
+    if (tickers.length > 100) {
+      args.push('--no-metadata')
+      console.log(`[api] Bulk download mode: skipping metadata for ${tickers.length} tickers`)
+    }
+
     // Add Tiingo API key if available
     const tiingoApiKey = await getTiingoApiKey(req.body?.tiingoApiKey)
     if (tiingoApiKey) {

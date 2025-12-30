@@ -290,6 +290,7 @@ def download_to_parquet(
     api_key: str | None = None,
     progress_cb: Optional[Callable[[dict], None]] = None,
     skip_metadata: Optional[set[str]] = None,
+    no_metadata: bool = False,
 ) -> list[Path]:
     """Download ticker data using yfinance batch downloads, with Tiingo fallback for missing data."""
     out_root = ensure_dir(out_dir)
@@ -343,9 +344,9 @@ def download_to_parquet(
             base.to_parquet(out_path, index=False)
             out_paths.append(out_path)
 
-            # Fetch metadata from Tiingo if we have a key and don't already have it
+            # Fetch metadata from Tiingo if we have a key, not in fast mode, and don't already have it
             metadata = None
-            if tiingo_key and t not in skip_set:
+            if tiingo_key and not no_metadata and t not in skip_set:
                 metadata = _fetch_ticker_metadata(t, tiingo_key)
 
             save_event = {
@@ -379,7 +380,7 @@ def download_to_parquet(
                             out_paths.append(out_path)
 
                             metadata = None
-                            if t not in skip_set:
+                            if not no_metadata and t not in skip_set:
                                 metadata = _fetch_ticker_metadata(t, tiingo_key)
 
                             save_event = {
@@ -425,6 +426,7 @@ def _cli() -> int:
     ap.add_argument("--start-date", type=str, default="1990-01-01", help="Start date for Tiingo fallback")
     ap.add_argument("--api-key", type=str, default=None, help="Tiingo API key (or set TIINGO_API_KEY env var)")
     ap.add_argument("--skip-metadata-json", type=str, default=None, help="JSON file with tickers to skip metadata fetch for")
+    ap.add_argument("--no-metadata", action="store_true", help="Skip ALL metadata fetches (fast bulk mode)")
     args = ap.parse_args()
 
     # Load tickers from either txt or json
@@ -469,7 +471,7 @@ def _cli() -> int:
         print(json.dumps(ev), flush=True)
 
     try:
-        out = download_to_parquet(tickers, out_dir=args.out_dir, cfg=cfg, api_key=args.api_key, progress_cb=cb, skip_metadata=skip_metadata_set)
+        out = download_to_parquet(tickers, out_dir=args.out_dir, cfg=cfg, api_key=args.api_key, progress_cb=cb, skip_metadata=skip_metadata_set, no_metadata=args.no_metadata)
         print(json.dumps({"type": "complete", "saved": len(out)}), flush=True)
         return 0
     except Exception as e:
