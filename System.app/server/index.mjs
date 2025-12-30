@@ -131,7 +131,28 @@ async function preloadParquetData() {
         const fileForDuckdb = parquetPath.replace(/\\/g, '/').replace(/'/g, "''")
 
         // Create a table for this ticker and load data from parquet
+        // Sanitize ticker name for table (same as Python sanitizer)
         const tableName = `ticker_${ticker.replace(/[^A-Z0-9]/g, '_')}`
+
+        // Skip if already loaded (handles BC/PC vs BC_PC collision)
+        if (loadedTickers.has(ticker)) {
+          continue
+        }
+
+        // Check if table already exists (from another ticker with same sanitized name)
+        const tableExists = await new Promise((resolve) => {
+          conn.all(`SELECT name FROM sqlite_master WHERE type='table' AND name='${tableName}'`, (err, rows) => {
+            resolve(!err && rows && rows.length > 0)
+          })
+        })
+
+        if (tableExists) {
+          // Table already created by another ticker variant, skip
+          loadedTickers.add(ticker)
+          loaded++
+          continue
+        }
+
         const createSql = `
           CREATE TABLE ${tableName} AS
           SELECT * FROM read_parquet('${fileForDuckdb}')
