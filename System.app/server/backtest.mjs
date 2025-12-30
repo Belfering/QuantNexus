@@ -2317,18 +2317,27 @@ const evaluateChildren = (ctx, node, slot, children) => {
   const { mode, volWindow } = getSlotConfig(node, slot)
   const childAllocs = children.map((c) => evaluateNode(ctx, c))
 
-  // Calculate weights based on mode
+  // Filter to only active children (those with non-empty allocations)
+  // Empty branches should "flow through" - their weight redistributes to remaining active children
+  const active = children
+    .map((child, idx) => ({ child, alloc: childAllocs[idx], origIdx: idx }))
+    .filter((x) => Object.keys(x.alloc).length > 0)
+
+  // If no active children, return empty (becomes cash)
+  if (active.length === 0) return {}
+
+  // Calculate weights based on mode (using ACTIVE children count)
   let weights
   if (mode === 'equal') {
-    weights = new Array(children.length).fill(1 / children.length)
+    weights = active.map(() => 1 / active.length)
   } else if (mode === 'defined') {
-    const definedWeights = children.map((c) => Number(c.window || 0))
+    const definedWeights = active.map((x) => Number(x.child.window || 0))
     const total = definedWeights.reduce((a, b) => a + b, 0)
-    weights = total > 0 ? definedWeights.map((w) => w / total) : new Array(children.length).fill(1 / children.length)
+    weights = total > 0 ? definedWeights.map((w) => w / total) : active.map(() => 1 / active.length)
   } else if (mode === 'inverse' || mode === 'pro') {
     // Volatility-based weighting
-    const vols = childAllocs.map((alloc) => {
-      const tickers = Object.keys(alloc)
+    const vols = active.map((x) => {
+      const tickers = Object.keys(x.alloc)
       if (tickers.length === 0) return null
       const avgVol = tickers.reduce((sum, t) => {
         const closes = getCachedCloseArray(ctx.cache, ctx.db, t)
@@ -2346,7 +2355,7 @@ const evaluateChildren = (ctx, node, slot, children) => {
     })
 
     if (vols.some((v) => v == null || v <= 0)) {
-      weights = new Array(children.length).fill(1 / children.length)
+      weights = active.map(() => 1 / active.length)
     } else {
       if (mode === 'inverse') {
         const invVols = vols.map((v) => 1 / v)
@@ -2358,13 +2367,13 @@ const evaluateChildren = (ctx, node, slot, children) => {
       }
     }
   } else {
-    weights = new Array(children.length).fill(1 / children.length)
+    weights = active.map(() => 1 / active.length)
   }
 
-  // Combine allocations
+  // Combine allocations from active children only
   const combined = {}
-  for (let i = 0; i < childAllocs.length; i++) {
-    const alloc = childAllocs[i]
+  for (let i = 0; i < active.length; i++) {
+    const alloc = active[i].alloc
     const weight = weights[i]
     for (const [ticker, w] of Object.entries(alloc)) {
       combined[ticker] = (combined[ticker] || 0) + w * weight
