@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit'
 import duckdb from 'duckdb'
 import { encrypt, decrypt } from './utils/crypto.mjs'
 import { seedAdminUser } from './seed-admin.mjs'
+import * as scheduler from './scheduler.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -2424,6 +2425,77 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
 })
 
 // ============================================
+// SCHEDULER ENDPOINTS
+// ============================================
+
+// GET /api/admin/sync-schedule - Get schedule configuration
+app.get('/api/admin/sync-schedule', async (req, res) => {
+  try {
+    await ensureDbInitialized()
+    const config = await scheduler.getScheduleConfig(database)
+    const lastSync = await scheduler.getLastSyncInfo(database)
+    const status = scheduler.getSchedulerStatus()
+
+    res.json({
+      config,
+      lastSync,
+      status: {
+        isRunning: status.isRunning,
+        schedulerActive: status.schedulerActive,
+        currentJob: status.currentJob,
+      },
+    })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// PUT /api/admin/sync-schedule - Update schedule configuration
+app.put('/api/admin/sync-schedule', async (req, res) => {
+  try {
+    await ensureDbInitialized()
+    const { enabled, updateTime, batchSize, sleepSeconds } = req.body
+
+    const currentConfig = await scheduler.getScheduleConfig(database)
+    const newConfig = {
+      ...currentConfig,
+      ...(enabled !== undefined && { enabled }),
+      ...(updateTime !== undefined && { updateTime }),
+      ...(batchSize !== undefined && { batchSize: Math.max(10, Math.min(500, Number(batchSize))) }),
+      ...(sleepSeconds !== undefined && { sleepSeconds: Math.max(0.5, Math.min(30, Number(sleepSeconds))) }),
+    }
+
+    const success = await scheduler.saveScheduleConfig(database, newConfig)
+    if (success) {
+      res.json({ success: true, config: newConfig })
+    } else {
+      res.status(500).json({ error: 'Failed to save schedule config' })
+    }
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// POST /api/admin/sync-schedule/run-now - Trigger immediate sync
+app.post('/api/admin/sync-schedule/run-now', async (req, res) => {
+  try {
+    await ensureDbInitialized()
+
+    const result = await scheduler.triggerManualSync({
+      database,
+      tickerRegistry,
+      tickerDataRoot: TICKER_DATA_ROOT,
+      parquetDir: PARQUET_DIR,
+      pythonCmd: PYTHON,
+    })
+
+    res.json(result)
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// ============================================
 // DATABASE VIEWER ENDPOINTS
 // ============================================
 
@@ -2550,4 +2622,14 @@ app.listen(PORT, async () => {
 
   // TEMPORARY: Pre-load all parquet data for fast development
   await preloadParquetData()
+
+  // Start the ticker sync scheduler (default: 6pm EST daily)
+  await ensureDbInitialized()
+  scheduler.startScheduler({
+    database,
+    tickerRegistry,
+    tickerDataRoot: TICKER_DATA_ROOT,
+    parquetDir: PARQUET_DIR,
+    pythonCmd: PYTHON,
+  })
 })

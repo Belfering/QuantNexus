@@ -1,0 +1,438 @@
+/**
+ * Scheduler Module
+ *
+ * Handles scheduled tasks like daily ticker data updates.
+ * Default: 6:00 PM Eastern Time daily
+ */
+
+import { spawn } from 'node:child_process'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+
+// Schedule configuration (stored in adminConfig table)
+const DEFAULT_SCHEDULE = {
+  enabled: true,
+  updateTime: '18:00',  // 6:00 PM in 24h format
+  timezone: 'America/New_York',
+  batchSize: 100,
+  sleepSeconds: 2.0,
+}
+
+let schedulerInterval = null
+let lastRunDate = null
+let isRunning = false
+let currentJob = null
+
+/**
+ * Get current schedule config from database or use defaults
+ */
+export async function getScheduleConfig(database) {
+  try {
+    const { adminConfig } = await import('./db/schema.mjs')
+    const { eq } = await import('drizzle-orm')
+
+    const [row] = await database.db.select()
+      .from(adminConfig)
+      .where(eq(adminConfig.key, 'ticker_sync_schedule'))
+      .limit(1)
+
+    if (row?.value) {
+      return { ...DEFAULT_SCHEDULE, ...JSON.parse(row.value) }
+    }
+  } catch (e) {
+    console.log('[scheduler] Using default config:', e.message)
+  }
+  return { ...DEFAULT_SCHEDULE }
+}
+
+/**
+ * Save schedule config to database
+ */
+export async function saveScheduleConfig(database, config) {
+  try {
+    const { adminConfig } = await import('./db/schema.mjs')
+
+    await database.db.insert(adminConfig)
+      .values({
+        key: 'ticker_sync_schedule',
+        value: JSON.stringify(config),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: adminConfig.key,
+        set: {
+          value: JSON.stringify(config),
+          updatedAt: new Date(),
+        },
+      })
+
+    return true
+  } catch (e) {
+    console.error('[scheduler] Error saving config:', e)
+    return false
+  }
+}
+
+/**
+ * Get last sync info
+ */
+export async function getLastSyncInfo(database) {
+  try {
+    const { adminConfig } = await import('./db/schema.mjs')
+    const { eq } = await import('drizzle-orm')
+
+    const [row] = await database.db.select()
+      .from(adminConfig)
+      .where(eq(adminConfig.key, 'ticker_sync_last_run'))
+      .limit(1)
+
+    if (row?.value) {
+      return JSON.parse(row.value)
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  return null
+}
+
+/**
+ * Save last sync info
+ */
+async function saveLastSyncInfo(database, info) {
+  try {
+    const { adminConfig } = await import('./db/schema.mjs')
+
+    await database.db.insert(adminConfig)
+      .values({
+        key: 'ticker_sync_last_run',
+        value: JSON.stringify(info),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: adminConfig.key,
+        set: {
+          value: JSON.stringify(info),
+          updatedAt: new Date(),
+        },
+      })
+  } catch (e) {
+    console.error('[scheduler] Error saving last sync info:', e)
+  }
+}
+
+/**
+ * Check if it's time to run the scheduled sync
+ */
+function isTimeToRun(config) {
+  if (!config.enabled) return false
+
+  // Get current time in the configured timezone
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: config.timezone || 'America/New_York',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const currentTime = formatter.format(now)
+
+  // Get current date in timezone
+  const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: config.timezone || 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const currentDate = dateFormatter.format(now)
+
+  // Check if current time matches scheduled time (within 1 minute window)
+  const [schedHour, schedMinute] = config.updateTime.split(':').map(Number)
+  const [curHour, curMinute] = currentTime.split(':').map(Number)
+
+  const isRightTime = curHour === schedHour && curMinute === schedMinute
+  const alreadyRanToday = lastRunDate === currentDate
+
+  return isRightTime && !alreadyRanToday && !isRunning
+}
+
+/**
+ * Run the ticker sync job
+ */
+async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry) {
+  if (isRunning) {
+    console.log('[scheduler] Sync already running, skipping')
+    return
+  }
+
+  isRunning = true
+  const startedAt = Date.now()
+  const today = new Date().toISOString().slice(0, 10)
+
+  console.log('[scheduler] Starting scheduled ticker sync...')
+
+  try {
+    // Ensure ticker registry table exists
+    await tickerRegistry.ensureTickerRegistryTable()
+
+    // Get tickers needing sync
+    const tickers = await tickerRegistry.getTickersNeedingSync(today)
+
+    if (tickers.length === 0) {
+      console.log('[scheduler] All tickers already synced for today')
+      lastRunDate = new Intl.DateTimeFormat('en-US', {
+        timeZone: config.timezone || 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date())
+
+      await saveLastSyncInfo(database, {
+        date: today,
+        status: 'skipped',
+        message: 'All tickers already synced',
+        timestamp: new Date().toISOString(),
+      })
+
+      isRunning = false
+      return
+    }
+
+    console.log(`[scheduler] Syncing ${tickers.length} tickers...`)
+
+    // Write tickers to temp file
+    const tempTickersPath = path.join(tickerDataRoot, '_pending_tickers.json')
+    await fs.writeFile(tempTickersPath, JSON.stringify(tickers), 'utf-8')
+
+    // Get tickers with existing metadata
+    const tickersWithMetadata = await tickerRegistry.getTickersWithMetadata()
+    const skipMetadataPath = path.join(tickerDataRoot, '_skip_metadata.json')
+    await fs.writeFile(skipMetadataPath, JSON.stringify(tickersWithMetadata), 'utf-8')
+
+    // Build script args
+    const scriptPath = path.join(tickerDataRoot, 'tiingo_download.py')
+    const args = [
+      '-u',
+      scriptPath,
+      '--tickers-json',
+      tempTickersPath,
+      '--out-dir',
+      parquetDir,
+      '--batch-size',
+      String(config.batchSize || 100),
+      '--sleep-seconds',
+      String(config.sleepSeconds || 2.0),
+      '--max-retries',
+      '3',
+      '--skip-metadata-json',
+      skipMetadataPath,
+    ]
+
+    // Add Tiingo API key from environment
+    const tiingoApiKey = process.env.TIINGO_API_KEY
+    if (tiingoApiKey) {
+      args.push('--api-key', tiingoApiKey)
+    }
+
+    // Spawn the download process
+    const child = spawn(pythonCmd, args, { windowsHide: true })
+    currentJob = {
+      pid: child.pid,
+      startedAt,
+      tickerCount: tickers.length,
+      syncedCount: 0,
+    }
+
+    child.stdout.on('data', (buf) => {
+      for (const line of String(buf).split(/\r?\n/)) {
+        const s = line.trimEnd()
+        if (!s) continue
+        try {
+          const ev = JSON.parse(s)
+          if (ev?.type === 'ticker_saved' && ev.ticker) {
+            currentJob.syncedCount++
+            // Mark as synced
+            tickerRegistry.markTickerSynced(ev.ticker, today).catch(() => {})
+            // Update metadata
+            if (ev.name || ev.description) {
+              tickerRegistry.updateTickerMetadata(ev.ticker, {
+                name: ev.name,
+                description: ev.description,
+              }).catch(() => {})
+            }
+          }
+          if (ev?.type === 'done') {
+            console.log(`[scheduler] Sync completed: ${ev.saved || 0} tickers saved`)
+          }
+        } catch {
+          // Non-JSON output
+        }
+      }
+    })
+
+    child.stderr.on('data', (buf) => {
+      console.log('[scheduler] stderr:', String(buf).trim())
+    })
+
+    child.on('close', async (code) => {
+      const finishedAt = Date.now()
+      const duration = Math.round((finishedAt - startedAt) / 1000)
+
+      if (code === 0) {
+        console.log(`[scheduler] Sync completed successfully in ${duration}s`)
+        await saveLastSyncInfo(database, {
+          date: today,
+          status: 'success',
+          tickerCount: tickers.length,
+          syncedCount: currentJob?.syncedCount || 0,
+          durationSeconds: duration,
+          timestamp: new Date().toISOString(),
+        })
+      } else {
+        console.error(`[scheduler] Sync failed with code ${code}`)
+        await saveLastSyncInfo(database, {
+          date: today,
+          status: 'error',
+          error: `Process exited with code ${code}`,
+          tickerCount: tickers.length,
+          syncedCount: currentJob?.syncedCount || 0,
+          durationSeconds: duration,
+          timestamp: new Date().toISOString(),
+        })
+      }
+
+      // Update last run date
+      lastRunDate = new Intl.DateTimeFormat('en-US', {
+        timeZone: config.timezone || 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date())
+
+      isRunning = false
+      currentJob = null
+    })
+
+    child.on('error', async (err) => {
+      console.error('[scheduler] Process error:', err)
+      await saveLastSyncInfo(database, {
+        date: today,
+        status: 'error',
+        error: String(err?.message || err),
+        timestamp: new Date().toISOString(),
+      })
+      isRunning = false
+      currentJob = null
+    })
+
+  } catch (e) {
+    console.error('[scheduler] Error starting sync:', e)
+    await saveLastSyncInfo(database, {
+      date: today,
+      status: 'error',
+      error: String(e?.message || e),
+      timestamp: new Date().toISOString(),
+    })
+    isRunning = false
+    currentJob = null
+  }
+}
+
+/**
+ * Start the scheduler
+ */
+export function startScheduler(options) {
+  const { database, tickerRegistry, tickerDataRoot, parquetDir, pythonCmd } = options
+
+  console.log('[scheduler] Starting scheduler...')
+
+  // Check every minute
+  schedulerInterval = setInterval(async () => {
+    try {
+      const config = await getScheduleConfig(database)
+
+      if (isTimeToRun(config)) {
+        console.log('[scheduler] Scheduled time reached, starting sync...')
+        await runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry)
+      }
+    } catch (e) {
+      console.error('[scheduler] Error in scheduler loop:', e)
+    }
+  }, 60 * 1000)  // Check every minute
+
+  // Also run once at startup to check if we missed today's run
+  setTimeout(async () => {
+    try {
+      const config = await getScheduleConfig(database)
+      const lastSync = await getLastSyncInfo(database)
+      const today = new Date().toISOString().slice(0, 10)
+
+      // If enabled and we haven't run today, and it's past the scheduled time
+      if (config.enabled && lastSync?.date !== today) {
+        const now = new Date()
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: config.timezone || 'America/New_York',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        })
+        const currentTime = formatter.format(now)
+        const [schedHour, schedMinute] = config.updateTime.split(':').map(Number)
+        const [curHour, curMinute] = currentTime.split(':').map(Number)
+
+        // If past scheduled time, run now
+        const isPastTime = curHour > schedHour || (curHour === schedHour && curMinute > schedMinute)
+        if (isPastTime) {
+          console.log('[scheduler] Missed scheduled time, running catchup sync...')
+          await runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry)
+        }
+      }
+    } catch (e) {
+      console.error('[scheduler] Error in startup check:', e)
+    }
+  }, 5000)  // Check 5 seconds after startup
+
+  console.log('[scheduler] Scheduler started')
+}
+
+/**
+ * Stop the scheduler
+ */
+export function stopScheduler() {
+  if (schedulerInterval) {
+    clearInterval(schedulerInterval)
+    schedulerInterval = null
+    console.log('[scheduler] Scheduler stopped')
+  }
+}
+
+/**
+ * Get scheduler status
+ */
+export function getSchedulerStatus() {
+  return {
+    isRunning,
+    currentJob,
+    lastRunDate,
+    schedulerActive: schedulerInterval !== null,
+  }
+}
+
+/**
+ * Trigger a manual sync (bypasses schedule)
+ */
+export async function triggerManualSync(options) {
+  const { database, tickerRegistry, tickerDataRoot, parquetDir, pythonCmd } = options
+  const config = await getScheduleConfig(database)
+
+  if (isRunning) {
+    return { success: false, error: 'Sync already in progress' }
+  }
+
+  // Reset lastRunDate to allow running
+  lastRunDate = null
+
+  // Run sync
+  await runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry)
+
+  return { success: true, message: 'Sync started' }
+}
