@@ -4151,6 +4151,9 @@ function AdminPanel({
   // Registry tickers (all tickers from Tiingo master list)
   const [registryTickers, setRegistryTickers] = useState<string[]>([])
 
+  // Missing tickers download state
+  const [missingDownloadJob, setMissingDownloadJob] = useState<{ jobId: string; status: string; saved: number; total: number } | null>(null)
+
   // Compute missing tickers (in registry but not in parquet files)
   const missingTickers = useMemo(() => {
     if (registryTickers.length === 0) return []
@@ -5399,6 +5402,67 @@ function AdminPanel({
                 Parquet: {parquetTickers.length.toLocaleString()} files |
                 Missing: {missingTickers.length.toLocaleString()}
               </div>
+              {missingTickers.length > 0 && (
+                <div className="flex items-center gap-2 my-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={missingDownloadJob?.status === 'running' || syncSchedule?.status?.isRunning}
+                    onClick={async () => {
+                      if (!confirm(`Download ${missingTickers.length.toLocaleString()} missing tickers? This may take a while.`)) return
+                      setRegistryMsg('Starting download of missing tickers...')
+                      try {
+                        const res = await fetch('/api/tickers/download-specific', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ tickers: missingTickers })
+                        })
+                        const data = await res.json()
+                        if (res.ok && data.jobId) {
+                          setMissingDownloadJob({ jobId: data.jobId, status: 'running', saved: 0, total: data.tickerCount })
+                          setRegistryMsg(`Download started (Job: ${data.jobId})`)
+                          // Poll for job status
+                          const poll = setInterval(async () => {
+                            try {
+                              const jobRes = await fetch(`/api/jobs/${data.jobId}`)
+                              if (jobRes.ok) {
+                                const job = await jobRes.json()
+                                const saved = job.syncedTickers?.length ?? 0
+                                setMissingDownloadJob(prev => prev ? { ...prev, status: job.status, saved } : null)
+                                if (job.status === 'done' || job.status === 'error') {
+                                  clearInterval(poll)
+                                  setRegistryMsg(job.status === 'done'
+                                    ? `Download complete: ${saved} tickers saved`
+                                    : `Download failed: ${job.error || 'Unknown error'}`)
+                                  // Refresh parquet list
+                                  const parquetRes = await fetch('/api/parquet-tickers')
+                                  if (parquetRes.ok) {
+                                    const pData = await parquetRes.json()
+                                    setParquetTickers(pData.tickers || [])
+                                  }
+                                }
+                              }
+                            } catch { /* ignore polling errors */ }
+                          }, 2000)
+                        } else {
+                          setRegistryMsg(`Error: ${data.error || 'Failed to start download'}`)
+                        }
+                      } catch (e) {
+                        setRegistryMsg(`Error: ${e}`)
+                      }
+                    }}
+                  >
+                    {missingDownloadJob?.status === 'running'
+                      ? `Downloading... (${missingDownloadJob.saved}/${missingDownloadJob.total})`
+                      : `Download Missing (${missingTickers.length.toLocaleString()})`}
+                  </Button>
+                  {missingDownloadJob?.status === 'running' && (
+                    <span className="text-xs text-muted-foreground">
+                      {((missingDownloadJob.saved / missingDownloadJob.total) * 100).toFixed(0)}% complete
+                    </span>
+                  )}
+                </div>
+              )}
               {missingTickers.length > 0 ? (
                 <div className="max-h-[200px] overflow-auto border rounded-lg p-2 bg-background text-xs font-mono">
                   {missingTickers.join(', ')}

@@ -734,6 +734,146 @@ app.post('/api/tickers/reload', async (req, res) => {
   }
 })
 
+// Download specific tickers (for downloading missing tickers)
+app.post('/api/tickers/download-specific', async (req, res) => {
+  const jobId = newJobId()
+  const startedAt = Date.now()
+  const today = new Date().toISOString().slice(0, 10)
+
+  try {
+    const tickers = req.body?.tickers
+    if (!Array.isArray(tickers) || tickers.length === 0) {
+      res.status(400).json({ error: 'tickers array required' })
+      return
+    }
+
+    // Sanitize and dedupe tickers
+    const tickerList = [...new Set(tickers.map(t => String(t).toUpperCase().trim()).filter(Boolean))]
+    if (tickerList.length === 0) {
+      res.status(400).json({ error: 'No valid tickers provided' })
+      return
+    }
+
+    // Write tickers to a temp JSON file for the download script
+    const tempTickersPath = path.join(TICKER_DATA_ROOT, '_specific_tickers.json')
+    await fs.writeFile(tempTickersPath, JSON.stringify(tickerList), 'utf-8')
+
+    // Get tickers that already have metadata (to skip redundant API calls)
+    const tickersWithMetadata = await tickerRegistry.getTickersWithMetadata()
+    const skipMetadataPath = path.join(TICKER_DATA_ROOT, '_skip_metadata.json')
+    await fs.writeFile(skipMetadataPath, JSON.stringify(tickersWithMetadata), 'utf-8')
+
+    const batchSize = Math.max(1, Math.min(500, Number(req.body?.batchSize ?? 50)))
+    const sleepSeconds = Math.max(0, Math.min(60, Number(req.body?.sleepSeconds ?? 0.2)))
+
+    const scriptPath = path.join(TICKER_DATA_ROOT, 'tiingo_download.py')
+    const args = [
+      '-u',
+      scriptPath,
+      '--tickers-json',
+      tempTickersPath,
+      '--out-dir',
+      PARQUET_DIR,
+      '--batch-size',
+      String(batchSize),
+      '--sleep-seconds',
+      String(sleepSeconds),
+      '--max-retries',
+      '3',
+      '--skip-metadata-json',
+      skipMetadataPath,
+    ]
+
+    // For bulk downloads (>100 tickers), skip metadata entirely for speed
+    if (tickerList.length > 100) {
+      args.push('--no-metadata')
+      console.log(`[api] Bulk download mode: skipping metadata for ${tickerList.length} tickers`)
+    }
+
+    // Add Tiingo API key if available
+    const tiingoApiKey = await getTiingoApiKey(req.body?.tiingoApiKey)
+    if (tiingoApiKey) {
+      args.push('--api-key', String(tiingoApiKey))
+    }
+
+    const job = {
+      id: jobId,
+      type: 'specific_download',
+      status: 'running',
+      startedAt,
+      finishedAt: null,
+      error: null,
+      config: { batchSize, sleepSeconds, tickerCount: tickerList.length },
+      events: [],
+      logs: [],
+      syncedTickers: [],
+    }
+    jobs.set(jobId, job)
+
+    // Log the command for debugging
+    console.log(`[api] Specific download job ${jobId}: ${PYTHON} ${args.join(' ')}`)
+
+    const child = spawn(PYTHON, args, { windowsHide: true })
+    job.pid = child.pid
+
+    child.stdout.on('data', (buf) => {
+      console.log('[api] download stdout:', String(buf).trim())
+      for (const line of String(buf).split(/\r?\n/)) {
+        const s = line.trimEnd()
+        if (!s) continue
+        job.logs.push(s)
+        if (job.logs.length > 400) job.logs.splice(0, job.logs.length - 400)
+        try {
+          const ev = JSON.parse(s)
+          if (ev && typeof ev === 'object') {
+            job.events.push(ev)
+            if (job.events.length > 400) job.events.splice(0, job.events.length - 400)
+            if (ev.type === 'ticker_saved' && ev.ticker) {
+              job.syncedTickers.push(ev.ticker)
+              tickerRegistry.markTickerSynced(ev.ticker, today).catch(() => {})
+              if (ev.name || ev.description) {
+                tickerRegistry.updateTickerMetadata(ev.ticker, {
+                  name: ev.name,
+                  description: ev.description
+                }).catch(() => {})
+              }
+            }
+          }
+        } catch {
+          // ignore non-JSON lines
+        }
+      }
+    })
+
+    child.stderr.on('data', (buf) => {
+      for (const line of String(buf).split(/\r?\n/)) {
+        const s = line.trimEnd()
+        if (s) job.logs.push('[stderr] ' + s)
+      }
+    })
+
+    child.on('error', (err) => {
+      job.finishedAt = Date.now()
+      job.status = 'error'
+      job.error = String(err?.message || err)
+    })
+
+    child.on('close', (code) => {
+      job.finishedAt = Date.now()
+      if (code === 0) {
+        job.status = 'done'
+      } else {
+        job.status = 'error'
+        job.error = `Downloader exited with code ${code}`
+      }
+    })
+
+    res.json({ jobId, tickerCount: tickerList.length })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
 // Search tickers in the registry
 app.get('/api/tickers/registry/search', async (req, res) => {
   try {

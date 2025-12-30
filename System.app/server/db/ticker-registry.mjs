@@ -101,7 +101,7 @@ export async function importTickers(tickers, options = { usOnly: true }) {
 }
 
 /**
- * Get all active US tickers
+ * Get all active US tickers (Stocks and ETFs only, excludes mutual funds)
  */
 export async function getActiveUSTickers() {
   const rows = await db.select({ ticker: tickerRegistry.ticker })
@@ -109,7 +109,8 @@ export async function getActiveUSTickers() {
     .where(
       and(
         eq(tickerRegistry.isActive, true),
-        eq(tickerRegistry.currency, 'USD')
+        eq(tickerRegistry.currency, 'USD'),
+        sql`${tickerRegistry.assetType} IN ('Stock', 'ETF')`
       )
     )
   return rows.map(r => r.ticker)
@@ -117,6 +118,7 @@ export async function getActiveUSTickers() {
 
 /**
  * Get tickers that need syncing (haven't been synced today)
+ * Only returns active US Stocks and ETFs (excludes mutual funds)
  * @param {string} today - Today's date in YYYY-MM-DD format
  */
 export async function getTickersNeedingSync(today) {
@@ -126,6 +128,7 @@ export async function getTickersNeedingSync(today) {
       and(
         eq(tickerRegistry.isActive, true),
         eq(tickerRegistry.currency, 'USD'),
+        sql`${tickerRegistry.assetType} IN ('Stock', 'ETF')`,
         sql`(${tickerRegistry.lastSynced} IS NULL OR ${tickerRegistry.lastSynced} < ${today})`
       )
     )
