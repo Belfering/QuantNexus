@@ -4,8 +4,10 @@ import json
 import os
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Callable, Iterable, Optional
 
 import pandas as pd
@@ -71,10 +73,11 @@ def ensure_dir(path: str | Path) -> Path:
 
 @dataclass(frozen=True)
 class DownloadConfig:
-    batch_size: int = 50  # Tiingo doesn't support batch downloads, but we use this for progress batching
-    sleep_seconds: float = 0.2  # Tiingo business has higher rate limits
+    batch_size: int = 50  # Number of concurrent downloads
+    sleep_seconds: float = 0.05  # Sleep between batches (reduced for parallel)
     max_retries: int = 3
     start_date: str = "1990-01-01"
+    max_workers: int = 20  # Number of parallel download threads
 
 
 def _get_api_key(cli_key: str | None = None) -> str:
@@ -204,6 +207,64 @@ def _download_ticker_yfinance(ticker: str, cfg: DownloadConfig) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _process_single_ticker(
+    ticker: str,
+    api_key: str,
+    cfg: DownloadConfig,
+    out_root: Path,
+    skip_metadata: set[str],
+) -> dict:
+    """Process a single ticker - download, normalize, save. Returns result dict."""
+    result = {"ticker": ticker, "success": False, "path": None, "source": None, "metadata": None, "error": None}
+
+    normalized: pd.DataFrame | None = None
+    source_used = "tiingo"
+
+    # Try Tiingo first
+    try:
+        df = _download_ticker(ticker, api_key, cfg)
+        if df is not None and not df.empty:
+            normalized = _normalize_tiingo_df(df, ticker)
+    except Exception as e:
+        result["error"] = f"tiingo: {str(e)}"
+
+    # Fallback to Yahoo Finance if Tiingo failed or returned no data
+    if (normalized is None or normalized.empty) and YFINANCE_AVAILABLE:
+        try:
+            normalized = _download_ticker_yfinance(ticker, cfg)
+            if normalized is not None and not normalized.empty:
+                source_used = "yfinance"
+                result["error"] = None  # Clear error if yfinance succeeded
+        except Exception as e2:
+            if result["error"]:
+                result["error"] += f", yfinance: {str(e2)}"
+            else:
+                result["error"] = f"yfinance: {str(e2)}"
+
+    # Skip if still no data
+    if normalized is None or normalized.empty:
+        result["error"] = result["error"] or "no data from tiingo or yfinance"
+        return result
+
+    # Save the parquet file
+    try:
+        out_path = out_root / f"{ticker}.parquet"
+        normalized.to_parquet(out_path, index=False)
+        result["success"] = True
+        result["path"] = str(out_path)
+        result["source"] = source_used
+
+        # Fetch metadata (name, description) only if not already saved
+        if source_used == "tiingo" and ticker not in skip_metadata:
+            metadata = _fetch_ticker_metadata(ticker, api_key)
+            if metadata:
+                result["metadata"] = metadata
+    except Exception as e:
+        result["error"] = f"save: {str(e)}"
+
+    return result
+
+
 def download_to_parquet(
     tickers: Iterable[str],
     *,
@@ -213,87 +274,83 @@ def download_to_parquet(
     progress_cb: Optional[Callable[[dict], None]] = None,
     skip_metadata: Optional[set[str]] = None,
 ) -> list[Path]:
-    """Download ticker data from Tiingo and save as Parquet files."""
+    """Download ticker data from Tiingo and save as Parquet files using parallel downloads."""
     out_root = ensure_dir(out_dir)
     tickers_list = [t.upper().strip() for t in tickers if str(t).strip()]
     out_paths: list[Path] = []
+    skip_set = skip_metadata or set()
 
     api_key = _get_api_key(api_key)
 
+    total_tickers = len(tickers_list)
+    num_batches = (total_tickers + cfg.batch_size - 1) // cfg.batch_size
+
     if progress_cb:
-        progress_cb({"type": "start", "tickers": len(tickers_list), "batches": len(tickers_list)})
+        progress_cb({"type": "start", "tickers": total_tickers, "batches": num_batches, "workers": cfg.max_workers})
 
-    for i, ticker in enumerate(tickers_list, start=1):
+    # Process in batches for better progress reporting
+    saved_count = 0
+    lock = Lock()
+
+    for batch_idx in range(num_batches):
+        batch_start = batch_idx * cfg.batch_size
+        batch_end = min(batch_start + cfg.batch_size, total_tickers)
+        batch = tickers_list[batch_start:batch_end]
+
         if progress_cb:
-            progress_cb({"type": "batch_start", "batch_index": i, "batches_total": len(tickers_list), "batch_size": 1, "ticker": ticker})
+            progress_cb({
+                "type": "batch_start",
+                "batch_index": batch_idx + 1,
+                "batches_total": num_batches,
+                "batch_size": len(batch),
+                "tickers_in_batch": batch[:5],  # Show first 5 tickers
+            })
 
-        normalized: pd.DataFrame | None = None
-        source_used = "tiingo"
-
-        # Try Tiingo first
-        try:
-            df = _download_ticker(ticker, api_key, cfg)
-            if df is not None and not df.empty:
-                normalized = _normalize_tiingo_df(df, ticker)
-        except Exception as e:
-            if progress_cb:
-                progress_cb({"type": "ticker_tiingo_failed", "ticker": ticker, "error": str(e), "fallback": "yfinance"})
-
-        # Fallback to Yahoo Finance if Tiingo failed or returned no data
-        if (normalized is None or normalized.empty) and YFINANCE_AVAILABLE:
-            try:
-                if progress_cb:
-                    progress_cb({"type": "ticker_fallback", "ticker": ticker, "source": "yfinance"})
-                normalized = _download_ticker_yfinance(ticker, cfg)
-                if normalized is not None and not normalized.empty:
-                    source_used = "yfinance"
-            except Exception as e2:
-                if progress_cb:
-                    progress_cb({"type": "ticker_fallback_failed", "ticker": ticker, "error": str(e2)})
-
-        # Skip if still no data
-        if normalized is None or normalized.empty:
-            if progress_cb:
-                progress_cb({"type": "ticker_skipped", "ticker": ticker, "reason": "no data from tiingo or yfinance"})
-            continue
-
-        # Save the parquet file
-        try:
-            out_path = out_root / f"{ticker}.parquet"
-            normalized.to_parquet(out_path, index=False)
-            out_paths.append(out_path)
-
-            # Fetch metadata (name, description) only if not already saved
-            metadata = None
-            skip_set = skip_metadata or set()
-            if source_used == "tiingo" and ticker not in skip_set:
-                metadata = _fetch_ticker_metadata(ticker, api_key)
-
-            save_event = {
-                "type": "ticker_saved",
-                "ticker": ticker,
-                "path": str(out_path),
-                "saved": len(out_paths),
-                "source": source_used,
+        # Download batch in parallel
+        batch_results = []
+        with ThreadPoolExecutor(max_workers=cfg.max_workers) as executor:
+            futures = {
+                executor.submit(_process_single_ticker, ticker, api_key, cfg, out_root, skip_set): ticker
+                for ticker in batch
             }
 
-            # Include metadata in the event if fetched
-            if metadata:
-                save_event["name"] = metadata.get("name")
-                save_event["description"] = metadata.get("description")
+            for future in as_completed(futures):
+                result = future.result()
+                batch_results.append(result)
 
-            if progress_cb:
-                progress_cb(save_event)
-        except Exception as e:
-            if progress_cb:
-                progress_cb({"type": "ticker_error", "ticker": ticker, "error": str(e)})
+                if result["success"]:
+                    with lock:
+                        saved_count += 1
+                        out_paths.append(Path(result["path"]))
 
-        # Rate limiting
-        if i < len(tickers_list):
-            time.sleep(cfg.sleep_seconds + random.uniform(0.0, 0.1))
+                    save_event = {
+                        "type": "ticker_saved",
+                        "ticker": result["ticker"],
+                        "path": result["path"],
+                        "saved": saved_count,
+                        "total": total_tickers,
+                        "source": result["source"],
+                    }
+                    if result["metadata"]:
+                        save_event["name"] = result["metadata"].get("name")
+                        save_event["description"] = result["metadata"].get("description")
+
+                    if progress_cb:
+                        progress_cb(save_event)
+                else:
+                    if progress_cb:
+                        progress_cb({
+                            "type": "ticker_skipped",
+                            "ticker": result["ticker"],
+                            "reason": result["error"],
+                        })
+
+        # Brief pause between batches to avoid overwhelming the API
+        if batch_idx < num_batches - 1:
+            time.sleep(cfg.sleep_seconds)
 
     if progress_cb:
-        progress_cb({"type": "done", "saved": len(out_paths)})
+        progress_cb({"type": "done", "saved": len(out_paths), "total": total_tickers})
 
     return out_paths
 
@@ -305,10 +362,10 @@ def _cli() -> int:
     ap.add_argument("--tickers-file", help="Path to tickers.txt (line-separated)")
     ap.add_argument("--tickers-json", help="Path to tickers.json (from sync_tickers.py)")
     ap.add_argument("--out-dir", required=True, help="Output directory for <TICKER>.parquet files")
-    ap.add_argument("--batch-size", type=int, default=50, help="Progress batch size (Tiingo downloads one at a time)")
-    ap.add_argument("--sleep-seconds", type=float, default=0.2, help="Sleep between requests")
+    ap.add_argument("--batch-size", type=int, default=50, help="Number of tickers per batch")
+    ap.add_argument("--sleep-seconds", type=float, default=0.05, help="Sleep between batches")
     ap.add_argument("--max-retries", type=int, default=3)
-    ap.add_argument("--threads", type=int, default=1, help="Ignored (kept for compatibility with download.py)")
+    ap.add_argument("--workers", type=int, default=20, help="Number of parallel download threads")
     ap.add_argument("--limit", type=int, default=0, help="0 = no limit")
     ap.add_argument("--offset", type=int, default=0, help="Skip first N tickers (for resuming)")
     ap.add_argument("--start-date", type=str, default="1990-01-01", help="Start date for historical data")
@@ -352,6 +409,7 @@ def _cli() -> int:
         sleep_seconds=float(args.sleep_seconds),
         max_retries=int(args.max_retries),
         start_date=args.start_date,
+        max_workers=int(args.workers),
     )
 
     def cb(ev: dict) -> None:
