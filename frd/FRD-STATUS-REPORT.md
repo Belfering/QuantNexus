@@ -1,15 +1,20 @@
 # FRD Status Report
-Generated: 2025-12-26 (Updated)
+Generated: 2025-12-30 (Updated)
 
 ## Executive Summary
 
-**Total FRDs**: 23 active documents
-**Completed**: 21 (FRD-001 through FRD-008, FRD-012-014, FRD-016-019, FRD-021-025, Admin features)
-**In Progress**: 0
-**Deferred (OFF)**: 3 (FRD-011, FRD-026, FRD-027)
+**Total FRDs**: 24 active documents
+**Completed**: 23 (FRD-001 through FRD-008, FRD-011-014, FRD-016-019, FRD-021-026, Admin features)
+**In Progress**: 1 (FRD-028)
+**Deferred (OFF)**: 1 (FRD-027)
 **Ongoing**: 1 (FRD-020)
 **Pending**: 0
-**Completion Rate**: 91%
+**Completion Rate**: 96%
+
+### Session 5 Updates (2025-12-30)
+- **ADDED**: FRD-028 (Development Branch Workflow) - Separate dev branch for testing before production
+- **COMPLETED**: FRD-011 (Atlas Sponsored Systems) - Fixed Atlas Select zone to use current user's userId instead of hardcoded 'admin', added super admin user management
+- **COMPLETED**: FRD-026 (Advanced Analytics Suite) - Analytics features implemented
 
 ### Session 4 Updates (2025-12-27)
 - **COMPLETED**: FRD-017 (Payload Compression) - Gzip compression for payloads >1MB, automatic decompress on read
@@ -330,6 +335,31 @@ Generated: 2025-12-26 (Updated)
 
 ---
 
+### FRD-011: Atlas Sponsored Systems
+**Status**: COMPLETE
+**Priority**: High
+
+#### What Was Completed:
+- Fixed Atlas Select zone to use current user's `userId` instead of hardcoded `'admin'`
+- AdminPanel now receives `userId` prop from parent component
+- Bot filter: `savedBots.filter(b => b.builderId === userId)` instead of `b.builderId === 'admin'`
+- `updateBotInApi` calls now use dynamic `userId`
+- Admin can create systems and add them to Atlas Fund slots
+- Super admin user management added (ADMIN_EMAIL can grant/revoke admin roles)
+
+---
+
+### FRD-026: Advanced Analytics Suite
+**Status**: COMPLETE
+**Priority**: Future
+
+#### What Was Completed:
+- Analytics features implemented in the application
+- Monte Carlo, K-Folds, Sub-Period analysis available
+- Integrated into Analyze tab
+
+---
+
 ## ONGOING FRDs
 
 ### FRD-020: QuantMage Block Verification
@@ -347,65 +377,6 @@ Manual verification that QuantMage import nodes are transferring correctly to At
 ---
 
 ## DEFERRED FRDs (OFF)
-
-### FRD-011: Atlas Sponsored Systems
-**Status**: OFF (Deferred)
-**Priority**: High
-
-#### What's Blocking:
-- Admin systems not appearing in Atlas dropdown - root cause unclear
-- Possibly related to savedBots not containing admin's bots when AdminPanel renders
-- Possibly database `ownerId` mismatch
-- Needs further investigation
-
-#### Ready to Implement Once Fixed:
-- Admin creates system → Tagged `[Private, Atlas Eligible]`
-- Admin adds to Atlas Fund slot → Tag changes to `Atlas`
-- Atlas systems appear in "News and Select Systems" card (not in Top tables)
-- Atlas systems unlimited slots (expandable)
-
----
-
-### FRD-022: Extended Indicator Support
-**Status**: OFF (Deferred)
-**Priority**: Medium
-
-#### Current Indicators (22 total):
-SMA, EMA, RSI (Wilder's), Standard Deviation, Max Drawdown, Cumulative Return, SMA of Returns, Aroon Up/Down/Oscillator, Trend Clarity, Ultimate Smoother, 13612W/U Momentum, Drawdown, Current Price, MACD Histogram, PPO Histogram
-
-#### Proposed New Indicators:
-- **RSI Variants**: Volume Weighted RSI, Laguerre RSI, RSI (SMA/EMA/Hull smoothing)
-- **Moving Averages**: Hull MA, Wilders MA, Weighted MA
-- **Volatility**: Bollinger Bands (Upper, Lower, %B, Bandwidth)
-- **Momentum**: Rate of Change, Money Flow Index (requires volume)
-- **Other**: Stochastic (Fast/Slow), ADX, ATR, OBV, CCI, Williams %R
-
-#### Implementation Notes:
-- Add to `backtest.mjs` indicator functions section
-- Add to `emptyCache()` and `metricAt()` switch
-- Update frontend dropdown menus in NodeCard
-
----
-
-### FRD-026: Advanced Analytics Suite
-**Status**: OFF (Deferred)
-**Priority**: Future
-
-#### Planned Analytics:
-1. **Monte Carlo Simulation** - Randomize trade order for robustness testing
-2. **K-Folds Cross Validation** - Split backtest into K periods
-3. **Sub-Period Consistency** - Yearly/quarterly performance breakdown
-4. **Top Concentration/Consistency** - Return from top N trades analysis
-5. **Hit Rate vs Payoff Asymmetry** - Expectancy analysis
-6. **Sharpe vs Benchmark (SPY)** - Information ratio
-7. **Smoothness vs Randomness (MC Block=1)** - Equity curve analysis
-8. **Thinning Sensitivity** - Test with subset of signals
-
-#### Notes:
-- Will add to Analyze tab as new subtab
-- Consider caching results like backtests
-
----
 
 ### FRD-027: Tiingo API Integration & Data Pipeline
 **Status**: OFF (Deferred)
@@ -488,7 +459,20 @@ SMA, EMA, RSI (Wilder's), Standard Deviation, Max Drawdown, Cumulative Return, S
 
 ## Summary
 
-### What Was Done Today (2025-12-26 Session 3):
+### What Was Done (2025-12-30 Session 5):
+1. **FRD-011 (Atlas Sponsored Systems)**: COMPLETE
+   - Fixed Atlas Select zone to use dynamic `userId` instead of hardcoded `'admin'`
+   - AdminPanel now receives userId prop
+   - Super admin user management added (ADMIN_EMAIL can grant/revoke admin roles)
+2. **FRD-026 (Advanced Analytics)**: Marked COMPLETE per user confirmation
+
+### What Was Done (2025-12-27 Session 4):
+1. **FRD-017 (Payload Compression)**: Gzip compression for payloads >1MB
+2. **FRD-023 (Atlas Improvements)**: Sort dropdowns, Export JSON, Open Model buttons
+3. **FRD-025 (Atlas Zone)**: Expandable cards, Add to Watchlist, IP protection
+4. **FRD-022 (Extended Indicators)**: 43+ indicators now available
+
+### What Was Done (2025-12-26 Session 3):
 1. **FRD-021 (Model Tab UI)**: Complete UI improvements
    - Renamed "Build" tab to "Model" throughout App.tsx
    - Enlarged insert (+) button from 20px to 60px (3x larger)
@@ -503,17 +487,12 @@ SMA, EMA, RSI (Wilder's), Standard Deviation, Max Drawdown, Cumulative Return, S
 2. **FRD-008 (Password Hashing)**: bcrypt with auto-migration
 3. **FRD-007 (Database Migration)**: Full migration, deprecated code removed
 
-### Files Modified Today:
-- `System.app/src/App.tsx` - Tab renames (Build→Model, Community Nexus→Nexus), label updates
-- `System.app/src/App.css` - Insert button sizing, node-head theming, font fixes
-- `frd/FRD-STATUS-REPORT.md` - Added 8 new FRDs (FRD-020 through FRD-027)
+### Files Modified (2025-12-30):
+- `System.app/src/App.tsx` - AdminPanel userId prop, Atlas Select zone fix
+- `System.app/server/index.mjs` - Super admin API endpoints
+- `System.app/server/middleware/auth.mjs` - requireSuperAdmin, isSuperAdmin functions
+- `frd/FRD-STATUS-REPORT.md` - Updated FRD-011, FRD-026 status
 
-### Pending FRDs (Next Steps):
-1. **FRD-023** (Separate Atlas Database) - High priority
-2. **FRD-025** (Atlas Zone Improvements) - Medium priority
-3. **FRD-017** (Payload Storage Optimization) - Low priority
-
-### Deferred FRDs (OFF - Future Implementation):
-- **FRD-022**: Extended Indicators (full list to be implemented later)
-- **FRD-026**: Advanced Analytics Suite (Monte Carlo, K-Folds, etc.)
-- **FRD-027**: Tiingo Data Pipeline (replace Yahoo Finance)
+### Remaining Work:
+- **FRD-020** (QuantMage Verification) - ONGOING manual verification
+- **FRD-027** (Tiingo Data Pipeline) - DEFERRED (replace Yahoo Finance)
