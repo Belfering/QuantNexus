@@ -315,3 +315,12 @@ export async function getTickersWithMetadata() {
 export async function clearRegistry() {
   await db.delete(tickerRegistry)
 }
+
+/**
+ * Reset all sync dates (forces re-download of all tickers)
+ */
+export async function resetAllSyncDates() {
+  await db.update(tickerRegistry)
+    .set({ lastSynced: null, updatedAt: new Date() })
+  return await db.select({ count: sql`count(*)` }).from(tickerRegistry)
+}

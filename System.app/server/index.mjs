@@ -553,6 +553,19 @@ app.post('/api/tickers/registry/sync', async (req, res) => {
   }
 })
 
+// Reset all sync dates (forces re-download of all tickers)
+app.post('/api/tickers/registry/reset-sync', async (req, res) => {
+  try {
+    await tickerRegistry.ensureTickerRegistryTable()
+    await tickerRegistry.resetAllSyncDates()
+    const stats = await tickerRegistry.getRegistryStats()
+    console.log('[api] Reset sync dates for all tickers')
+    res.json({ success: true, message: 'All sync dates reset', stats })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
 // Start downloading OHLCV data for all registered tickers
 app.post('/api/tickers/registry/download', async (req, res) => {
   const jobId = newJobId()
