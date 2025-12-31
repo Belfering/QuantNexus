@@ -439,13 +439,16 @@ export function initializeDatabase() {
   }
 
   // Clean up orphaned bots (not in any watchlist)
-  // IMPORTANT: Preserve Nexus and Atlas bots even if not in a watchlist
-  // These are published bots that should never be deleted on server restart
+  // IMPORTANT: Only delete truly temporary bots that were never properly saved
+  // Preserve:
+  // - Any bot in a watchlist (normal saved bots)
+  // - Any bot with non-private visibility (nexus, nexus_eligible, atlas)
+  // - Any bot with tags (explicitly configured by user)
   const orphanedBots = sqlite.prepare(`
     DELETE FROM bots
     WHERE id NOT IN (SELECT DISTINCT bot_id FROM watchlist_bots)
       AND visibility = 'private'
-      AND (tags IS NULL OR tags NOT LIKE '%"Atlas"%')
+      AND (tags IS NULL OR tags = '[]' OR tags = 'null')
   `).run()
   if (orphanedBots.changes > 0) {
     console.log(`[DB] Cleaned up ${orphanedBots.changes} orphaned private bots (not in any watchlist)`)
