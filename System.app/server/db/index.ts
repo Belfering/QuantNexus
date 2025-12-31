@@ -165,8 +165,8 @@ export function initializeDatabase() {
   const existingConfig = sqlite.prepare('SELECT key FROM admin_config WHERE key = ?').get('atlas_fee_percent')
   if (!existingConfig) {
     const now = Date.now()
-    sqlite.prepare('INSERT INTO admin_config (key, value, updated_at) VALUES (?, ?, ?)').run('atlas_fee_percent', '2.0', now)
-    sqlite.prepare('INSERT INTO admin_config (key, value, updated_at) VALUES (?, ?, ?)').run('partner_share_percent', '50.0', now)
+    sqlite.prepare('INSERT INTO admin_config (key, value, updated_at) VALUES (?, ?, ?)').run('atlas_fee_percent', '1.0', now)
+    sqlite.prepare('INSERT INTO admin_config (key, value, updated_at) VALUES (?, ?, ?)').run('partner_share_percent', '1.0', now)
   }
 
   // Seed default users (1, 3, 5, 7, 9, admin)
