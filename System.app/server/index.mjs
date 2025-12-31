@@ -8,6 +8,7 @@ import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import duckdb from 'duckdb'
 import { encrypt, decrypt } from './utils/crypto.mjs'
+import { validateDisplayName } from './utils/profanity-filter.mjs'
 import { seedAdminUser } from './seed-admin.mjs'
 import * as scheduler from './scheduler.mjs'
 import { authenticate, requireAdmin, requireSuperAdmin, requireMainAdmin, isSuperAdmin, isMainAdmin, hasAdminAccess, hasEngineerAccess, canChangeUserRole } from './middleware/auth.mjs'
@@ -81,7 +82,7 @@ const authLimiter = rateLimit({
 // General API rate limiter
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 100, // 100 requests per minute
+  max: 500, // 500 requests per minute
   message: { error: 'Too many requests, please slow down' },
   standardHeaders: true,
   legacyHeaders: false
@@ -119,7 +120,8 @@ const DEFAULT_ROOT = path.resolve(__dirname, '..', 'ticker-data')
 const TICKER_DATA_ROOT = process.env.SYSTEM_TICKER_DATA_ROOT || process.env.TICKER_DATA_MINI_ROOT || DEFAULT_ROOT
 const TICKERS_PATH = process.env.TICKERS_PATH || path.join(TICKER_DATA_ROOT, 'tickers.txt')
 const PARQUET_DIR = process.env.PARQUET_DIR || path.join(TICKER_DATA_ROOT, 'data', 'ticker_data_parquet')
-const PYTHON = process.env.PYTHON || 'python3'
+// Use 'python' on Windows, 'python3' on Unix-like systems
+const PYTHON = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
 
 const db = new duckdb.Database(':memory:')
 const conn = db.connect()
@@ -2111,6 +2113,83 @@ app.put('/api/preferences', async (req, res) => {
     })
     res.json({ success: true })
   } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// ============================================================================
+// User Profile Updates
+// ============================================================================
+
+// GET /api/user/display-name/check - Check if display name is available
+app.get('/api/user/display-name/check', authenticate, async (req, res) => {
+  try {
+    await ensureDbInitialized()
+    const userId = req.user.id
+    const { name } = req.query
+
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Name parameter required' })
+    }
+
+    // Validate the display name (profanity filter, length, etc.)
+    const validation = validateDisplayName(name)
+    if (!validation.valid) {
+      return res.json({ available: false, reason: validation.reason })
+    }
+
+    const trimmedName = name.trim()
+
+    // Check uniqueness (case-insensitive), excluding current user
+    const existingUser = database.sqlite.prepare(`
+      SELECT id FROM users
+      WHERE LOWER(display_name) = LOWER(?) AND id != ?
+    `).get(trimmedName, userId)
+
+    if (existingUser) {
+      return res.json({ available: false, reason: 'This display name is already taken' })
+    }
+
+    res.json({ available: true })
+  } catch (e) {
+    console.error('Error checking display name:', e)
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// PUT /api/user/display-name - Update user's display name
+app.put('/api/user/display-name', authenticate, async (req, res) => {
+  try {
+    await ensureDbInitialized()
+    const userId = req.user.id
+    const { displayName } = req.body
+
+    // Validate the display name (profanity filter, length, etc.)
+    const validation = validateDisplayName(displayName)
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.reason })
+    }
+
+    const trimmedName = displayName.trim()
+
+    // Check uniqueness (case-insensitive)
+    const existingUser = database.sqlite.prepare(`
+      SELECT id FROM users
+      WHERE LOWER(display_name) = LOWER(?) AND id != ?
+    `).get(trimmedName, userId)
+
+    if (existingUser) {
+      return res.status(400).json({ error: 'This display name is already taken' })
+    }
+
+    // Update the display name
+    database.sqlite.prepare(`
+      UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?
+    `).run(trimmedName, Date.now(), userId)
+
+    res.json({ success: true, displayName: trimmedName })
+  } catch (e) {
+    console.error('Error updating display name:', e)
     res.status(500).json({ error: String(e?.message || e) })
   }
 })

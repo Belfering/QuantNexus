@@ -288,6 +288,30 @@ const INDICATOR_CATEGORIES: Record<string, MetricChoice[]> = {
   ],
 }
 
+// Backtest mode descriptions for tooltips
+const BACKTEST_MODE_INFO: Record<BacktestMode, { label: string; desc: string; formula: string }> = {
+  'CC': {
+    label: 'Close→Close',
+    desc: 'Buy at close, sell at close. Holds position for full trading days.',
+    formula: 'Buy at Close[t] → Sell at Close[t+n]'
+  },
+  'OO': {
+    label: 'Open→Open',
+    desc: 'Buy at open, sell at open. Holds position including overnight gaps.',
+    formula: 'Buy at Open[t] → Sell at Open[t+n]'
+  },
+  'OC': {
+    label: 'Open→Close',
+    desc: 'Buy at open, sell at close. Intraday only - no overnight exposure.',
+    formula: 'Buy at Open[t] → Sell at Close[t]'
+  },
+  'CO': {
+    label: 'Close→Open',
+    desc: 'Buy at close, sell at next open. Overnight only - no intraday exposure.',
+    formula: 'Buy at Close[t] → Sell at Open[t+1]'
+  },
+}
+
 type UserId = string
 type ThemeMode = 'light' | 'dark'
 type ColorTheme = 'slate' | 'ocean' | 'emerald' | 'violet' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'lime' | 'fuchsia'
@@ -1177,6 +1201,87 @@ function IndicatorDropdown({
   )
 }
 
+// Backtest Mode Dropdown with tooltips
+function BacktestModeDropdown({
+  value,
+  onChange,
+  className,
+}: {
+  value: BacktestMode
+  onChange: (mode: BacktestMode) => void
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [hoveredMode, setHoveredMode] = useState<BacktestMode | null>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 })
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [open])
+
+  const modes: BacktestMode[] = ['CC', 'OO', 'OC', 'CO']
+
+  return (
+    <div ref={dropdownRef} className={cn('relative inline-block', className)}>
+      <button
+        type="button"
+        className="flex items-center gap-1 text-xs bg-transparent border-0 p-0 cursor-pointer hover:text-accent"
+        onClick={() => setOpen(!open)}
+      >
+        <span>{BACKTEST_MODE_INFO[value].label}</span>
+        <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 bg-surface border border-border rounded-md shadow-lg z-50 min-w-[130px]">
+          {modes.map((mode) => (
+            <div
+              key={mode}
+              className={cn(
+                'px-3 py-1.5 text-xs cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2',
+                mode === value && 'bg-muted/30 font-medium'
+              )}
+              onClick={() => {
+                onChange(mode)
+                setOpen(false)
+              }}
+              onMouseEnter={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setTooltipPos({ x: rect.right + 8, y: rect.top + rect.height / 2 })
+                setHoveredMode(mode)
+              }}
+              onMouseLeave={() => setHoveredMode(null)}
+            >
+              <span>{BACKTEST_MODE_INFO[mode].label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {hoveredMode && (
+        <div
+          className="fixed z-[9999] bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md shadow-xl p-2.5 min-w-[240px] max-w-[300px]"
+          style={{ left: tooltipPos.x, top: tooltipPos.y, transform: 'translateY(-50%)' }}
+        >
+          <div className="text-xs font-semibold mb-1.5 text-zinc-900 dark:text-zinc-100">{BACKTEST_MODE_INFO[hoveredMode].label}</div>
+          <div className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-2 leading-relaxed">{BACKTEST_MODE_INFO[hoveredMode].desc}</div>
+          <div className="text-[10px] font-mono bg-zinc-100 dark:bg-zinc-800 px-2 py-1.5 rounded text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700">{BACKTEST_MODE_INFO[hoveredMode].formula}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TickerDatalist({ id, options }: { id: string; options: string[] }) {
   return (
     <datalist id={id}>
@@ -1184,6 +1289,184 @@ function TickerDatalist({ id, options }: { id: string; options: string[] }) {
         <option key={t} value={t} />
       ))}
     </datalist>
+  )
+}
+
+// Popular tickers to show when modal opens (before typing)
+const POPULAR_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'BRK-B', 'UNH', 'JPM', 'GLD', 'TLT', 'BND', 'VNQ', 'Empty']
+
+function TickerSearchModal({
+  open,
+  onClose,
+  onSelect,
+  tickerOptions,
+  tickerMetadata,
+  restrictToTickers,
+}: {
+  open: boolean
+  onClose: () => void
+  onSelect: (ticker: string) => void
+  tickerOptions: string[]
+  tickerMetadata: Map<string, { name?: string; assetType?: string; exchange?: string }>
+  restrictToTickers?: string[]
+}) {
+  const [search, setSearch] = useState('')
+  const [includeETFs, setIncludeETFs] = useState(true)
+  const [includeStocks, setIncludeStocks] = useState(true)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Determine base ticker list (restricted or full)
+  const baseTickers = restrictToTickers || tickerOptions
+
+  // Auto-focus on open and reset search
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 50)
+      setSearch('')
+    }
+  }, [open])
+
+  // Close on ESC
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    if (open) {
+      document.addEventListener('keydown', handleEsc)
+      return () => document.removeEventListener('keydown', handleEsc)
+    }
+  }, [open, onClose])
+
+  // Filter results
+  const filteredResults = useMemo(() => {
+    const query = search.toLowerCase().trim()
+    const hasEmpty = baseTickers.includes('Empty')
+
+    // If no search query, show Empty first, then popular tickers (filtered to available)
+    if (!query) {
+      const popular = POPULAR_TICKERS.filter(t => t !== 'Empty' && baseTickers.includes(t))
+      const remaining = baseTickers.filter(t => t !== 'Empty' && !POPULAR_TICKERS.includes(t))
+      const filtered = [...popular, ...remaining]
+        .filter(ticker => {
+          const meta = tickerMetadata.get(ticker.toUpperCase())
+          const assetType = meta?.assetType
+          if (assetType === 'ETF' && !includeETFs) return false
+          if (assetType === 'Stock' && !includeStocks) return false
+          return true
+        })
+        .slice(0, 49) // Leave room for Empty
+      return hasEmpty ? ['Empty', ...filtered] : filtered
+    }
+
+    // With search query
+    const filtered = baseTickers
+      .filter(ticker => {
+        if (ticker === 'Empty') return 'empty'.includes(query)
+        const meta = tickerMetadata.get(ticker.toUpperCase())
+        const assetType = meta?.assetType
+
+        // Asset type filter
+        if (assetType === 'ETF' && !includeETFs) return false
+        if (assetType === 'Stock' && !includeStocks) return false
+
+        // Search filter - also search exchange
+        const tickerMatch = ticker.toLowerCase().includes(query)
+        const nameMatch = meta?.name?.toLowerCase().includes(query)
+        const exchangeMatch = meta?.exchange?.toLowerCase().includes(query)
+        return tickerMatch || nameMatch || exchangeMatch
+      })
+      .slice(0, 50)
+
+    // If Empty matches and is in results, move it to front
+    if (filtered.includes('Empty')) {
+      return ['Empty', ...filtered.filter(t => t !== 'Empty')]
+    }
+    return filtered
+  }, [search, baseTickers, tickerMetadata, includeETFs, includeStocks])
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      {/* Modal */}
+      <div className="relative bg-surface border border-border rounded-lg shadow-2xl w-[500px] max-h-[70vh] flex flex-col">
+        {/* Header with search */}
+        <div className="p-4 border-b border-border">
+          <input
+            ref={inputRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search ticker or company name..."
+            className="w-full px-3 py-2 border border-border rounded bg-card text-sm"
+          />
+
+          {/* Filter checkboxes */}
+          <div className="flex gap-4 mt-3">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeETFs}
+                onChange={(e) => setIncludeETFs(e.target.checked)}
+              />
+              Include ETFs
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeStocks}
+                onChange={(e) => setIncludeStocks(e.target.checked)}
+              />
+              Include Stocks
+            </label>
+          </div>
+        </div>
+
+        {/* Results list */}
+        <div className="flex-1 overflow-y-auto">
+          {filteredResults.map(ticker => {
+            const meta = tickerMetadata.get(ticker.toUpperCase())
+            return (
+              <div
+                key={ticker}
+                className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
+                onClick={() => { onSelect(ticker); onClose() }}
+              >
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="font-mono font-bold shrink-0 w-16">{ticker}</span>
+                  <span className="text-muted-foreground text-sm truncate flex-1">
+                    {ticker === 'Empty'
+                      ? 'No position'
+                      : (meta?.name || <span className="italic text-muted-foreground/60">Metadata Unavailable</span>)}
+                  </span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {ticker === 'Empty'
+                      ? ''
+                      : (meta?.exchange || <span className="italic text-muted-foreground/60">Exchange Unavailable</span>)}
+                  </span>
+                </div>
+                {meta?.assetType && (
+                  <span className={cn(
+                    'px-1.5 py-0.5 rounded text-xs shrink-0 ml-2',
+                    meta.assetType === 'ETF' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
+                  )}>
+                    {meta.assetType}
+                  </span>
+                )}
+              </div>
+            )
+          })}
+          {filteredResults.length === 0 && (
+            <div className="px-4 py-8 text-center text-muted-foreground">
+              No tickers found
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -7470,6 +7753,8 @@ type CardProps = {
   // Indicator overlay toggle
   enabledOverlays?: Set<string>
   onToggleOverlay?: (key: string) => void
+  // Ticker search modal
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[]) => void
 }
 
 // Check if all descendants of a node are collapsed
@@ -7544,6 +7829,7 @@ const NodeCard = ({
   highlightedInstance,
   enabledOverlays,
   onToggleOverlay,
+  openTickerModal,
 }: CardProps) => {
   const [addRowOpen, setAddRowOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -7803,40 +8089,12 @@ const NodeCard = ({
                 }
 
                 return (
-                  <input
-                    list={TICKER_DATALIST_ID}
-                    value={shown}
-                    onFocus={(e) => {
-                      e.currentTarget.select()
-                      if ((draftValue ?? p) === 'Empty') {
-                        setPositionDrafts((prev) => ({ ...prev, [key]: '' }))
-                      }
-                    }}
-                    onChange={(e) => {
-                      setPositionDrafts((prev) => ({ ...prev, [key]: e.target.value }))
-                    }}
-                    onBlur={(e) => {
-                      commit(e.target.value)
-                      setPositionDrafts((prev) => {
-                        const next = { ...prev }
-                        delete next[key]
-                        return next
-                      })
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
-                      if (e.key === 'Escape') {
-                        setPositionDrafts((prev) => {
-                          const next = { ...prev }
-                          delete next[key]
-                          return next
-                        })
-                      }
-                    }}
-                    placeholder="Ticker"
-                    spellCheck={false}
-                    className="w-[120px]"
-                  />
+                  <button
+                    className="w-[120px] px-2 py-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50 text-left truncate"
+                    onClick={() => openTickerModal?.((ticker) => commit(ticker))}
+                  >
+                    {shown || 'Ticker'}
+                  </button>
                 )
               })()}
             </div>
@@ -8020,17 +8278,12 @@ const NodeCard = ({
             className="h-8 px-1.5 mx-1"
           />
           {' of '}
-          <Select
-            className="h-8 px-1.5 mx-1"
-            value={cond.ticker}
-            onChange={(e) => onUpdateCondition(ownerId, cond.id, { ticker: e.target.value as PositionChoice }, itemId)}
+          <button
+            className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+            onClick={() => openTickerModal?.((ticker) => onUpdateCondition(ownerId, cond.id, { ticker: ticker as PositionChoice }, itemId))}
           >
-            {[cond.ticker, ...tickerOptions.filter((t) => t !== cond.ticker)].map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </Select>{' '}
+            {cond.ticker}
+          </button>{' '}
           is{' '}
           <Select
             className="h-8 px-1.5 mx-1"
@@ -8071,19 +8324,12 @@ const NodeCard = ({
                 className="h-8 px-1.5 mx-1"
               />{' '}
               of{' '}
-              <Select
-                className="h-8 px-1.5 mx-1"
-                value={cond.rightTicker ?? 'SPY'}
-                onChange={(e) =>
-                  onUpdateCondition(ownerId, cond.id, { rightTicker: e.target.value as PositionChoice }, itemId)
-                }
+              <button
+                className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                onClick={() => openTickerModal?.((ticker) => onUpdateCondition(ownerId, cond.id, { rightTicker: ticker as PositionChoice }, itemId))}
               >
-                {[cond.rightTicker ?? 'SPY', ...tickerOptions.filter((t) => t !== (cond.rightTicker ?? 'SPY'))].map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </Select>{' '}
+                {cond.rightTicker ?? 'SPY'}
+              </button>{' '}
             </>
           ) : null}
           {/* For X consecutive days input */}
@@ -8356,19 +8602,12 @@ const NodeCard = ({
                           className="h-8 px-1.5 mx-1"
                         />
                         {' of '}
-                        <Select
-                          className="h-8 px-1.5 mx-1"
-                          value={cond.ticker}
-                          onChange={(e) =>
-                            onUpdateCondition(node.id, cond.id, { ticker: e.target.value as PositionChoice })
-                          }
+                        <button
+                          className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                          onClick={() => openTickerModal?.((ticker) => onUpdateCondition(node.id, cond.id, { ticker: ticker as PositionChoice }))}
                         >
-                          {[cond.ticker, ...tickerOptions.filter((t) => t !== cond.ticker)].map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </Select>{' '}
+                          {cond.ticker}
+                        </button>{' '}
                         is{' '}
                         <Select
                           className="h-8 px-1.5 mx-1"
@@ -8411,22 +8650,12 @@ const NodeCard = ({
                               className="h-8 px-1.5 mx-1"
                             />{' '}
                             of{' '}
-                            <Select
-                              className="h-8 px-1.5 mx-1"
-                              value={cond.rightTicker ?? 'SPY'}
-                              onChange={(e) =>
-                                onUpdateCondition(node.id, cond.id, { rightTicker: e.target.value as PositionChoice })
-                              }
+                            <button
+                              className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                              onClick={() => openTickerModal?.((ticker) => onUpdateCondition(node.id, cond.id, { rightTicker: ticker as PositionChoice }))}
                             >
-                              {[
-                                cond.rightTicker ?? 'SPY',
-                                ...tickerOptions.filter((t) => t !== (cond.rightTicker ?? 'SPY')),
-                              ].map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
-                              ))}
-                            </Select>{' '}
+                              {cond.rightTicker ?? 'SPY'}
+                            </button>{' '}
                           </>
                         ) : null}
                         {/* For X consecutive days input */}
@@ -8909,15 +9138,12 @@ const NodeCard = ({
                             className="h-8 px-1.5 mx-1"
                           />
                           {' of '}
-                          <Select
-                            className="h-8 px-1.5 mx-1"
-                            value={cond.ticker}
-                            onChange={(e) => onUpdateEntryCondition(node.id, cond.id, { ticker: e.target.value as PositionChoice })}
+                          <button
+                            className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                            onClick={() => openTickerModal?.((ticker) => onUpdateEntryCondition(node.id, cond.id, { ticker: ticker as PositionChoice }))}
                           >
-                            {[cond.ticker, ...tickerOptions.filter((t) => t !== cond.ticker)].map((t) => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </Select>{' '}
+                            {cond.ticker}
+                          </button>{' '}
                           is{' '}
                           <Select
                             className="h-8 px-1.5 mx-1"
@@ -8955,15 +9181,12 @@ const NodeCard = ({
                                 className="h-8 px-1.5 mx-1"
                               />{' '}
                               of{' '}
-                              <Select
-                                className="h-8 px-1.5 mx-1"
-                                value={cond.rightTicker ?? 'SPY'}
-                                onChange={(e) => onUpdateEntryCondition(node.id, cond.id, { rightTicker: e.target.value as PositionChoice })}
+                              <button
+                                className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                                onClick={() => openTickerModal?.((ticker) => onUpdateEntryCondition(node.id, cond.id, { rightTicker: ticker as PositionChoice }))}
                               >
-                                {[cond.rightTicker ?? 'SPY', ...tickerOptions.filter((t) => t !== (cond.rightTicker ?? 'SPY'))].map((t) => (
-                                  <option key={t} value={t}>{t}</option>
-                                ))}
-                              </Select>{' '}
+                                {cond.rightTicker ?? 'SPY'}
+                              </button>{' '}
                             </>
                           ) : null}
                           <Button
@@ -9079,15 +9302,12 @@ const NodeCard = ({
                             className="h-8 px-1.5 mx-1"
                           />
                           {' of '}
-                          <Select
-                            className="h-8 px-1.5 mx-1"
-                            value={cond.ticker}
-                            onChange={(e) => onUpdateExitCondition(node.id, cond.id, { ticker: e.target.value as PositionChoice })}
+                          <button
+                            className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                            onClick={() => openTickerModal?.((ticker) => onUpdateExitCondition(node.id, cond.id, { ticker: ticker as PositionChoice }))}
                           >
-                            {[cond.ticker, ...tickerOptions.filter((t) => t !== cond.ticker)].map((t) => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </Select>{' '}
+                            {cond.ticker}
+                          </button>{' '}
                           is{' '}
                           <Select
                             className="h-8 px-1.5 mx-1"
@@ -9125,15 +9345,12 @@ const NodeCard = ({
                                 className="h-8 px-1.5 mx-1"
                               />{' '}
                               of{' '}
-                              <Select
-                                className="h-8 px-1.5 mx-1"
-                                value={cond.rightTicker ?? 'SPY'}
-                                onChange={(e) => onUpdateExitCondition(node.id, cond.id, { rightTicker: e.target.value as PositionChoice })}
+                              <button
+                                className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                                onClick={() => openTickerModal?.((ticker) => onUpdateExitCondition(node.id, cond.id, { rightTicker: ticker as PositionChoice }))}
                               >
-                                {[cond.rightTicker ?? 'SPY', ...tickerOptions.filter((t) => t !== (cond.rightTicker ?? 'SPY'))].map((t) => (
-                                  <option key={t} value={t}>{t}</option>
-                                ))}
-                              </Select>{' '}
+                                {cond.rightTicker ?? 'SPY'}
+                              </button>{' '}
                             </>
                           ) : null}
                           <Button
@@ -12133,6 +12350,13 @@ type BacktesterPanelProps = {
   // Robustness tab
   modelSanityReport?: SanityReportState
   onFetchRobustness?: () => void
+  // Undo/Redo
+  onUndo?: () => void
+  onRedo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
+  // Ticker modal
+  openTickerModal?: (onSelect: (ticker: string) => void) => void
 }
 
 function BacktesterPanel({
@@ -12156,6 +12380,11 @@ function BacktesterPanel({
   onFetchBenchmarks,
   modelSanityReport,
   onFetchRobustness,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
+  openTickerModal,
 }: BacktesterPanelProps) {
   const [tab, setTab] = useState<'Overview' | 'In Depth' | 'Benchmarks' | 'Robustness'>('Overview')
   const [selectedRange, setSelectedRange] = useState<VisibleRange | null>(null)
@@ -12437,61 +12666,60 @@ function BacktesterPanel({
   return (
     <Card>
       <CardHeader>
-        <div>
-          <div className="text-xs tracking-widest uppercase text-muted mb-1">Build</div>
-          <h2 className="text-xl font-black">Backtester</h2>
-        </div>
-        <div className="flex flex-wrap gap-3 items-end mt-2">
-          <label className="grid gap-1">
-            <span className="text-sm font-bold">Mode</span>
-            <Select value={mode} onChange={(e) => setMode(e.target.value as BacktesterPanelProps['mode'])}>
-              <option value="CC">Close→Close</option>
-              <option value="OO">Open→Open</option>
-              <option value="OC">Open→Close</option>
-              <option value="CO">Close→Open</option>
-            </Select>
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm font-bold">Cost (bps)</span>
-            <Input
-              type="number"
-              min={0}
-              step={1}
-              value={Number.isFinite(costBps) ? costBps : 0}
-              onChange={(e) => setCostBps(Number(e.target.value || 0))}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm font-bold">Benchmark</span>
-            <Input
-              list={TICKER_DATALIST_ID}
-              value={benchmark}
-              onChange={(e) => setBenchmark(e.target.value)}
-              placeholder="SPY"
-              spellCheck={false}
-              className="w-[120px]"
-            />
-          </label>
-          {!benchmarkKnown && benchmark.trim() ? (
-            <div className="text-danger font-extrabold text-xs">Unknown ticker</div>
-          ) : null}
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={showBenchmark} onChange={(e) => setShowBenchmark(e.target.checked)} />
-            <span className="text-sm font-bold">Show benchmark</span>
-          </label>
-          <Button onClick={handleRun} disabled={status === 'running'}>
-            {status === 'running' ? 'Running…' : 'Run Backtest'}
-          </Button>
+        <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 items-stretch">
+          {/* Left section: Run Backtest through Show benchmark - all on one row */}
+          <div className="flex flex-nowrap gap-2 items-stretch">
+            <Button onClick={handleRun} disabled={status === 'running'} className="flex-1 px-5 text-sm font-bold whitespace-nowrap h-full">
+              {status === 'running' ? 'Running…' : 'Run Backtest'}
+            </Button>
+            <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
+              <span className="text-xs font-bold text-muted">Mode</span>
+              <BacktestModeDropdown value={mode} onChange={(m) => setMode(m)} />
+            </div>
+            <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
+              <span className="text-xs font-bold text-muted">Cost (bps)</span>
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                value={Number.isFinite(costBps) ? costBps : 0}
+                onChange={(e) => setCostBps(Number(e.target.value || 0))}
+                title="Transaction cost (bps)"
+                className="w-[60px] text-sm border-0 p-0 h-auto bg-transparent text-center"
+              />
+            </div>
+            <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
+              <div className="flex items-center justify-center gap-1">
+                <input type="checkbox" checked={showBenchmark} onChange={(e) => setShowBenchmark(e.target.checked)} title="Show benchmark on chart" />
+                <span className="text-xs font-bold text-muted">Benchmark</span>
+              </div>
+              <div className="flex items-center justify-center gap-1">
+                <button
+                  className="px-2 py-0.5 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                  onClick={() => openTickerModal?.((ticker) => setBenchmark(ticker))}
+                  title="Benchmark ticker"
+                >
+                  {benchmark || 'SPY'}
+                </button>
+                {!benchmarkKnown && benchmark.trim() ? (
+                  <span className="text-danger font-bold text-xs">?</span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          {/* Center section: View tabs */}
+          <div className="flex items-stretch">
+            {(['Overview', 'In Depth', 'Benchmarks', 'Robustness'] as const).map((t) => (
+              <Button key={t} variant={tab === t ? 'accent' : 'secondary'} className="flex-1 px-5 text-sm font-semibold h-full" onClick={() => setTab(t)}>
+                {t}
+              </Button>
+            ))}
+          </div>
+          {/* Right section: empty spacer for grid balance */}
+          <div />
         </div>
       </CardHeader>
       <CardContent className="grid gap-3">
-        <div className="flex gap-2">
-          {(['Overview', 'In Depth', 'Benchmarks', 'Robustness'] as const).map((t) => (
-            <Button key={t} variant={tab === t ? 'accent' : 'secondary'} size="sm" onClick={() => setTab(t)}>
-              {t}
-            </Button>
-          ))}
-        </div>
 
         {errors.length > 0 && (
           <Alert variant="destructive">
@@ -12515,7 +12743,7 @@ function BacktesterPanel({
 
         {result && tab === 'Overview' ? (
           <>
-            <div className="grid grid-cols-10 gap-2">
+            <div className="flex gap-1.5 w-full">
               <Card
                 ref={rangePickerRef}
                 role="button"
@@ -12538,56 +12766,56 @@ function BacktesterPanel({
                   setRangePopoverPos(computeRangePopoverPos())
                   setRangePickerOpen((v) => !v)
                 }}
-                className="cursor-pointer relative p-2 text-center"
+                className="cursor-pointer relative p-1.5 text-center flex-1 min-w-0"
                 title="Click to set a custom date range"
               >
-                <div className="text-[10px] font-bold text-muted">Date range</div>
-                <div className="text-sm font-black">{rangeLabel.start} → {rangeLabel.end}</div>
-                <div className="text-[10px] text-muted">{tradingDaysInRange} days</div>
+                <div className="text-[9px] font-bold text-muted whitespace-nowrap">Date range</div>
+                <div className="text-xs font-black whitespace-nowrap">{rangeLabel.start} → {rangeLabel.end}</div>
+                <div className="text-[9px] text-muted">{tradingDaysInRange} days</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">CAGR</div>
-                <div className="text-sm font-black">{formatPct(result.metrics.cagr)}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Compound Annual Growth Rate: The average annual return over the period, accounting for compounding. Higher is better.">
+                <div className="text-[9px] font-bold text-muted">CAGR</div>
+                <div className="text-xs font-black">{formatPct(result.metrics.cagr)}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Max DD</div>
-                <div className="text-sm font-black">{formatPct(result.metrics.maxDrawdown)}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Maximum Drawdown: The largest peak-to-trough decline in portfolio value. Smaller (less negative) is better.">
+                <div className="text-[9px] font-bold text-muted">Max DD</div>
+                <div className="text-xs font-black">{formatPct(result.metrics.maxDrawdown)}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Calmar Ratio</div>
-                <div className="text-sm font-black">{Number.isFinite(result.metrics.calmar) ? result.metrics.calmar.toFixed(2) : '—'}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Calmar Ratio: CAGR divided by Max Drawdown. Measures return per unit of drawdown risk. Higher is better.">
+                <div className="text-[9px] font-bold text-muted">Calmar</div>
+                <div className="text-xs font-black">{Number.isFinite(result.metrics.calmar) ? result.metrics.calmar.toFixed(2) : '—'}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Sharpe Ratio</div>
-                <div className="text-sm font-black">{Number.isFinite(result.metrics.sharpe) ? result.metrics.sharpe.toFixed(2) : '—'}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Sharpe Ratio: Risk-adjusted return using total volatility. (Return - Risk-free rate) / Volatility. Higher is better.">
+                <div className="text-[9px] font-bold text-muted">Sharpe</div>
+                <div className="text-xs font-black">{Number.isFinite(result.metrics.sharpe) ? result.metrics.sharpe.toFixed(2) : '—'}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Sortino Ratio</div>
-                <div className="text-sm font-black">{Number.isFinite(result.metrics.sortino) ? result.metrics.sortino.toFixed(2) : '—'}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Sortino Ratio: Like Sharpe but only penalizes downside volatility. Higher is better, especially for asymmetric returns.">
+                <div className="text-[9px] font-bold text-muted">Sortino</div>
+                <div className="text-xs font-black">{Number.isFinite(result.metrics.sortino) ? result.metrics.sortino.toFixed(2) : '—'}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Treynor Ratio</div>
-                <div className="text-sm font-black">{Number.isFinite(result.metrics.treynor) ? result.metrics.treynor.toFixed(2) : '—'}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Treynor Ratio: Excess return per unit of market risk (beta). Higher is better for diversified portfolios.">
+                <div className="text-[9px] font-bold text-muted">Treynor</div>
+                <div className="text-xs font-black">{Number.isFinite(result.metrics.treynor) ? result.metrics.treynor.toFixed(2) : '—'}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Beta</div>
-                <div className="text-sm font-black">{Number.isFinite(result.metrics.beta) ? result.metrics.beta.toFixed(2) : '—'}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Beta: Sensitivity to market movements vs the benchmark. Beta=1 moves with market, <1 is less volatile, >1 is more volatile.">
+                <div className="text-[9px] font-bold text-muted">Beta</div>
+                <div className="text-xs font-black">{Number.isFinite(result.metrics.beta) ? result.metrics.beta.toFixed(2) : '—'}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Vol</div>
-                <div className="text-sm font-black">{formatPct(result.metrics.vol)}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Volatility: Annualized standard deviation of returns. Measures how much returns fluctuate. Lower is generally better.">
+                <div className="text-[9px] font-bold text-muted">Volatility</div>
+                <div className="text-xs font-black">{formatPct(result.metrics.vol)}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Win rate</div>
-                <div className="text-sm font-black">{formatPct(result.metrics.winRate)}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Win Rate: Percentage of trading days with positive returns. Higher is better, but must consider magnitude of wins vs losses.">
+                <div className="text-[9px] font-bold text-muted">Win rate</div>
+                <div className="text-xs font-black">{formatPct(result.metrics.winRate)}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Turnover</div>
-                <div className="text-sm font-black">{formatPct(result.metrics.avgTurnover)}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Average Turnover: How much of the portfolio changes each day on average. Lower turnover means lower transaction costs.">
+                <div className="text-[9px] font-bold text-muted">Turnover</div>
+                <div className="text-xs font-black">{formatPct(result.metrics.avgTurnover)}</div>
               </Card>
-              <Card className="p-2 text-center">
-                <div className="text-[10px] font-bold text-muted">Avg # Holdings</div>
-                <div className="text-sm font-black">{result.metrics.avgHoldings.toFixed(2)}</div>
+              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Average Holdings: Average number of positions held at any time. More holdings typically means more diversification.">
+                <div className="text-[9px] font-bold text-muted">Avg Hold</div>
+                <div className="text-xs font-black">{result.metrics.avgHoldings.toFixed(2)}</div>
               </Card>
             </div>
 
@@ -13396,7 +13624,7 @@ function BacktesterPanel({
           <div className="text-muted font-bold p-4 text-center">Running backtest…</div>
         ) : (
           <div className="text-muted font-bold p-4 text-center">
-            Tip: Start `npm run api` so tickers and candles load. Use the tabs to see allocations and rebalances after running.
+            Tip: Click Run Backtest in the top left corner to generate an equity curve
           </div>
         )}
       </CardContent>
@@ -13437,6 +13665,20 @@ function App() {
     }
   })()
 
+  // Load display name from stored user object
+  const initialDisplayName: string | null = (() => {
+    try {
+      const userJson = localStorage.getItem('user')
+      if (userJson) {
+        const user = JSON.parse(userJson)
+        return user.displayName || null
+      }
+      return null
+    } catch {
+      return null
+    }
+  })()
+
   const initialUserData: UserData = (() => {
     if (!initialUserId) {
       return { savedBots: [], watchlists: ensureDefaultWatchlist([]), callChains: [], ui: defaultUiState() }
@@ -13446,6 +13688,7 @@ function App() {
 
   const [userId, setUserId] = useState<UserId | null>(() => initialUserId)
   const [userRole, setUserRole] = useState<string | null>(() => initialUserRole)
+  const [userDisplayName, setUserDisplayName] = useState<string | null>(() => initialDisplayName)
 
   // Role hierarchy checks
   // Admin = sub_admin, main_admin, or legacy 'admin' role
@@ -13484,7 +13727,7 @@ function App() {
   const theme = userId ? uiState.theme : deviceTheme
 
   const [availableTickers, setAvailableTickers] = useState<string[]>([])
-  const [tickerMetadata, setTickerMetadata] = useState<Map<string, { assetType?: string; name?: string }>>(new Map())
+  const [tickerMetadata, setTickerMetadata] = useState<Map<string, { assetType?: string; name?: string; exchange?: string }>>(new Map())
   const [tickerApiError, setTickerApiError] = useState<string | null>(null)
   const [etfsOnlyMode, setEtfsOnlyMode] = useState(false)
   const [backtestMode, setBacktestMode] = useState<BacktestMode>('CC')
@@ -13866,10 +14109,10 @@ function App() {
         if (res.ok) {
           const data = await res.json()
           if (data.tickers && Array.isArray(data.tickers)) {
-            const map = new Map<string, { assetType?: string; name?: string }>()
+            const map = new Map<string, { assetType?: string; name?: string; exchange?: string }>()
             for (const t of data.tickers) {
               if (t.ticker) {
-                map.set(t.ticker.toUpperCase(), { assetType: t.assetType, name: t.name })
+                map.set(t.ticker.toUpperCase(), { assetType: t.assetType, name: t.name, exchange: t.exchange })
               }
             }
             setTickerMetadata(map)
@@ -13916,7 +14159,18 @@ function App() {
   const [analyzeSubtab, setAnalyzeSubtab] = useState<'Systems' | 'Correlation Tool'>('Systems')
   const [adminTab, setAdminTab] = useState<AdminSubtab>('Atlas Overview')
   const [databasesTab, setDatabasesTab] = useState<DatabasesSubtab>('Systems')
-  const [helpTab, setHelpTab] = useState<'Changelog' | 'Appearance'>('Changelog')
+  const [helpTab, setHelpTab] = useState<'Changelog' | 'Settings'>('Changelog')
+
+  // Ticker search modal state
+  const [tickerModalOpen, setTickerModalOpen] = useState(false)
+  const [tickerModalCallback, setTickerModalCallback] = useState<((ticker: string) => void) | null>(null)
+  const [tickerModalRestriction, setTickerModalRestriction] = useState<string[] | undefined>(undefined)
+  const [displayNameInput, setDisplayNameInput] = useState<string>('')
+  const [displayNameSaving, setDisplayNameSaving] = useState(false)
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null)
+  const [displayNameSuccess, setDisplayNameSuccess] = useState(false)
+  const [displayNameAvailable, setDisplayNameAvailable] = useState<boolean | null>(null)
+  const [displayNameChecking, setDisplayNameChecking] = useState(false)
 
   // Eligibility requirements (fetched for Admin tab and Partner Program page)
   const [appEligibilityRequirements, setAppEligibilityRequirements] = useState<EligibilityRequirement[]>([])
@@ -15156,6 +15410,13 @@ function App() {
     }
   }, [userId])
 
+  // Open ticker search modal
+  const openTickerModal = useCallback((onSelect: (ticker: string) => void, restrictTo?: string[]) => {
+    setTickerModalCallback(() => onSelect)
+    setTickerModalRestriction(restrictTo)
+    setTickerModalOpen(true)
+  }, [])
+
   // Open a specific bot by ID in the Model tab
   const handleOpenBot = useCallback(async (botId: string) => {
     try {
@@ -16295,12 +16556,13 @@ function App() {
     } catch {
       // ignore
     }
-    // Load role from stored user object
+    // Load role and display name from stored user object
     try {
       const userJson = localStorage.getItem('user')
       if (userJson) {
         const user = JSON.parse(userJson)
         setUserRole(user.role || null)
+        setUserDisplayName(user.displayName || null)
       }
     } catch {
       // ignore
@@ -16332,6 +16594,7 @@ function App() {
     }
     setUserId(null)
     setUserRole(null)
+    setUserDisplayName(null)
     setSavedBots([])
     setWatchlists([])
     setCallChains([])
@@ -16342,6 +16605,98 @@ function App() {
     setSaveMenuOpen(false)
     setAddToWatchlistBotId(null)
   }
+
+  const handleSaveDisplayName = async () => {
+    if (!displayNameInput.trim()) {
+      setDisplayNameError('Display name cannot be empty')
+      return
+    }
+    setDisplayNameSaving(true)
+    setDisplayNameError(null)
+    setDisplayNameSuccess(false)
+
+    try {
+      const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
+      const res = await fetch('/api/user/display-name', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ displayName: displayNameInput.trim() })
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        setDisplayNameError(data.error || 'Failed to update display name')
+        return
+      }
+
+      // Update state and localStorage
+      setUserDisplayName(data.displayName)
+      setDisplayNameSuccess(true)
+
+      // Update the stored user object
+      try {
+        const userJson = localStorage.getItem('user')
+        if (userJson) {
+          const user = JSON.parse(userJson)
+          user.displayName = data.displayName
+          localStorage.setItem('user', JSON.stringify(user))
+        }
+      } catch {
+        // ignore
+      }
+
+      // Clear success message after 3 seconds
+      setTimeout(() => setDisplayNameSuccess(false), 3000)
+    } catch {
+      setDisplayNameError('Network error. Please try again.')
+    } finally {
+      setDisplayNameSaving(false)
+    }
+  }
+
+  // Check display name availability (debounced)
+  const checkDisplayNameAvailability = useCallback(async (name: string) => {
+    if (!name.trim() || name.trim().length < 2) {
+      setDisplayNameAvailable(null)
+      return
+    }
+
+    setDisplayNameChecking(true)
+    try {
+      const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
+      const res = await fetch(`/api/user/display-name/check?name=${encodeURIComponent(name.trim())}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      })
+      const data = await res.json()
+      if (data.available !== undefined) {
+        setDisplayNameAvailable(data.available)
+        if (!data.available && data.reason) {
+          setDisplayNameError(data.reason)
+        }
+      }
+    } catch {
+      // Ignore network errors during availability check
+    } finally {
+      setDisplayNameChecking(false)
+    }
+  }, [])
+
+  // Debounced availability check effect
+  useEffect(() => {
+    if (!displayNameInput.trim()) {
+      setDisplayNameAvailable(null)
+      return
+    }
+
+    const timeoutId = setTimeout(() => {
+      checkDisplayNameAvailability(displayNameInput)
+    }, 500) // 500ms debounce
+
+    return () => clearTimeout(timeoutId)
+  }, [displayNameInput, checkDisplayNameAvailability])
 
   const colorTheme = uiState.colorTheme ?? 'slate'
 
@@ -16374,141 +16729,132 @@ function App() {
           </div>
         </div>
       )}
-      <header className="border-b border-border bg-surface shrink-0 z-10" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gridTemplateRows: tab === 'Model' ? '80px auto auto auto' : tab === 'Help/Support' ? '80px auto' : '80px' }}>
-        {/* Row 1: Main tabs */}
-        <div className="flex items-stretch" style={{ gridColumn: '1 / 2', gridRow: '1 / 2' }}>
+      <header className="border-b border-border bg-surface shrink-0 z-10">
+        {/* Grid layout: Logo spans all rows on right when Model active */}
+        <div
+          className="grid"
+          style={{
+            gridTemplateColumns: tab === 'Model' ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr' : '1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr',
+            gridTemplateRows: tab === 'Model' ? 'auto auto' : 'auto',
+          }}
+        >
+          {/* Row 1: Main tabs */}
           {(['Dashboard', 'Nexus', 'Analyze', 'Model', 'Help/Support', ...(isAdmin ? ['Admin'] : []), ...(hasEngineerAccess ? ['Databases'] : [])] as ('Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases')[]).map((t) => (
             <button
               key={t}
-              className={`flex-1 px-4 py-3 text-sm font-bold border-r-2 border-border transition-colors ${
+              className={`px-4 py-3 text-sm font-bold border-r-2 border-border transition-colors h-20 ${
                 tab === t
                   ? 'text-white'
                   : 'bg-surface hover:bg-muted/50 text-foreground'
               }`}
-              style={tab === t ? { backgroundColor: 'var(--color-accent)' } : undefined}
+              style={{ backgroundColor: tab === t ? 'var(--color-accent)' : undefined }}
               onClick={() => setTab(t)}
             >
               {t}
             </button>
           ))}
-        </div>
-        {/* QN Logo - spans rows when Model tab, uses background image */}
-        <div
-          className="border-2 border-border"
-          style={{
-            gridColumn: '2 / 3',
-            gridRow: tab === 'Model' ? '1 / 3' : '1 / 2',
-            width: '400px',
-          }}
-        >
+          {/* QN Logo - spans 2 rows when Model active */}
           <div
+            className="border-2 border-border"
             style={{
-              width: '100%',
-              height: '100%',
-              backgroundImage: 'url(/quantnexus-header-large.png)',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center center',
-              backgroundRepeat: 'no-repeat',
-              backgroundColor: theme === 'dark' ? 'rgb(30, 41, 59)' : 'rgb(241, 245, 249)',
-              filter: theme === 'dark'
-                ? `invert(1) hue-rotate(180deg) brightness(1.2) sepia(0.3) hue-rotate(${
-                    colorTheme === 'ocean' || colorTheme === 'cyan' ? '190deg' : colorTheme === 'emerald' || colorTheme === 'lime' ? '90deg' : colorTheme === 'violet' || colorTheme === 'indigo' || colorTheme === 'fuchsia' ? '260deg' : colorTheme === 'amber' || colorTheme === 'rose' ? '350deg' : '0deg'
-                  }) saturate(1.5)`
-                : `sepia(0.2) hue-rotate(${
-                    colorTheme === 'ocean' || colorTheme === 'cyan' ? '190deg' : colorTheme === 'emerald' || colorTheme === 'lime' ? '90deg' : colorTheme === 'violet' || colorTheme === 'indigo' || colorTheme === 'fuchsia' ? '260deg' : colorTheme === 'amber' || colorTheme === 'rose' ? '20deg' : '0deg'
-                  }) saturate(1.2)`
+              gridColumn: '8 / 9',
+              gridRow: tab === 'Model' ? '1 / 3' : '1 / 2',
             }}
-          />
-        </div>
-        {/* Logout button */}
-        <button
-          className="px-4 py-3 text-xs bg-surface hover:bg-muted/50 text-muted flex items-center gap-2 whitespace-nowrap"
-          style={{ gridColumn: '3 / 4', gridRow: '1 / 2' }}
-          onClick={handleLogout}
-        >
-          <span className="font-extrabold text-foreground">{userId}</span>
-          <span className="text-muted">Logout</span>
-        </button>
-        {/* Row 2: Model sub-buttons (only when Model tab active) */}
-        {tab === 'Model' && (
-          <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 2', gridRow: '2 / 3' }}>
-            <Button onClick={handleNewBot} className="flex-1 rounded-none border-r border-border">New System</Button>
-            <div className="relative flex-1">
-              <Button
-                onClick={() => setSaveMenuOpen((v) => !v)}
-                title="Save this system to a watchlist"
-                variant={justSavedFeedback ? 'accent' : 'default'}
-                className={`w-full rounded-none border-r border-border ${justSavedFeedback ? 'transition-colors duration-300' : ''}`}
-              >
-                {justSavedFeedback ? '✓ Saved!' : 'Save to Watchlist'}
-              </Button>
-              {saveMenuOpen ? (
-                <Card
-                  className="absolute top-full left-0 z-[200] min-w-60 p-1.5 mt-1"
-                  onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                backgroundImage: 'url(/quantnexus-header.png)',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center center',
+                backgroundRepeat: 'no-repeat',
+                backgroundColor: theme === 'dark' ? 'rgb(30, 41, 59)' : 'rgb(241, 245, 249)',
+                filter: theme === 'dark'
+                  ? `invert(1) hue-rotate(180deg) brightness(1.2) sepia(0.3) hue-rotate(${
+                      colorTheme === 'ocean' || colorTheme === 'cyan' ? '190deg' : colorTheme === 'emerald' || colorTheme === 'lime' ? '90deg' : colorTheme === 'violet' || colorTheme === 'indigo' || colorTheme === 'fuchsia' ? '260deg' : colorTheme === 'amber' || colorTheme === 'rose' ? '350deg' : '0deg'
+                    }) saturate(1.5)`
+                  : `sepia(0.2) hue-rotate(${
+                      colorTheme === 'ocean' || colorTheme === 'cyan' ? '190deg' : colorTheme === 'emerald' || colorTheme === 'lime' ? '90deg' : colorTheme === 'violet' || colorTheme === 'indigo' || colorTheme === 'fuchsia' ? '260deg' : colorTheme === 'amber' || colorTheme === 'rose' ? '20deg' : '0deg'
+                    }) saturate(1.2)`
+              }}
+            />
+          </div>
+          {/* Logout button - shows username, spans 2 rows on Model tab */}
+          <button
+            className="px-4 py-3 text-sm font-bold bg-surface hover:bg-muted/50 text-foreground flex flex-col items-center justify-center border-l border-border"
+            style={{ gridColumn: '9 / 10', gridRow: tab === 'Model' ? '1 / 3' : '1 / 2' }}
+            onClick={handleLogout}
+          >
+            <span className="text-xs text-muted">{userDisplayName || 'User'}</span>
+            <span>Logout</span>
+          </button>
+          {/* Row 2: Model sub-buttons (only when Model tab active) - flex container spans columns 1-8 */}
+          {tab === 'Model' && (
+            <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 8', gridRow: '2 / 3' }}>
+              <Button onClick={handleNewBot} className="flex-1 rounded-none border-r border-border h-10">New System</Button>
+              <div className="relative flex-1">
+                <Button
+                  onClick={() => setSaveMenuOpen((v) => !v)}
+                  title="Save this system to a watchlist"
+                  variant={justSavedFeedback ? 'accent' : 'default'}
+                  className={`w-full h-full rounded-none border-r border-border ${justSavedFeedback ? 'transition-colors duration-300' : ''}`}
                 >
-                  <div className="flex flex-col gap-1">
-                    {watchlists.map((w) => (
-                      <Button key={w.id} variant="ghost" className="justify-start" onClick={() => handleSaveToWatchlist(w.id)}>
-                        {w.name}
-                      </Button>
-                    ))}
-                  </div>
-                  <div className="p-2.5 border-t border-border-soft mt-1">
-                    <div className="text-xs font-bold mb-1.5">New watchlist</div>
-                    <Input
-                      value={saveNewWatchlistName}
-                      placeholder="Type a name…"
-                      onChange={(e) => setSaveNewWatchlistName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveToWatchlist(saveNewWatchlistName)
-                      }}
-                      className="w-full"
-                    />
-                    <div className="flex gap-2 mt-2">
-                      <Button onClick={() => handleSaveToWatchlist(saveNewWatchlistName)} className="flex-1">
-                        Save
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          setSaveMenuOpen(false)
-                          setSaveNewWatchlistName('')
-                        }}
-                        className="flex-1"
-                      >
-                        Cancel
-                      </Button>
+                  {justSavedFeedback ? '✓ Saved!' : 'Save to Watchlist'}
+                </Button>
+                {saveMenuOpen ? (
+                  <Card
+                    className="absolute top-full left-0 z-[200] min-w-60 p-1.5 mt-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex flex-col gap-1">
+                      {watchlists.map((w) => (
+                        <Button key={w.id} variant="ghost" className="justify-start" onClick={() => handleSaveToWatchlist(w.id)}>
+                          {w.name}
+                        </Button>
+                      ))}
                     </div>
-                  </div>
-                </Card>
-              ) : null}
+                    <div className="p-2.5 border-t border-border-soft mt-1">
+                      <div className="text-xs font-bold mb-1.5">New watchlist</div>
+                      <Input
+                        value={saveNewWatchlistName}
+                        placeholder="Type a name…"
+                        onChange={(e) => setSaveNewWatchlistName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveToWatchlist(saveNewWatchlistName)
+                        }}
+                        className="w-full"
+                      />
+                      <div className="flex gap-2 mt-2">
+                        <Button onClick={() => handleSaveToWatchlist(saveNewWatchlistName)} className="flex-1">
+                          Save
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setSaveMenuOpen(false)
+                            setSaveNewWatchlistName('')
+                          }}
+                          className="flex-1"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ) : null}
+              </div>
+              <Button onClick={() => setTab('Analyze')} className="flex-1 rounded-none border-r border-border h-10">Open</Button>
+              <Button onClick={handleImport} disabled={isImporting} className="flex-1 rounded-none border-r border-border h-10">
+                {isImporting ? 'Importing...' : 'Import'}
+              </Button>
+              <Button onClick={handleExport} className="flex-1 rounded-none h-10">Export</Button>
             </div>
-            <Button onClick={() => setTab('Analyze')} className="flex-1 rounded-none border-r border-border">Open</Button>
-            <Button onClick={handleImport} disabled={isImporting} className="flex-1 rounded-none border-r border-border">
-              {isImporting ? 'Importing...' : 'Import'}
-            </Button>
-            <Button onClick={handleExport} className="flex-1 rounded-none">Export</Button>
-          </div>
-        )}
-        {/* Undo/Redo buttons - right of logo when Model tab active */}
-        {tab === 'Model' && (
-          <div className="flex items-stretch h-full" style={{ gridColumn: '3 / 4', gridRow: '2 / 3' }}>
-            <Button onClick={undo} disabled={!activeBot || activeBot.historyIndex === 0} className="flex-1 rounded-none border-l border-border h-full">
-              Undo
-            </Button>
-            <Button
-              onClick={redo}
-              disabled={!activeBot || activeBot.historyIndex === activeBot.history.length - 1}
-              className="flex-1 rounded-none border-l border-border h-full"
-            >
-              Redo
-            </Button>
-          </div>
-        )}
+          )}
+        </div>
         {/* Row 3: Algo tabs (only when Model tab active) */}
         {tab === 'Model' && (
-          <div className="flex gap-2 mt-3 px-2" style={{ gridColumn: '1 / 4', gridRow: '3 / 4' }}>
+          <div className="flex gap-2 py-2 px-2 border-t border-border">
               {bots.map((b) => {
                 const root = b.history[b.historyIndex] ?? b.history[0]
                 const label = root?.title || 'Untitled'
@@ -16561,198 +16907,9 @@ function App() {
               })}
             </div>
           )}
-        {/* Row 4: Find/Replace Ticker Panel - Model tab only */}
-        {tab === 'Model' && (
-          <div className="flex items-center gap-2 mt-3 px-3 py-2 bg-surface border border-border rounded-lg" style={{ gridColumn: '1 / 4', gridRow: '4 / 5' }}>
-              {/* Datalist for used tickers autocomplete */}
-              <datalist id={USED_TICKERS_DATALIST_ID}>
-                {collectUsedTickers(current, includeCallChains ? callChains : undefined).map(t => (
-                  <option key={t} value={t} />
-                ))}
-              </datalist>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted">From</span>
-                <Input
-                  list={USED_TICKERS_DATALIST_ID}
-                  className="h-7 w-24 text-xs"
-                  placeholder="Ticker"
-                  value={findTicker}
-                  onChange={(e) => {
-                    const val = e.target.value.toUpperCase()
-                    setFindTicker(val)
-                    // Auto-search on change
-                    let instances = findTickerInstances(current, val, includePositions, includeIndicators)
-                    // Include call chains if enabled
-                    if (includeCallChains && callChains.length > 0) {
-                      callChains.forEach(chain => {
-                        try {
-                          const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                          const chainInstances = findTickerInstances(chainRoot, val, includePositions, includeIndicators, chain.id)
-                          instances = [...instances, ...chainInstances]
-                        } catch { /* ignore parse errors */ }
-                      })
-                    }
-                    setFoundInstances(instances)
-                    setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
-                    setHighlightedInstance(instances.length > 0 ? instances[0] : null)
-                  }}
-                />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted">To</span>
-                <Input
-                  className="h-7 w-24 text-xs"
-                  placeholder="Ticker"
-                  value={replaceTicker}
-                  onChange={(e) => setReplaceTicker(e.target.value.toUpperCase())}
-                />
-              </div>
-              <label className="flex items-center gap-1 text-xs cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includePositions}
-                  onChange={(e) => {
-                    setIncludePositions(e.target.checked)
-                    // Re-search with new settings
-                    let instances = findTickerInstances(current, findTicker, e.target.checked, includeIndicators)
-                    if (includeCallChains && callChains.length > 0) {
-                      callChains.forEach(chain => {
-                        try {
-                          const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                          instances = [...instances, ...findTickerInstances(chainRoot, findTicker, e.target.checked, includeIndicators, chain.id)]
-                        } catch { /* ignore */ }
-                      })
-                    }
-                    setFoundInstances(instances)
-                    setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
-                  }}
-                />
-                Trade Tickers
-              </label>
-              <label className="flex items-center gap-1 text-xs cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeIndicators}
-                  onChange={(e) => {
-                    setIncludeIndicators(e.target.checked)
-                    // Re-search with new settings
-                    let instances = findTickerInstances(current, findTicker, includePositions, e.target.checked)
-                    if (includeCallChains && callChains.length > 0) {
-                      callChains.forEach(chain => {
-                        try {
-                          const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                          instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, e.target.checked, chain.id)]
-                        } catch { /* ignore */ }
-                      })
-                    }
-                    setFoundInstances(instances)
-                    setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
-                  }}
-                />
-                Indicator Tickers
-              </label>
-              <label className="flex items-center gap-1 text-xs cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeCallChains}
-                  onChange={(e) => {
-                    setIncludeCallChains(e.target.checked)
-                    // Re-search with new settings
-                    let instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
-                    if (e.target.checked && callChains.length > 0) {
-                      callChains.forEach(chain => {
-                        try {
-                          const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                          instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, includeIndicators, chain.id)]
-                        } catch { /* ignore */ }
-                      })
-                    }
-                    setFoundInstances(instances)
-                    setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
-                  }}
-                />
-                Call Chains
-              </label>
-              {findTicker && (
-                <span className="text-xs text-muted ml-2">
-                  {foundInstances.length} found
-                  {currentInstanceIndex >= 0 && foundInstances.length > 0 && ` (${currentInstanceIndex + 1}/${foundInstances.length})`}
-                </span>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={foundInstances.length === 0}
-                onClick={() => {
-                  const newIdx = (currentInstanceIndex - 1 + foundInstances.length) % foundInstances.length
-                  setCurrentInstanceIndex(newIdx)
-                  const instance = foundInstances[newIdx]
-                  setHighlightedInstance(instance)
-                  // Scroll to node
-                  const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
-                  if (nodeEl) {
-                    nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                  }
-                }}
-              >
-                ◀ Prev
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={foundInstances.length === 0}
-                onClick={() => {
-                  const newIdx = (currentInstanceIndex + 1) % foundInstances.length
-                  setCurrentInstanceIndex(newIdx)
-                  const instance = foundInstances[newIdx]
-                  setHighlightedInstance(instance)
-                  // Scroll to node
-                  const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
-                  if (nodeEl) {
-                    nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                  }
-                }}
-              >
-                Next ▶
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                disabled={!findTicker || !replaceTicker || foundInstances.length === 0}
-                onClick={() => {
-                  // Replace in main tree
-                  const nextRoot = replaceTickerInTree(current, findTicker, replaceTicker, includePositions, includeIndicators)
-                  push(nextRoot)
-                  // Replace in call chains if enabled
-                  if (includeCallChains && callChains.length > 0) {
-                    callChains.forEach(chain => {
-                      try {
-                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                        const updatedRoot = replaceTickerInTree(chainRoot, findTicker, replaceTicker, includePositions, includeIndicators)
-                        // Update call chain via API
-                        fetch(`/api/call-chains/${chain.id}`, {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ root: JSON.stringify(updatedRoot) })
-                        }).then(() => loadCallChainsFromApi(userId).then(setCallChains))
-                      } catch { /* ignore parse errors */ }
-                    })
-                  }
-                  // Clear state
-                  setFindTicker('')
-                  setReplaceTicker('')
-                  setFoundInstances([])
-                  setCurrentInstanceIndex(-1)
-                  setHighlightedInstance(null)
-                }}
-              >
-                Replace
-              </Button>
-            </div>
-          )}
         {tab === 'Help/Support' && (
-          <div className="flex gap-2 mt-3 px-2" style={{ gridColumn: '1 / 4', gridRow: '2 / 3' }}>
-            {(['Changelog', 'Appearance'] as const).map((t) => (
+          <div className="flex gap-2 py-2 px-2 border-t border-border">
+            {(['Changelog', 'Settings'] as const).map((t) => (
               <Button
                 key={t}
                 variant={helpTab === t ? 'accent' : 'secondary'}
@@ -16771,6 +16928,17 @@ function App() {
         </Alert>
       )}
       <TickerDatalist id={TICKER_DATALIST_ID} options={tickerOptions} />
+      <TickerSearchModal
+        open={tickerModalOpen}
+        onClose={() => setTickerModalOpen(false)}
+        onSelect={(ticker) => {
+          tickerModalCallback?.(ticker)
+          setTickerModalOpen(false)
+        }}
+        tickerOptions={tickerOptions}
+        tickerMetadata={tickerMetadata}
+        restrictToTickers={tickerModalRestriction}
+      />
       <main className="flex-1 overflow-hidden min-h-0">
         {tab === 'Model' ? (
           <Card className="h-full flex flex-col overflow-hidden m-4">
@@ -16798,6 +16966,11 @@ function App() {
                   onFetchBenchmarks={fetchBenchmarkMetrics}
                   modelSanityReport={modelSanityReport}
                   onFetchRobustness={runModelRobustness}
+                  onUndo={undo}
+                  onRedo={redo}
+                  canUndo={activeBot && activeBot.historyIndex > 0}
+                  canRedo={activeBot && activeBot.historyIndex < activeBot.history.length - 1}
+                  openTickerModal={openTickerModal}
                 />
               </div>
 
@@ -16806,12 +16979,12 @@ function App() {
                 {/* Bottom Left Zone - Sticky Labels + Content */}
                 <div className={`flex items-start transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'w-auto' : 'w-1/2'}`}>
                   {/* Left Side - Labels and Buttons (sticky, fills visible height, split 50/50) */}
-                  <div className="flex flex-col w-auto border border-border rounded-l-lg bg-card sticky top-4 z-10" style={{ height: 'calc(100vh - 240px)' }}>
+                  <div className="flex flex-col w-auto border border-border rounded-l-lg sticky top-4 z-10" style={{ height: 'calc(100vh - 240px)', backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))' }}>
                     {/* Callback Nodes Label/Button Zone - takes 50% */}
                     <div className="flex-1 flex flex-col items-center justify-center border-b border-border">
                       <button
                         onClick={() => setCallbackNodesCollapsed(!callbackNodesCollapsed)}
-                        className="px-2 py-2 hover:bg-accent/10 transition-colors rounded"
+                        className={`px-2 py-2 transition-colors rounded active:bg-accent/30 ${!callbackNodesCollapsed ? 'bg-accent/20' : 'hover:bg-accent/10'}`}
                         title={callbackNodesCollapsed ? 'Expand' : 'Collapse'}
                       >
                         <div className="text-xs font-bold" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
@@ -16829,7 +17002,7 @@ function App() {
                     <div className="flex-1 flex flex-col items-center justify-center">
                       <button
                         onClick={() => setCustomIndicatorsCollapsed(!customIndicatorsCollapsed)}
-                        className="px-2 py-2 hover:bg-accent/10 transition-colors rounded"
+                        className={`px-2 py-2 transition-colors rounded active:bg-accent/30 ${!customIndicatorsCollapsed ? 'bg-accent/20' : 'hover:bg-accent/10'}`}
                         title={customIndicatorsCollapsed ? 'Expand' : 'Collapse'}
                       >
                         <div className="text-xs font-bold" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
@@ -16846,8 +17019,9 @@ function App() {
 
                   {/* Right Side - Content Area (dynamic based on expanded state) */}
                   <div
-                    className="flex-1 grid overflow-hidden border border-l-0 border-border rounded-r-lg bg-card sticky top-4 z-10"
+                    className="flex-1 grid overflow-hidden border border-l-0 border-border rounded-r-lg sticky top-4 z-10"
                     style={{
+                      backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))',
                       gridTemplateRows:
                         callbackNodesCollapsed && customIndicatorsCollapsed ? '0fr 0fr' :
                         callbackNodesCollapsed && !customIndicatorsCollapsed ? '0fr 1fr' :
@@ -16870,7 +17044,12 @@ function App() {
                         <Card key={c.id}>
                           <div className="flex gap-2 items-center">
                             <Input value={c.name} onChange={(e) => handleRenameCallChain(c.id, e.target.value)} className="flex-1" />
-                            <Button variant="ghost" size="sm" onClick={() => handleToggleCallChainCollapse(c.id)}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`active:bg-accent/30 ${!c.collapsed ? 'bg-accent/20' : ''}`}
+                              onClick={() => handleToggleCallChainCollapse(c.id)}
+                            >
                               {c.collapsed ? 'Expand' : 'Collapse'}
                             </Button>
                             <Button
@@ -17084,26 +17263,216 @@ function App() {
                   </div>
                 </div>
 
-                {/* Bottom Right Zone - Flow Tree Builder with Sticky Scrollbar */}
-                <div className={`flex flex-col border border-border rounded-lg bg-card transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
-                  {/* ETFs Only Toggle - near ticker dropdown */}
-                  <div className="flex items-center gap-3 px-4 pt-3 pb-2 border-b border-border shrink-0">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={etfsOnlyMode}
-                        onChange={(e) => setEtfsOnlyMode(e.target.checked)}
-                        className="w-4 h-4 rounded border-border cursor-pointer"
-                      />
-                      <span className="text-sm font-semibold">ETFs Only</span>
-                    </label>
-                    <span className="text-xs text-muted">
-                      {etfsOnlyMode
-                        ? `Showing ${tickerOptions.length} ETFs`
-                        : `Showing all ${tickerOptions.length} tickers`}
-                    </span>
+                {/* Bottom Right Zone - Flow Tree Builder with Floating Toolbar */}
+                <div className={`flex flex-col transition-all relative ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
+                  {/* ETFs Only Toggle + Find/Replace - FLOATING TOOLBAR (sticky like Callback Nodes) */}
+                  <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg mb-2 sticky top-4 z-20" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
+                    {/* Left section: ETFs Only checkbox + ticker count */}
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={etfsOnlyMode}
+                          onChange={(e) => setEtfsOnlyMode(e.target.checked)}
+                          className="w-4 h-4 rounded border-border cursor-pointer"
+                        />
+                        <span className="text-sm font-semibold">ETFs Only</span>
+                      </label>
+                      <span className="text-xs text-muted">
+                        {etfsOnlyMode
+                          ? `Showing ${tickerOptions.length} ETFs`
+                          : `Showing all ${tickerOptions.length} tickers`}
+                      </span>
+                    </div>
+                    {/* Center section: Find/Replace Controls */}
+                    <div className="flex items-center gap-2">
+                      <datalist id={USED_TICKERS_DATALIST_ID}>
+                        {collectUsedTickers(current, includeCallChains ? callChains : undefined).map(t => (
+                          <option key={t} value={t} />
+                        ))}
+                      </datalist>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted">Replace</span>
+                        <button
+                          className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
+                          onClick={() => openTickerModal((ticker) => {
+                            setFindTicker(ticker)
+                            let instances = findTickerInstances(current, ticker, includePositions, includeIndicators)
+                            if (includeCallChains && callChains.length > 0) {
+                              callChains.forEach(chain => {
+                                try {
+                                  const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                                  const chainInstances = findTickerInstances(chainRoot, ticker, includePositions, includeIndicators, chain.id)
+                                  instances = [...instances, ...chainInstances]
+                                } catch { /* ignore parse errors */ }
+                              })
+                            }
+                            setFoundInstances(instances)
+                            setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                            setHighlightedInstance(instances.length > 0 ? instances[0] : null)
+                          }, collectUsedTickers(current, includeCallChains ? callChains : undefined))}
+                        >
+                          {findTicker || 'Ticker'}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted">With</span>
+                        <button
+                          className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
+                          onClick={() => openTickerModal((ticker) => setReplaceTicker(ticker))}
+                        >
+                          {replaceTicker || 'Ticker'}
+                        </button>
+                      </div>
+                      <label className="flex items-center gap-1 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includePositions}
+                          onChange={(e) => {
+                            setIncludePositions(e.target.checked)
+                            let instances = findTickerInstances(current, findTicker, e.target.checked, includeIndicators)
+                            if (includeCallChains && callChains.length > 0) {
+                              callChains.forEach(chain => {
+                                try {
+                                  const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                                  instances = [...instances, ...findTickerInstances(chainRoot, findTicker, e.target.checked, includeIndicators, chain.id)]
+                                } catch { /* ignore */ }
+                              })
+                            }
+                            setFoundInstances(instances)
+                            setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                          }}
+                        />
+                        Trade Tickers
+                      </label>
+                      <label className="flex items-center gap-1 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includeIndicators}
+                          onChange={(e) => {
+                            setIncludeIndicators(e.target.checked)
+                            let instances = findTickerInstances(current, findTicker, includePositions, e.target.checked)
+                            if (includeCallChains && callChains.length > 0) {
+                              callChains.forEach(chain => {
+                                try {
+                                  const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                                  instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, e.target.checked, chain.id)]
+                                } catch { /* ignore */ }
+                              })
+                            }
+                            setFoundInstances(instances)
+                            setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                          }}
+                        />
+                        Indicator Tickers
+                      </label>
+                      <label className="flex items-center gap-1 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includeCallChains}
+                          onChange={(e) => {
+                            setIncludeCallChains(e.target.checked)
+                            let instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
+                            if (e.target.checked && callChains.length > 0) {
+                              callChains.forEach(chain => {
+                                try {
+                                  const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                                  instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, includeIndicators, chain.id)]
+                                } catch { /* ignore */ }
+                              })
+                            }
+                            setFoundInstances(instances)
+                            setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                          }}
+                        />
+                        Call Chains
+                      </label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="active:bg-accent/30"
+                        disabled={foundInstances.length === 0}
+                        onClick={() => {
+                          const newIdx = (currentInstanceIndex - 1 + foundInstances.length) % foundInstances.length
+                          setCurrentInstanceIndex(newIdx)
+                          const instance = foundInstances[newIdx]
+                          setHighlightedInstance(instance)
+                          const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
+                          if (nodeEl) nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                        }}
+                      >
+                        ◀ Prev
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="active:bg-accent/30"
+                        disabled={foundInstances.length === 0}
+                        onClick={() => {
+                          const newIdx = (currentInstanceIndex + 1) % foundInstances.length
+                          setCurrentInstanceIndex(newIdx)
+                          const instance = foundInstances[newIdx]
+                          setHighlightedInstance(instance)
+                          const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
+                          if (nodeEl) nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                        }}
+                      >
+                        Next ▶
+                      </Button>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="active:bg-accent/50"
+                        disabled={!findTicker || !replaceTicker || foundInstances.length === 0}
+                        onClick={() => {
+                          const nextRoot = replaceTickerInTree(current, findTicker, replaceTicker, includePositions, includeIndicators)
+                          push(nextRoot)
+                          if (includeCallChains && callChains.length > 0) {
+                            callChains.forEach(chain => {
+                              try {
+                                const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                                const updatedRoot = replaceTickerInTree(chainRoot, findTicker, replaceTicker, includePositions, includeIndicators)
+                                fetch(`/api/call-chains/${chain.id}`, {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ root: JSON.stringify(updatedRoot) })
+                                }).then(() => loadCallChainsFromApi(userId).then(setCallChains))
+                              } catch { /* ignore parse errors */ }
+                            })
+                          }
+                          setFindTicker('')
+                          setReplaceTicker('')
+                          setFoundInstances([])
+                          setCurrentInstanceIndex(-1)
+                          setHighlightedInstance(null)
+                        }}
+                      >
+                        Replace
+                      </Button>
+                    </div>
+                    {/* Right section: Undo/Redo */}
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        variant="secondary"
+                        className="px-4 py-2 text-sm font-semibold active:bg-accent/30"
+                        onClick={undo}
+                        disabled={!activeBot || activeBot.historyIndex <= 0}
+                      >
+                        Undo
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="px-4 py-2 text-sm font-semibold active:bg-accent/30"
+                        onClick={redo}
+                        disabled={!activeBot || activeBot.historyIndex >= activeBot.history.length - 1}
+                      >
+                        Redo
+                      </Button>
+                    </div>
                   </div>
-                  <FlowchartScrollWrapper className="flex-1 p-4">
+                  {/* Flowchart Card - separate from toolbar */}
+                  <div className="flex-1 overflow-auto border border-border rounded-lg bg-card">
+                  <FlowchartScrollWrapper className="p-4">
                   <NodeCard
                     node={current}
                     depth={0}
@@ -17164,6 +17533,7 @@ function App() {
                     onToggleOverlay={handleToggleOverlay}
                   />
                   </FlowchartScrollWrapper>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -17171,9 +17541,77 @@ function App() {
         ) : tab === 'Help/Support' ? (
           <Card className="h-full flex flex-col overflow-hidden m-4">
             <CardContent className="p-6 flex flex-col h-full overflow-auto">
-              {helpTab === 'Appearance' ? (
+              {helpTab === 'Settings' ? (
                 <div className="max-w-3xl mx-auto w-full">
-                  <h2 className="text-xl font-bold mb-4">Appearance</h2>
+                  <h2 className="text-xl font-bold mb-4">Settings</h2>
+
+                  <div className="mb-8 p-4 border border-border rounded-lg">
+                    <h3 className="font-bold mb-2">Display Name</h3>
+                    <p className="text-muted text-sm mb-3">
+                      Choose a unique display name that will be shown in the header and on your systems.
+                      {userDisplayName && <span className="block mt-1">Current: <span className="font-semibold text-foreground">{userDisplayName}</span></span>}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <Input
+                          className={`h-8 text-sm w-64 pr-8 ${
+                            displayNameInput.trim().length >= 2
+                              ? displayNameAvailable === true
+                                ? 'border-green-500 focus:ring-green-500'
+                                : displayNameAvailable === false
+                                  ? 'border-red-500 focus:ring-red-500'
+                                  : ''
+                              : ''
+                          }`}
+                          value={displayNameInput}
+                          onChange={(e) => {
+                            setDisplayNameInput(e.target.value)
+                            setDisplayNameError(null)
+                            setDisplayNameAvailable(null)
+                          }}
+                          placeholder={userDisplayName || 'Enter a display name'}
+                          maxLength={30}
+                        />
+                        {/* Availability indicator */}
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                          {displayNameChecking ? (
+                            <span className="text-muted text-xs">...</span>
+                          ) : displayNameInput.trim().length >= 2 ? (
+                            displayNameAvailable === true ? (
+                              <span className="text-green-500 text-sm font-bold">✓</span>
+                            ) : displayNameAvailable === false ? (
+                              <span className="text-red-500 text-sm font-bold">✗</span>
+                            ) : null
+                          ) : null}
+                        </div>
+                      </div>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={handleSaveDisplayName}
+                        disabled={displayNameSaving || !displayNameInput.trim() || displayNameAvailable === false}
+                      >
+                        {displayNameSaving ? 'Saving...' : 'Save'}
+                      </Button>
+                    </div>
+                    {/* Availability status message */}
+                    {displayNameInput.trim().length >= 2 && !displayNameError && (
+                      displayNameAvailable === true ? (
+                        <p className="text-green-500 text-sm mt-2">This name is available!</p>
+                      ) : displayNameAvailable === false ? (
+                        <p className="text-red-500 text-sm mt-2">This name is not available</p>
+                      ) : displayNameChecking ? (
+                        <p className="text-muted text-sm mt-2">Checking availability...</p>
+                      ) : null
+                    )}
+                    {displayNameError && (
+                      <p className="text-red-500 text-sm mt-2">{displayNameError}</p>
+                    )}
+                    {displayNameSuccess && (
+                      <p className="text-green-500 text-sm mt-2">Display name updated successfully!</p>
+                    )}
+                    <p className="text-muted text-xs mt-2">2-30 characters. Letters, numbers, spaces, underscores, and hyphens only.</p>
+                  </div>
 
                   <div className="mb-8 p-4 border border-border rounded-lg">
                     <h3 className="font-bold mb-2">Theme</h3>

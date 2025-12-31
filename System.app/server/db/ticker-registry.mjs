@@ -302,7 +302,8 @@ export async function getAllTickerMetadata() {
   const rows = await db.select({
     ticker: tickerRegistry.ticker,
     name: tickerRegistry.name,
-    assetType: tickerRegistry.assetType
+    assetType: tickerRegistry.assetType,
+    exchange: tickerRegistry.exchange
   })
     .from(tickerRegistry)
     .where(

@@ -30,6 +30,7 @@ Atlas Engine enables users to visually design trading strategies by connecting d
   - CC mode: Adj Close for both signals and execution (dividend-adjusted returns)
   - OO/CO/OC modes: Adj Close for signals, actual Open/Close for execution
 - **Rich Indicator Library**: RSI, SMA, EMA, ROC, Volatility, Drawdown, Cumulative Return, 13612W Momentum, and more
+- **Ticker Search Modal**: Search tickers by symbol or company name with ETF/Stock filtering
 - **Undo/Redo**: Full history-based state management
 - **Copy/Paste**: Clone node subtrees with a single click
 - **Live Data Visualization**: View candlestick charts for tickers using DuckDB-powered queries
@@ -339,6 +340,13 @@ All pending FRDs have been completed!
 ### Deferred/Future (2 total)
 - FRD-011: Atlas Sponsored Systems (blocked - needs investigation)
 - FRD-027: Tiingo API Integration (replace Yahoo Finance)
+
+## Coming Soon
+
+- Position Node (adding Tickers) rework to be less click intensive
+- API/Backtest Speed up
+- Correlation matrix/portfolio builder tool
+- Variable Library (allowing the creation of custom indicators)
 
 
 ## Contributing

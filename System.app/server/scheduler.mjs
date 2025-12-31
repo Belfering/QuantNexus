@@ -197,6 +197,17 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
   const startedAt = Date.now()
   const today = new Date().toISOString().slice(0, 10)
 
+  // Set preliminary currentJob immediately so UI shows progress
+  currentJob = {
+    pid: null,
+    startedAt,
+    tickerCount: 0, // Will be updated once we know the count
+    syncedCount: 0,
+    stderrBuffer: '',
+    phase: 'preparing', // Show user we're preparing
+    source,
+  }
+
   console.log('[scheduler] Starting scheduled ticker sync...')
 
   try {
@@ -271,12 +282,15 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
     // Spawn the download process
     const child = spawn(pythonCmd, args, { windowsHide: true })
     currentChildProcess = child
+    // Update currentJob with actual values now that we have them
     currentJob = {
       pid: child.pid,
       startedAt,
       tickerCount: tickers.length,
       syncedCount: 0,
       stderrBuffer: '',
+      phase: 'downloading',
+      source,
     }
 
     child.stdout.on('data', (buf) => {
