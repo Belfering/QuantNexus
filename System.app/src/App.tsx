@@ -2481,7 +2481,6 @@ function CandlesChart({ candles }: { candles: CandlestickData[] }) {
       rightPriceScale: { borderColor: '#cbd5e1' },
       timeScale: { borderColor: '#cbd5e1' },
       handleScroll: { mouseWheel: false }, // Disable scroll-to-zoom so page scrolling works
-      watermark: { visible: false },
     })
     const series = chart.addSeries(CandlestickSeries)
     chartRef.current = chart
@@ -2591,8 +2590,7 @@ const DashboardEquityChart = ({
       rightPriceScale: { borderColor },
       timeScale: { borderColor, visible: false }, // Hide time scale on returns chart
       handleScroll: false,
-      handleScale: false,
-      watermark: { visible: false },
+      handleScale: false
     })
 
     // Portfolio returns series (main area)
@@ -2624,8 +2622,7 @@ const DashboardEquityChart = ({
       rightPriceScale: { borderColor },
       timeScale: { borderColor },
       handleScroll: false,
-      handleScale: false,
-      watermark: { visible: false },
+      handleScale: false
     })
 
     const drawdownSeries = drawdownChart.addSeries(AreaSeries, {
@@ -2732,8 +2729,7 @@ const PartnerTBillChart = ({
       rightPriceScale: { borderColor },
       timeScale: { borderColor, rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
       handleScroll: false,
-      handleScale: false,
-      watermark: { visible: false },
+      handleScale: false
     })
 
     const series = chart.addSeries(AreaSeries, {
@@ -2896,6 +2892,7 @@ function EquityChart({
   showCursorStats = true,
   heightPx,
   indicatorOverlays,
+  theme = 'light',
 }: {
   points: EquityPoint[]
   benchmarkPoints?: EquityPoint[]
@@ -2906,6 +2903,7 @@ function EquityChart({
   showCursorStats?: boolean
   heightPx?: number
   indicatorOverlays?: IndicatorOverlayData[]
+  theme?: 'dark' | 'light'
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -3042,17 +3040,22 @@ function EquityChart({
       return Math.max(0, width - border)
     }
 
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+
     const chart = createChart(el, {
       width: Math.floor(innerWidth()),
       height: chartHeight,
-      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
-      grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
       crosshair: { vertLine: { labelVisible: false }, horzLine: { labelVisible: false } },
-      rightPriceScale: { borderColor: '#cbd5e1', mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
-      timeScale: { borderColor: '#cbd5e1', rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
+      rightPriceScale: { borderColor, mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
+      timeScale: { borderColor, rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
       handleScroll: false,
-      handleScale: false,
-      watermark: { visible: false },
+      handleScale: false
     })
     const series = chart.addSeries(LineSeries, {
       color: '#0ea5e9',
@@ -3442,10 +3445,12 @@ function DrawdownChart({
   points,
   visibleRange,
   onVisibleRangeChange,
+  theme = 'light',
 }: {
   points: EquityPoint[]
   visibleRange?: VisibleRange
   onVisibleRangeChange?: (range: VisibleRange) => void
+  theme?: 'dark' | 'light'
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -3477,16 +3482,21 @@ function DrawdownChart({
       return Math.max(0, width - border)
     }
 
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+
     const chart = createChart(el, {
       width: Math.floor(innerWidth()),
       height: 130,
-      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
-      grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
-      rightPriceScale: { borderColor: '#cbd5e1' },
-      timeScale: { borderColor: '#cbd5e1', rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor, rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
       handleScroll: false,
-      handleScale: false,
-      watermark: { visible: false },
+      handleScale: false
     })
     const series = chart.addSeries(AreaSeries, {
       lineColor: '#ef4444',
@@ -3572,10 +3582,12 @@ function RangeNavigator({
   points,
   range,
   onChange,
+  theme = 'light',
 }: {
   points: EquityPoint[]
   range: VisibleRange
   onChange: (range: VisibleRange) => void
+  theme?: 'dark' | 'light'
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -3671,17 +3683,22 @@ function RangeNavigator({
       return Math.max(0, width - border)
     }
 
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+
     const chart = createChart(el, {
       width: Math.floor(innerWidth()),
       height: 110,
-      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
-      grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
       rightPriceScale: { visible: false },
       leftPriceScale: { visible: false },
-      timeScale: { visible: false, borderColor: '#cbd5e1', fixLeftEdge: true, fixRightEdge: true },
+      timeScale: { visible: false, borderColor, fixLeftEdge: true, fixRightEdge: true },
       handleScroll: false,
-      handleScale: false,
-      watermark: { visible: false },
+      handleScale: false
     })
     const series = chart.addSeries(LineSeries, { color: '#94a3b8', lineWidth: 1 })
     chartRef.current = chart
@@ -3851,9 +3868,11 @@ function RangeNavigator({
 function AllocationChart({
   series,
   visibleRange,
+  theme = 'light',
 }: {
   series: Array<{ name: string; color: string; points: EquityPoint[] }>
   visibleRange?: VisibleRange
+  theme?: 'dark' | 'light'
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -3874,14 +3893,19 @@ function AllocationChart({
       return Math.max(0, width - border)
     }
 
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+
     const chart = createChart(el, {
       width: Math.floor(innerWidth()),
       height: 240,
-      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
-      grid: { vertLines: { color: '#eef2f7' }, horzLines: { color: '#eef2f7' } },
-      rightPriceScale: { borderColor: '#cbd5e1' },
-      timeScale: { borderColor: '#cbd5e1', rightOffset: 0, fixLeftEdge: true, fixRightEdge: true },
-      watermark: { visible: false },
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor, rightOffset: 0, fixLeftEdge: true, fixRightEdge: true }
     })
     chartRef.current = chart
 
@@ -9471,7 +9495,9 @@ const downloadRebalancesCsv = (result: BacktestResult) => {
 const renderMonthlyHeatmap = (
   monthly: Array<{ year: number; month: number; value: number }>,
   days: BacktestDayRow[],
+  theme: 'dark' | 'light' = 'light',
 ) => {
+  const isDark = theme === 'dark'
   const safeGetYear = (ts: number) => {
     const ms = Number(ts) * 1000
     if (!Number.isFinite(ms)) return NaN
@@ -9498,23 +9524,34 @@ const renderMonthlyHeatmap = (
   const minNeg = neg.length ? Math.min(...neg) : 0
 
   const mix = (a: number, b: number, t: number) => Math.round(a + (b - a) * Math.max(0, Math.min(1, t)))
+  const neutralBg = isDark ? '#1e293b' : '#ffffff'
+  const neutralText = isDark ? '#94a3b8' : '#94a3b8'
+  const zeroText = isDark ? '#94a3b8' : '#475569'
   const bgFor = (v: number) => {
-    if (!Number.isFinite(v)) return { background: '#ffffff', color: '#94a3b8' }
-    if (Math.abs(v) < 1e-12) return { background: '#ffffff', color: '#475569' }
+    if (!Number.isFinite(v)) return { background: neutralBg, color: neutralText }
+    if (Math.abs(v) < 1e-12) return { background: neutralBg, color: zeroText }
 
     if (v > 0) {
       const t = maxPos > 0 ? Math.min(1, v / maxPos) : 0
-      const r = mix(255, 22, t)
-      const g = mix(255, 163, t)
-      const b = mix(255, 74, t)
-      return { background: `rgb(${r}, ${g}, ${b})`, color: '#064e3b' }
+      // Green gradient - in dark mode start from dark slate, in light mode from white
+      const baseR = isDark ? 30 : 255
+      const baseG = isDark ? 41 : 255
+      const baseB = isDark ? 59 : 255
+      const r = mix(baseR, 22, t)
+      const g = mix(baseG, 163, t)
+      const b = mix(baseB, 74, t)
+      return { background: `rgb(${r}, ${g}, ${b})`, color: isDark ? '#86efac' : '#064e3b' }
     }
 
     const t = minNeg < 0 ? Math.min(1, v / minNeg) : 0
-    const r = mix(255, 220, t)
-    const g = mix(255, 38, t)
-    const b = mix(255, 38, t)
-    return { background: `rgb(${r}, ${g}, ${b})`, color: '#881337' }
+    // Red gradient - in dark mode start from dark slate, in light mode from white
+    const baseR = isDark ? 30 : 255
+    const baseG = isDark ? 41 : 255
+    const baseB = isDark ? 59 : 255
+    const r = mix(baseR, 220, t)
+    const g = mix(baseG, 38, t)
+    const b = mix(baseB, 38, t)
+    return { background: `rgb(${r}, ${g}, ${b})`, color: isDark ? '#fda4af' : '#881337' }
   }
 
   const yearStats = new Map<number, { cagr: number; maxDD: number } | null>()
@@ -11790,6 +11827,7 @@ type BacktesterPanelProps = {
   onRun: () => void
   onJumpToError: (err: BacktestError) => void
   indicatorOverlays?: IndicatorOverlayData[]
+  theme?: 'dark' | 'light'
 }
 
 function BacktesterPanel({
@@ -11808,6 +11846,7 @@ function BacktesterPanel({
   onRun,
   onJumpToError,
   indicatorOverlays,
+  theme = 'light',
 }: BacktesterPanelProps) {
   const [tab, setTab] = useState<'Overview' | 'In Depth'>('Overview')
   const [selectedRange, setSelectedRange] = useState<VisibleRange | null>(null)
@@ -12279,6 +12318,7 @@ function BacktesterPanel({
                   visibleRange={visibleRange}
                   logScale={logScale}
                   indicatorOverlays={indicatorOverlays}
+                  theme={theme}
                 />
               </div>
               {rangePopover}
@@ -12290,9 +12330,10 @@ function BacktesterPanel({
               <DrawdownChart
                 points={result.drawdownPoints}
                 visibleRange={visibleRange}
+                theme={theme}
               />
               {visibleRange ? (
-                <RangeNavigator points={result.points} range={visibleRange} onChange={handleChartVisibleRangeChange} />
+                <RangeNavigator points={result.points} range={visibleRange} onChange={handleChartVisibleRangeChange} theme={theme} />
               ) : null}
             </div>
 
@@ -12318,7 +12359,7 @@ function BacktesterPanel({
         ) : result && tab === 'In Depth' ? (
           <>
             <div className="saved-item grid grid-cols-2 gap-4 items-start">
-              <div className="monthly-heatmap overflow-auto">{renderMonthlyHeatmap(result.monthly, result.days)}</div>
+              <div className="monthly-heatmap overflow-auto">{renderMonthlyHeatmap(result.monthly, result.days, theme)}</div>
               <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
                 <div className="font-black mb-1.5">Allocations (recent)</div>
                 <div className="flex-1 overflow-auto font-mono text-xs min-h-0">
@@ -12339,7 +12380,7 @@ function BacktesterPanel({
             </div>
             <div className="saved-item">
               <div className="font-black mb-1.5">Allocation over time (top 10 + cash)</div>
-              <AllocationChart series={allocationSeries} visibleRange={visibleRange} />
+              <AllocationChart series={allocationSeries} visibleRange={visibleRange} theme={theme} />
               <div className="backtester-legend">
                 {allocationSeries.map((s) => (
                   <div key={s.name} className="legend-item">
@@ -15722,6 +15763,7 @@ function App() {
                   onRun={handleRunBacktest}
                   onJumpToError={handleJumpToBacktestError}
                   indicatorOverlays={indicatorOverlayData}
+                  theme={uiState.theme}
                 />
               </div>
 
@@ -16419,10 +16461,11 @@ function App() {
                                           logScale
                                           showCursorStats={false}
                                           heightPx={390}
+                                          theme={uiState.theme}
                                         />
                                       </div>
                                           <div className="mt-2.5 w-full">
-                                            <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
+                                            <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
                                           </div>
                                         </div>
                                       </div>
@@ -17745,10 +17788,11 @@ function App() {
                                               logScale
                                               showCursorStats={false}
                                               heightPx={390}
+                                              theme={uiState.theme}
                                             />
                                           </div>
                                           <div className="mt-2.5 w-full">
-                                            <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
+                                            <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
                                           </div>
                                         </div>
                                       </div>
@@ -18526,10 +18570,11 @@ function App() {
                                                 logScale
                                                 showCursorStats={false}
                                                 heightPx={390}
+                                                theme={uiState.theme}
                                               />
                                             </div>
                                             <div className="mt-2.5 w-full">
-                                              <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
+                                              <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
                                             </div>
                                           </div>
                                         </div>
@@ -19137,10 +19182,11 @@ function App() {
                                                       logScale
                                                       showCursorStats={false}
                                                       heightPx={390}
+                                                      theme={uiState.theme}
                                                     />
                                                   </div>
                                                   <div className="mt-2.5 w-full">
-                                                    <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} />
+                                                    <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
                                                   </div>
                                                 </div>
                                               </div>
