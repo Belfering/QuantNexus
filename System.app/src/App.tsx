@@ -16412,10 +16412,10 @@ function App() {
               backgroundColor: theme === 'dark' ? 'rgb(30, 41, 59)' : 'rgb(241, 245, 249)',
               filter: theme === 'dark'
                 ? `invert(1) hue-rotate(180deg) brightness(1.2) sepia(0.3) hue-rotate(${
-                    colorTheme === 'blue' ? '190deg' : colorTheme === 'green' ? '90deg' : colorTheme === 'purple' ? '260deg' : colorTheme === 'orange' ? '350deg' : '0deg'
+                    colorTheme === 'ocean' || colorTheme === 'cyan' ? '190deg' : colorTheme === 'emerald' || colorTheme === 'lime' ? '90deg' : colorTheme === 'violet' || colorTheme === 'indigo' || colorTheme === 'fuchsia' ? '260deg' : colorTheme === 'amber' || colorTheme === 'rose' ? '350deg' : '0deg'
                   }) saturate(1.5)`
                 : `sepia(0.2) hue-rotate(${
-                    colorTheme === 'blue' ? '190deg' : colorTheme === 'green' ? '90deg' : colorTheme === 'purple' ? '260deg' : colorTheme === 'orange' ? '20deg' : '0deg'
+                    colorTheme === 'ocean' || colorTheme === 'cyan' ? '190deg' : colorTheme === 'emerald' || colorTheme === 'lime' ? '90deg' : colorTheme === 'violet' || colorTheme === 'indigo' || colorTheme === 'fuchsia' ? '260deg' : colorTheme === 'amber' || colorTheme === 'rose' ? '20deg' : '0deg'
                   }) saturate(1.2)`
             }}
           />
