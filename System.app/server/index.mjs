@@ -918,6 +918,73 @@ app.get('/api/tickers/registry/metadata', async (req, res) => {
   }
 })
 
+// Export full ticker registry (for syncing between environments)
+app.get('/api/tickers/registry/export', async (req, res) => {
+  try {
+    await tickerRegistry.ensureTickerRegistryTable()
+    const rows = await db.select().from(schema.tickerRegistry)
+    res.json({ tickers: rows, count: rows.length, exportedAt: new Date().toISOString() })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// Import ticker registry data (for local dev sync from production)
+app.post('/api/tickers/registry/import', async (req, res) => {
+  try {
+    const { tickers } = req.body
+    if (!Array.isArray(tickers)) {
+      return res.status(400).json({ error: 'tickers must be an array' })
+    }
+
+    await tickerRegistry.ensureTickerRegistryTable()
+
+    let imported = 0
+    const batchSize = 500
+
+    for (let i = 0; i < tickers.length; i += batchSize) {
+      const batch = tickers.slice(i, i + batchSize)
+      for (const t of batch) {
+        await db.insert(schema.tickerRegistry)
+          .values({
+            ticker: t.ticker,
+            name: t.name || null,
+            description: t.description || null,
+            exchange: t.exchange || null,
+            assetType: t.assetType || t.asset_type || null,
+            currency: t.currency || 'USD',
+            startDate: t.startDate || t.start_date || null,
+            endDate: t.endDate || t.end_date || null,
+            isActive: t.isActive !== undefined ? t.isActive : (t.is_active !== undefined ? t.is_active : true),
+            lastSynced: t.lastSynced || t.last_synced || null,
+            createdAt: t.createdAt ? new Date(t.createdAt) : new Date(),
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: schema.tickerRegistry.ticker,
+            set: {
+              name: t.name || null,
+              description: t.description || null,
+              exchange: t.exchange || null,
+              assetType: t.assetType || t.asset_type || null,
+              currency: t.currency || 'USD',
+              startDate: t.startDate || t.start_date || null,
+              endDate: t.endDate || t.end_date || null,
+              isActive: t.isActive !== undefined ? t.isActive : (t.is_active !== undefined ? t.is_active : true),
+              lastSynced: t.lastSynced || t.last_synced || null,
+              updatedAt: new Date(),
+            },
+          })
+        imported++
+      }
+    }
+
+    res.json({ imported, total: tickers.length })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
 app.get('/api/debug/:ticker', async (req, res) => {
   const ticker = normalizeTicker(req.params.ticker)
   if (!ticker) {
@@ -2109,7 +2176,7 @@ app.put('/api/preferences', async (req, res) => {
     await database.updateUserPreferences(userId, {
       theme,
       colorScheme,
-      uiState: uiState ? JSON.stringify(uiState) : undefined,
+      uiState: uiState || undefined,
     })
     res.json({ success: true })
   } catch (e) {
@@ -3155,8 +3222,8 @@ app.get('/api/admin/db/:table', async (req, res) => {
     // Define allowed tables and their queries
     const tableQueries = {
       'users': {
-        query: `SELECT id, username, display_name, role, is_partner_eligible, created_at, updated_at, last_login_at FROM users ORDER BY created_at DESC`,
-        columns: ['id', 'username', 'display_name', 'role', 'is_partner_eligible', 'created_at', 'updated_at', 'last_login_at']
+        query: `SELECT id, username, display_name, role, is_partner_eligible, theme, color_scheme, created_at, updated_at, last_login_at FROM users ORDER BY created_at DESC`,
+        columns: ['id', 'username', 'display_name', 'role', 'is_partner_eligible', 'theme', 'color_scheme', 'created_at', 'updated_at', 'last_login_at']
       },
       'bots': {
         query: `SELECT b.id, b.owner_id, b.name, b.visibility, b.tags, b.fund_slot,
