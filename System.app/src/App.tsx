@@ -4715,14 +4715,6 @@ function AdminPanel({
     }
   }, [])
 
-  // Legacy handlers that use the new role change API
-  const handleGrantAdmin = useCallback(async (targetUserId: string) => {
-    await handleChangeRole(targetUserId, 'sub_admin')
-  }, [handleChangeRole])
-
-  const handleRevokeAdmin = useCallback(async (targetUserId: string) => {
-    await handleChangeRole(targetUserId, 'user')
-  }, [handleChangeRole])
 
 
   return (
@@ -5868,20 +5860,16 @@ function AdminPanel({
                         {user.isSuperAdmin ? (
                           <span className="text-xs text-muted-foreground italic">Protected</span>
                         ) : (
-                          <Select
+                          <select
+                            className="w-32 h-7 text-xs px-2 rounded border border-border bg-background"
                             value={user.role === 'admin' ? 'main_admin' : user.role}
-                            onValueChange={(newRole) => void handleChangeRole(user.id, newRole)}
+                            onChange={(e) => void handleChangeRole(user.id, e.target.value)}
                           >
-                            <SelectTrigger className="w-32 h-7 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="user">user</SelectItem>
-                              <SelectItem value="partner">partner</SelectItem>
-                              <SelectItem value="engineer">engineer</SelectItem>
-                              <SelectItem value="sub_admin">sub_admin</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            <option value="user">user</option>
+                            <option value="partner">partner</option>
+                            <option value="engineer">engineer</option>
+                            <option value="sub_admin">sub_admin</option>
+                          </select>
                         )}
                       </TableCell>
                     </TableRow>
@@ -13335,8 +13323,6 @@ function App() {
   // Role hierarchy checks
   // Admin = sub_admin, main_admin, or legacy 'admin' role
   const isAdmin = userRole === 'admin' || userRole === 'main_admin' || userRole === 'sub_admin'
-  // Main admin = main_admin or legacy 'admin' role (can manage other admins)
-  const isMainAdmin = userRole === 'admin' || userRole === 'main_admin'
   // Engineer access = engineer or higher (for Databases tab)
   const hasEngineerAccess = userRole === 'engineer' || userRole === 'sub_admin' || userRole === 'main_admin' || userRole === 'admin'
 
