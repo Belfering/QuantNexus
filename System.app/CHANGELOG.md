@@ -8,9 +8,12 @@ All notable changes to System Block Chain are documented here.
 - Dashboard as default landing page for logged-in users
 - Changelog visible in Help/Support tab
 - Contact information for support
+- QuantNexus logo in header with theme-reactive styling
+- Logo container spans multiple rows when Model tab is active
 
 ### Changed
 - "Run" buttons renamed to "Re-run" in Benchmarks for consistency
+- Header layout uses CSS grid for better organization
 - TradingView charts now match app theme (dark/light mode)
 - Indicator dropdowns now use consistent expanded format across all node types
 - Monthly Returns heatmap now respects dark/light theme

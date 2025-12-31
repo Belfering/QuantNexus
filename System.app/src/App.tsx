@@ -2606,7 +2606,31 @@ const DashboardEquityChart = ({
       botSeriesRefs.current = []
       drawdownSeriesRef.current = null
     }
-  }, [theme, botSeries.length])
+  }, [botSeries.length])
+
+  // Update chart colors when theme changes (without recreating the charts)
+  useEffect(() => {
+    const equityChart = equityChartRef.current
+    const drawdownChart = drawdownChartRef.current
+    if (!equityChart || !drawdownChart) return
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+    equityChart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor },
+    })
+    drawdownChart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor },
+    })
+  }, [theme])
 
   useEffect(() => {
     if (!portfolioSeriesRef.current || !drawdownSeriesRef.current) return
@@ -2691,6 +2715,23 @@ const PartnerTBillChart = ({
       chartRef.current = null
       seriesRef.current = null
     }
+  }, [])
+
+  // Update chart colors when theme changes (without recreating the chart)
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+    chart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor },
+    })
   }, [theme])
 
   useEffect(() => {
@@ -3126,6 +3167,23 @@ function EquityChart({
     }
   }, [computeWindowStats, formatReturnFromBase, logScale, showCursorStats, chartHeight, updateCursorSegment])
 
+  // Update chart colors when theme changes (without recreating the chart)
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+    chart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor },
+    })
+  }, [theme])
+
   useEffect(() => {
     if (!seriesRef.current) return
     const main = sanitizeSeriesPoints(points)
@@ -3489,6 +3547,23 @@ function DrawdownChart({
       seriesRef.current = null
     }
   }, [])
+
+  // Update chart colors when theme changes (without recreating the chart)
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+    chart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor },
+    })
+  }, [theme])
 
   useEffect(() => {
     if (!seriesRef.current) return
@@ -3868,6 +3943,23 @@ function AllocationChart({
       chartRef.current = null
       seriesRefs.current = []
     }
+  }, [])
+
+  // Update chart colors when theme changes (without recreating the chart)
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const isDark = theme === 'dark'
+    const bgColor = isDark ? '#1e293b' : '#ffffff'
+    const textColor = isDark ? '#e2e8f0' : '#0f172a'
+    const gridColor = isDark ? '#334155' : '#eef2f7'
+    const borderColor = isDark ? '#475569' : '#cbd5e1'
+    chart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor },
+      timeScale: { borderColor },
+    })
   }, [theme])
 
   useEffect(() => {
@@ -3977,7 +4069,7 @@ function AllocationChart({
         setLegendData(null)
       }
     })
-  }, [series, visibleRange, theme])
+  }, [series, visibleRange])
 
   const isDark = theme === 'dark'
 
@@ -4269,7 +4361,7 @@ function AdminPanel({
   const [syncSchedule, setSyncSchedule] = useState<{
     config: { enabled: boolean; updateTime: string; timezone: string; batchSize?: number; sleepSeconds?: number }
     lastSync: { date: string; status: string; syncedCount?: number; tickerCount?: number; timestamp?: string } | null
-    status: { isRunning: boolean; schedulerActive: boolean; currentJob?: { pid: number; syncedCount: number; tickerCount: number; startedAt: number } }
+    status: { isRunning: boolean; schedulerActive: boolean; currentJob?: { pid: number | null; syncedCount: number; tickerCount: number; startedAt: number; phase?: string; source?: string } }
   } | null>(null)
   const [syncKilling, setSyncKilling] = useState(false)
 
@@ -5265,7 +5357,11 @@ function AdminPanel({
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-                  <span className="font-bold">Download In Progress</span>
+                  <span className="font-bold">
+                    {syncSchedule.status.currentJob.phase === 'preparing'
+                      ? 'Preparing Download...'
+                      : `${syncSchedule.status.currentJob.source === 'tiingo' ? 'Tiingo' : 'yFinance'} Download In Progress`}
+                  </span>
                 </div>
                 <Button
                   variant="destructive"
@@ -5292,40 +5388,66 @@ function AdminPanel({
                     }
                   }}
                 >
-                  {syncKilling ? 'Stopping...' : 'Stop Download'}
+                  {syncKilling ? 'Stopping...' : 'Stop'}
                 </Button>
               </div>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <div className="text-muted-foreground text-xs">Progress</div>
-                  <div className="font-bold">
-                    {syncSchedule.status.currentJob.syncedCount.toLocaleString()} / {syncSchedule.status.currentJob.tickerCount.toLocaleString()}
-                  </div>
+              {syncSchedule.status.currentJob.phase === 'preparing' ? (
+                <div className="text-sm text-muted-foreground">
+                  Fetching ticker list and preparing download...
                 </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">Elapsed</div>
-                  <div className="font-bold">
-                    {Math.round((Date.now() - syncSchedule.status.currentJob.startedAt) / 1000 / 60)} min
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <div className="text-muted-foreground text-xs">Progress</div>
+                      <div className="font-bold">
+                        {syncSchedule.status.currentJob.syncedCount.toLocaleString()} / {syncSchedule.status.currentJob.tickerCount.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground text-xs">Elapsed</div>
+                      <div className="font-bold">
+                        {(() => {
+                          const elapsed = Math.round((Date.now() - syncSchedule.status.currentJob.startedAt) / 1000)
+                          if (elapsed < 60) return `${elapsed}s`
+                          return `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`
+                        })()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground text-xs">Rate</div>
+                      <div className="font-bold">
+                        {(() => {
+                          const elapsed = (Date.now() - syncSchedule.status.currentJob.startedAt) / 1000
+                          const rate = elapsed > 0 ? syncSchedule.status.currentJob.syncedCount / elapsed : 0
+                          return `${rate.toFixed(1)}/sec`
+                        })()}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">Rate</div>
-                  <div className="font-bold">
-                    {(() => {
-                      const elapsed = (Date.now() - syncSchedule.status.currentJob.startedAt) / 1000
-                      const rate = elapsed > 0 ? syncSchedule.status.currentJob.syncedCount / elapsed : 0
-                      return `${rate.toFixed(1)}/sec`
-                    })()}
+                  {/* Progress bar */}
+                  <div className="mt-3 h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-500"
+                      style={{ width: `${syncSchedule.status.currentJob.tickerCount > 0 ? Math.min(100, (syncSchedule.status.currentJob.syncedCount / syncSchedule.status.currentJob.tickerCount) * 100) : 0}%` }}
+                    />
                   </div>
-                </div>
-              </div>
-              {/* Progress bar */}
-              <div className="mt-3 h-2 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-500"
-                  style={{ width: `${Math.min(100, (syncSchedule.status.currentJob.syncedCount / syncSchedule.status.currentJob.tickerCount) * 100)}%` }}
-                />
-              </div>
+                  {/* ETA */}
+                  {syncSchedule.status.currentJob.syncedCount > 0 && (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      {(() => {
+                        const elapsed = (Date.now() - syncSchedule.status.currentJob.startedAt) / 1000
+                        const rate = syncSchedule.status.currentJob.syncedCount / elapsed
+                        const remaining = syncSchedule.status.currentJob.tickerCount - syncSchedule.status.currentJob.syncedCount
+                        const eta = rate > 0 ? remaining / rate : 0
+                        if (eta < 60) return `~${Math.round(eta)}s remaining`
+                        if (eta < 3600) return `~${Math.round(eta / 60)}m remaining`
+                        return `~${Math.round(eta / 3600)}h ${Math.round((eta % 3600) / 60)}m remaining`
+                      })()}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -5895,11 +6017,13 @@ function DatabasesPanel({
   setDatabasesTab,
   onOpenBot,
   onExportBot,
+  isAdmin,
 }: {
   databasesTab: DatabasesSubtab
   setDatabasesTab: (t: DatabasesSubtab) => void
   onOpenBot?: (botId: string) => void
   onExportBot?: (botId: string) => void
+  isAdmin: boolean
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -5955,7 +6079,10 @@ function DatabasesPanel({
       <div className="flex items-center gap-3 mb-6">
         <div className="font-black text-lg">Databases</div>
         <div className="flex gap-2">
-          {(['Users', 'Systems', 'Portfolios', 'Cache', 'Admin Config', 'Tickers'] as const).map((t) => (
+          {(isAdmin
+            ? ['Users', 'Systems', 'Portfolios', 'Cache', 'Admin Config', 'Tickers'] as const
+            : ['Systems'] as const
+          ).map((t) => (
             <Button
               key={t}
               variant={databasesTab === t ? 'accent' : 'secondary'}
@@ -13788,7 +13915,8 @@ function App() {
   const [dashboardSubtab, setDashboardSubtab] = useState<'Portfolio' | 'Partner Program'>('Portfolio')
   const [analyzeSubtab, setAnalyzeSubtab] = useState<'Systems' | 'Correlation Tool'>('Systems')
   const [adminTab, setAdminTab] = useState<AdminSubtab>('Atlas Overview')
-  const [databasesTab, setDatabasesTab] = useState<DatabasesSubtab>('Users')
+  const [databasesTab, setDatabasesTab] = useState<DatabasesSubtab>('Systems')
+  const [helpTab, setHelpTab] = useState<'Changelog' | 'Appearance'>('Changelog')
 
   // Eligibility requirements (fetched for Admin tab and Partner Program page)
   const [appEligibilityRequirements, setAppEligibilityRequirements] = useState<EligibilityRequirement[]>([])
@@ -14970,6 +15098,25 @@ function App() {
     setClipboard(null)
     setCopiedNodeId(null)
   }
+
+  const handleDuplicateBot = useCallback((botId: string) => {
+    const sourceBotSession = bots.find(b => b.id === botId)
+    if (!sourceBotSession) return
+    const sourceRoot = sourceBotSession.history[sourceBotSession.historyIndex] ?? sourceBotSession.history[0]
+    if (!sourceRoot) return
+    const clonedRoot = cloneNode(sourceRoot)
+    clonedRoot.title = `${sourceRoot.title || 'Untitled'} (Copy)`
+    const newBot: BotSession = {
+      id: `bot-${newId()}`,
+      history: [clonedRoot],
+      historyIndex: 0,
+      backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+    }
+    setBots((prev) => [...prev, newBot])
+    setActiveBotId(newBot.id)
+    setClipboard(null)
+    setCopiedNodeId(null)
+  }, [bots])
 
   const handleExport = useCallback(() => {
     if (!current) return
@@ -16227,106 +16374,141 @@ function App() {
           </div>
         </div>
       )}
-      <header className="flex items-center justify-between px-4 py-3.5 border-b border-border bg-surface shrink-0 z-10">
-        <div>
-          <div className="text-xs tracking-widest uppercase text-muted mb-1">System</div>
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h1 className="m-0 text-2xl font-extrabold tracking-tight mr-1">Atlas Engine</h1>
-            <div className="flex items-center gap-1.5">
-              <Select
-                className="h-8 text-xs"
-                value={colorTheme}
-                onChange={(e) => setUiState((prev) => ({ ...prev, colorTheme: e.target.value as ColorTheme }))}
-                title="Select color theme"
-              >
-                {COLOR_THEMES.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </Select>
+      <header className="border-b border-border bg-surface shrink-0 z-10" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gridTemplateRows: tab === 'Model' ? '80px auto auto auto' : tab === 'Help/Support' ? '80px auto' : '80px' }}>
+        {/* Row 1: Main tabs */}
+        <div className="flex items-stretch" style={{ gridColumn: '1 / 2', gridRow: '1 / 2' }}>
+          {(['Dashboard', 'Nexus', 'Analyze', 'Model', 'Help/Support', ...(isAdmin ? ['Admin'] : []), ...(hasEngineerAccess ? ['Databases'] : [])] as ('Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases')[]).map((t) => (
+            <button
+              key={t}
+              className={`flex-1 px-4 py-3 text-sm font-bold border-r-2 border-border transition-colors ${
+                tab === t
+                  ? 'text-white'
+                  : 'bg-surface hover:bg-muted/50 text-foreground'
+              }`}
+              style={tab === t ? { backgroundColor: 'var(--color-accent)' } : undefined}
+              onClick={() => setTab(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        {/* QN Logo - spans rows when Model tab, uses background image */}
+        <div
+          className="border-2 border-border"
+          style={{
+            gridColumn: '2 / 3',
+            gridRow: tab === 'Model' ? '1 / 3' : '1 / 2',
+            width: '400px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              backgroundImage: 'url(/quantnexus-header-large.png)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center center',
+              backgroundRepeat: 'no-repeat',
+              backgroundColor: theme === 'dark' ? 'rgb(30, 41, 59)' : 'rgb(241, 245, 249)',
+              filter: theme === 'dark'
+                ? `invert(1) hue-rotate(180deg) brightness(1.2) sepia(0.3) hue-rotate(${
+                    colorTheme === 'blue' ? '190deg' : colorTheme === 'green' ? '90deg' : colorTheme === 'purple' ? '260deg' : colorTheme === 'orange' ? '350deg' : '0deg'
+                  }) saturate(1.5)`
+                : `sepia(0.2) hue-rotate(${
+                    colorTheme === 'blue' ? '190deg' : colorTheme === 'green' ? '90deg' : colorTheme === 'purple' ? '260deg' : colorTheme === 'orange' ? '20deg' : '0deg'
+                  }) saturate(1.2)`
+            }}
+          />
+        </div>
+        {/* Logout button */}
+        <button
+          className="px-4 py-3 text-xs bg-surface hover:bg-muted/50 text-muted flex items-center gap-2 whitespace-nowrap"
+          style={{ gridColumn: '3 / 4', gridRow: '1 / 2' }}
+          onClick={handleLogout}
+        >
+          <span className="font-extrabold text-foreground">{userId}</span>
+          <span className="text-muted">Logout</span>
+        </button>
+        {/* Row 2: Model sub-buttons (only when Model tab active) */}
+        {tab === 'Model' && (
+          <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 2', gridRow: '2 / 3' }}>
+            <Button onClick={handleNewBot} className="flex-1 rounded-none border-r border-border">New System</Button>
+            <div className="relative flex-1">
               <Button
-                variant="default"
-                size="sm"
-                onClick={() => setUiState((prev) => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
-                title="Toggle light/dark mode"
+                onClick={() => setSaveMenuOpen((v) => !v)}
+                title="Save this system to a watchlist"
+                variant={justSavedFeedback ? 'accent' : 'default'}
+                className={`w-full rounded-none border-r border-border ${justSavedFeedback ? 'transition-colors duration-300' : ''}`}
               >
-                {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                {justSavedFeedback ? '✓ Saved!' : 'Save to Watchlist'}
               </Button>
-            </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            {(['Dashboard', 'Nexus', 'Analyze', 'Model', 'Help/Support', ...(isAdmin ? ['Admin'] : []), ...(hasEngineerAccess ? ['Databases'] : [])] as ('Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases')[]).map((t) => (
-              <Button
-                key={t}
-                variant={tab === t ? 'accent' : 'secondary'}
-                onClick={() => setTab(t)}
-              >
-                {t}
-              </Button>
-            ))}
-          </div>
-          {tab === 'Model' && (
-            <div className="flex gap-2 mt-3">
-              <Button onClick={handleNewBot}>New System</Button>
-              <div className="relative inline-block">
-                <Button
-                  onClick={() => setSaveMenuOpen((v) => !v)}
-                  title="Save this system to a watchlist"
-                  variant={justSavedFeedback ? 'accent' : 'default'}
-                  className={justSavedFeedback ? 'transition-colors duration-300' : ''}
+              {saveMenuOpen ? (
+                <Card
+                  className="absolute top-full left-0 z-[200] min-w-60 p-1.5 mt-1"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  {justSavedFeedback ? '✓ Saved!' : 'Save to Watchlist'}
-                </Button>
-                {saveMenuOpen ? (
-                  <Card
-                    className="absolute top-full left-0 z-[200] min-w-60 p-1.5 mt-1"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex flex-col gap-1">
-                      {watchlists.map((w) => (
-                        <Button key={w.id} variant="ghost" className="justify-start" onClick={() => handleSaveToWatchlist(w.id)}>
-                          {w.name}
-                        </Button>
-                      ))}
-                    </div>
-                    <div className="p-2.5 border-t border-border-soft mt-1">
-                      <div className="text-xs font-bold mb-1.5">New watchlist</div>
-                      <Input
-                        value={saveNewWatchlistName}
-                        placeholder="Type a name…"
-                        onChange={(e) => setSaveNewWatchlistName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveToWatchlist(saveNewWatchlistName)
+                  <div className="flex flex-col gap-1">
+                    {watchlists.map((w) => (
+                      <Button key={w.id} variant="ghost" className="justify-start" onClick={() => handleSaveToWatchlist(w.id)}>
+                        {w.name}
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="p-2.5 border-t border-border-soft mt-1">
+                    <div className="text-xs font-bold mb-1.5">New watchlist</div>
+                    <Input
+                      value={saveNewWatchlistName}
+                      placeholder="Type a name…"
+                      onChange={(e) => setSaveNewWatchlistName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveToWatchlist(saveNewWatchlistName)
+                      }}
+                      className="w-full"
+                    />
+                    <div className="flex gap-2 mt-2">
+                      <Button onClick={() => handleSaveToWatchlist(saveNewWatchlistName)} className="flex-1">
+                        Save
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setSaveMenuOpen(false)
+                          setSaveNewWatchlistName('')
                         }}
-                        className="w-full"
-                      />
-                      <div className="flex gap-2 mt-2">
-                        <Button onClick={() => handleSaveToWatchlist(saveNewWatchlistName)} className="flex-1">
-                          Save
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setSaveMenuOpen(false)
-                            setSaveNewWatchlistName('')
-                          }}
-                          className="flex-1"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
                     </div>
-                  </Card>
-                ) : null}
-              </div>
-              <Button onClick={() => setTab('Analyze')}>Open</Button>
-              <Button onClick={handleImport} disabled={isImporting}>
-                {isImporting ? 'Importing...' : 'Import'}
-              </Button>
-              <Button onClick={handleExport}>Export</Button>
+                  </div>
+                </Card>
+              ) : null}
             </div>
-          )}
-          {tab === 'Model' && (
-            <div className="flex gap-2 mt-3">
+            <Button onClick={() => setTab('Analyze')} className="flex-1 rounded-none border-r border-border">Open</Button>
+            <Button onClick={handleImport} disabled={isImporting} className="flex-1 rounded-none border-r border-border">
+              {isImporting ? 'Importing...' : 'Import'}
+            </Button>
+            <Button onClick={handleExport} className="flex-1 rounded-none">Export</Button>
+          </div>
+        )}
+        {/* Undo/Redo buttons - right of logo when Model tab active */}
+        {tab === 'Model' && (
+          <div className="flex items-stretch h-full" style={{ gridColumn: '3 / 4', gridRow: '2 / 3' }}>
+            <Button onClick={undo} disabled={!activeBot || activeBot.historyIndex === 0} className="flex-1 rounded-none border-l border-border h-full">
+              Undo
+            </Button>
+            <Button
+              onClick={redo}
+              disabled={!activeBot || activeBot.historyIndex === activeBot.history.length - 1}
+              className="flex-1 rounded-none border-l border-border h-full"
+            >
+              Redo
+            </Button>
+          </div>
+        )}
+        {/* Row 3: Algo tabs (only when Model tab active) */}
+        {tab === 'Model' && (
+          <div className="flex gap-2 mt-3 px-2" style={{ gridColumn: '1 / 4', gridRow: '3 / 4' }}>
               {bots.map((b) => {
                 const root = b.history[b.historyIndex] ?? b.history[0]
                 const label = root?.title || 'Untitled'
@@ -16334,7 +16516,7 @@ function App() {
                   <div
                     key={b.id}
                     className={cn(
-                      'flex items-center gap-1 border rounded-lg p-1 pr-1.5',
+                      'flex flex-col border rounded-lg p-2 min-w-[120px]',
                       b.id === activeBotId
                         ? 'bg-accent-bg border-accent-border text-accent-text'
                         : 'bg-surface border-border'
@@ -16343,29 +16525,45 @@ function App() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="w-full justify-center font-medium"
                       onClick={() => setActiveBotId(b.id)}
                     >
                       {label}
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-danger px-1 h-auto"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleCloseBot(b.id)
-                      }}
-                    >
-                      ✕
-                    </Button>
+                    <div className="flex gap-1 mt-1 justify-center">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs px-2 h-6"
+                        title="Open new copy"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDuplicateBot(b.id)
+                        }}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-danger px-2 h-6 text-xs"
+                        title="Close"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleCloseBot(b.id)
+                        }}
+                      >
+                        ✕
+                      </Button>
+                    </div>
                   </div>
                 )
               })}
             </div>
           )}
-          {/* Find/Replace Ticker Panel - Model tab only */}
-          {tab === 'Model' && (
-            <div className="flex items-center gap-2 mt-3 px-3 py-2 bg-surface border border-border rounded-lg">
+        {/* Row 4: Find/Replace Ticker Panel - Model tab only */}
+        {tab === 'Model' && (
+          <div className="flex items-center gap-2 mt-3 px-3 py-2 bg-surface border border-border rounded-lg" style={{ gridColumn: '1 / 4', gridRow: '4 / 5' }}>
               {/* Datalist for used tickers autocomplete */}
               <datalist id={USED_TICKERS_DATALIST_ID}>
                 {collectUsedTickers(current, includeCallChains ? callChains : undefined).map(t => (
@@ -16552,28 +16750,20 @@ function App() {
               </Button>
             </div>
           )}
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex gap-2">
-            <Button onClick={undo} disabled={!activeBot || activeBot.historyIndex === 0}>
-              Undo
-            </Button>
-            <Button
-              onClick={redo}
-              disabled={!activeBot || activeBot.historyIndex === activeBot.history.length - 1}
-            >
-              Redo
-            </Button>
+        {tab === 'Help/Support' && (
+          <div className="flex gap-2 mt-3 px-2" style={{ gridColumn: '1 / 4', gridRow: '2 / 3' }}>
+            {(['Changelog', 'Appearance'] as const).map((t) => (
+              <Button
+                key={t}
+                variant={helpTab === t ? 'accent' : 'secondary'}
+                size="sm"
+                onClick={() => setHelpTab(t)}
+              >
+                {t}
+              </Button>
+            ))}
           </div>
-          <div className="flex items-center gap-2.5">
-            <div className="text-xs text-muted">
-              Logged in as <span className="font-extrabold">{userId}</span>
-            </div>
-            <Button variant="default" size="sm" onClick={handleLogout}>
-              Logout
-            </Button>
-          </div>
-        </div>
+        )}
       </header>
       {tickerApiError && (
         <Alert variant="destructive" className="rounded-none border-x-0">
@@ -16981,18 +17171,47 @@ function App() {
         ) : tab === 'Help/Support' ? (
           <Card className="h-full flex flex-col overflow-hidden m-4">
             <CardContent className="p-6 flex flex-col h-full overflow-auto">
-              <div className="max-w-3xl mx-auto w-full">
-                <h2 className="text-xl font-bold mb-4">Help & Support</h2>
+              {helpTab === 'Appearance' ? (
+                <div className="max-w-3xl mx-auto w-full">
+                  <h2 className="text-xl font-bold mb-4">Appearance</h2>
 
-                <div className="mb-8 p-4 border border-border rounded-lg">
-                  <h3 className="font-bold mb-2">Contact</h3>
-                  <p className="text-muted text-sm">Message me on Discord</p>
+                  <div className="mb-8 p-4 border border-border rounded-lg">
+                    <h3 className="font-bold mb-2">Theme</h3>
+                    <div className="flex items-center gap-3">
+                      <Select
+                        className="h-8 text-xs"
+                        value={colorTheme}
+                        onChange={(e) => setUiState((prev) => ({ ...prev, colorTheme: e.target.value as ColorTheme }))}
+                        title="Select color theme"
+                      >
+                        {COLOR_THEMES.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </Select>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => setUiState((prev) => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
+                        title="Toggle light/dark mode"
+                      >
+                        {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
+              ) : (
+                <div className="max-w-3xl mx-auto w-full">
+                  <h2 className="text-xl font-bold mb-4">Help & Support</h2>
 
-                <div className="space-y-6">
-                  <h3 className="text-lg font-bold border-b border-border pb-2">Changelog</h3>
+                  <div className="mb-8 p-4 border border-border rounded-lg">
+                    <h3 className="font-bold mb-2">Contact</h3>
+                    <p className="text-muted text-sm">Message me on Discord</p>
+                  </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-bold border-b border-border pb-2">Changelog</h3>
+
+                    <div className="space-y-4">
                     <div>
                       <h4 className="font-bold text-sm text-muted mb-2">[Unreleased]</h4>
                       <div className="pl-4 space-y-3">
@@ -17051,9 +17270,10 @@ function App() {
                         </ul>
                       </div>
                     </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         ) : tab === 'Admin' ? (
@@ -17087,6 +17307,7 @@ function App() {
                 setDatabasesTab={setDatabasesTab}
                 onOpenBot={isAdmin ? handleOpenBot : undefined}
                 onExportBot={isAdmin ? handleExportBot : undefined}
+                isAdmin={isAdmin}
               />
             </CardContent>
           </Card>
