@@ -18020,7 +18020,7 @@ function App() {
                           {b.tags?.includes('Nexus Eligible') && (
                             <Badge variant="secondary">Nexus Eligible</Badge>
                           )}
-                          <Badge variant="default">{b.builderDisplayName || b.builderId}</Badge>
+                          <Badge variant="default">{b.builderDisplayName || (b.builderId === userId ? userDisplayName : null) || b.builderId}</Badge>
                           <div className="flex gap-1.5 flex-wrap">
                             {tags.map((w) => (
                               <Badge key={w.id} variant="accent" className="gap-1.5">
@@ -19144,7 +19144,7 @@ function App() {
               const communityBotRows: CommunityBotRow[] = allNexusBots.map((bot) => {
                   const tagNames = (watchlistsByBotId.get(bot.id) ?? []).map((w) => w.name)
                   // Since this is specifically for Nexus bots, primary tag is always Nexus
-                  const builderName = bot.builderDisplayName || bot.builderId
+                  const builderName = bot.builderDisplayName || (bot.builderId === userId ? userDisplayName : null) || bot.builderId
                   const tags = ['Nexus', builderName, ...tagNames]
                   // Use frontend-cached metrics if available, otherwise fall back to API-provided backtestResult
                   const metrics = analyzeBacktests[bot.id]?.result?.metrics ?? bot.backtestResult
@@ -19332,7 +19332,7 @@ function App() {
                       // Use anonymized display name for Nexus bots in Community tab
                       // Use fundSlot from bot, or look up from fundZones as fallback
                       const fundSlot = b.fundSlot ?? getFundSlotForBot(b.id)
-                      const builderName = b.builderDisplayName || b.builderId
+                      const builderName = b.builderDisplayName || (b.builderId === userId ? userDisplayName : null) || b.builderId
                       const displayName = b.tags?.includes('Nexus') && fundSlot
                         ? `${builderName}'s Fund #${fundSlot}`
                         : b.tags?.includes('Nexus')
@@ -19352,7 +19352,7 @@ function App() {
                             {b.tags?.includes('Nexus Eligible') && (
                               <Badge variant="secondary">Nexus Eligible</Badge>
                             )}
-                            <Badge variant="default">{b.builderDisplayName || b.builderId}</Badge>
+                            <Badge variant="default">{b.builderDisplayName || (b.builderId === userId ? userDisplayName : null) || b.builderId}</Badge>
                             <div className="flex gap-1.5 flex-wrap">
                               {wlTags.map((w) => (
                                 <Badge key={w.id} variant="accent" className="gap-1.5">
@@ -20149,7 +20149,7 @@ function App() {
 
                           // Use anonymized display name for Nexus bots from other users
                           const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
-                          const builderName = b?.builderDisplayName || b?.builderId
+                          const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
                           const displayName = b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
                             ? `${builderName}'s Fund #${fundSlot}`
                             : b?.tags?.includes('Nexus') && b?.builderId !== userId
@@ -20167,7 +20167,7 @@ function App() {
                                 <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
                                   {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
                                 </Badge>
-                                {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || b?.builderId}</Badge>}
+                                {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
                                 <div className="flex gap-1.5 flex-wrap">
                                   {wlTags.map((w) => (
                                     <Badge key={w.id} variant="accent" className="gap-1.5">
@@ -20731,7 +20731,7 @@ function App() {
                                 {b.tags?.includes('Nexus Eligible') && (
                                   <Badge variant="secondary">Nexus Eligible</Badge>
                                 )}
-                                <Badge variant="default">{b.builderDisplayName || b.builderId}</Badge>
+                                <Badge variant="default">{b.builderDisplayName || (b.builderId === userId ? userDisplayName : null) || b.builderId}</Badge>
                                 <div className="flex gap-1.5 flex-wrap">
                                   {wlTags.map((w) => (
                                     <Badge key={w.id} variant="accent" className="gap-1.5">
