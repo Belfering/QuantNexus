@@ -53,6 +53,9 @@ COPY --from=builder /app/dist ./dist
 # Copy server code
 COPY --from=builder /app/server ./server
 
+# Copy CHANGELOG.md for the changelog API endpoint
+COPY --from=builder /app/CHANGELOG.md ./CHANGELOG.md
+
 # Copy ticker-data Python scripts (for data downloads)
 COPY --from=builder /app/ticker-data/*.py ./ticker-data/
 
