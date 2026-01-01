@@ -84,7 +84,15 @@
       "Bash(set \"TIINGO_API_KEY=2ad4af55cc51c2138c5385be2f02569ad06410c7\")",
       "Bash(cmd /c \"taskkill /PID 142840 /F\")",
       "Bash(npm run lint:*)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(git merge:*)",
+      "Bash(git restore:*)",
+      "Bash(del \"c:\\\\Users\\\\Trader\\\\Desktop\\\\Flowchart\\\\System.app\\\\import-tickers.mjs\")",
+      "Bash(del \"c:\\\\Users\\\\Trader\\\\Desktop\\\\Flowchart\\\\System.app\\\\import-ticker-metadata.mjs\")",
+      "Bash(cmd //c \"taskkill /PID 149380 /F\")",
+      "Bash(cmd //c \"taskkill /PID 157504 /F\")",
+      "Bash(cmd //c \"taskkill /PID 174180 /F\")",
+      "Bash(cmd //c \"taskkill /PID 169260 /F\")"
     ]
   }
 }

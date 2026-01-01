@@ -13892,10 +13892,11 @@ function App() {
     try {
       const apiBots = await fetchNexusBotsFromApi()
       // Merge user's local Nexus bots with API bots (deduplicated)
+      // Prefer API bots as they have builderDisplayName populated from the database
       const localNexusBots = savedBots.filter((bot) => bot.tags?.includes('Nexus'))
-      const localBotIds = new Set(localNexusBots.map((b) => b.id))
-      const apiBotsMerged = apiBots.filter((ab) => !localBotIds.has(ab.id))
-      const merged = [...localNexusBots, ...apiBotsMerged]
+      const apiBotIds = new Set(apiBots.map((b) => b.id))
+      const localBotsNotInApi = localNexusBots.filter((lb) => !apiBotIds.has(lb.id))
+      const merged = [...apiBots, ...localBotsNotInApi]
       const seen = new Set<string>()
       const deduplicated = merged.filter((bot) => {
         if (seen.has(bot.id)) return false

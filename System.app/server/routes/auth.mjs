@@ -190,7 +190,7 @@ router.post('/login', async (req, res) => {
 
     // Update last login
     sqlite.prepare(`
-      UPDATE users SET updated_at = datetime('now') WHERE id = ?
+      UPDATE users SET last_login_at = datetime('now'), updated_at = datetime('now') WHERE id = ?
     `).run(user.id)
 
     res.json({

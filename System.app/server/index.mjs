@@ -3203,7 +3203,7 @@ app.get('/api/admin/db/:table', async (req, res) => {
         columns: ['id', 'username', 'display_name', 'role', 'is_partner_eligible', 'theme', 'color_scheme', 'created_at', 'updated_at', 'last_login_at']
       },
       'bots': {
-        query: `SELECT b.id, b.owner_id, u.display_name as owner_name, b.name, b.visibility, b.tags, b.fund_slot,
+        query: `SELECT b.id, u.display_name as owner_name, b.name, b.visibility, b.tags, b.fund_slot,
                 ROUND(m.cagr * 100, 2) as cagr_pct,
                 ROUND(m.sharpe_ratio, 2) as sharpe,
                 ROUND(m.max_drawdown * 100, 2) as maxdd_pct,
@@ -3219,7 +3219,7 @@ app.get('/api/admin/db/:table', async (req, res) => {
                    OR (b.tags IS NOT NULL AND b.tags != '[]' AND b.tags != 'null')
                 ORDER BY m.cagr DESC NULLS LAST
                 LIMIT 500`,
-        columns: ['id', 'owner_id', 'owner_name', 'name', 'visibility', 'tags', 'fund_slot', 'cagr_pct', 'sharpe', 'maxdd_pct', 'sortino', 'watchlist_count', 'in_watchlists', 'created_at', 'deleted_at']
+        columns: ['id', 'owner_name', 'name', 'visibility', 'tags', 'fund_slot', 'cagr_pct', 'sharpe', 'maxdd_pct', 'sortino', 'watchlist_count', 'in_watchlists', 'created_at', 'deleted_at']
       },
       'bot_metrics': {
         query: `SELECT * FROM bot_metrics ORDER BY cagr DESC LIMIT 500`,

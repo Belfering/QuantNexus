@@ -21,6 +21,9 @@ export const users = sqliteTable('users', {
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   lastLoginAt: integer('last_login_at', { mode: 'timestamp' }),
+  // UI Preferences (stored directly on user for simplicity)
+  theme: text('theme').default('dark'),
+  colorScheme: text('color_scheme').default('slate'),
 })
 
 // ============================================
