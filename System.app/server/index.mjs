@@ -1024,6 +1024,23 @@ app.post('/api/tickers/registry/import', async (req, res) => {
   }
 })
 
+// Reactivate a ticker (mark as active again)
+app.post('/api/tickers/registry/reactivate', async (req, res) => {
+  try {
+    const { ticker } = req.body
+    if (!ticker) {
+      return res.status(400).json({ error: 'ticker is required' })
+    }
+
+    await tickerRegistry.ensureTickerRegistryTable()
+    await tickerRegistry.markTickerActive(ticker)
+
+    res.json({ success: true, ticker: ticker.toUpperCase() })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
 app.get('/api/debug/:ticker', async (req, res) => {
   const ticker = normalizeTicker(req.params.ticker)
   if (!ticker) {

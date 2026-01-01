@@ -6500,8 +6500,8 @@ function DatabasesPanel({
             }
           }
 
-          // Add Actions column for Systems tab
-          const showActions = databasesTab === 'Systems' && (onOpenBot || onExportBot)
+          // Add Actions column for Systems tab and Tickers tab (for reactivate)
+          const showActions = (databasesTab === 'Systems' && (onOpenBot || onExportBot)) || databasesTab === 'Tickers'
           const displayColumns = showActions ? [...columns, 'Actions'] : columns
 
           return (
@@ -6544,6 +6544,29 @@ function DatabasesPanel({
                             {onOpenBot && (
                               <Button size="sm" variant="outline" onClick={() => onOpenBot(String(row['id']))}>
                                 Open
+                              </Button>
+                            )}
+                            {databasesTab === 'Tickers' && row['isActive'] === false && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch('/api/tickers/registry/reactivate', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ ticker: String(row['ticker']) }),
+                                    })
+                                    if (res.ok) {
+                                      // Refresh the ticker list
+                                      fetchTickers(tickerSearchDebounced, tickerActiveOnly, tickerOffset)
+                                    }
+                                  } catch {
+                                    // Ignore errors
+                                  }
+                                }}
+                              >
+                                Reactivate
                               </Button>
                             )}
                           </div>

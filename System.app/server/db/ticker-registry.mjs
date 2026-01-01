@@ -172,6 +172,15 @@ export async function markTickerInactive(ticker) {
 }
 
 /**
+ * Mark a ticker as active (reactivate a previously deactivated ticker)
+ */
+export async function markTickerActive(ticker) {
+  await db.update(tickerRegistry)
+    .set({ isActive: true, updatedAt: new Date() })
+    .where(eq(tickerRegistry.ticker, ticker.toUpperCase()))
+}
+
+/**
  * Get registry statistics
  */
 export async function getRegistryStats() {
