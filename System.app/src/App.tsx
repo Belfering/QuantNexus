@@ -4529,7 +4529,7 @@ function AdminPanel({
 
   // Sync Schedule state (for simplified admin panel)
   const [syncSchedule, setSyncSchedule] = useState<{
-    config: { enabled: boolean; updateTime: string; timezone: string; batchSize?: number; sleepSeconds?: number }
+    config: { enabled: boolean; updateTime: string; timezone: string; batchSize?: number; sleepSeconds?: number; tiingoSleepSeconds?: number }
     lastSync: { date: string; status: string; syncedCount?: number; tickerCount?: number; timestamp?: string } | null
     status: { isRunning: boolean; schedulerActive: boolean; currentJob?: { pid: number | null; syncedCount: number; tickerCount: number; startedAt: number; phase?: string; source?: string } }
   } | null>(null)
@@ -4548,11 +4548,17 @@ function AdminPanel({
   const [adminUsersLoading, setAdminUsersLoading] = useState(false)
   const [adminUsersError, setAdminUsersError] = useState<string | null>(null)
 
+  // Sanitize ticker for filename comparison (matches Python download.py sanitize_filename)
+  const sanitizeTickerForFilename = (ticker: string) =>
+    ticker.replace(/[/\\:*?"<>|]/g, '-').toUpperCase()
+
   // Compute missing tickers (in registry but not in parquet files)
   const missingTickers = useMemo(() => {
     if (registryTickers.length === 0) return []
+    // Parquet filenames are already sanitized (e.g., BC-PC.parquet from BC/PC)
     const parquetSet = new Set(parquetTickers.map(t => t.toUpperCase()))
-    return registryTickers.filter(t => !parquetSet.has(t.toUpperCase())).sort()
+    // Compare sanitized registry tickers against parquet filenames
+    return registryTickers.filter(t => !parquetSet.has(sanitizeTickerForFilename(t))).sort()
   }, [registryTickers, parquetTickers])
 
   useEffect(() => {

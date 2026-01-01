@@ -279,6 +279,8 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       if (tiingoApiKey) {
         args.push('--api-key', tiingoApiKey)
       }
+      // Use Tiingo-only mode: download ALL tickers directly from Tiingo (slower but thorough)
+      args.push('--tiingo-only')
     }
 
     // Log the command being run for debugging

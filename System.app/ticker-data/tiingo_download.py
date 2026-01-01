@@ -282,6 +282,83 @@ def _fetch_ticker_metadata(ticker: str, api_key: str) -> dict | None:
         return None
 
 
+def download_to_parquet_tiingo_only(
+    tickers: Iterable[str],
+    *,
+    out_dir: str | Path,
+    cfg: DownloadConfig,
+    api_key: str,
+    progress_cb: Optional[Callable[[dict], None]] = None,
+    skip_metadata: Optional[set[str]] = None,
+    no_metadata: bool = False,
+) -> list[Path]:
+    """Download ALL ticker data directly from Tiingo API (no yfinance). Slower but more thorough."""
+    out_root = ensure_dir(out_dir)
+    tickers_list = [t.upper().strip() for t in tickers if str(t).strip()]
+    out_paths: list[Path] = []
+    skip_set = skip_metadata or set()
+
+    if progress_cb:
+        progress_cb({"type": "start", "tickers": len(tickers_list), "mode": "tiingo_only"})
+
+    for i, t in enumerate(tickers_list, start=1):
+        try:
+            # Download price data from Tiingo
+            df = _download_ticker_tiingo(t, api_key, cfg)
+            if df is None or df.empty:
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "no_data"})
+                continue
+
+            base = _normalize_tiingo_df(df, t)
+            if base.empty:
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "empty_frame"})
+                continue
+
+            safe_ticker = _sanitize_ticker_for_filename(t)
+            out_path = out_root / f"{safe_ticker}.parquet"
+            try:
+                base.to_parquet(out_path, index=False)
+                out_paths.append(out_path)
+
+                # Fetch metadata from Tiingo
+                metadata = None
+                if not no_metadata and t not in skip_set:
+                    metadata = _fetch_ticker_metadata(t, api_key)
+
+                save_event = {
+                    "type": "ticker_saved",
+                    "ticker": t,
+                    "path": str(out_path),
+                    "saved": len(out_paths),
+                    "total": len(tickers_list),
+                    "source": "tiingo",
+                }
+                if metadata:
+                    save_event["name"] = metadata.get("name")
+                    save_event["description"] = metadata.get("description")
+
+                if progress_cb:
+                    progress_cb(save_event)
+            except OSError as e:
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": f"file_error: {str(e)[:100]}"})
+
+        except Exception as e:
+            if progress_cb:
+                progress_cb({"type": "ticker_skipped", "ticker": t, "reason": str(e)[:200]})
+
+        # Sleep between API calls (respecting rate limits)
+        if i < len(tickers_list):
+            time.sleep(cfg.sleep_seconds + random.uniform(0.0, 0.1))
+
+    if progress_cb:
+        progress_cb({"type": "done", "saved": len(out_paths), "total": len(tickers_list)})
+
+    return out_paths
+
+
 def download_to_parquet(
     tickers: Iterable[str],
     *,
@@ -439,6 +516,7 @@ def _cli() -> int:
     ap.add_argument("--api-key", type=str, default=None, help="Tiingo API key (or set TIINGO_API_KEY env var)")
     ap.add_argument("--skip-metadata-json", type=str, default=None, help="JSON file with tickers to skip metadata fetch for")
     ap.add_argument("--no-metadata", action="store_true", help="Skip ALL metadata fetches (fast bulk mode)")
+    ap.add_argument("--tiingo-only", action="store_true", help="Download ALL tickers directly from Tiingo API (no yfinance batch)")
     args = ap.parse_args()
 
     # Load tickers from either txt or json
@@ -483,7 +561,20 @@ def _cli() -> int:
         print(json.dumps(ev), flush=True)
 
     try:
-        out = download_to_parquet(tickers, out_dir=args.out_dir, cfg=cfg, api_key=args.api_key, progress_cb=cb, skip_metadata=skip_metadata_set, no_metadata=args.no_metadata)
+        if args.tiingo_only:
+            # Tiingo-only mode: download ALL tickers directly from Tiingo API (slower but thorough)
+            out = download_to_parquet_tiingo_only(
+                tickers,
+                out_dir=args.out_dir,
+                cfg=cfg,
+                api_key=args.api_key,
+                progress_cb=cb,
+                skip_metadata=skip_metadata_set,
+                no_metadata=args.no_metadata,
+            )
+        else:
+            # Default mode: yFinance batch + Tiingo fallback for failed tickers
+            out = download_to_parquet(tickers, out_dir=args.out_dir, cfg=cfg, api_key=args.api_key, progress_cb=cb, skip_metadata=skip_metadata_set, no_metadata=args.no_metadata)
         print(json.dumps({"type": "complete", "saved": len(out)}), flush=True)
         return 0
     except Exception as e:
