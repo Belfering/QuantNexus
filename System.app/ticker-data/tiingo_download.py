@@ -341,27 +341,31 @@ def download_to_parquet(
 
             safe_ticker = _sanitize_ticker_for_filename(t)
             out_path = out_root / f"{safe_ticker}.parquet"
-            base.to_parquet(out_path, index=False)
-            out_paths.append(out_path)
+            try:
+                base.to_parquet(out_path, index=False)
+                out_paths.append(out_path)
 
-            # Fetch metadata from Tiingo if we have a key, not in fast mode, and don't already have it
-            metadata = None
-            if tiingo_key and not no_metadata and t not in skip_set:
-                metadata = _fetch_ticker_metadata(t, tiingo_key)
+                # Fetch metadata from Tiingo if we have a key, not in fast mode, and don't already have it
+                metadata = None
+                if tiingo_key and not no_metadata and t not in skip_set:
+                    metadata = _fetch_ticker_metadata(t, tiingo_key)
 
-            save_event = {
-                "type": "ticker_saved",
-                "ticker": t,
-                "path": str(out_path),
-                "saved": len(out_paths),
-                "source": "yfinance",
-            }
-            if metadata:
-                save_event["name"] = metadata.get("name")
-                save_event["description"] = metadata.get("description")
+                save_event = {
+                    "type": "ticker_saved",
+                    "ticker": t,
+                    "path": str(out_path),
+                    "saved": len(out_paths),
+                    "source": "yfinance",
+                }
+                if metadata:
+                    save_event["name"] = metadata.get("name")
+                    save_event["description"] = metadata.get("description")
 
-            if progress_cb:
-                progress_cb(save_event)
+                if progress_cb:
+                    progress_cb(save_event)
+            except OSError as e:
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": f"file_error: {str(e)[:100]}"})
 
         # Tiingo fallback for tickers that failed in yfinance
         if failed_tickers and tiingo_key:
@@ -376,29 +380,37 @@ def download_to_parquet(
                         if not base.empty:
                             safe_ticker = _sanitize_ticker_for_filename(t)
                             out_path = out_root / f"{safe_ticker}.parquet"
-                            base.to_parquet(out_path, index=False)
-                            out_paths.append(out_path)
+                            try:
+                                base.to_parquet(out_path, index=False)
+                                out_paths.append(out_path)
 
-                            metadata = None
-                            if not no_metadata and t not in skip_set:
-                                metadata = _fetch_ticker_metadata(t, tiingo_key)
+                                metadata = None
+                                if not no_metadata and t not in skip_set:
+                                    metadata = _fetch_ticker_metadata(t, tiingo_key)
 
-                            save_event = {
-                                "type": "ticker_saved",
-                                "ticker": t,
-                                "path": str(out_path),
-                                "saved": len(out_paths),
-                                "source": "tiingo",
-                            }
-                            if metadata:
-                                save_event["name"] = metadata.get("name")
-                                save_event["description"] = metadata.get("description")
+                                save_event = {
+                                    "type": "ticker_saved",
+                                    "ticker": t,
+                                    "path": str(out_path),
+                                    "saved": len(out_paths),
+                                    "source": "tiingo",
+                                }
+                                if metadata:
+                                    save_event["name"] = metadata.get("name")
+                                    save_event["description"] = metadata.get("description")
 
-                            if progress_cb:
-                                progress_cb(save_event)
+                                if progress_cb:
+                                    progress_cb(save_event)
+                            except OSError as e:
+                                if progress_cb:
+                                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": f"file_error: {str(e)[:100]}"})
+                    else:
+                        # No data from Tiingo either
+                        if progress_cb:
+                            progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "no_data"})
                 except Exception as e:
                     if progress_cb:
-                        progress_cb({"type": "ticker_skipped", "ticker": t, "reason": str(e)})
+                        progress_cb({"type": "ticker_skipped", "ticker": t, "reason": str(e)[:200]})
 
         # Sleep between batches
         if i < len(batches):

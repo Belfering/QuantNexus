@@ -35,6 +35,13 @@ def ensure_dir(path: str | Path) -> Path:
     return p
 
 
+def sanitize_filename(ticker: str) -> str:
+    """Sanitize ticker symbol for use as filename (replace problematic chars)."""
+    # Replace characters that are invalid in Windows/Unix filenames
+    # / and \ create directory paths, : is invalid on Windows, etc.
+    return ticker.replace("/", "-").replace("\\", "-").replace(":", "-").replace("*", "-").replace("?", "-").replace('"', "-").replace("<", "-").replace(">", "-").replace("|", "-")
+
+
 def _chunked(seq: list[str], size: int) -> list[list[str]]:
     return [seq[i : i + size] for i in range(0, len(seq), size)]
 
@@ -165,11 +172,18 @@ def download_to_parquet(
                 if progress_cb:
                     progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "empty_frame"})
                 continue
-            out_path = out_root / f"{t}.parquet"
-            base.to_parquet(out_path, index=False)
-            out_paths.append(out_path)
-            if progress_cb:
-                progress_cb({"type": "ticker_saved", "ticker": t, "path": str(out_path), "saved": len(out_paths)})
+            # Sanitize ticker for filename (handle tickers with / or other special chars)
+            safe_filename = sanitize_filename(t)
+            out_path = out_root / f"{safe_filename}.parquet"
+            try:
+                base.to_parquet(out_path, index=False)
+                out_paths.append(out_path)
+                if progress_cb:
+                    progress_cb({"type": "ticker_saved", "ticker": t, "path": str(out_path), "saved": len(out_paths)})
+            except OSError as e:
+                # Handle any remaining file system errors (permissions, etc.)
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": f"file_error: {str(e)[:100]}"})
 
         if i < len(batches):
             time.sleep(cfg.sleep_seconds + random.uniform(0.0, 0.5))
