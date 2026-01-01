@@ -307,7 +307,14 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
         timestamp: new Date().toISOString(),
       })
 
+      // Update job status to show completion in UI
+      if (currentJob) {
+        currentJob.phase = 'done'
+        currentJob.message = 'All tickers already synced for today'
+      }
+
       isRunning = false
+      currentJob = null
       return
     }
 

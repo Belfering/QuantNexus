@@ -1,59 +1,55 @@
 # Changelog
 
-All notable changes to System Block Chain are documented here.
+All notable changes to Atlas Engine are documented here.
 
-## [Unreleased]
+---
+
+## [1.2.0] - 2026-01-01
 
 ### Added
-- Dashboard as default landing page for logged-in users
-- Changelog visible in Help/Support tab
-- Contact information for support
-- QuantNexus logo in header with theme-reactive styling
-- Logo container spans multiple rows when Model tab is active
-- Backtest mode dropdown now shows tooltips explaining each timing mode (CC, OO, OC, CO)
-- Ticker search modal with search by ticker or company name, ETF/Stock filter checkboxes
-- Popular tickers shown first when modal opens (SPY, QQQ, IWM, etc.)
-- Save button for theme/color scheme preferences in Help/Support tab
-- Number inputs now auto-select content on focus for easier editing
-
-### Performance Optimizations
-- API response compression (gzip) - 80% smaller payloads, 2-3x faster transfers
-- Batch candles endpoint (`POST /api/candles/batch`) - fetch multiple tickers in one request
-- Pre-cached common tickers (SPY, QQQ, IWM, etc.) at server startup for instant access
-- Backtest data now filters from 1993 onwards (20-40% less data to process)
-- Optimized date intersection algorithm using sorted arrays (O(n log n) vs O(n*m²))
-- Parallelized benchmark metrics computation (4-5x faster Analyze tab benchmarks)
-
-### Changed
-- "Run" buttons renamed to "Re-run" in Benchmarks for consistency
-- Header layout uses CSS grid for better organization
-- Ticker selection now uses modal dialog instead of dropdown/datalist for all ticker inputs
-- TradingView charts now match app theme (dark/light mode)
-- Indicator dropdowns now use consistent expanded format across all node types
-- Monthly Returns heatmap now respects dark/light theme
-- Time period selector (RangeNavigator) now respects dark/light theme
-- Allocation over time chart Y-axis now shows proper percentages (10%, 20%) instead of decimals
-- Monthly Returns and Allocations (recent) are now equal-width cards side by side
-- Hidden TradingView/lightweight-charts watermark from all charts
-- Updated header logo to new QuantNexus branding with improved scaling
-- Removed rate limiting entirely for uninterrupted workflow
-- Admin Systems database now shows all bots saved to any user's watchlist with owner info
-- Number input spinner arrows hidden for cleaner UI
+- Auto-sync ticker registry before downloads - yFinance and Tiingo buttons now refresh from Tiingo's master list automatically
 
 ### Fixed
-- Save to Watchlist button now shows visual feedback
-- Call node copy/paste functionality restored
-- Partner Program page now displays correct fee percentages
-- Orphaned systems can now be deleted from Admin panel
-- Header logo now properly fills container while maintaining aspect ratio
-- Ticker search modal now displays exchange information from database
-- User preferences (theme/color scheme) now persist correctly after login
-- Last login timestamp now properly recorded on user login
-- Nexus eligibility auto-tagging now works for all users (was only for non-admin)
-- Builder tags in watchlists now show display name instead of UUID
-- Ticker search modal now works for nested position nodes (was missing prop passthrough)
-- Model tab flowchart container now expands to fill available height (no longer cut off)
-- Builder name in Nexus/Community tabs now shows display name instead of UUID
+- Duplicate ticker handling - tickers listed on multiple exchanges (like SPYM) now correctly use the active listing
+- Download progress UI now properly updates when all tickers are already synced for the day
+- Tickers automatically reactivate when data is successfully downloaded
+
+---
+
+## [1.1.0] - 2025-12-31
+
+### Added
+- Tiingo-only download mode - download data exclusively from Tiingo API
+- Stop button for downloads - cancel running downloads mid-process
+- Ticker search modal - search by ticker symbol or company name with ETF/Stock filters
+- Popular tickers (SPY, QQQ, IWM, etc.) shown first when opening ticker search
+- Backtest mode tooltips explaining each timing mode (CC, OO, OC, CO)
+- Number inputs auto-select on focus for easier editing
+
+### Performance
+- API response compression (gzip) - 80% smaller payloads
+- Batch candles endpoint - fetch multiple tickers in one request
+- Common tickers pre-cached at startup (SPY, QQQ, IWM, etc.)
+- Backtest data filters from 1993 onwards (20-40% less data)
+- Optimized date intersection algorithm
+- Parallelized benchmark metrics computation
+
+### Changed
+- Ticker selection uses modal dialog instead of dropdown/datalist
+- TradingView charts match app theme (dark/light mode)
+- Monthly Returns heatmap respects dark/light theme
+- Time period selector respects dark/light theme
+- Allocation chart Y-axis shows percentages instead of decimals
+- Monthly Returns and Allocations cards are equal-width side by side
+- Hidden chart watermarks for cleaner visuals
+- Number input spinner arrows hidden
+
+### Fixed
+- Save to Watchlist button visual feedback
+- Call node copy/paste functionality
+- Ticker search modal displays exchange information
+- Ticker search works for nested position nodes
+- Model tab flowchart container fills available height
 
 ---
 
@@ -73,7 +69,5 @@ All notable changes to System Block Chain are documented here.
 - Backtesting with equity curves and performance metrics
 - Benchmark comparisons (SPY, QQQ, VTI, etc.)
 - Robustness analysis with bootstrap simulations
-- User authentication and preferences
 - Watchlists for organizing trading systems
-- Admin panel for ticker data management
 - Dark/Light theme support with multiple color schemes
