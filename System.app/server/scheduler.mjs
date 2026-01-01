@@ -313,6 +313,12 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
               }).catch(() => {})
             }
           }
+          // Handle skipped tickers (no data = likely delisted/inactive)
+          if (ev?.type === 'ticker_skipped' && ev.ticker) {
+            currentJob.skippedCount = (currentJob.skippedCount || 0) + 1
+            // Mark ticker as inactive so we don't try to download it again
+            tickerRegistry.markTickerInactive(ev.ticker).catch(() => {})
+          }
           if (ev?.type === 'done') {
             console.log(`[scheduler] Sync completed: ${ev.saved || 0} tickers saved`)
           }

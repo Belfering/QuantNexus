@@ -73,7 +73,7 @@ app.use(cors(corsOptions))
 // Enable gzip/brotli compression for API responses (2-3x faster transfers)
 app.use(compression())
 
-app.use(express.json({ limit: '1mb' }))
+app.use(express.json({ limit: '1.5mb' }))
 
 // Serve static frontend in production with proper cache headers
 if (isProduction) {
@@ -893,6 +893,65 @@ app.get('/api/tickers/registry/metadata', async (req, res) => {
     await tickerRegistry.ensureTickerRegistryTable()
     const allTickers = await tickerRegistry.getAllTickerMetadata()
     res.json({ tickers: allTickers })
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// Admin: Get all tickers with search and filter support
+app.get('/api/tickers/registry/all', async (req, res) => {
+  try {
+    await tickerRegistry.ensureTickerRegistryTable()
+    const search = String(req.query.search || '').trim().toUpperCase()
+    const activeOnly = req.query.activeOnly === 'true'
+    const usdOnly = req.query.usdOnly !== 'false'  // Default to USD only
+    const stocksEtfsOnly = req.query.stocksEtfsOnly !== 'false'  // Default to stocks/ETFs only
+    const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 500))
+    const offset = Math.max(0, Number(req.query.offset) || 0)
+
+    // Build query with filters
+    let query = `
+      SELECT ticker, name, asset_type, exchange, is_active, last_synced, start_date, end_date, currency
+      FROM ticker_registry
+      WHERE 1=1
+    `
+    const params = []
+
+    if (search) {
+      query += ` AND (ticker LIKE ? OR name LIKE ?)`
+      params.push(`%${search}%`, `%${search}%`)
+    }
+
+    if (activeOnly) {
+      query += ` AND is_active = 1`
+    }
+
+    if (usdOnly) {
+      query += ` AND currency = 'USD'`
+    }
+
+    if (stocksEtfsOnly) {
+      query += ` AND asset_type IN ('Stock', 'ETF')`
+    }
+
+    // Get total count for pagination
+    const countQuery = query.replace(/SELECT[\s\S]*?FROM/, 'SELECT COUNT(*) as count FROM')
+    const [countResult] = database.sqlite.prepare(countQuery).all(...params)
+    const total = countResult?.count || 0
+
+    // Add sorting and pagination
+    query += ` ORDER BY ticker ASC LIMIT ? OFFSET ?`
+    params.push(limit, offset)
+
+    const rows = database.sqlite.prepare(query).all(...params)
+
+    res.json({
+      rows,
+      total,
+      limit,
+      offset,
+      hasMore: offset + rows.length < total
+    })
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }

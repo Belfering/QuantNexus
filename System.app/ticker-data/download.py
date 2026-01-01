@@ -142,14 +142,28 @@ def download_to_parquet(
     for i, batch in enumerate(batches, start=1):
         if progress_cb:
             progress_cb({"type": "batch_start", "batch_index": i, "batches_total": len(batches), "batch_size": len(batch)})
-        df_batch = _download_batch(batch, cfg)
+
+        try:
+            df_batch = _download_batch(batch, cfg)
+        except Exception as e:
+            # Log error but continue with next batch
+            if progress_cb:
+                progress_cb({"type": "batch_error", "batch_index": i, "error": str(e)[:200]})
+            if i < len(batches):
+                time.sleep(cfg.sleep_seconds + random.uniform(0.0, 0.5))
+            continue
 
         for t in batch:
             df_t = _normalize_single_ticker_df(df_batch) if len(batch) == 1 else _extract_one_from_multi(df_batch, t)
             if df_t is None or df_t.empty:
+                # Emit ticker_skipped for tickers with no data (likely delisted)
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "no_data"})
                 continue
             base = build_ticker_base_frame(t, df_t)
             if base.empty:
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "empty_frame"})
                 continue
             out_path = out_root / f"{t}.parquet"
             base.to_parquet(out_path, index=False)
@@ -170,16 +184,28 @@ def _cli() -> int:
     import json
 
     ap = argparse.ArgumentParser(description="Download OHLCV via yfinance to per-ticker Parquet files.")
-    ap.add_argument("--tickers-file", required=True, help="Path to tickers.txt")
+    ap.add_argument("--tickers-file", help="Path to tickers.txt (line-separated)")
+    ap.add_argument("--tickers-json", help="Path to tickers.json (JSON array)")
     ap.add_argument("--out-dir", required=True, help="Output directory for <TICKER>.parquet files")
     ap.add_argument("--batch-size", type=int, default=100)
     ap.add_argument("--sleep-seconds", type=float, default=2.0)
     ap.add_argument("--max-retries", type=int, default=3)
     ap.add_argument("--threads", type=int, default=1, help="1=true, 0=false")
     ap.add_argument("--limit", type=int, default=0, help="0 = no limit")
+    ap.add_argument("--skip-metadata-json", help="Ignored (for tiingo compat)")
     args = ap.parse_args()
 
-    tickers = read_tickers_from_txt(args.tickers_file)
+    # Load tickers from either JSON or TXT file
+    if args.tickers_json:
+        with open(args.tickers_json, 'r', encoding='utf-8') as f:
+            tickers = json.load(f)
+        if not isinstance(tickers, list):
+            raise ValueError("tickers.json must be a JSON array")
+        tickers = [str(t).upper().strip() for t in tickers if str(t).strip()]
+    elif args.tickers_file:
+        tickers = read_tickers_from_txt(args.tickers_file)
+    else:
+        raise ValueError("Either --tickers-file or --tickers-json is required")
     if int(args.limit) > 0:
         tickers = tickers[: int(args.limit)]
 

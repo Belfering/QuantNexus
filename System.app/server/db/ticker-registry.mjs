@@ -163,6 +163,15 @@ export async function markTickerSynced(ticker, date) {
 }
 
 /**
+ * Mark a ticker as inactive (e.g., delisted, no data available)
+ */
+export async function markTickerInactive(ticker) {
+  await db.update(tickerRegistry)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(eq(tickerRegistry.ticker, ticker.toUpperCase()))
+}
+
+/**
  * Get registry statistics
  */
 export async function getRegistryStats() {

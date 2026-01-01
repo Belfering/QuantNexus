@@ -4655,7 +4655,7 @@ function AdminPanel({
     }
     void run()
 
-    // Poll sync status every 5 seconds when running
+    // Poll sync status every 2 seconds for faster UI updates during downloads
     const pollInterval = setInterval(async () => {
       try {
         const schedRes = await fetch('/api/admin/sync-schedule')
@@ -4673,7 +4673,7 @@ function AdminPanel({
       } catch {
         // Ignore errors
       }
-    }, 5000)
+    }, 2000)
 
     return () => {
       cancelled = true
@@ -6201,6 +6201,23 @@ function DatabasesPanel({
   const [columns, setColumns] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<DbSortConfig>({ col: '', dir: 'desc' })
 
+  // Ticker-specific state
+  const [tickerSearch, setTickerSearch] = useState('')
+  const [tickerSearchDebounced, setTickerSearchDebounced] = useState('')
+  const [tickerActiveOnly, setTickerActiveOnly] = useState(false)
+  const [tickerTotal, setTickerTotal] = useState(0)
+  const [tickerOffset, setTickerOffset] = useState(0)
+  const tickerLimit = 500
+
+  // Debounce ticker search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTickerSearchDebounced(tickerSearch)
+      setTickerOffset(0)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [tickerSearch])
+
   const fetchTable = useCallback(async (table: string) => {
     setLoading(true)
     setError(null)
@@ -6222,17 +6239,50 @@ function DatabasesPanel({
     }
   }, [])
 
-  useEffect(() => {
-    const tableMap: Record<DatabasesSubtab, string> = {
-      'Users': 'users',
-      'Systems': 'bots',
-      'Portfolios': 'portfolios',
-      'Cache': 'cache',
-      'Admin Config': 'admin_config',
-      'Tickers': 'ticker_registry',
+  // Special fetch for Tickers with search/filter/pagination
+  const fetchTickers = useCallback(async (search: string, activeOnly: boolean, offset: number) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({
+        search,
+        activeOnly: activeOnly.toString(),
+        limit: tickerLimit.toString(),
+        offset: offset.toString(),
+      })
+      const res = await fetch(`${API_BASE}/tickers/registry/all?${params}`)
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to fetch tickers')
+      }
+      const result = await res.json()
+      setData(result.rows || [])
+      setColumns(['ticker', 'name', 'asset_type', 'exchange', 'is_active', 'last_synced', 'start_date', 'end_date', 'currency'])
+      setTickerTotal(result.total || 0)
+    } catch (e) {
+      setError(String((e as Error)?.message || e))
+      setData(null)
+      setColumns([])
+    } finally {
+      setLoading(false)
     }
-    fetchTable(tableMap[databasesTab])
-  }, [databasesTab, fetchTable])
+  }, [tickerLimit])
+
+  useEffect(() => {
+    if (databasesTab === 'Tickers') {
+      fetchTickers(tickerSearchDebounced, tickerActiveOnly, tickerOffset)
+    } else {
+      const tableMap: Record<DatabasesSubtab, string> = {
+        'Users': 'users',
+        'Systems': 'bots',
+        'Portfolios': 'portfolios',
+        'Cache': 'cache',
+        'Admin Config': 'admin_config',
+        'Tickers': 'ticker_registry',
+      }
+      fetchTable(tableMap[databasesTab])
+    }
+  }, [databasesTab, fetchTable, fetchTickers, tickerSearchDebounced, tickerActiveOnly, tickerOffset])
 
   const formatValue = (val: unknown): string => {
     if (val === null || val === undefined) return '—'
@@ -6267,21 +6317,75 @@ function DatabasesPanel({
           variant="outline"
           size="sm"
           onClick={() => {
-            const tableMap: Record<DatabasesSubtab, string> = {
-              'Users': 'users',
-              'Systems': 'bots',
-              'Portfolios': 'portfolios',
-              'Cache': 'cache',
-              'Admin Config': 'admin_config',
-              'Tickers': 'ticker_registry',
+            if (databasesTab === 'Tickers') {
+              fetchTickers(tickerSearchDebounced, tickerActiveOnly, tickerOffset)
+            } else {
+              const tableMap: Record<DatabasesSubtab, string> = {
+                'Users': 'users',
+                'Systems': 'bots',
+                'Portfolios': 'portfolios',
+                'Cache': 'cache',
+                'Admin Config': 'admin_config',
+                'Tickers': 'ticker_registry',
+              }
+              fetchTable(tableMap[databasesTab])
             }
-            fetchTable(tableMap[databasesTab])
           }}
           disabled={loading}
         >
           {loading ? 'Loading...' : 'Refresh'}
         </Button>
       </div>
+
+      {/* Ticker-specific search and filter controls */}
+      {databasesTab === 'Tickers' && (
+        <div className="flex items-center gap-4 mb-4">
+          <input
+            type="text"
+            placeholder="Search by ticker or name..."
+            value={tickerSearch}
+            onChange={(e) => setTickerSearch(e.target.value)}
+            className="w-64 h-8 px-3 text-sm rounded border border-border bg-background"
+          />
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tickerActiveOnly}
+              onChange={(e) => {
+                setTickerActiveOnly(e.target.checked)
+                setTickerOffset(0) // Reset to first page on filter change
+              }}
+            />
+            Active only
+          </label>
+          <div className="text-sm text-muted-foreground">
+            Showing {data?.length || 0} of {tickerTotal.toLocaleString()} tickers
+          </div>
+          {tickerTotal > tickerLimit && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={tickerOffset === 0 || loading}
+                onClick={() => setTickerOffset(Math.max(0, tickerOffset - tickerLimit))}
+              >
+                ← Prev
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {Math.floor(tickerOffset / tickerLimit) + 1} of {Math.ceil(tickerTotal / tickerLimit)}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={tickerOffset + tickerLimit >= tickerTotal || loading}
+                onClick={() => setTickerOffset(tickerOffset + tickerLimit)}
+              >
+                Next →
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-3 bg-destructive/10 border border-destructive rounded text-destructive text-sm">
@@ -16205,9 +16309,9 @@ function App() {
         // Apply format-specific file size limits
         // Composer files are much larger due to verbose JSON structure (UUIDs, nested weights, etc.)
         const MAX_COMPOSER_SIZE = 20 * 1024 * 1024 // 20MB for Composer
-        const MAX_OTHER_SIZE = 1 * 1024 * 1024 // 1MB for Atlas/QuantMage
+        const MAX_OTHER_SIZE = 1.5 * 1024 * 1024 // 1.5MB for Atlas/QuantMage
         const maxSize = format === 'composer' ? MAX_COMPOSER_SIZE : MAX_OTHER_SIZE
-        const maxSizeLabel = format === 'composer' ? '20MB' : '1MB'
+        const maxSizeLabel = format === 'composer' ? '20MB' : '1.5MB'
 
         if (file.size > maxSize) {
           setIsImporting(false)
