@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // Schedule configuration (stored in adminConfig table)
 const DEFAULT_SCHEDULE = {
@@ -24,6 +25,68 @@ let lastRunDate = null
 let isRunning = false
 let currentJob = null
 let currentChildProcess = null
+
+/**
+ * Sync the ticker registry from Tiingo's master list
+ * This ensures we have the latest active tickers before downloading
+ * @param {string} tickerDataRoot - Path to ticker data root
+ * @param {string} pythonCmd - Python command
+ * @param {Object} tickerRegistry - Ticker registry instance
+ * @returns {Promise<{success: boolean, count?: number, error?: string}>}
+ */
+async function syncRegistryFromTiingo(tickerDataRoot, pythonCmd, tickerRegistry) {
+  console.log('[scheduler] Syncing registry from Tiingo master list...')
+
+  return new Promise((resolve) => {
+    const syncScriptPath = path.join(tickerDataRoot, 'sync_tickers.py')
+    const outputPath = path.join(tickerDataRoot, '_tiingo_master.json')
+
+    const args = ['-u', syncScriptPath, '--output', outputPath]
+    const child = spawn(pythonCmd, args, { windowsHide: true })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (buf) => {
+      stdout += String(buf)
+    })
+
+    child.stderr.on('data', (buf) => {
+      stderr += String(buf)
+    })
+
+    child.on('close', async (code) => {
+      if (code !== 0) {
+        console.error('[scheduler] Registry sync failed:', stderr)
+        resolve({ success: false, error: `sync_tickers.py exited with code ${code}` })
+        return
+      }
+
+      try {
+        // Read the downloaded ticker list
+        const data = await fs.readFile(outputPath, 'utf-8')
+        const tickers = JSON.parse(data)
+
+        console.log(`[scheduler] Downloaded ${tickers.length} tickers from Tiingo`)
+
+        // Import into registry (deduplication happens in importTickers)
+        await tickerRegistry.ensureTickerRegistryTable()
+        const result = await tickerRegistry.importTickers(tickers, { usOnly: true })
+
+        console.log(`[scheduler] Imported ${result.imported} tickers into registry`)
+        resolve({ success: true, count: result.imported })
+      } catch (e) {
+        console.error('[scheduler] Error importing tickers:', e)
+        resolve({ success: false, error: String(e?.message || e) })
+      }
+    })
+
+    child.on('error', (err) => {
+      console.error('[scheduler] Error running sync_tickers.py:', err)
+      resolve({ success: false, error: String(err?.message || err) })
+    })
+  })
+}
 
 /**
  * Get current schedule config from database or use defaults
@@ -212,10 +275,20 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
   console.log('[scheduler] Starting scheduled ticker sync...')
 
   try {
-    // Ensure ticker registry table exists
-    await tickerRegistry.ensureTickerRegistryTable()
+    // STEP 1: Sync registry from Tiingo master list first
+    // This ensures we have the latest active tickers before downloading
+    currentJob.phase = 'syncing_registry'
+    console.log('[scheduler] Step 1: Syncing ticker registry from Tiingo...')
 
-    // Get tickers needing sync
+    const registryResult = await syncRegistryFromTiingo(tickerDataRoot, pythonCmd, tickerRegistry)
+    if (!registryResult.success) {
+      console.warn('[scheduler] Registry sync failed, continuing with existing registry:', registryResult.error)
+    } else {
+      console.log(`[scheduler] Registry synced: ${registryResult.count} tickers`)
+    }
+
+    // STEP 2: Get tickers needing sync (now with updated registry)
+    currentJob.phase = 'preparing'
     const tickers = await tickerRegistry.getTickersNeedingSync(today)
 
     if (tickers.length === 0) {
