@@ -6536,12 +6536,12 @@ function DatabasesPanel({
                       {showActions && (
                         <td className="px-3 py-2 whitespace-nowrap">
                           <div className="flex gap-1">
-                            {onExportBot && (
+                            {databasesTab === 'Systems' && onExportBot && (
                               <Button size="sm" variant="outline" onClick={() => onExportBot(String(row['id']))}>
                                 Export
                               </Button>
                             )}
-                            {onOpenBot && (
+                            {databasesTab === 'Systems' && onOpenBot && (
                               <Button size="sm" variant="outline" onClick={() => onOpenBot(String(row['id']))}>
                                 Open
                               </Button>
