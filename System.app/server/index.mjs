@@ -286,6 +286,18 @@ async function listParquetTickers() {
     .sort()
 }
 
+// Changelog endpoint - serves the CHANGELOG.md file
+app.get('/api/changelog', async (_req, res) => {
+  try {
+    const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md')
+    const content = await fs.readFile(changelogPath, 'utf-8')
+    res.type('text/plain').send(content)
+  } catch (err) {
+    console.error('[changelog] Failed to read CHANGELOG.md:', err.message)
+    res.status(404).json({ error: 'Changelog not found' })
+  }
+})
+
 app.get('/api/status', async (_req, res) => {
   const exists = async (p) => {
     try {

@@ -829,59 +829,8 @@ const loadCallChainsFromApi = async (userId: UserId): Promise<CallChain[]> => {
   }
 }
 
-// Create a new call chain in the database
-const createCallChainInApi = async (userId: UserId, callChain: CallChain): Promise<string | null> => {
-  try {
-    const res = await fetch(`${API_BASE}/call-chains`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        name: callChain.name,
-        root: JSON.stringify(callChain.root),
-      }),
-    })
-    if (!res.ok) return null
-    const { callChain: created } = await res.json() as { callChain: { id: string } }
-    return created.id
-  } catch (err) {
-    console.warn('[API] Failed to create call chain:', err)
-    return null
-  }
-}
-
-// Update a call chain in the database
-const updateCallChainInApi = async (userId: UserId, callChain: CallChain): Promise<boolean> => {
-  try {
-    const res = await fetch(`${API_BASE}/call-chains/${callChain.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        name: callChain.name,
-        root: JSON.stringify(callChain.root),
-        collapsed: callChain.collapsed,
-      }),
-    })
-    return res.ok
-  } catch (err) {
-    console.warn('[API] Failed to update call chain:', err)
-    return false
-  }
-}
-
-// Delete a call chain from the database
-const deleteCallChainInApi = async (userId: UserId, callChainId: string): Promise<boolean> => {
-  try {
-    const res = await fetch(`${API_BASE}/call-chains/${callChainId}?userId=${userId}`, {
-      method: 'DELETE',
-    })
-    return res.ok
-  } catch (err) {
-    console.warn('[API] Failed to delete call chain:', err)
-    return false
-  }
-}
+// NOTE: Call chain API functions removed - call chains are now stored per-bot in the bot payload
+// They are saved when the bot is saved to a watchlist, not synced separately
 
 // ============================================================================
 
@@ -915,8 +864,8 @@ const syncBotMetricsToApi = async (botId: string, metrics: {
 // ============================================================================
 
 const loadInitialThemeMode = (): ThemeMode => {
-  // Theme now comes from user preferences (database), so just use device preference as default
-  return loadDeviceThemeMode()
+  // Default to light mode for new users - they can change to dark in settings
+  return 'light'
 }
 
 const newKeyId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -1485,6 +1434,7 @@ type BotSession = {
   historyIndex: number
   savedBotId?: string
   backtest: BotBacktestState
+  callChains: CallChain[] // Per-bot call chains (stored with bot payload)
 }
 
 type AdminStatus = {
@@ -1511,6 +1461,7 @@ type SavedSystem = {
   builderId: UserId
   builderDisplayName?: string // Display name of the builder (for showing in UI)
   payload: FlowNode
+  callChains?: CallChain[] // Per-bot call chains (stored with the system)
   visibility: BotVisibility
   createdAt: number
   tags?: string[] // e.g., ['Atlas', 'Nexus']
@@ -9528,85 +9479,72 @@ const NodeCard = ({
               </>
             ) : node.kind === 'scaling' ? (
               <>
-                {/* SCALE BY indicator */}
-                <div className="flex items-center gap-2">
-                  <div className="indent with-line" style={{ width: 14 }} />
-                  <Badge variant="default" className="gap-1.5 py-1 px-2.5">
-                    Scale by{' '}
-                    {isWindowlessIndicator(node.scaleMetric ?? 'Relative Strength Index') ? null : (
-                      <>
+                {/* SCALE BY indicator + FROM/TO range on one line */}
+                {(() => {
+                  const overlayKey = `${node.id}:scale`
+                  const isOverlayActive = enabledOverlays?.has(overlayKey)
+                  return (
+                    <div className="flex items-center gap-2">
+                      <div className="indent with-line" style={{ width: 14 }} />
+                      <Badge variant="default" className="gap-1.5 py-1 px-2.5">
+                        {/* Nested Scale by badge */}
+                        <Badge variant="default" className="gap-1 py-1 px-2">
+                          {/* Indicator overlay toggle button */}
+                          {onToggleOverlay && (
+                            <Button
+                              variant={isOverlayActive ? 'accent' : 'ghost'}
+                              size="sm"
+                              className={`h-6 w-6 p-0 text-xs ${isOverlayActive ? 'ring-2 ring-accent' : ''}`}
+                              onClick={() => onToggleOverlay(overlayKey)}
+                              title={isOverlayActive ? 'Hide indicator on chart' : 'Show indicator on chart'}
+                            >
+                              📈
+                            </Button>
+                          )}
+                          Scale by{' '}
+                          {isWindowlessIndicator(node.scaleMetric ?? 'Relative Strength Index') ? null : (
+                            <>
+                              <Input
+                                type="number"
+                                className="w-14 h-7 px-1.5 mx-1 inline-flex"
+                                value={node.scaleWindow ?? 14}
+                                onChange={(e) => onUpdateScaling(node.id, { scaleWindow: Number(e.target.value) })}
+                              />
+                              d{' '}
+                            </>
+                          )}
+                          <IndicatorDropdown
+                            value={node.scaleMetric ?? 'Relative Strength Index'}
+                            onChange={(m) => onUpdateScaling(node.id, { scaleMetric: m })}
+                            className="h-7 px-1.5 mx-1"
+                          />
+                          {' of '}
+                          <button
+                            className="h-7 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                            onClick={() => openTickerModal?.((ticker) => onUpdateScaling(node.id, { scaleTicker: ticker }))}
+                          >
+                            {node.scaleTicker ?? 'SPY'}
+                          </button>
+                        </Badge>
+                        {' '}From below{' '}
                         <Input
                           type="number"
-                          className="w-14 h-7 px-1.5 inline-flex"
-                          value={node.scaleWindow ?? 14}
-                          onChange={(e) => onUpdateScaling(node.id, { scaleWindow: Number(e.target.value) })}
+                          className="w-16 h-8 px-1.5 mx-1 inline-flex"
+                          value={node.scaleFrom ?? 30}
+                          onChange={(e) => onUpdateScaling(node.id, { scaleFrom: Number(e.target.value) })}
                         />
-                        d{' '}
-                      </>
-                    )}
-                    <Select
-                      className="h-7 px-1.5 mx-1 inline-flex"
-                      value={node.scaleMetric ?? 'Relative Strength Index'}
-                      onChange={(e) => onUpdateScaling(node.id, { scaleMetric: e.target.value as MetricChoice })}
-                    >
-                      <option value="Current Price">Current Price</option>
-                      <option value="Simple Moving Average">Simple Moving Average</option>
-                      <option value="Exponential Moving Average">Exponential Moving Average</option>
-                      <option value="Relative Strength Index">Relative Strength Index</option>
-                      <option value="Max Drawdown">Max Drawdown</option>
-                      <option value="Standard Deviation">Standard Deviation</option>
-                      <option value="Standard Deviation of Price">Standard Deviation of Price</option>
-                      <option value="Cumulative Return">Cumulative Return</option>
-                      <option value="SMA of Returns">SMA of Returns</option>
-                      <option value="Momentum (Weighted)">Momentum (Weighted)</option>
-                      <option value="Momentum (Unweighted)">Momentum (Unweighted)</option>
-                      <option value="Momentum (12-Month SMA)">Momentum (12-Month SMA)</option>
-                      <option value="Drawdown">Drawdown</option>
-                      <option value="Aroon Up">Aroon Up</option>
-                      <option value="Aroon Down">Aroon Down</option>
-                      <option value="Aroon Oscillator">Aroon Oscillator</option>
-                      <option value="MACD Histogram">MACD Histogram</option>
-                      <option value="PPO Histogram">PPO Histogram</option>
-                      <option value="Trend Clarity">Trend Clarity</option>
-                      <option value="Ultimate Smoother">Ultimate Smoother</option>
-                      <option value="Money Flow Index">Money Flow Index</option>
-                      <option value="OBV Rate of Change">OBV Rate of Change</option>
-                      <option value="VWAP Ratio">VWAP Ratio</option>
-                    </Select>
-                    {' of '}
-                    <Select
-                      className="h-7 px-1.5 mx-1 inline-flex"
-                      value={node.scaleTicker ?? 'SPY'}
-                      onChange={(e) => onUpdateScaling(node.id, { scaleTicker: e.target.value })}
-                    >
-                      {[node.scaleTicker ?? 'SPY', ...tickerOptions.filter((t) => t !== (node.scaleTicker ?? 'SPY'))].map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </Select>
-                  </Badge>
-                </div>
-
-                {/* FROM / TO range */}
-                <div className="flex items-center gap-2">
-                  <div className="indent with-line" style={{ width: 14 }} />
-                  <Badge variant="default" className="gap-1.5 py-1 px-2.5">
-                    From{' '}
-                    <Input
-                      type="number"
-                      className="w-16 h-7 px-1.5 inline-flex"
-                      value={node.scaleFrom ?? 30}
-                      onChange={(e) => onUpdateScaling(node.id, { scaleFrom: Number(e.target.value) })}
-                    />
-                    {' (100% Then) to '}
-                    <Input
-                      type="number"
-                      className="w-16 h-7 px-1.5 inline-flex"
-                      value={node.scaleTo ?? 70}
-                      onChange={(e) => onUpdateScaling(node.id, { scaleTo: Number(e.target.value) })}
-                    />
-                    {' (100% Else)'}
-                  </Badge>
-                </div>
+                        {' (100% Then) to above '}
+                        <Input
+                          type="number"
+                          className="w-16 h-8 px-1.5 mx-1 inline-flex"
+                          value={node.scaleTo ?? 70}
+                          onChange={(e) => onUpdateScaling(node.id, { scaleTo: Number(e.target.value) })}
+                        />
+                        {' (100% Else)'}
+                      </Badge>
+                    </div>
+                  )
+                })()}
 
                 {/* THEN (Low) slot */}
                 <div className="flex items-center gap-2">
@@ -9767,38 +9705,14 @@ const NodeCard = ({
                               d{' '}
                             </>
                           )}
-                          <Select
-                            className="h-7 px-1.5 mx-1 inline-flex"
+                          <IndicatorDropdown
                             value={node.metric ?? 'Relative Strength Index'}
-                            onChange={(e) => onFunctionMetric(node.id, e.target.value as MetricChoice)}
-                          >
-                            <option value="Current Price">Current Price</option>
-                            <option value="Simple Moving Average">Simple Moving Average</option>
-                            <option value="Exponential Moving Average">Exponential Moving Average</option>
-                            <option value="Relative Strength Index">Relative Strength Index</option>
-                            <option value="Max Drawdown">Max Drawdown</option>
-                            <option value="Standard Deviation">Standard Deviation</option>
-                            <option value="Standard Deviation of Price">Standard Deviation of Price</option>
-                            <option value="Cumulative Return">Cumulative Return</option>
-                            <option value="SMA of Returns">SMA of Returns</option>
-                            <option value="Momentum (Weighted)">Momentum (Weighted)</option>
-                            <option value="Momentum (Unweighted)">Momentum (Unweighted)</option>
-                            <option value="Momentum (12-Month SMA)">Momentum (12-Month SMA)</option>
-                            <option value="Drawdown">Drawdown</option>
-                            <option value="Aroon Up">Aroon Up</option>
-                            <option value="Aroon Down">Aroon Down</option>
-                            <option value="Aroon Oscillator">Aroon Oscillator</option>
-                            <option value="MACD Histogram">MACD Histogram</option>
-                            <option value="PPO Histogram">PPO Histogram</option>
-                            <option value="Trend Clarity">Trend Clarity</option>
-                            <option value="Ultimate Smoother">Ultimate Smoother</option>
-                            <option value="Money Flow Index">Money Flow Index</option>
-                            <option value="OBV Rate of Change">OBV Rate of Change</option>
-                            <option value="VWAP Ratio">VWAP Ratio</option>
-                          </Select>
+                            onChange={(m) => onFunctionMetric(node.id, m)}
+                            className="h-7 mx-1"
+                          />
                           {isWindowlessIndicator(node.metric ?? 'Relative Strength Index') ? ' pick the ' : 's pick the '}
                           <Select
-                            className="h-7 px-1.5 mx-1 inline-flex"
+                            className="h-7 px-2 mx-1 text-xs font-bold"
                             value={node.rank ?? 'Bottom'}
                             onChange={(e) => onFunctionRank(node.id, e.target.value as RankChoice)}
                           >
@@ -12759,7 +12673,12 @@ function BacktesterPanel({
         <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 items-stretch">
           {/* Left section: Run Backtest through Show benchmark - all on one row */}
           <div className="flex flex-nowrap gap-2 items-stretch">
-            <Button onClick={handleRun} disabled={status === 'running'} className="flex-1 px-5 text-sm font-bold whitespace-nowrap h-full bg-accent text-white hover:bg-accent/90">
+            <Button
+              onClick={handleRun}
+              disabled={status === 'running'}
+              className="flex-1 px-5 text-sm font-bold whitespace-nowrap h-full border-l-[3px] border-l-accent hover:brightness-95 transition-all"
+              style={{ background: 'color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2) 88%)' }}
+            >
               {status === 'running' ? 'Running…' : 'Run Backtest'}
             </Button>
             <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
@@ -13788,7 +13707,7 @@ function App() {
 
   const [savedBots, setSavedBots] = useState<SavedBot[]>(() => initialUserData.savedBots)
   const [watchlists, setWatchlists] = useState<Watchlist[]>(() => initialUserData.watchlists)
-  const [callChains, setCallChains] = useState<CallChain[]>(() => initialUserData.callChains)
+  // NOTE: callChains is now per-bot (stored in BotSession.callChains), not global state
   const [uiState, setUiState] = useState<UserUiState>(() => initialUserData.ui)
   // Portfolio is now loaded from database API, start with default
   const [dashboardPortfolio, setDashboardPortfolio] = useState<DashboardPortfolio>(defaultDashboardPortfolio)
@@ -14010,83 +13929,8 @@ function App() {
     return () => clearTimeout(timer)
   }, [userId, uiState, prefsLoadedFromApi])
 
-  // Load call chains from database API when user logs in
-  const [_callChainsLoadedFromApi, setCallChainsLoadedFromApi] = useState(false)
-  useEffect(() => {
-    if (!userId) return
-    setCallChainsLoadedFromApi(false)
-    loadCallChainsFromApi(userId).then(async (apiCallChains) => {
-      // Check localStorage for any call chains that aren't in the API yet (migration)
-      const localData = loadUserData(userId)
-      const apiCallChainIds = new Set(apiCallChains.map(cc => cc.id))
-      const localCallChainsNotInApi = localData.callChains.filter(cc => !apiCallChainIds.has(cc.id))
-
-      if (localCallChainsNotInApi.length > 0) {
-        // Migrate localStorage call chains that don't exist in API
-        console.log('[Migration] Migrating', localCallChainsNotInApi.length, 'call chains to API...')
-        for (const cc of localCallChainsNotInApi) {
-          await createCallChainInApi(userId, cc)
-        }
-        console.log('[Migration] Call chains migrated successfully')
-        // Reload from API to get fresh data with server IDs
-        const refreshedCallChains = await loadCallChainsFromApi(userId)
-        setCallChains(refreshedCallChains)
-      } else if (apiCallChains.length > 0) {
-        // No migration needed, just use API call chains
-        setCallChains(apiCallChains)
-      }
-      setCallChainsLoadedFromApi(true)
-    }).catch((err) => {
-      console.warn('[API] Failed to load call chains, using localStorage fallback:', err)
-      const localData = loadUserData(userId)
-      if (localData.callChains.length > 0) {
-        setCallChains(localData.callChains)
-      }
-      setCallChainsLoadedFromApi(true)
-    })
-  }, [userId])
-
-  // Track call chain changes and sync to API
-  const callChainsRef = useRef(callChains)
-  const prevCallChainsRef = useRef<CallChain[]>([])
-  useEffect(() => {
-    callChainsRef.current = callChains
-  }, [callChains])
-
-  // Save call chains to database when they change (debounced)
-  useEffect(() => {
-    if (!userId) return
-    // Debounce call chain saves
-    const timer = setTimeout(async () => {
-      const current = callChainsRef.current
-      const previous = prevCallChainsRef.current
-
-      // Find new call chains (in current but not in previous)
-      const previousIds = new Set(previous.map(cc => cc.id))
-      const newCallChains = current.filter(cc => !previousIds.has(cc.id))
-      for (const cc of newCallChains) {
-        await createCallChainInApi(userId, cc)
-      }
-
-      // Find updated call chains (in both but different)
-      for (const cc of current) {
-        const prev = previous.find(p => p.id === cc.id)
-        if (prev && (prev.name !== cc.name || JSON.stringify(prev.root) !== JSON.stringify(cc.root) || prev.collapsed !== cc.collapsed)) {
-          await updateCallChainInApi(userId, cc)
-        }
-      }
-
-      // Find deleted call chains (in previous but not in current)
-      const currentIds = new Set(current.map(cc => cc.id))
-      const deletedCallChains = previous.filter(cc => !currentIds.has(cc.id))
-      for (const cc of deletedCallChains) {
-        await deleteCallChainInApi(userId, cc.id)
-      }
-
-      prevCallChainsRef.current = [...current]
-    }, 1000) // 1 second debounce
-    return () => clearTimeout(timer)
-  }, [userId, callChains])
+  // NOTE: Call chains are now stored per-bot (in BotSession.callChains) instead of globally
+  // They are saved with the bot payload when saving to watchlist
 
   // Manual refresh function for allNexusBots (called after Atlas slot changes)
   const refreshAllNexusBots = useCallback(async () => {
@@ -14242,6 +14086,7 @@ function App() {
       history: [root],
       historyIndex: 0,
       backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+      callChains: [], // Per-bot call chains (stored with bot payload)
     }
   }, [])
 
@@ -14258,6 +14103,8 @@ function App() {
   const [adminTab, setAdminTab] = useState<AdminSubtab>('Atlas Overview')
   const [databasesTab, setDatabasesTab] = useState<DatabasesSubtab>('Systems')
   const [helpTab, setHelpTab] = useState<'Changelog' | 'Settings'>('Changelog')
+  const [changelogContent, setChangelogContent] = useState<string>('')
+  const [changelogLoading, setChangelogLoading] = useState(false)
 
   // Ticker search modal state
   const [tickerModalOpen, setTickerModalOpen] = useState(false)
@@ -14386,6 +14233,20 @@ function App() {
 
   const current = activeBot.history[activeBot.historyIndex]
 
+  // Per-bot call chains (derived from activeBot)
+  const callChains = activeBot.callChains
+
+  // Update active bot's call chains
+  const setCallChains = useCallback((updater: CallChain[] | ((prev: CallChain[]) => CallChain[])) => {
+    setBots((prev) =>
+      prev.map((b) => {
+        if (b.id !== activeBotId) return b
+        const newCallChains = typeof updater === 'function' ? updater(b.callChains) : updater
+        return { ...b, callChains: newCallChains }
+      }),
+    )
+  }, [activeBotId])
+
   // Per-bot backtest state (derived from activeBot)
   const backtestStatus = activeBot.backtest.status
   const backtestErrors = activeBot.backtest.errors
@@ -14425,6 +14286,30 @@ function App() {
     }
     fetchOverlays()
   }, [enabledOverlays, backtestResult, current, backtestMode])
+
+  // Fetch changelog when viewing Help tab
+  useEffect(() => {
+    console.log('[changelog] useEffect triggered:', { tab, helpTab, hasContent: !!changelogContent })
+    if (tab !== 'Help/Support' || helpTab !== 'Changelog') return
+    if (changelogContent) return // Already loaded
+
+    console.log('[changelog] Fetching changelog...')
+    setChangelogLoading(true)
+    fetch('/api/changelog')
+      .then(res => {
+        console.log('[changelog] Response status:', res.status)
+        return res.text()
+      })
+      .then(content => {
+        console.log('[changelog] Loaded content length:', content.length)
+        setChangelogContent(content)
+        setChangelogLoading(false)
+      })
+      .catch(err => {
+        console.error('Failed to fetch changelog:', err)
+        setChangelogLoading(false)
+      })
+  }, [tab, helpTab, changelogContent])
 
   // Fetch eligibility requirements when viewing Partner Program page
   useEffect(() => {
@@ -15507,6 +15392,7 @@ function App() {
       history: [clonedRoot],
       historyIndex: 0,
       backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+      callChains: sourceBotSession.callChains.map(cc => ({ ...cc, id: `call-${newId()}` })), // Clone call chains with new IDs
     }
     setBots((prev) => [...prev, newBot])
     setActiveBotId(newBot.id)
@@ -15568,13 +15454,31 @@ function App() {
       if (!bot || !bot.payload) throw new Error('Bot payload not available (IP protected)')
       // Parse payload if it's a string
       const payload = typeof bot.payload === 'string' ? JSON.parse(bot.payload) : bot.payload
-      push(ensureSlots(payload))
+      // Parse callChains if it's a string
+      const loadedCallChains: CallChain[] = typeof bot.callChains === 'string'
+        ? JSON.parse(bot.callChains)
+        : (bot.callChains || [])
+      // Update the active bot with the loaded flowchart and callChains
+      setBots((prev) =>
+        prev.map((b) => {
+          if (b.id !== activeBotId) return b
+          const trimmed = b.history.slice(0, b.historyIndex + 1)
+          trimmed.push(ensureSlots(payload))
+          return {
+            ...b,
+            history: trimmed,
+            historyIndex: trimmed.length - 1,
+            savedBotId: botId, // Link to the saved bot
+            callChains: loadedCallChains,
+          }
+        }),
+      )
       setTab('Model')
     } catch (e) {
       console.error('Open failed:', e)
       alert('Failed to open bot: ' + String((e as Error)?.message || e))
     }
-  }, [userId])
+  }, [userId, activeBotId])
 
   const resolveWatchlistId = useCallback(
     (watchlistNameOrId: string): string => {
@@ -15664,6 +15568,7 @@ function App() {
           name: current.title || 'Algo',
           builderId: userId,
           payload,
+          callChains: activeBot?.callChains || [],
           visibility: 'private',
           createdAt: now,
           tags: tagsWithEtf,
@@ -15687,6 +15592,7 @@ function App() {
         const updatedBot: SavedBot = {
           ...(existingBot || { id: savedBotId, createdAt: now, visibility: 'private' as const }),
           payload,
+          callChains: activeBot?.callChains || [],
           name: current.title || existingBot?.name || 'Algo',
           builderId: existingBot?.builderId ?? userId,
           tags: tagsWithEtf,
@@ -15714,7 +15620,7 @@ function App() {
       setJustSavedFeedback(true)
       setTimeout(() => setJustSavedFeedback(false), 1500)
     },
-    [current, activeBotId, activeSavedBotId, resolveWatchlistId, addBotToWatchlist, userId, savedBots, backtestMode, backtestCostBps, computeEtfsOnlyTag],
+    [current, activeBotId, activeSavedBotId, activeBot, resolveWatchlistId, addBotToWatchlist, userId, savedBots, backtestMode, backtestCostBps, computeEtfsOnlyTag],
   )
 
   const handleConfirmAddToWatchlist = useCallback(
@@ -16332,6 +16238,7 @@ function App() {
         historyIndex: 0,
         savedBotId: newBot.id,
         backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+        callChains: (bot.callChains || []).map(cc => ({ ...cc, id: `call-${newId()}` })), // Clone call chains from source
       }
       setBots((prev) => [...prev, session])
       setActiveBotId(session.id)
@@ -16374,6 +16281,7 @@ function App() {
         historyIndex: 0,
         savedBotId: bot.id,
         backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+        callChains: bot.callChains || [], // Load call chains from saved bot
       }
       setBots((prev) => [...prev, session])
       setActiveBotId(session.id)
@@ -16711,11 +16619,11 @@ function App() {
     }
     const data = loadUserData(nextUser)
     setUserId(nextUser)
-    // Bots, watchlists, call chains, and preferences will be loaded from database API via useEffects when userId changes
+    // Bots, watchlists, and preferences will be loaded from database API via useEffects when userId changes
     // Set defaults here, the useEffects will replace with API data
+    // NOTE: Call chains are now per-bot (stored in BotSession.callChains), not global
     setSavedBots(data.savedBots) // Initial from localStorage, then replaced by API
     setWatchlists(ensureDefaultWatchlist([])) // Empty default, will be loaded from API
-    setCallChains([]) // Empty default, will be loaded from API
     setUiState(defaultUiState()) // Default, will be loaded from API
     // Portfolio will be loaded from database API via useEffect when userId changes
     setDashboardPortfolio(defaultDashboardPortfolio())
@@ -16739,7 +16647,8 @@ function App() {
     setUserDisplayName(null)
     setSavedBots([])
     setWatchlists([])
-    setCallChains([])
+    // NOTE: Call chains are now per-bot, reset via setBots
+    setBots([createBotSession('Algo Name Here')])
     setUiState(defaultUiState())
     setDashboardPortfolio(defaultDashboardPortfolio())
     setAnalyzeBacktests({})
@@ -17821,95 +17730,82 @@ function App() {
                   <div className="space-y-6">
                     <h3 className="text-lg font-bold border-b border-border pb-2">Changelog</h3>
 
-                    <div className="space-y-4">
-                    <div>
-                      <h4 className="font-bold text-sm text-muted mb-2">[1.2.0] - 2026-01-01</h4>
-                      <div className="pl-4 space-y-3">
-                        <div>
-                          <div className="font-semibold text-sm text-green-600 dark:text-green-400">Added</div>
-                          <ul className="list-disc list-inside text-sm text-muted ml-2 space-y-0.5">
-                            <li>Auto-sync ticker registry before downloads - yFinance and Tiingo buttons now refresh from Tiingo's master list automatically</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold text-sm text-amber-600 dark:text-amber-400">Fixed</div>
-                          <ul className="list-disc list-inside text-sm text-muted ml-2 space-y-0.5">
-                            <li>Duplicate ticker handling - tickers listed on multiple exchanges now correctly use the active listing</li>
-                            <li>Download progress UI now properly updates when all tickers are already synced</li>
-                            <li>Tickers automatically reactivate when data is successfully downloaded</li>
-                            <li>Analyze tab now shows display name instead of user ID</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
+                    {changelogLoading ? (
+                      <div className="text-muted text-sm">Loading changelog...</div>
+                    ) : changelogContent ? (
+                      <div className="space-y-4">
+                        {(() => {
+                          // Parse markdown changelog into sections
+                          const sections: { version: string; content: { type: string; items: string[] }[] }[] = []
+                          let currentSection: typeof sections[0] | null = null
+                          let currentType: { type: string; items: string[] } | null = null
 
-                    <div>
-                      <h4 className="font-bold text-sm text-muted mb-2">[1.1.0] - 2025-12-31</h4>
-                      <div className="pl-4 space-y-3">
-                        <div>
-                          <div className="font-semibold text-sm text-green-600 dark:text-green-400">Added</div>
-                          <ul className="list-disc list-inside text-sm text-muted ml-2 space-y-0.5">
-                            <li>Tiingo-only download mode - download data exclusively from Tiingo API</li>
-                            <li>Stop button for downloads - cancel running downloads mid-process</li>
-                            <li>Ticker search modal - search by ticker symbol or company name with ETF/Stock filters</li>
-                            <li>Popular tickers (SPY, QQQ, IWM, etc.) shown first when opening ticker search</li>
-                            <li>Backtest mode tooltips explaining each timing mode (CC, OO, OC, CO)</li>
-                            <li>Number inputs auto-select on focus for easier editing</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold text-sm text-purple-600 dark:text-purple-400">Performance</div>
-                          <ul className="list-disc list-inside text-sm text-muted ml-2 space-y-0.5">
-                            <li>API response compression (gzip) - 80% smaller payloads</li>
-                            <li>Batch candles endpoint - fetch multiple tickers in one request</li>
-                            <li>Common tickers pre-cached at startup (SPY, QQQ, IWM, etc.)</li>
-                            <li>Backtest data filters from 1993 onwards (20-40% less data)</li>
-                            <li>Optimized date intersection algorithm</li>
-                            <li>Parallelized benchmark metrics computation</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold text-sm text-blue-600 dark:text-blue-400">Changed</div>
-                          <ul className="list-disc list-inside text-sm text-muted ml-2 space-y-0.5">
-                            <li>Ticker selection uses modal dialog instead of dropdown/datalist</li>
-                            <li>TradingView charts match app theme (dark/light mode)</li>
-                            <li>Monthly Returns heatmap respects dark/light theme</li>
-                            <li>Time period selector respects dark/light theme</li>
-                            <li>Allocation chart Y-axis shows percentages instead of decimals</li>
-                            <li>Monthly Returns and Allocations cards are equal-width side by side</li>
-                            <li>Hidden chart watermarks for cleaner visuals</li>
-                            <li>Number input spinner arrows hidden</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold text-sm text-amber-600 dark:text-amber-400">Fixed</div>
-                          <ul className="list-disc list-inside text-sm text-muted ml-2 space-y-0.5">
-                            <li>Save to Watchlist button visual feedback</li>
-                            <li>Call node copy/paste functionality</li>
-                            <li>Ticker search modal displays exchange information</li>
-                            <li>Ticker search works for nested position nodes</li>
-                            <li>Model tab flowchart container fills available height</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
+                          console.log('[changelog] Parsing content, length:', changelogContent.length)
 
-                    <div>
-                      <h4 className="font-bold text-sm text-muted mb-2">[1.0.0] - 2025-12-30</h4>
-                      <div className="pl-4">
-                        <div className="font-semibold text-sm text-green-600 dark:text-green-400">Initial Release</div>
-                        <ul className="list-disc list-inside text-sm text-muted ml-2 space-y-0.5">
-                          <li>Visual flowchart-based trading algorithm builder</li>
-                          <li>Multiple node types: Basic, Function, Indicator, Position, Call</li>
-                          <li>Backtesting with equity curves and performance metrics</li>
-                          <li>Benchmark comparisons (SPY, QQQ, VTI, etc.)</li>
-                          <li>Robustness analysis with bootstrap simulations</li>
-                          <li>Watchlists for organizing trading systems</li>
-                          <li>Dark/Light theme support with multiple color schemes</li>
-                        </ul>
+                          // Normalize line endings (Windows \r\n -> \n)
+                          const normalizedContent = changelogContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+                          for (const line of normalizedContent.split('\n')) {
+                            // Version header: ## [1.2.0] - 2026-01-01
+                            const versionMatch = line.match(/^## \[(.+?)\] - (.+)$/)
+                            if (versionMatch) {
+                              console.log('[changelog] Found version:', versionMatch[1])
+                              if (currentSection) sections.push(currentSection)
+                              currentSection = { version: `[${versionMatch[1]}] - ${versionMatch[2]}`, content: [] }
+                              currentType = null
+                              continue
+                            }
+                            // Section header: ### Added, ### Fixed, etc.
+                            const typeMatch = line.match(/^### (.+)$/)
+                            if (typeMatch && currentSection) {
+                              currentType = { type: typeMatch[1], items: [] }
+                              currentSection.content.push(currentType)
+                              continue
+                            }
+                            // List item: - Some change
+                            const itemMatch = line.match(/^- (.+)$/)
+                            if (itemMatch && currentType) {
+                              currentType.items.push(itemMatch[1])
+                            }
+                          }
+                          if (currentSection) sections.push(currentSection)
+                          console.log('[changelog] Parsed sections:', sections.length, sections)
+
+                          const getTypeColor = (type: string) => {
+                            switch (type.toLowerCase()) {
+                              case 'added': return 'text-green-600 dark:text-green-400'
+                              case 'fixed': return 'text-amber-600 dark:text-amber-400'
+                              case 'changed': return 'text-blue-600 dark:text-blue-400'
+                              case 'performance': return 'text-purple-600 dark:text-purple-400'
+                              case 'features': return 'text-green-600 dark:text-green-400'
+                              default: return 'text-muted'
+                            }
+                          }
+
+                          return sections.map((section, i) => (
+                            <div key={i}>
+                              <h4 className="font-bold text-sm text-muted mb-2">{section.version}</h4>
+                              <div className="pl-4 space-y-3">
+                                {section.content.map((typeBlock, j) => (
+                                  <div key={j}>
+                                    <div className={`font-semibold text-sm ${getTypeColor(typeBlock.type)}`}>
+                                      {typeBlock.type}
+                                    </div>
+                                    <ul className="list-disc list-inside text-sm text-muted ml-2 space-y-0.5">
+                                      {typeBlock.items.map((item, k) => (
+                                        <li key={k}>{item}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))
+                        })()}
                       </div>
-                    </div>
-                    </div>
+                    ) : (
+                      <div className="text-muted text-sm">Failed to load changelog</div>
+                    )}
                   </div>
                 </div>
               )}

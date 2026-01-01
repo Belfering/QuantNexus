@@ -8,12 +8,24 @@ All notable changes to Atlas Engine are documented here.
 
 ### Added
 - Auto-sync ticker registry before downloads - yFinance and Tiingo buttons now refresh from Tiingo's master list automatically
+- Scaling node chart indicator button - toggle indicator overlay on backtest chart (same as Indicator node)
+- Dynamic changelog - Help/Support tab now fetches CHANGELOG.md from server instead of hardcoded content
+
+### Changed
+- Default theme is now light mode with slate color (users can change in Settings)
+- Scaling node UI redesigned - single line with nested badges for cleaner layout
+- Scaling node text updated: "From below [X] (100% Then) to above [Y] (100% Else)"
+- Sort node indicator dropdown now uses IndicatorDropdown component (consistent styling)
+- Sort node Top/Bottom selector text is now bold for better visibility
 
 ### Fixed
 - Duplicate ticker handling - tickers listed on multiple exchanges (like SPYM) now correctly use the active listing
 - Download progress UI now properly updates when all tickers are already synced for the day
 - Tickers automatically reactivate when data is successfully downloaded
 - Analyze tab now shows display name instead of user ID
+- Call chains no longer create infinite duplicates on login (139,000+ duplicates cleaned up)
+- Scaling node ticker selector now uses ticker search modal (was broken Select dropdown)
+- Scaling node and Sort node indicator dropdowns properly sized (no text cutoff)
 
 ---
 

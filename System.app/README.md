@@ -95,6 +95,7 @@ npm run preview  # Preview the build
 | `/api/parquet-tickers` | GET | List available parquet files |
 | `/api/candles/:ticker` | GET | Fetch OHLC candlestick data |
 | `/api/download` | POST | Start ticker data download job |
+| `/api/changelog` | GET | Fetch CHANGELOG.md content |
 
 ## Project Structure
 
