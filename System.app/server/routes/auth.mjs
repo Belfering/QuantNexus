@@ -87,9 +87,9 @@ router.post('/register', async (req, res) => {
 
     // Check if display name is taken (if provided)
     if (displayName?.trim()) {
-      const existingDisplayName = sqlite.prepare(\`
+      const existingDisplayName = sqlite.prepare(`
         SELECT id FROM users WHERE LOWER(display_name) = LOWER(?)
-      \`).get(displayName.trim())
+      `).get(displayName.trim())
       if (existingDisplayName) {
         return res.status(409).json({ error: 'Display name is already taken' })
       }
