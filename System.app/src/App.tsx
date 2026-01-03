@@ -7764,7 +7764,7 @@ const collapseSingleChildren = (node: FlowNode | null): FlowNode | null => {
 // Compute a hash for a subtree to detect duplicates
 const computeSubtreeHash = (node: FlowNode | null): string => {
   if (!node) return 'null'
-  const parts = [node.kind]
+  const parts: string[] = [node.kind]
   if (node.positions) parts.push('pos:' + node.positions.sort().join(','))
   if (node.weighting) parts.push('w:' + node.weighting)
   if (node.conditions) parts.push('cond:' + JSON.stringify(node.conditions))
