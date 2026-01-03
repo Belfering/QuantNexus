@@ -15,6 +15,7 @@ All notable changes to Atlas Engine are documented here.
   - Previously measured longest time in any drawdown, now tracks recovery from the deepest drawdown
   - Shows max DD percentage and actual recovery time
 - Fixed missing `ultSmooth` cache key causing "Cannot read properties of undefined" error
+- Fixed Drawdown Recovery using wrong equity curve property (`p.value` instead of `p.equity`)
 
 ### Changed
 - Robustness analysis now auto-runs after every backtest (no separate button click needed)

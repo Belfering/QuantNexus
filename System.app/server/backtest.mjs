@@ -1161,7 +1161,13 @@ const emptyCache = () => ({
 
 const getCachedSeries = (cache, kind, ticker, period, compute) => {
   const t = getSeriesKey(ticker)
-  const map = cache[kind]
+  let map = cache[kind]
+  if (!map) {
+    // Dynamically add missing cache key (for new indicators)
+    console.warn(`[getCachedSeries] cache[${kind}] missing, creating dynamically`)
+    map = new Map()
+    cache[kind] = map
+  }
   let byTicker = map.get(t)
   if (!byTicker) {
     byTicker = new Map()
