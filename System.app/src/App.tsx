@@ -4643,7 +4643,7 @@ function AdminDataPanel({
   )
 }
 
-type AdminSubtab = 'Atlas Overview' | 'Nexus Maintenance' | 'Ticker Data' | 'User Management' | 'Trading Control'
+type AdminSubtab = 'Atlas Overview' | 'Nexus Maintenance' | 'Ticker Data' | 'User Management' | 'Trading Control' | 'Atlas Systems'
 
 function AdminPanel({
   adminTab,
@@ -4759,6 +4759,30 @@ function AdminPanel({
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [adminUsersLoading, setAdminUsersLoading] = useState(false)
   const [adminUsersError, setAdminUsersError] = useState<string | null>(null)
+
+  // Atlas Systems state (super admin only - from private atlas-private.db)
+  type AtlasSystem = {
+    id: string
+    ownerId: string
+    ownerName: string
+    ownerEmail: string
+    name: string
+    description: string | null
+    visibility: string
+    fundSlot: number | null
+    tags: string[]
+    createdAt: string
+    updatedAt: string
+    metrics: {
+      cagr: number | null
+      maxDrawdown: number | null
+      sharpeRatio: number | null
+      sortinoRatio: number | null
+    } | null
+  }
+  const [atlasSystems, setAtlasSystems] = useState<AtlasSystem[]>([])
+  const [atlasSystemsLoading, setAtlasSystemsLoading] = useState(false)
+  const [atlasSystemsError, setAtlasSystemsError] = useState<string | null>(null)
 
   // Sanitize ticker for filename comparison (matches Python download.py sanitize_filename)
   const sanitizeTickerForFilename = (ticker: string) =>
@@ -4917,6 +4941,35 @@ function AdminPanel({
     }
     void checkSuperAdmin()
   }, [])
+
+  // Fetch Atlas Systems when tab is active
+  useEffect(() => {
+    if (adminTab !== 'Atlas Systems' || !isSuperAdmin) return
+    let cancelled = false
+
+    const fetchAtlasSystems = async () => {
+      setAtlasSystemsLoading(true)
+      setAtlasSystemsError(null)
+      try {
+        const res = await fetch('/api/admin/systems/atlas', {
+          headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || 'Failed to fetch atlas systems')
+        }
+        const data = await res.json()
+        if (!cancelled) setAtlasSystems(data.systems || [])
+      } catch (e) {
+        if (!cancelled) setAtlasSystemsError(String((e as Error)?.message || e))
+      } finally {
+        if (!cancelled) setAtlasSystemsLoading(false)
+      }
+    }
+
+    void fetchAtlasSystems()
+    return () => { cancelled = true }
+  }, [adminTab, isSuperAdmin])
 
   useEffect(() => {
     if (adminTab !== 'User Management' || !isSuperAdmin) return
@@ -5252,6 +5305,16 @@ function AdminPanel({
             onClick={() => setAdminTab('User Management')}
           >
             User Management
+          </button>
+        )}
+
+        {/* Atlas Systems tab - view all Atlas admin systems */}
+        {isSuperAdmin && (
+          <button
+            className={`tab-btn ${adminTab === 'Atlas Systems' ? 'active' : ''}`}
+            onClick={() => setAdminTab('Atlas Systems')}
+          >
+            Atlas Systems
           </button>
         )}
       </div>
@@ -6867,6 +6930,84 @@ function AdminPanel({
           )}
         </div>
       )}
+
+      {/* Atlas Systems Tab - All systems from private Atlas database */}
+      {adminTab === 'Atlas Systems' && isSuperAdmin && (
+        <div className="space-y-6">
+          <div className="font-black text-lg">Atlas Systems</div>
+          <p className="text-sm text-muted-foreground">
+            Private admin systems (stored in atlas-private.db). Hidden from engineers and regular users.
+          </p>
+
+          {atlasSystemsError && (
+            <div className="text-destructive text-sm p-3 bg-destructive/10 rounded-lg">
+              {atlasSystemsError}
+            </div>
+          )}
+
+          {atlasSystemsLoading ? (
+            <div className="text-muted-foreground">Loading atlas systems...</div>
+          ) : atlasSystems.length === 0 ? (
+            <Card className="p-6 text-center text-muted-foreground">
+              No Atlas systems yet. Create systems from the Build tab and they will appear here.
+            </Card>
+          ) : (
+            <Card className="p-4">
+              <div className="text-sm text-muted-foreground mb-2">
+                Total: {atlasSystems.length} systems
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Owner</TableHead>
+                      <TableHead>Visibility</TableHead>
+                      <TableHead>CAGR</TableHead>
+                      <TableHead>Sharpe</TableHead>
+                      <TableHead>Max DD</TableHead>
+                      <TableHead>Fund Slot</TableHead>
+                      <TableHead>Created</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {atlasSystems.map(sys => (
+                      <TableRow key={sys.id}>
+                        <TableCell className="font-medium">{sys.name}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {sys.ownerName || sys.ownerEmail || 'Unknown'}
+                        </TableCell>
+                        <TableCell>
+                          <span className="px-2 py-0.5 rounded text-xs bg-blue-500/20 text-blue-500">
+                            {sys.visibility}
+                          </span>
+                        </TableCell>
+                        <TableCell className={sys.metrics?.cagr != null ? (sys.metrics.cagr >= 0 ? 'text-green-500' : 'text-red-500') : ''}>
+                          {sys.metrics?.cagr != null ? `${(sys.metrics.cagr * 100).toFixed(1)}%` : '-'}
+                        </TableCell>
+                        <TableCell>{sys.metrics?.sharpeRatio != null ? sys.metrics.sharpeRatio.toFixed(2) : '-'}</TableCell>
+                        <TableCell className="text-red-500">
+                          {sys.metrics?.maxDrawdown != null ? `${(sys.metrics.maxDrawdown * 100).toFixed(1)}%` : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {sys.fundSlot != null ? (
+                            <span className="px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-500">
+                              Slot {sys.fundSlot}
+                            </span>
+                          ) : '-'}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {new Date(sys.createdAt).toLocaleDateString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
     </>
   )
 }
@@ -6904,6 +7045,9 @@ function DatabasesPanel({
   const [tickerOffset, setTickerOffset] = useState(0)
   const tickerLimit = 500
 
+  // Get auth token from storage
+  const getAuthToken = () => localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
+
   // Debounce ticker search
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -6917,7 +7061,9 @@ function DatabasesPanel({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/admin/db/${table}`)
+      const res = await fetch(`${API_BASE}/admin/db/${table}`, {
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+      })
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || `Failed to fetch ${table}`)
@@ -6945,7 +7091,9 @@ function DatabasesPanel({
         limit: tickerLimit.toString(),
         offset: offset.toString(),
       })
-      const res = await fetch(`${API_BASE}/tickers/registry/all?${params}`)
+      const res = await fetch(`${API_BASE}/tickers/registry/all?${params}`, {
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+      })
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || 'Failed to fetch tickers')

@@ -651,6 +651,45 @@ const parseIncantation = (
     }
   }
 
+  // EnterExit: condition-based entry/exit with separate positions for each state
+  // Used in QuantMage for strategies that enter on one condition and exit on another
+  if (incType === 'EnterExit') {
+    const enterCondition = node.enter_condition as Record<string, unknown> | undefined
+    const enterInc = node.enter_incantation as Record<string, unknown> | undefined
+    const exitInc = node.exit_incantation as Record<string, unknown> | undefined
+
+    // Parse the enter condition (this triggers buying the enter position)
+    const enterConditions = enterCondition ? parseCondition(enterCondition, idGen) : [{
+      id: idGen.condId(),
+      type: 'if' as const,
+      metric: 'Relative Strength Index' as MetricChoice,
+      window: 14,
+      ticker: 'SPY' as PositionChoice,
+      comparator: 'gt' as ComparatorChoice,
+      threshold: 50,
+      expanded: false,
+    }]
+
+    const enterBranch = enterInc ? parseIncantation(enterInc, idGen) : null
+    const exitBranch = exitInc ? parseIncantation(exitInc, idGen) : null
+
+    // Model EnterExit as an altExit node (if enter condition -> enter position, else exit position)
+    return {
+      id: idGen.nodeId(),
+      kind: 'altExit',
+      title: (node.name as string) || 'Enter/Exit',
+      collapsed: true,
+      weighting: 'equal',
+      weightingThen: 'equal',
+      weightingElse: 'equal',
+      conditions: enterConditions,
+      children: {
+        then: enterBranch ? [enterBranch] : [null],
+        else: exitBranch ? [exitBranch] : [null],
+      },
+    }
+  }
+
   console.warn(`[ImportWorker] Unknown incantation_type: ${incType}`)
   return null
 }
