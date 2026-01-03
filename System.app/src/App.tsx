@@ -4874,7 +4874,9 @@ function AdminPanel({
 
       // Fetch sync schedule status
       try {
-        const schedRes = await fetch('/api/admin/sync-schedule')
+        const schedRes = await fetch('/api/admin/sync-schedule', {
+          headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+        })
         if (schedRes.ok && !cancelled) {
           setSyncSchedule(await schedRes.json())
         }
@@ -4900,7 +4902,9 @@ function AdminPanel({
     // Poll sync status every 2 seconds for faster UI updates during downloads
     const pollInterval = setInterval(async () => {
       try {
-        const schedRes = await fetch('/api/admin/sync-schedule')
+        const schedRes = await fetch('/api/admin/sync-schedule', {
+          headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+        })
         if (schedRes.ok) {
           const data = await schedRes.json()
           setSyncSchedule(data)
@@ -5893,12 +5897,17 @@ function AdminPanel({
                     if (!confirm('Are you sure you want to stop the current download?')) return
                     setSyncKilling(true)
                     try {
-                      const res = await fetch('/api/admin/sync-schedule/kill', { method: 'POST' })
+                      const res = await fetch('/api/admin/sync-schedule/kill', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                      })
                       const data = await res.json()
                       if (res.ok) {
                         setRegistryMsg(`Job stopped: ${data.message}`)
                         // Refresh status
-                        const schedRes = await fetch('/api/admin/sync-schedule')
+                        const schedRes = await fetch('/api/admin/sync-schedule', {
+                          headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                        })
                         if (schedRes.ok) setSyncSchedule(await schedRes.json())
                       } else {
                         setRegistryMsg(`Error: ${data.error}`)
@@ -6011,10 +6020,15 @@ function AdminPanel({
                   if (!confirm('Stop the running yFinance download?')) return
                   setRegistryMsg('Stopping download...')
                   try {
-                    const res = await fetch('/api/admin/sync-schedule/kill', { method: 'POST' })
+                    const res = await fetch('/api/admin/sync-schedule/kill', {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                    })
                     const data = await res.json()
                     setRegistryMsg(data.message || 'Download stopped')
-                    const schedRes = await fetch('/api/admin/sync-schedule')
+                    const schedRes = await fetch('/api/admin/sync-schedule', {
+                      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                    })
                     if (schedRes.ok) setSyncSchedule(await schedRes.json())
                   } catch (e) {
                     setRegistryMsg(`Error: ${e}`)
@@ -6028,13 +6042,18 @@ function AdminPanel({
                 try {
                   const res = await fetch('/api/admin/sync-schedule/run-now', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${getAuthToken()}`
+                    },
                     body: JSON.stringify({ source: 'yfinance', tickers: parquetTickers })
                   })
                   const data = await res.json()
                   if (res.ok) {
                     setRegistryMsg(data.message || 'yFinance download started')
-                    const schedRes = await fetch('/api/admin/sync-schedule')
+                    const schedRes = await fetch('/api/admin/sync-schedule', {
+                      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                    })
                     if (schedRes.ok) setSyncSchedule(await schedRes.json())
                   } else {
                     setRegistryMsg(`Error: ${data.error}`)
@@ -6061,10 +6080,15 @@ function AdminPanel({
                   if (!confirm('Stop the running Tiingo download?')) return
                   setRegistryMsg('Stopping download...')
                   try {
-                    const res = await fetch('/api/admin/sync-schedule/kill', { method: 'POST' })
+                    const res = await fetch('/api/admin/sync-schedule/kill', {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                    })
                     const data = await res.json()
                     setRegistryMsg(data.message || 'Download stopped')
-                    const schedRes = await fetch('/api/admin/sync-schedule')
+                    const schedRes = await fetch('/api/admin/sync-schedule', {
+                      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                    })
                     if (schedRes.ok) setSyncSchedule(await schedRes.json())
                   } catch (e) {
                     setRegistryMsg(`Error: ${e}`)
@@ -6078,13 +6102,18 @@ function AdminPanel({
                 try {
                   const res = await fetch('/api/admin/sync-schedule/run-now', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${getAuthToken()}`
+                    },
                     body: JSON.stringify({ source: 'tiingo', tickers: parquetTickers, fillGaps: true })
                   })
                   const data = await res.json()
                   if (res.ok) {
                     setRegistryMsg(data.message || 'Tiingo download started')
-                    const schedRes = await fetch('/api/admin/sync-schedule')
+                    const schedRes = await fetch('/api/admin/sync-schedule', {
+                      headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                    })
                     if (schedRes.ok) setSyncSchedule(await schedRes.json())
                   } else {
                     setRegistryMsg(`Error: ${data.error}`)
@@ -6108,7 +6137,9 @@ function AdminPanel({
               onClick={async () => {
                 const [statsRes, schedRes, parquetRes] = await Promise.all([
                   fetch('/api/tickers/registry/stats'),
-                  fetch('/api/admin/sync-schedule'),
+                  fetch('/api/admin/sync-schedule', {
+                    headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                  }),
                   fetch('/api/parquet-tickers')
                 ])
                 if (statsRes.ok) setRegistryStats(await statsRes.json())
@@ -6138,11 +6169,16 @@ function AdminPanel({
                   try {
                     const res = await fetch('/api/admin/sync-schedule', {
                       method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getAuthToken()}`
+                      },
                       body: JSON.stringify({ batchSize: val })
                     })
                     if (res.ok) {
-                      const schedRes = await fetch('/api/admin/sync-schedule')
+                      const schedRes = await fetch('/api/admin/sync-schedule', {
+                        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                      })
                       if (schedRes.ok) setSyncSchedule(await schedRes.json())
                     }
                   } catch {
@@ -6165,11 +6201,16 @@ function AdminPanel({
                   try {
                     const res = await fetch('/api/admin/sync-schedule', {
                       method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getAuthToken()}`
+                      },
                       body: JSON.stringify({ sleepSeconds: val })
                     })
                     if (res.ok) {
-                      const schedRes = await fetch('/api/admin/sync-schedule')
+                      const schedRes = await fetch('/api/admin/sync-schedule', {
+                        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                      })
                       if (schedRes.ok) setSyncSchedule(await schedRes.json())
                     }
                   } catch {
@@ -6194,11 +6235,16 @@ function AdminPanel({
                   try {
                     const res = await fetch('/api/admin/sync-schedule', {
                       method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getAuthToken()}`
+                      },
                       body: JSON.stringify({ tiingoSleepSeconds: val })
                     })
                     if (res.ok) {
-                      const schedRes = await fetch('/api/admin/sync-schedule')
+                      const schedRes = await fetch('/api/admin/sync-schedule', {
+                        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                      })
                       if (schedRes.ok) setSyncSchedule(await schedRes.json())
                     }
                   } catch {
@@ -6224,11 +6270,16 @@ function AdminPanel({
                     try {
                       const res = await fetch('/api/admin/sync-schedule', {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${getAuthToken()}`
+                        },
                         body: JSON.stringify({ enabled: e.target.checked })
                       })
                       if (res.ok) {
-                        const schedRes = await fetch('/api/admin/sync-schedule')
+                        const schedRes = await fetch('/api/admin/sync-schedule', {
+                          headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                        })
                         if (schedRes.ok) setSyncSchedule(await schedRes.json())
                         setRegistryMsg(e.target.checked ? 'Schedule enabled' : 'Schedule disabled')
                       }
@@ -6252,11 +6303,16 @@ function AdminPanel({
                     try {
                       const res = await fetch('/api/admin/sync-schedule', {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${getAuthToken()}`
+                        },
                         body: JSON.stringify({ updateTime: newTime })
                       })
                       if (res.ok) {
-                        const schedRes = await fetch('/api/admin/sync-schedule')
+                        const schedRes = await fetch('/api/admin/sync-schedule', {
+                          headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                        })
                         if (schedRes.ok) setSyncSchedule(await schedRes.json())
                         setRegistryMsg(`Schedule updated to ${newTime}`)
                       }
@@ -11385,7 +11441,8 @@ const collectBacktestInputs = (root: FlowNode, callMap: Map<string, CallChain>):
     const ticker = normalizeChoice(cond.ticker)
     if (ticker === 'Empty') {
       addError(ownerId, `${baseField}.ticker`, 'Indicator condition is missing a ticker.')
-    } else {
+    } else if (!ticker.toUpperCase().startsWith('BRANCH:')) {
+      // Only add real tickers, not branch references (which compute from child equity curves)
       addTicker(ticker, ownerId, `${baseField}.ticker`)
     }
     // forDays adds extra lookback (we need to check N consecutive days)
@@ -11398,7 +11455,7 @@ const collectBacktestInputs = (root: FlowNode, callMap: Map<string, CallChain>):
     if (cond.expanded) {
       const rt = normalizeChoice(cond.rightTicker ?? '')
       if (rt === 'Empty') addError(ownerId, `${baseField}.rightTicker`, 'Right-side ticker is missing.')
-      else addTicker(rt, ownerId, `${baseField}.rightTicker`)
+      else if (!rt.toUpperCase().startsWith('BRANCH:')) addTicker(rt, ownerId, `${baseField}.rightTicker`)
       const rw = Number(cond.rightWindow ?? cond.window)
       const rightMetric = (cond.rightMetric ?? cond.metric) as MetricChoice
       if (rightMetric !== 'Current Price' && !isWindowlessIndicator(rightMetric)) {
@@ -11472,7 +11529,8 @@ const collectBacktestInputs = (root: FlowNode, callMap: Map<string, CallChain>):
       const scaleTicker = normalizeChoice(node.scaleTicker ?? 'SPY')
       if (scaleTicker === 'Empty') {
         addError(node.id, 'scaleTicker', 'Scaling node is missing a ticker.')
-      } else {
+      } else if (!scaleTicker.toUpperCase().startsWith('BRANCH:')) {
+        // Only add real tickers, not branch references (which compute from child equity curves)
         addTicker(scaleTicker, node.id, 'scaleTicker')
       }
       const scaleMetric = node.scaleMetric ?? 'Relative Strength Index'
@@ -11599,10 +11657,11 @@ const collectIndicatorTickers = (root: FlowNode, callMap: Map<string, CallChain>
   const collectFromCondition = (cond: ConditionLine) => {
     const ticker = normalizeChoice(cond.ticker)
     // FRD-021: Skip branch references - they're computed from child equity, not external tickers
-    if (ticker !== 'Empty' && !ticker.startsWith('branch:')) addTicker(ticker)
+    // Use toUpperCase() since normalizeChoice uppercases the ticker
+    if (ticker !== 'Empty' && !ticker.toUpperCase().startsWith('BRANCH:')) addTicker(ticker)
     if (cond.expanded) {
       const rt = normalizeChoice(cond.rightTicker ?? '')
-      if (rt !== 'Empty' && !rt.startsWith('branch:')) addTicker(rt)
+      if (rt !== 'Empty' && !rt.toUpperCase().startsWith('BRANCH:')) addTicker(rt)
     }
   }
 
@@ -11640,7 +11699,8 @@ const collectIndicatorTickers = (root: FlowNode, callMap: Map<string, CallChain>
     if (node.kind === 'scaling') {
       const scaleTicker = normalizeChoice(node.scaleTicker ?? 'SPY')
       // FRD-021: Skip branch references - they're computed from child equity, not external tickers
-      if (scaleTicker !== 'Empty' && !scaleTicker.startsWith('branch:')) addTicker(scaleTicker)
+      // Use toUpperCase() since normalizeChoice uppercases the ticker
+      if (scaleTicker !== 'Empty' && !scaleTicker.toUpperCase().startsWith('BRANCH:')) addTicker(scaleTicker)
     }
 
     // Function nodes sort by a metric on their children (the children are usually positions)
@@ -12331,6 +12391,8 @@ const metricAtIndex = (ctx: EvalCtx, ticker: string, metric: MetricChoice, windo
 const metricAt = (ctx: EvalCtx, ticker: string, metric: MetricChoice, window: number): number | null => {
   const t = getSeriesKey(ticker)
   if (!t || t === 'Empty') return null
+  // Branch references (e.g., BRANCH:FROM) are computed server-side only
+  if (t.startsWith('BRANCH:')) return null
 
   if (metric === 'Current Price') {
     const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : ctx.db.close[t]
@@ -12593,11 +12655,16 @@ const evalCondition = (ctx: EvalCtx, ownerId: string, traceOwnerId: string, cond
     const right = metricAt(ctx, rightTicker, rightMetric, rightWindow)
 
     if (left == null || right == null) {
-      ctx.warnings.push({
-        time: ctx.db.dates[ctx.decisionIndex],
-        date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
-        message: `Missing data for condition on ${ownerId}.`,
-      })
+      // Branch references are computed server-side only, don't warn about them
+      const leftIsBranch = normalizeChoice(cond.ticker).startsWith('BRANCH:')
+      const rightIsBranch = normalizeChoice(rightTicker).startsWith('BRANCH:')
+      if (!leftIsBranch && !rightIsBranch) {
+        ctx.warnings.push({
+          time: ctx.db.dates[ctx.decisionIndex],
+          date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
+          message: `Missing data for condition on ${ownerId}.`,
+        })
+      }
       ctx.trace?.recordCondition(traceOwnerId, cond, false, {
         date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
         left,
@@ -12615,11 +12682,15 @@ const evalCondition = (ctx: EvalCtx, ownerId: string, traceOwnerId: string, cond
   }
 
   if (left == null) {
-    ctx.warnings.push({
-      time: ctx.db.dates[ctx.decisionIndex],
-      date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
-      message: `Missing data for condition on ${ownerId}.`,
-    })
+    // Branch references are computed server-side only, don't warn about them
+    const isBranchRef = normalizeChoice(cond.ticker).startsWith('BRANCH:')
+    if (!isBranchRef) {
+      ctx.warnings.push({
+        time: ctx.db.dates[ctx.decisionIndex],
+        date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
+        message: `Missing data for condition on ${ownerId}.`,
+      })
+    }
     ctx.trace?.recordCondition(traceOwnerId, cond, false, {
       date: isoFromUtcSeconds(ctx.db.dates[ctx.decisionIndex]),
       left,
@@ -12892,8 +12963,13 @@ const evaluateNode = (ctx: EvalCtx, node: FlowNode, callStack: string[] = []): A
     }
     case 'altExit': {
       // Evaluate both entry and exit conditions
+      // NOTE: Suppress warnings for altExit conditions - the server handles these with full data
+      // The frontend may not have all ticker data loaded, so warnings are misleading
+      const savedWarnings = ctx.warnings
+      ctx.warnings = [] // Temporarily suppress warnings
       const entryOk = evalConditions(ctx, node.id, node.entryConditions, `${node.id}:entry`)
       const exitOk = evalConditions(ctx, node.id, node.exitConditions, `${node.id}:exit`)
+      ctx.warnings = savedWarnings // Restore warnings array
 
       // Get previous state from trace (or null for first bar)
       const prevState = ctx.trace?.getAltExitState(node.id) ?? null
@@ -13105,8 +13181,12 @@ const tracePositionContributions = (
       return result
     }
     case 'altExit': {
+      // Suppress warnings for altExit conditions (same as in evaluateNode)
+      const savedWarnings = ctx.warnings
+      ctx.warnings = []
       const entryOk = evalConditions(ctx, node.id, node.entryConditions, `${node.id}:entry`)
       const exitOk = evalConditions(ctx, node.id, node.exitConditions, `${node.id}:exit`)
+      ctx.warnings = savedWarnings
       const prevState = ctx.trace?.getAltExitState(node.id) ?? null
       let currentState: 'then' | 'else'
       if (prevState === null) {
@@ -13332,7 +13412,7 @@ const computeBacktestSummary = (points: EquityPoint[], drawdowns: number[], days
   }
 }
 
-const fetchOhlcSeries = async (ticker: string, limit: number): Promise<Array<{ time: UTCTimestamp; open: number; close: number; adjClose: number }>> => {
+const fetchOhlcSeries = async (ticker: string, limit: number): Promise<Array<{ time: UTCTimestamp; open: number; high: number; low: number; close: number; adjClose: number }>> => {
   const t = encodeURIComponent(getSeriesKey(ticker))
   const res = await fetch(`/api/candles/${t}?limit=${encodeURIComponent(String(limit))}`)
   const text = await res.text()
@@ -13347,11 +13427,18 @@ const fetchOhlcSeries = async (ticker: string, limit: number): Promise<Array<{ t
     throw new Error(`Failed to load ${ticker} candles. ${err}`)
   }
   const candles = (payload as AdminCandlesResponse).candles || []
-  return candles.map((c) => ({ time: c.time as UTCTimestamp, open: Number(c.open), close: Number(c.close), adjClose: Number((c as unknown as { adjClose?: number }).adjClose ?? c.close) }))
+  return candles.map((c) => ({
+    time: c.time as UTCTimestamp,
+    open: Number(c.open),
+    high: Number((c as unknown as { high?: number }).high ?? c.close),
+    low: Number((c as unknown as { low?: number }).low ?? c.close),
+    close: Number(c.close),
+    adjClose: Number((c as unknown as { adjClose?: number }).adjClose ?? c.close),
+  }))
 }
 
 // Client-side ticker data cache for faster subsequent backtests
-type CachedOhlcData = Array<{ time: UTCTimestamp; open: number; close: number; adjClose: number }>
+type CachedOhlcData = Array<{ time: UTCTimestamp; open: number; high: number; low: number; close: number; adjClose: number }>
 const ohlcDataCache = new Map<string, { data: CachedOhlcData; limit: number; timestamp: number }>()
 const OHLC_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
@@ -13401,7 +13488,7 @@ const fetchOhlcSeriesBatch = async (
 
       const payload = (await res.json()) as {
         success: boolean
-        results: Record<string, Array<{ time: number; open: number; close: number; adjClose: number }>>
+        results: Record<string, Array<{ time: number; open: number; high: number; low: number; close: number; adjClose: number }>>
         errors?: string[]
       }
 
@@ -13410,6 +13497,8 @@ const fetchOhlcSeriesBatch = async (
         const data = candles.map((c) => ({
           time: c.time as UTCTimestamp,
           open: Number(c.open),
+          high: Number(c.high ?? c.close),
+          low: Number(c.low ?? c.close),
           close: Number(c.close),
           adjClose: Number(c.adjClose ?? c.close),
         }))
@@ -13447,10 +13536,10 @@ const fetchOhlcSeriesBatch = async (
 // This allows indicator tickers (with longer history) to set the date range, while position tickers
 // (which may have shorter history) just get null values for dates before their data starts
 const buildPriceDb = (
-  series: Array<{ ticker: string; bars: Array<{ time: UTCTimestamp; open: number; close: number; adjClose: number }> }>,
+  series: Array<{ ticker: string; bars: Array<{ time: UTCTimestamp; open: number; high: number; low: number; close: number; adjClose: number }> }>,
   dateIntersectionTickers?: string[]
 ): PriceDB => {
-  const byTicker = new Map<string, Map<number, { open: number; close: number; adjClose: number }>>()
+  const byTicker = new Map<string, Map<number, { open: number; high: number; low: number; close: number; adjClose: number }>>()
   const tickerCounts: Record<string, number> = {}
   let overlapStart = 0
   let overlapEnd = Number.POSITIVE_INFINITY
@@ -13463,8 +13552,14 @@ const buildPriceDb = (
 
   for (const s of series) {
     const t = getSeriesKey(s.ticker)
-    const map = new Map<number, { open: number; close: number; adjClose: number }>()
-    for (const b of s.bars) map.set(Number(b.time), { open: Number(b.open), close: Number(b.close), adjClose: Number(b.adjClose) })
+    const map = new Map<number, { open: number; high: number; low: number; close: number; adjClose: number }>()
+    for (const b of s.bars) map.set(Number(b.time), {
+      open: Number(b.open),
+      high: Number((b as { high?: number }).high ?? b.close),
+      low: Number((b as { low?: number }).low ?? b.close),
+      close: Number(b.close),
+      adjClose: Number(b.adjClose),
+    })
     byTicker.set(t, map)
     tickerCounts[t] = s.bars.length
 
@@ -13507,15 +13602,19 @@ const buildPriceDb = (
   // Build price arrays for ALL tickers (not just intersection tickers)
   // Non-intersection tickers may have nulls for dates before their data starts
   const open: Record<string, Array<number | null>> = {}
+  const high: Record<string, Array<number | null>> = {}
+  const low: Record<string, Array<number | null>> = {}
   const close: Record<string, Array<number | null>> = {}
   const adjClose: Record<string, Array<number | null>> = {}
   for (const [ticker, map] of byTicker) {
     open[ticker] = dates.map((d) => (map.get(Number(d))?.open ?? null))
+    high[ticker] = dates.map((d) => (map.get(Number(d))?.high ?? null))
+    low[ticker] = dates.map((d) => (map.get(Number(d))?.low ?? null))
     close[ticker] = dates.map((d) => (map.get(Number(d))?.close ?? null))
     adjClose[ticker] = dates.map((d) => (map.get(Number(d))?.adjClose ?? null))
   }
 
-  return { dates, open, close, adjClose, limitingTicker, tickerCounts }
+  return { dates, open, high, low, close, adjClose, limitingTicker, tickerCounts }
 }
 
 const expandToNode = (node: FlowNode, targetId: string): { next: FlowNode; found: boolean } => {

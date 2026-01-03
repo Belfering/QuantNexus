@@ -4,6 +4,18 @@ All notable changes to Atlas Engine are documented here.
 
 ---
 
+## [1.5.1] - 2026-01-03
+
+### Fixed
+- Aroon indicators (Aroon Up, Aroon Down, Aroon Oscillator) now work correctly in frontend evaluation
+  - Frontend now fetches high/low price data from API (previously only open/close/adjClose)
+  - `buildPriceDb` now populates `db.high` and `db.low` for all tickers
+  - Enables proper Aroon calculation for QuantMage Enter/Exit strategies
+- Suppressed duplicate warnings for altExit conditions in `tracePositionContributions`
+  - Both `evaluateNode` and `tracePositionContributions` now suppress warnings for altExit conditions
+
+---
+
 ## [1.5.0] - 2026-01-03
 
 ### Added
@@ -18,19 +30,7 @@ All notable changes to Atlas Engine are documented here.
   - Position Concentration: flags under-diversified strategies (<3 holdings)
   - Drawdown Recovery: flags slow recovery from max drawdown (>2 years)
 - Fragility Fingerprints now displayed in 2x4 grid layout (8 total indicators)
-- Separate sync timestamps for yFinance and Tiingo data sources in Admin tab
 - Background data preloading on login - all tickers cached automatically
-- Separate Atlas database for main_admin exclusive bots
-- Trading Control Panel (Admin) - Alpaca paper trading integration
-  - Save encrypted broker credentials (AES-256-GCM)
-  - Test connection to verify API keys and view account status
-  - Dry Run simulation - evaluates fund slot bots to get current-day allocations
-  - Merges multi-bot allocations weighted by investment amounts
-  - Shows position breakdown with live Alpaca prices and limit prices
-  - Displays calculated shares, values, and allocation percentages
-
-### Changed
-- Last Sync card now shows two columns: yFinance status and Tiingo status
 
 ---
 
