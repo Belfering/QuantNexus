@@ -7,10 +7,9 @@ All notable changes to Atlas Engine are documented here.
 ## [1.5.1] - 2026-01-03
 
 ### Fixed
-- Aroon indicators (Aroon Up, Aroon Down, Aroon Oscillator) now work correctly in frontend evaluation
-  - Frontend now fetches high/low price data from API (previously only open/close/adjClose)
-  - `buildPriceDb` now populates `db.high` and `db.low` for all tickers
-  - Enables proper Aroon calculation for QuantMage Enter/Exit strategies
+- Frontend evaluation now includes high/low price data for all indicators
+  - Previously only fetched open/close/adjClose - now includes high/low from API
+  - Fixes indicators requiring high/low: Aroon, Williams %R, Stochastic, ATR, etc.
 - Suppressed duplicate warnings for altExit conditions in `tracePositionContributions`
 - Drawdown Recovery fingerprint now correctly measures time to recover from MAX drawdown
   - Previously measured longest time in any drawdown, now tracks recovery from the deepest drawdown
