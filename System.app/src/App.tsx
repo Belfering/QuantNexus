@@ -13770,6 +13770,21 @@ const buildPriceDb = (
   return { dates, open, high, low, close, adjClose, limitingTicker, tickerCounts }
 }
 
+// Mark local backtest utilities as intentionally unused (backtests now run on server)
+// These are kept for potential future local debugging scenarios
+void compressTreeForBacktest
+void makeValidationError
+void allocEntries
+void mdyFromUtcSeconds
+void collectBacktestInputs
+void collectIndicatorTickers
+void emptyCache
+void createBacktestTraceCollector
+void turnoverFraction
+void computeBacktestSummary
+void fetchOhlcSeriesBatch
+void buildPriceDb
+
 const expandToNode = (node: FlowNode, targetId: string): { next: FlowNode; found: boolean } => {
   if (node.id === targetId) {
     return { next: node.collapsed ? { ...node, collapsed: false } : node, found: true }
@@ -16763,21 +16778,31 @@ function App() {
       }))
 
       // Transform metrics from server format to frontend format
+      const tradingDays = serverResult.metrics?.tradingDays ?? 0
+      const years = tradingDays / 252
+      const startDate = points.length > 0 ? new Date(Number(points[0].time) * 1000).toISOString().split('T')[0] : ''
+      const endDate = points.length > 0 ? new Date(Number(points[points.length - 1].time) * 1000).toISOString().split('T')[0] : ''
+      const totalReturn = points.length > 0 ? points[points.length - 1].value - 1 : 0
+
       const metrics = {
+        startDate,
+        endDate,
+        days: tradingDays,
+        years,
+        totalReturn,
         cagr: serverResult.metrics?.cagr ?? 0,
+        vol: serverResult.metrics?.volatility ?? 0,
         maxDrawdown: serverResult.metrics?.maxDrawdown ?? 0,
+        calmar: serverResult.metrics?.calmarRatio ?? 0,
         sharpe: serverResult.metrics?.sharpeRatio ?? 0,
         sortino: serverResult.metrics?.sortinoRatio ?? 0,
-        calmar: serverResult.metrics?.calmarRatio ?? 0,
-        treynor: serverResult.metrics?.treynorRatio ?? null,
-        beta: serverResult.metrics?.beta ?? null,
-        volatility: serverResult.metrics?.volatility ?? 0,
+        treynor: serverResult.metrics?.treynorRatio ?? 0,
+        beta: serverResult.metrics?.beta ?? 0,
         winRate: serverResult.metrics?.winRate ?? 0,
-        avgTurnover: serverResult.metrics?.avgTurnover ?? 0,
-        avgHoldings: serverResult.metrics?.avgHoldings ?? 0,
         bestDay: serverResult.metrics?.bestDay ?? 0,
         worstDay: serverResult.metrics?.worstDay ?? 0,
-        days: serverResult.metrics?.tradingDays ?? 0,
+        avgTurnover: serverResult.metrics?.avgTurnover ?? 0,
+        avgHoldings: serverResult.metrics?.avgHoldings ?? 0,
       }
 
       // Build minimal days array for monthly returns calculation
@@ -16811,7 +16836,7 @@ function App() {
           allocations,
           warnings: [],
           monthly,
-          trace: { nodeTraces: {} },
+          trace: { nodes: [] },
         },
       }
     },
