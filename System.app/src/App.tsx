@@ -5016,7 +5016,7 @@ function AdminPanel({
 
       // FRD-014: Also fetch cache stats
       try {
-        const cacheRes = await fetch(`${API_BASE}/admin/cache/stats`)
+        const cacheRes = await authFetch(`${API_BASE}/admin/cache/stats`)
         if (cacheRes.ok && !cancelled) {
           setCacheStats(await cacheRes.json())
         }
@@ -5183,9 +5183,7 @@ function AdminPanel({
 
     const fetchBrokerCredentials = async () => {
       try {
-        const res = await fetch(`${API_BASE}/admin/broker/credentials`, {
-          headers: { Authorization: `Bearer ${getAuthToken()}` }
-        })
+        const res = await authFetch(`${API_BASE}/admin/broker/credentials`)
         if (!res.ok) return
         if (cancelled) return
         const data = await res.json()
@@ -6558,8 +6556,8 @@ function AdminPanel({
                     if (!confirm('Clear all cached backtest results?')) return
                     setCacheRefreshing(true)
                     try {
-                      await fetch(`${API_BASE}/admin/cache/invalidate`, { method: 'POST' })
-                      const res = await fetch(`${API_BASE}/admin/cache/stats`)
+                      await authFetch(`${API_BASE}/admin/cache/invalidate`, { method: 'POST' })
+                      const res = await authFetch(`${API_BASE}/admin/cache/stats`)
                       if (res.ok) setCacheStats(await res.json())
                     } finally {
                       setCacheRefreshing(false)
@@ -6576,7 +6574,7 @@ function AdminPanel({
                     if (!confirm('Run backtests for all systems?')) return
                     setPrewarmRunning(true)
                     try {
-                      await fetch(`${API_BASE}/admin/cache/prewarm`, {
+                      await authFetch(`${API_BASE}/admin/cache/prewarm`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ includeSanity: true })
@@ -6809,9 +6807,9 @@ function AdminPanel({
                   setBrokerSaving(true)
                   setBrokerError(null)
                   try {
-                    const res = await fetch(`${API_BASE}/admin/broker/credentials`, {
+                    const res = await authFetch(`${API_BASE}/admin/broker/credentials`, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ apiKey: brokerApiKey, apiSecret: brokerApiSecret, isPaper: brokerIsPaper }),
                     })
                     const data = await res.json()
@@ -6835,9 +6833,9 @@ function AdminPanel({
                   setBrokerTesting(true)
                   setBrokerError(null)
                   try {
-                    const res = await fetch(`${API_BASE}/admin/broker/test`, {
+                    const res = await authFetch(`${API_BASE}/admin/broker/test`, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                      headers: { 'Content-Type': 'application/json' },
                     })
                     const data = await res.json()
                     if (!res.ok) throw new Error(data.error || 'Connection test failed')
@@ -6891,9 +6889,9 @@ function AdminPanel({
                   setBrokerError(null)
                   setDryRunResult(null)
                   try {
-                    const res = await fetch(`${API_BASE}/admin/live/dry-run`, {
+                    const res = await authFetch(`${API_BASE}/admin/live/dry-run`, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ cashReserve: dryRunCashReserve, cashMode: dryRunCashMode }),
                     })
                     const data = await res.json()
@@ -7256,9 +7254,7 @@ function DatabasesPanel({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/admin/db/${table}`, {
-        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
-      })
+      const res = await authFetch(`${API_BASE}/admin/db/${table}`)
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || `Failed to fetch ${table}`)
