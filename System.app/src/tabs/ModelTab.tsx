@@ -67,7 +67,8 @@ import {
 } from '@/features/builder'
 import { BacktesterPanel } from '@/features/backtest'
 import { loadCallChainsFromApi } from '@/features/auth'
-import { useAuthStore, useUIStore, useBotStore, useBacktestStore } from '@/stores'
+import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
+import { useTreeSync, useTreeUndo } from '@/hooks'
 
 export interface ModelTabProps {
   // Backtest panel props (from App.tsx - derived or callback)
@@ -80,8 +81,6 @@ export interface ModelTabProps {
   theme: 'light' | 'dark'
   fetchBenchmarkMetrics: () => void
   runModelRobustness: () => void
-  undo: () => void
-  redo: () => void
   activeBot: BotSession | undefined
 
   // Call chain props (from App.tsx - per-bot state)
@@ -93,45 +92,9 @@ export interface ModelTabProps {
   handleDeleteCallChain: (id: string) => void
   pushCallChain: (id: string, newRoot: FlowNode) => void
 
-  // Main flowchart (from App.tsx - derived or callback)
-  current: FlowNode
-  push: (node: FlowNode) => void
+  // Backtest visual state
   backtestErrorNodeIds: Set<string>
   backtestFocusNodeId: string | null
-  handleAdd: (parentId: string, slot: SlotId, index: number, kind: BlockKind) => void
-  handleAppend: (parentId: string, slot: SlotId) => void
-  handleRemoveSlotEntry: (parentId: string, slot: SlotId, index: number) => void
-  handleDelete: (id: string) => void
-  handleCopy: (id: string) => void
-  handlePaste: (parentId: string, slot: SlotId, index: number, child: FlowNode) => void
-  handlePasteCallRef: (parentId: string, slot: SlotId, index: number, callChainId: string) => void
-  handleRename: (id: string, title: string) => void
-  handleWeightChange: (id: string, weight: WeightMode, branch?: 'then' | 'else') => void
-  handleUpdateCappedFallback: (id: string, choice: PositionChoice, branch?: 'then' | 'else') => void
-  handleUpdateVolWindow: (id: string, days: number, branch?: 'then' | 'else') => void
-  handleColorChange: (id: string, color?: string) => void
-  handleToggleCollapse: (id: string, collapsed: boolean) => void
-  handleNumberedQuantifier: (id: string, quantifier: NumberedQuantifier) => void
-  handleNumberedN: (id: string, n: number) => void
-  handleAddNumberedItem: (id: string) => void
-  handleDeleteNumberedItem: (id: string, itemId: string) => void
-  handleAddCondition: (id: string, type: 'and' | 'or', itemId?: string) => void
-  handleDeleteCondition: (id: string, condId: string, itemId?: string) => void
-  handleFunctionWindow: (id: string, value: number) => void
-  handleFunctionBottom: (id: string, value: number) => void
-  handleFunctionMetric: (id: string, metric: MetricChoice) => void
-  handleFunctionRank: (id: string, rank: RankChoice) => void
-  handleAddPos: (id: string) => void
-  handleRemovePos: (id: string, index: number) => void
-  handleChoosePos: (id: string, index: number, choice: PositionChoice) => void
-  handleUpdateCallRef: (id: string, callId: string | null) => void
-  handleAddEntryCondition: (id: string, type: 'and' | 'or') => void
-  handleAddExitCondition: (id: string, type: 'and' | 'or') => void
-  handleDeleteEntryCondition: (id: string, condId: string) => void
-  handleDeleteExitCondition: (id: string, condId: string) => void
-  handleUpdateEntryCondition: (id: string, condId: string, updates: Partial<ConditionLine>) => void
-  handleUpdateExitCondition: (id: string, condId: string, updates: Partial<ConditionLine>) => void
-  handleUpdateScaling: (id: string, updates: Record<string, unknown>) => void
 
   // Scroll refs for floating scrollbar sync
   flowchartScrollRef: RefObject<HTMLDivElement | null>
@@ -149,8 +112,6 @@ export function ModelTab({
   theme,
   fetchBenchmarkMetrics,
   runModelRobustness,
-  undo,
-  redo,
   activeBot,
   // Call chain props
   callChains,
@@ -160,49 +121,143 @@ export function ModelTab({
   handleToggleCallChainCollapse,
   handleDeleteCallChain,
   pushCallChain,
-  // Main flowchart
-  current,
-  push,
+  // Backtest visual state
   backtestErrorNodeIds,
   backtestFocusNodeId,
-  handleAdd,
-  handleAppend,
-  handleRemoveSlotEntry,
-  handleDelete,
-  handleCopy,
-  handlePaste,
-  handlePasteCallRef,
-  handleRename,
-  handleWeightChange,
-  handleUpdateCappedFallback,
-  handleUpdateVolWindow,
-  handleColorChange,
-  handleToggleCollapse,
-  handleNumberedQuantifier,
-  handleNumberedN,
-  handleAddNumberedItem,
-  handleDeleteNumberedItem,
-  handleAddCondition,
-  handleDeleteCondition,
-  handleFunctionWindow,
-  handleFunctionBottom,
-  handleFunctionMetric,
-  handleFunctionRank,
-  handleAddPos,
-  handleRemovePos,
-  handleChoosePos,
-  handleUpdateCallRef,
-  handleAddEntryCondition,
-  handleAddExitCondition,
-  handleDeleteEntryCondition,
-  handleDeleteExitCondition,
-  handleUpdateEntryCondition,
-  handleUpdateExitCondition,
-  handleUpdateScaling,
   // Refs
   flowchartScrollRef,
   floatingScrollRef,
 }: ModelTabProps) {
+  // --- Tree state from useTreeStore (Phase 2N-15c) ---
+  const current = useTreeSync()
+  const { undo, redo } = useTreeUndo()
+  const treeStore = useTreeStore()
+
+  // Tree operation handlers from store
+  const handleAdd = (parentId: string, slot: SlotId, index: number, kind: BlockKind) => {
+    treeStore.insertNode(parentId, slot, index, kind)
+  }
+  const handleAppend = (parentId: string, slot: SlotId) => {
+    treeStore.appendPlaceholder(parentId, slot)
+  }
+  const handleRemoveSlotEntry = (parentId: string, slot: SlotId, index: number) => {
+    treeStore.removeSlotEntry(parentId, slot, index)
+  }
+  const handleDelete = (id: string) => {
+    if (current.id === id) {
+      // Deleting root - handled by useBotStore.closeBot
+      const { activeBotId, closeBot } = useBotStore.getState()
+      closeBot(activeBotId)
+      return
+    }
+    treeStore.deleteNode(id)
+  }
+  const handleRename = (id: string, title: string) => {
+    treeStore.renameNode(id, title)
+  }
+  const handleWeightChange = (id: string, weight: WeightMode, branch?: 'then' | 'else') => {
+    treeStore.updateWeight(id, weight, branch)
+  }
+  const handleUpdateCappedFallback = (id: string, choice: PositionChoice, branch?: 'then' | 'else') => {
+    treeStore.updateCappedFallback(id, choice, branch)
+  }
+  const handleUpdateVolWindow = (id: string, days: number, branch?: 'then' | 'else') => {
+    treeStore.updateVolWindow(id, days, branch)
+  }
+  const handleColorChange = (id: string, color?: string) => {
+    treeStore.updateColor(id, color)
+  }
+  const handleToggleCollapse = (id: string, collapsed: boolean) => {
+    treeStore.toggleCollapse(id, collapsed)
+  }
+  const handleNumberedQuantifier = (id: string, quantifier: NumberedQuantifier) => {
+    treeStore.updateNumberedQuantifier(id, quantifier)
+  }
+  const handleNumberedN = (id: string, n: number) => {
+    treeStore.updateNumberedN(id, n)
+  }
+  const handleAddNumberedItem = (id: string) => {
+    treeStore.addNumberedItem(id)
+  }
+  const handleDeleteNumberedItem = (id: string, itemId: string) => {
+    treeStore.deleteNumberedItem(id, itemId)
+  }
+  const handleAddCondition = (id: string, type: 'and' | 'or', itemId?: string) => {
+    treeStore.addCondition(id, type, itemId)
+  }
+  const handleDeleteCondition = (id: string, condId: string, itemId?: string) => {
+    treeStore.deleteCondition(id, condId, itemId)
+  }
+  const handleFunctionWindow = (id: string, value: number) => {
+    treeStore.updateFunctionWindow(id, value)
+  }
+  const handleFunctionBottom = (id: string, value: number) => {
+    treeStore.updateFunctionBottom(id, value)
+  }
+  const handleFunctionMetric = (id: string, metric: MetricChoice) => {
+    treeStore.updateFunctionMetric(id, metric)
+  }
+  const handleFunctionRank = (id: string, rank: RankChoice) => {
+    treeStore.updateFunctionRank(id, rank as 'Top' | 'Bottom')
+  }
+  const handleAddPos = (id: string) => {
+    treeStore.addPosition(id)
+  }
+  const handleRemovePos = (id: string, index: number) => {
+    treeStore.removePosition(id, index)
+  }
+  const handleChoosePos = (id: string, index: number, choice: PositionChoice) => {
+    treeStore.choosePosition(id, index, choice)
+  }
+  const handleUpdateCallRef = (id: string, callId: string | null) => {
+    treeStore.updateCallReference(id, callId)
+  }
+  const handleAddEntryCondition = (id: string, type: 'and' | 'or') => {
+    treeStore.addEntryCondition(id, type)
+  }
+  const handleAddExitCondition = (id: string, type: 'and' | 'or') => {
+    treeStore.addExitCondition(id, type)
+  }
+  const handleDeleteEntryCondition = (id: string, condId: string) => {
+    treeStore.deleteEntryCondition(id, condId)
+  }
+  const handleDeleteExitCondition = (id: string, condId: string) => {
+    treeStore.deleteExitCondition(id, condId)
+  }
+  const handleUpdateEntryCondition = (id: string, condId: string, updates: Partial<ConditionLine>) => {
+    treeStore.updateEntryCondition(id, condId, updates as Parameters<typeof treeStore.updateEntryCondition>[2])
+  }
+  const handleUpdateExitCondition = (id: string, condId: string, updates: Partial<ConditionLine>) => {
+    treeStore.updateExitCondition(id, condId, updates as Parameters<typeof treeStore.updateExitCondition>[2])
+  }
+  const handleUpdateScaling = (id: string, updates: Record<string, unknown>) => {
+    treeStore.updateScaling(id, updates as Parameters<typeof treeStore.updateScaling>[1])
+  }
+  // Clipboard handlers using useBotStore
+  const handleCopy = (id: string) => {
+    const found = findNode(current, id)
+    if (!found) return
+    const { setClipboard, setCopiedNodeId } = useBotStore.getState()
+    setClipboard(cloneNode(found))
+    setCopiedNodeId(id)
+  }
+  const handlePaste = (parentId: string, slot: SlotId, index: number, child: FlowNode) => {
+    const normalized = cloneAndNormalize(child)
+    treeStore.insertNode(parentId, slot, index, normalized.kind)
+    // After insert, replace the placeholder with the cloned node
+    const next = insertAtSlot(current, parentId, slot, index, normalized)
+    treeStore.setRoot(next)
+  }
+  const handlePasteCallRef = (parentId: string, slot: SlotId, index: number, callChainId: string) => {
+    const callNode = createNode('call')
+    callNode.callRefId = callChainId
+    const next = insertAtSlot(current, parentId, slot, index, ensureSlots(callNode))
+    treeStore.setRoot(next)
+  }
+  // push for inline callbacks that still need it
+  const push = (node: FlowNode) => {
+    treeStore.setRoot(node)
+  }
   // --- Zustand stores ---
   // Auth store
   const userId = useAuthStore((s) => s.userId)

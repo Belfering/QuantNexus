@@ -26,6 +26,7 @@ export {
 
 export {
   isoFromUtcSeconds,
+  mdyFromUtcSeconds,
   type BasicMetrics,
   computeMetrics,
   type MonthlyReturn,

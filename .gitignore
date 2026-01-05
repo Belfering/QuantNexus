@@ -62,3 +62,26 @@ coverage/
 *.tmp
 *.temp
 nul
+
+# SQLite WAL files (auto-generated)
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Claude Code plans (local only)
+.claude/plans/
+
+# Playwright MCP cache
+.playwright-mcp/
+
+# Backup files
+*.backup
+
+# Screenshots (binary)
+System.app/screenshots-before/
+
+# Agent handoff docs (temporary)
+System.app/AGENT-HANDOFF-*.md
+
+# Tiingo master data (API cache)
+System.app/ticker-data/_tiingo_master.json

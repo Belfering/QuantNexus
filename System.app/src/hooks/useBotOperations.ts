@@ -1,0 +1,517 @@
+// src/hooks/useBotOperations.ts
+// Hook for bot CRUD operations and import/export (Phase 2N-19)
+
+import { useCallback } from 'react'
+import type {
+  FlowNode,
+  UserId,
+  SavedBot,
+  BotSession,
+  CallChain,
+  BotBacktestState,
+  BacktestError,
+} from '@/types'
+import { API_BASE } from '@/constants'
+import {
+  newId,
+  cloneNode,
+  ensureSlots,
+  normalizeForImport,
+  expandToNode,
+} from '@/features/builder'
+import {
+  isBacktestValidationError,
+} from '@/features/backtest'
+import {
+  detectImportFormat,
+  parseComposerSymphony,
+  yieldToMain,
+} from '@/features/data'
+import {
+  createBotInApi,
+  deleteBotFromApi,
+} from '@/features/bots'
+import { useBotStore, useTreeStore } from '@/stores'
+
+interface UseBotOperationsOptions {
+  userId: UserId | null
+  isAdmin: boolean
+  bots: BotSession[]
+  setBots: React.Dispatch<React.SetStateAction<BotSession[]>>
+  activeBotId: string
+  setActiveBotId: (id: string) => void
+  current: FlowNode
+  setSavedBots: React.Dispatch<React.SetStateAction<SavedBot[]>>
+  setWatchlists: React.Dispatch<React.SetStateAction<import('@/types').Watchlist[]>>
+  createBotSession: (name: string) => BotSession
+  runBacktestForNode: (node: FlowNode) => Promise<{ result: import('@/types').BacktestResult }>
+  setTab: (tab: 'Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases') => void
+  setIsImporting: (v: boolean) => void
+}
+
+/**
+ * Hook that provides bot operation handlers
+ * Extracts bot CRUD logic from App.tsx (Phase 2N-19)
+ */
+export function useBotOperations({
+  userId,
+  isAdmin,
+  bots,
+  setBots,
+  activeBotId,
+  setActiveBotId,
+  current,
+  setSavedBots,
+  setWatchlists,
+  createBotSession,
+  runBacktestForNode,
+  setTab,
+  setIsImporting,
+}: UseBotOperationsOptions) {
+  // Bot Store - clipboard
+  const setClipboard = useBotStore((s) => s.setClipboard)
+  const setCopiedNodeId = useBotStore((s) => s.setCopiedNodeId)
+
+  // Get active bot
+  const activeBot = bots.find((b) => b.id === activeBotId) ?? bots[0]
+
+  /**
+   * Update tree in store
+   */
+  const push = useCallback(
+    (next: FlowNode) => {
+      useTreeStore.getState().setRoot(next)
+    },
+    [],
+  )
+
+  /**
+   * Close a bot tab
+   */
+  const handleCloseBot = useCallback(
+    (botId: string) => {
+      setBots((prev) => {
+        const filtered = prev.filter((b) => b.id !== botId)
+        if (filtered.length === 0) {
+          const nb = createBotSession('Algo Name Here')
+          setActiveBotId(nb.id)
+          setClipboard(null)
+          setCopiedNodeId(null)
+          return [nb]
+        }
+        if (botId === activeBotId) {
+          setActiveBotId(filtered[0].id)
+          setClipboard(null)
+          setCopiedNodeId(null)
+        }
+        return filtered
+      })
+    },
+    [activeBotId, createBotSession, setActiveBotId, setBots, setClipboard, setCopiedNodeId],
+  )
+
+  /**
+   * Update backtest state for the active bot
+   */
+  const updateActiveBotBacktest = useCallback((update: Partial<BotBacktestState>) => {
+    setBots((prev) =>
+      prev.map((b) =>
+        b.id === activeBotId ? { ...b, backtest: { ...b.backtest, ...update } } : b,
+      ),
+    )
+  }, [activeBotId, setBots])
+
+  /**
+   * Jump to a backtest error node
+   */
+  const handleJumpToBacktestError = useCallback(
+    (err: BacktestError) => {
+      updateActiveBotBacktest({ focusNodeId: err.nodeId })
+      const expanded = expandToNode(current, err.nodeId)
+      if (expanded.found) push(expanded.next)
+      setTimeout(() => {
+        document.getElementById(`node-${err.nodeId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 30)
+    },
+    [current, push, updateActiveBotBacktest],
+  )
+
+  /**
+   * Run backtest for current tree
+   */
+  const handleRunBacktest = useCallback(async () => {
+    updateActiveBotBacktest({ status: 'running', focusNodeId: null, result: null, errors: [] })
+    try {
+      const { result } = await runBacktestForNode(current)
+      updateActiveBotBacktest({ result, status: 'done' })
+    } catch (e) {
+      if (isBacktestValidationError(e)) {
+        updateActiveBotBacktest({ errors: e.errors, status: 'error' })
+      } else {
+        const msg = String((e as Error)?.message || e)
+        const friendly = msg.includes('Failed to fetch') ? `${msg}. Is the backend running? (npm run api)` : msg
+        updateActiveBotBacktest({ errors: [{ nodeId: current.id, field: 'backtest', message: friendly }], status: 'error' })
+      }
+    }
+  }, [current, runBacktestForNode, updateActiveBotBacktest])
+
+  /**
+   * Create a new bot
+   */
+  const handleNewBot = useCallback(() => {
+    const bot = createBotSession('Algo Name Here')
+    setBots((prev) => [...prev, bot])
+    setActiveBotId(bot.id)
+    setClipboard(null)
+    setCopiedNodeId(null)
+  }, [createBotSession, setActiveBotId, setBots, setClipboard, setCopiedNodeId])
+
+  /**
+   * Duplicate an existing bot
+   */
+  const handleDuplicateBot = useCallback((botId: string) => {
+    const sourceBotSession = bots.find(b => b.id === botId)
+    if (!sourceBotSession) return
+    const sourceRoot = sourceBotSession.history[sourceBotSession.historyIndex] ?? sourceBotSession.history[0]
+    if (!sourceRoot) return
+    const clonedRoot = cloneNode(sourceRoot)
+    clonedRoot.title = `${sourceRoot.title || 'Untitled'} (Copy)`
+    const newBot: BotSession = {
+      id: `bot-${newId()}`,
+      history: [clonedRoot],
+      historyIndex: 0,
+      backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+      callChains: sourceBotSession.callChains.map(cc => ({ ...cc, id: `call-${newId()}` })),
+    }
+    setBots((prev) => [...prev, newBot])
+    setActiveBotId(newBot.id)
+    setClipboard(null)
+    setCopiedNodeId(null)
+  }, [bots, setActiveBotId, setBots, setClipboard, setCopiedNodeId])
+
+  /**
+   * Export current tree as JSON
+   */
+  const handleExport = useCallback(() => {
+    if (!current) return
+    const json = JSON.stringify(current)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const name = (current.title || 'algo').replace(/\s+/g, '_')
+    a.href = url
+    a.download = `${name}.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }, [current])
+
+  /**
+   * Export a specific bot by ID (for admin panel)
+   */
+  const handleExportBot = useCallback(async (botId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/bots/${botId}?userId=${userId}`)
+      if (!res.ok) throw new Error('Failed to fetch bot')
+      const { bot } = await res.json()
+      if (!bot) throw new Error('Bot not found')
+      const json = JSON.stringify(bot, null, 2)
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(bot.name || 'bot').replace(/\s+/g, '_')}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('Export failed:', e)
+      alert('Failed to export bot: ' + String((e as Error)?.message || e))
+    }
+  }, [userId])
+
+  /**
+   * Open a specific bot by ID in the Model tab
+   */
+  const handleOpenBot = useCallback(async (botId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/bots/${botId}?userId=${userId}`)
+      if (!res.ok) throw new Error('Failed to fetch bot')
+      const { bot } = await res.json()
+      if (!bot || !bot.payload) throw new Error('Bot payload not available (IP protected)')
+      const payload = typeof bot.payload === 'string' ? JSON.parse(bot.payload) : bot.payload
+      const loadedCallChains: CallChain[] = typeof bot.callChains === 'string'
+        ? JSON.parse(bot.callChains)
+        : (bot.callChains || [])
+      setBots((prev) =>
+        prev.map((b) => {
+          if (b.id !== activeBotId) return b
+          const trimmed = b.history.slice(0, b.historyIndex + 1)
+          trimmed.push(ensureSlots(payload))
+          return {
+            ...b,
+            history: trimmed,
+            historyIndex: trimmed.length - 1,
+            savedBotId: botId,
+            callChains: loadedCallChains,
+          }
+        }),
+      )
+      setTab('Model')
+    } catch (e) {
+      console.error('Open failed:', e)
+      alert('Failed to open bot: ' + String((e as Error)?.message || e))
+    }
+  }, [userId, activeBotId, setBots, setTab])
+
+  /**
+   * Copy saved bot payload to clipboard
+   */
+  const handleCopySaved = useCallback(
+    async (bot: SavedBot) => {
+      if (bot.visibility === 'community') {
+        alert('Community systems cannot be copied/exported.')
+        return
+      }
+      const ensured = ensureSlots(cloneNode(bot.payload))
+      setClipboard(ensured)
+      const json = JSON.stringify(bot.payload)
+      try {
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(json)
+        }
+      } catch {
+        // ignore system clipboard failure
+      }
+    },
+    [setClipboard],
+  )
+
+  /**
+   * Copy to New System - for Nexus/Atlas bots that can't be edited (FRD-012)
+   */
+  const handleCopyToNew = useCallback(
+    async (bot: SavedBot) => {
+      if (!userId) return
+
+      const clonedPayload = ensureSlots(cloneNode(bot.payload))
+      const defaultTags = isAdmin ? ['Private', 'Atlas Eligible'] : ['Private']
+      const newBot: SavedBot = {
+        id: `saved-bot-${Date.now()}`,
+        name: `${bot.name} (Copy)`,
+        payload: clonedPayload,
+        visibility: 'private',
+        tags: defaultTags,
+        builderId: userId,
+        createdAt: Date.now(),
+        fundSlot: undefined,
+        backtestMode: bot.backtestMode || 'CC',
+        backtestCostBps: bot.backtestCostBps ?? 5,
+      }
+
+      setSavedBots((prev) => [...prev, newBot])
+      await createBotInApi(userId, newBot)
+
+      const session: BotSession = {
+        id: `bot-${newId()}`,
+        history: [clonedPayload],
+        historyIndex: 0,
+        savedBotId: newBot.id,
+        backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+        callChains: (bot.callChains || []).map(cc => ({ ...cc, id: `call-${newId()}` })),
+      }
+      setBots((prev) => [...prev, session])
+      setActiveBotId(session.id)
+      setTab('Model')
+    },
+    [userId, isAdmin, setSavedBots, setBots, setActiveBotId, setTab],
+  )
+
+  /**
+   * Delete a saved bot
+   */
+  const handleDeleteSaved = useCallback(async (id: string) => {
+    if (userId) {
+      await deleteBotFromApi(userId, id)
+    }
+    setSavedBots((prev) => prev.filter((b) => b.id !== id))
+    setWatchlists((prev) => prev.map((w) => ({ ...w, botIds: w.botIds.filter((x) => x !== id) })))
+  }, [userId, setSavedBots, setWatchlists])
+
+  /**
+   * Open a saved bot in the Model tab
+   */
+  const handleOpenSaved = useCallback(
+    (bot: SavedBot) => {
+      const isPublished = bot.tags?.includes('Nexus') || bot.tags?.includes('Atlas')
+      if (isPublished) {
+        alert('Published systems cannot be edited. Use "Copy to New System" to create an editable copy.')
+        return
+      }
+      if (bot.builderId !== userId) {
+        alert('You cannot open other users\' systems.')
+        return
+      }
+      if (bot.visibility === 'community') {
+        alert('Community systems cannot be opened in Build.')
+        return
+      }
+      const payload = ensureSlots(cloneNode(bot.payload))
+      const session: BotSession = {
+        id: `bot-${newId()}`,
+        history: [payload],
+        historyIndex: 0,
+        savedBotId: bot.id,
+        backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+        callChains: bot.callChains || [],
+      }
+      setBots((prev) => [...prev, session])
+      setActiveBotId(session.id)
+      setTab('Model')
+    },
+    [userId, setBots, setActiveBotId, setTab],
+  )
+
+  /**
+   * Import a bot from JSON file
+   */
+  const handleImport = useCallback(() => {
+    if (!activeBot) return
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+
+      try {
+        setIsImporting(true)
+        await yieldToMain()
+
+        const text = await file.text()
+        const parsed = JSON.parse(text) as unknown
+
+        const format = detectImportFormat(parsed)
+        console.log(`[Import] Detected format: ${format}`)
+
+        const MAX_COMPOSER_SIZE = 20 * 1024 * 1024
+        const MAX_OTHER_SIZE = 1.5 * 1024 * 1024
+        const maxSize = format === 'composer' ? MAX_COMPOSER_SIZE : MAX_OTHER_SIZE
+        const maxSizeLabel = format === 'composer' ? '20MB' : '1.5MB'
+
+        if (file.size > maxSize) {
+          setIsImporting(false)
+          alert(`File too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum allowed size for ${format} format is ${maxSizeLabel}.`)
+          return
+        }
+
+        let root0: FlowNode
+
+        if (format === 'composer') {
+          root0 = parseComposerSymphony(parsed as Record<string, unknown>)
+          console.log('[Import] Parsed Composer Symphony:', root0)
+        } else if (format === 'quantmage') {
+          const workerResult = await new Promise<FlowNode>((resolve, reject) => {
+            const worker = new Worker(new URL('../importWorker.ts', import.meta.url), { type: 'module' })
+            worker.onmessage = (e) => {
+              worker.terminate()
+              if (e.data.type === 'success') {
+                resolve(e.data.result as FlowNode)
+              } else {
+                reject(new Error(e.data.error || 'Worker parsing failed'))
+              }
+            }
+            worker.onerror = (err) => {
+              worker.terminate()
+              reject(err)
+            }
+            worker.postMessage({ type: 'parse', data: parsed, format: 'quantmage', filename: file.name })
+          })
+          root0 = workerResult
+          console.log('[Import] Parsed QuantMage Strategy via Worker:', root0)
+        } else if (format === 'atlas') {
+          const isFlowNodeLike = (v: unknown): v is FlowNode => {
+            if (!v || typeof v !== 'object') return false
+            const o = v as Partial<FlowNode>
+            return typeof o.id === 'string' && typeof o.kind === 'string' && typeof o.title === 'string' && typeof o.children === 'object'
+          }
+
+          const extractRoot = (v: unknown): FlowNode => {
+            if (isFlowNodeLike(v)) return v
+            if (v && typeof v === 'object') {
+              const o = v as { payload?: unknown; root?: unknown; name?: unknown }
+              if (isFlowNodeLike(o.payload)) {
+                const name = typeof o.name === 'string' ? o.name.trim() : ''
+                return name ? { ...o.payload, title: name } : o.payload
+              }
+              if (isFlowNodeLike(o.root)) return o.root
+            }
+            throw new Error('Invalid JSON shape for bot import.')
+          }
+          root0 = extractRoot(parsed)
+        } else {
+          setIsImporting(false)
+          alert('Unknown import format. Please use Atlas, Composer, or QuantMage JSON files.')
+          return
+        }
+
+        let ensured: FlowNode
+        if (format === 'quantmage') {
+          ensured = root0
+        } else {
+          const inferredTitle = file.name.replace(/\.json$/i, '').replace(/_/g, ' ').trim()
+          const hasTitle = Boolean(root0.title?.trim())
+          const shouldInfer = !hasTitle || (root0.title.trim() === 'Algo Name Here' && inferredTitle && inferredTitle !== 'Algo Name Here')
+          const root1 = shouldInfer ? { ...root0, title: inferredTitle || 'Imported System' } : root0
+          ensured = normalizeForImport(root1)
+        }
+
+        setBots((prev) =>
+          prev.map((b) => {
+            if (b.id !== activeBot.id) return b
+            const newHistory = [...b.history.slice(0, b.historyIndex + 1), ensured]
+            return {
+              ...b,
+              history: newHistory,
+              historyIndex: newHistory.length - 1,
+              backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+            }
+          }),
+        )
+        setClipboard(null)
+        setCopiedNodeId(null)
+        setIsImporting(false)
+        console.log(`[Import] Successfully imported ${format} format as: ${ensured.title}`)
+      } catch (err) {
+        setIsImporting(false)
+        console.error('[Import] Error:', err)
+        alert('Failed to Import due to an error in the JSON')
+      }
+    }
+    input.click()
+  }, [activeBot, setBots, setClipboard, setCopiedNodeId, setIsImporting])
+
+  return {
+    // Tree operations
+    push,
+    // Bot operations
+    handleCloseBot,
+    updateActiveBotBacktest,
+    handleJumpToBacktestError,
+    handleRunBacktest,
+    handleNewBot,
+    handleDuplicateBot,
+    handleExport,
+    handleExportBot,
+    handleOpenBot,
+    // Saved bot operations
+    handleCopySaved,
+    handleCopyToNew,
+    handleDeleteSaved,
+    handleOpenSaved,
+    // Import
+    handleImport,
+  }
+}

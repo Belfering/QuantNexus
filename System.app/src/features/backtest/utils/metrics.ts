@@ -17,6 +17,20 @@ export const isoFromUtcSeconds = (t: number): string => {
 }
 
 /**
+ * Convert UTC seconds to M/D/YYYY format (matching QuantMage display format)
+ */
+export const mdyFromUtcSeconds = (t: number): string => {
+  const ms = Number(t) * 1000
+  if (!Number.isFinite(ms)) return '1/1/1970'
+  try {
+    const d = new Date(ms)
+    return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`
+  } catch {
+    return '1/1/1970'
+  }
+}
+
+/**
  * Basic metrics computed from equity curve and returns
  */
 export type BasicMetrics = {
