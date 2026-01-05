@@ -780,17 +780,204 @@ function computeThinningFragility(returns, options = {}) {
 }
 
 /**
- * Compute all fragility metrics
+ * Compute backtest length fingerprint
+ * Red: <5 years, Yellow: 5-15 years, Green: >15 years
+ * @param {number} tradingDays - Number of trading days in backtest
  */
-export function computeFragility(returns, options = {}) {
-  const { seed = 42 } = options
+function computeBacktestLength(tradingDays) {
+  const years = tradingDays / 252 // Approximate trading days per year
+
+  let level = 'Good'
+  if (years < 5) {
+    level = 'High Risk'
+  } else if (years < 15) {
+    level = 'Caution'
+  }
 
   return {
+    level,
+    years: Math.round(years * 10) / 10,
+    tradingDays,
+    detail: years < 5
+      ? `Only ${years.toFixed(1)} years of data - high risk of overfitting`
+      : years < 15
+      ? `${years.toFixed(1)} years of data - moderate confidence`
+      : `${years.toFixed(1)} years of data - good historical coverage`
+  }
+}
+
+/**
+ * Compute turnover risk fingerprint
+ * Red: >50% daily, Yellow: 20-50% daily, Green: <20% daily
+ * @param {number} avgTurnover - Average daily turnover (0-1)
+ */
+function computeTurnoverRisk(avgTurnover) {
+  const turnoverPct = avgTurnover * 100
+
+  let level = 'Good'
+  if (turnoverPct > 50) {
+    level = 'High Risk'
+  } else if (turnoverPct > 20) {
+    level = 'Caution'
+  }
+
+  return {
+    level,
+    avgTurnover: Math.round(turnoverPct * 10) / 10,
+    detail: turnoverPct > 50
+      ? `${turnoverPct.toFixed(0)}% daily turnover - excessive trading costs`
+      : turnoverPct > 20
+      ? `${turnoverPct.toFixed(0)}% daily turnover - moderate trading costs`
+      : `${turnoverPct.toFixed(0)}% daily turnover - reasonable`
+  }
+}
+
+/**
+ * Compute position concentration risk fingerprint
+ * Red: <3 avg holdings, Yellow: 3-5 avg holdings, Green: >5 avg holdings
+ * @param {number} avgHoldings - Average number of positions held
+ */
+function computeConcentrationRisk(avgHoldings) {
+  let level = 'Good'
+  if (avgHoldings < 3) {
+    level = 'High Risk'
+  } else if (avgHoldings < 5) {
+    level = 'Caution'
+  }
+
+  return {
+    level,
+    avgHoldings: Math.round(avgHoldings * 10) / 10,
+    detail: avgHoldings < 3
+      ? `Only ${avgHoldings.toFixed(1)} avg positions - high concentration risk`
+      : avgHoldings < 5
+      ? `${avgHoldings.toFixed(1)} avg positions - moderate diversification`
+      : `${avgHoldings.toFixed(1)} avg positions - well diversified`
+  }
+}
+
+/**
+ * Compute drawdown recovery time fingerprint
+ * Finds the LONGEST underwater period (peak to new high) across entire history
+ * Red: >2 years underwater, Yellow: 1-2 years, Green: <1 year
+ * @param {number[]} equity - Equity curve array
+ */
+function computeDrawdownRecovery(equity) {
+  if (!equity || equity.length < 50) {
+    return {
+      level: 'Insufficient Data',
+      recoveryDays: 0,
+      recoveryYears: 0,
+      maxDd: 0,
+      detail: 'Need more trading days for analysis'
+    }
+  }
+
+  // Find all drawdown periods and track the longest one (peak to recovery)
+  let peak = equity[0]
+  let peakIdx = 0
+  let maxDd = 0  // Track deepest drawdown for display
+  let longestUnderwaterDays = 0
+  let currentUnderwaterStart = null
+
+  for (let i = 0; i < equity.length; i++) {
+    if (equity[i] >= peak) {
+      // New high - end of any current drawdown period
+      if (currentUnderwaterStart !== null) {
+        const underwaterDays = i - currentUnderwaterStart
+        if (underwaterDays > longestUnderwaterDays) {
+          longestUnderwaterDays = underwaterDays
+        }
+      }
+      peak = equity[i]
+      peakIdx = i
+      currentUnderwaterStart = null
+    } else {
+      // In drawdown
+      if (currentUnderwaterStart === null) {
+        currentUnderwaterStart = peakIdx  // Start from the peak
+      }
+      const dd = (equity[i] - peak) / peak
+      if (dd < maxDd) {
+        maxDd = dd
+      }
+    }
+  }
+
+  // Check if we're still in a drawdown at the end
+  let stillInDrawdown = false
+  if (currentUnderwaterStart !== null) {
+    const underwaterDays = equity.length - currentUnderwaterStart
+    if (underwaterDays > longestUnderwaterDays) {
+      longestUnderwaterDays = underwaterDays
+    }
+    stillInDrawdown = true
+  }
+
+  const recoveryYears = longestUnderwaterDays / 252
+
+  // Debug log for F12 console
+  console.log(`[DrawdownRecovery] equityLen=${equity.length}, longestUnderwaterDays=${longestUnderwaterDays}, recoveryYears=${recoveryYears.toFixed(2)}, maxDd=${(maxDd * 100).toFixed(1)}%, stillInDD=${stillInDrawdown}`)
+
+  // Thresholds: >2 years underwater = High Risk, >1 year = Caution
+  let level = 'Good'
+  if (recoveryYears > 2) {
+    level = 'High Risk'
+  } else if (recoveryYears > 1) {
+    level = 'Caution'
+  }
+
+  const maxDdPct = Math.abs(maxDd * 100).toFixed(1)
+  const recoveryMonths = Math.round(longestUnderwaterDays / 21)
+
+  return {
+    level,
+    recoveryDays: longestUnderwaterDays,
+    recoveryYears: Math.round(recoveryYears * 10) / 10,
+    maxDd: Math.round(maxDd * 1000) / 10,
+    detail: stillInDrawdown
+      ? `Longest underwater: ${recoveryYears.toFixed(1)}y (ongoing), Max DD: ${maxDdPct}%`
+      : recoveryMonths <= 12
+      ? `Longest underwater: ${recoveryMonths}mo, Max DD: ${maxDdPct}%`
+      : `Longest underwater: ${recoveryYears.toFixed(1)}y, Max DD: ${maxDdPct}%`
+  }
+}
+
+/**
+ * Compute all fragility metrics
+ * @param {number[]} returns - Daily returns array
+ * @param {Object} options - Configuration options
+ * @param {number} options.seed - Random seed for reproducibility
+ * @param {number} options.tradingDays - Number of trading days (for backtest length)
+ * @param {number} options.avgTurnover - Average daily turnover (for turnover risk)
+ * @param {number} options.avgHoldings - Average positions held (for concentration risk)
+ * @param {number[]} options.equity - Equity curve (for drawdown recovery)
+ */
+export function computeFragility(returns, options = {}) {
+  const { seed = 42, tradingDays, avgTurnover, avgHoldings, equity } = options
+
+  const result = {
     subPeriodStability: computeSubPeriodStability(returns, 4),
     profitConcentration: computeProfitConcentration(returns),
     smoothnessScore: computeSmoothnessScore(returns, 100, seed),
     thinningFragility: computeThinningFragility(returns, { folds: 50, shards: 10, seed })
   }
+
+  // Add new fingerprints if data is available
+  if (tradingDays != null) {
+    result.backtestLength = computeBacktestLength(tradingDays)
+  }
+  if (avgTurnover != null) {
+    result.turnoverRisk = computeTurnoverRisk(avgTurnover)
+  }
+  if (avgHoldings != null) {
+    result.concentrationRisk = computeConcentrationRisk(avgHoldings)
+  }
+  if (equity != null && equity.length > 0) {
+    result.drawdownRecovery = computeDrawdownRecovery(equity)
+  }
+
+  return result
 }
 
 // ============================================
@@ -857,7 +1044,10 @@ export function generateSanityReport(returns, options = {}, spyReturns = null) {
     years = 5,
     blockSize = 7,
     shards = 10,
-    seed = 42
+    seed = 42,
+    avgTurnover,
+    avgHoldings,
+    equityCurve
   } = options
 
   // Compute original metrics for reference
@@ -874,7 +1064,17 @@ export function generateSanityReport(returns, options = {}, spyReturns = null) {
     seed
   }, spyReturns)
 
-  const fragility = computeFragility(returns, { seed })
+  // Use provided equity curve or the computed one for fragility
+  // Handle both {value} and {equity} formats from backtest result
+  const equityForFragility = equityCurve?.map(p => p.equity ?? p.value) || originalEquity
+
+  const fragility = computeFragility(returns, {
+    seed,
+    tradingDays: returns.length,
+    avgTurnover,
+    avgHoldings,
+    equity: equityForFragility
+  })
 
   const summary = generateSummary(pathRisk, fragility)
 

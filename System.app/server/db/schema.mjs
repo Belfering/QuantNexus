@@ -225,6 +225,21 @@ export const userSessions = sqliteTable('user_sessions', {
 })
 
 // ============================================
+// OAUTH ACCOUNTS (Google, Discord, GitHub)
+// ============================================
+export const oauthAccounts = sqliteTable('oauth_accounts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: text('provider', { enum: ['google', 'discord', 'github'] }).notNull(),
+  providerAccountId: text('provider_account_id').notNull(),
+  email: text('email'),
+  displayName: text('display_name'),
+  avatarUrl: text('avatar_url'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+// ============================================
 // TICKER REGISTRY (Tiingo Master List)
 // ============================================
 export const tickerRegistry = sqliteTable('ticker_registry', {

@@ -4,6 +4,7 @@
  */
 
 import duckdb from 'duckdb'
+import { compressTree } from './tree-compressor.mjs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -26,6 +27,7 @@ const safeIsoDate = (ts) => {
   }
 }
 
+// DuckDB connection pool for concurrent query handling
 const duckDbPromise = new Promise((resolve, reject) => {
   const db = new duckdb.Database(':memory:')
   db.all('SELECT 1', (err) => {
@@ -33,6 +35,23 @@ const duckDbPromise = new Promise((resolve, reject) => {
     else resolve(db)
   })
 })
+
+// Query queue to serialize DuckDB access (prevents concurrency corruption)
+let queryQueue = Promise.resolve()
+
+function runQuery(sql) {
+  return new Promise((resolve, reject) => {
+    queryQueue = queryQueue.then(async () => {
+      const db = await duckDbPromise
+      return new Promise((res, rej) => {
+        db.all(sql, (err, rows) => {
+          if (err) rej(err)
+          else res(rows)
+        })
+      })
+    }).then(resolve).catch(reject)
+  })
+}
 
 // Minimum backtest start date: 1993-01-01 (filters out older, rarely-used data)
 const BACKTEST_START_DATE = new Date(1993, 0, 1)
@@ -68,43 +87,34 @@ async function initTickerCache() {
 
 // Internal function without cache check (used for initial loading)
 async function fetchOhlcSeriesUncached(ticker, limit = 20000) {
-  const db = await duckDbPromise
   const filePath = path.join(PARQUET_DIR, `${ticker}.parquet`)
+  const sql = `
+    SELECT
+      epoch(Date) AS time,
+      Open AS open,
+      High AS high,
+      Low AS low,
+      Close AS close,
+      "Adj Close" AS adjClose,
+      Volume AS volume
+    FROM read_parquet('${filePath.replace(/\\/g, '/')}')
+    WHERE epoch(Date) >= ${BACKTEST_START_EPOCH}
+    ORDER BY Date DESC
+    LIMIT ${limit}
+  `
 
-  return new Promise((resolve, reject) => {
-    const sql = `
-      SELECT
-        epoch(Date) AS time,
-        Open AS open,
-        High AS high,
-        Low AS low,
-        Close AS close,
-        "Adj Close" AS adjClose,
-        Volume AS volume
-      FROM read_parquet('${filePath.replace(/\\/g, '/')}')
-      WHERE epoch(Date) >= ${BACKTEST_START_EPOCH}
-      ORDER BY Date DESC
-      LIMIT ${limit}
-    `
-    db.all(sql, (err, rows) => {
-      if (err) {
-        reject(err)
-        return
-      }
-      const sorted = rows
-        .map(r => ({
-          time: Number(r.time),
-          open: r.open == null ? null : Number(r.open),
-          high: r.high == null ? null : Number(r.high),
-          low: r.low == null ? null : Number(r.low),
-          close: r.close == null ? null : Number(r.close),
-          adjClose: r.adjClose == null ? null : Number(r.adjClose),
-          volume: r.volume == null ? null : Number(r.volume),
-        }))
-        .sort((a, b) => a.time - b.time)
-      resolve(sorted)
-    })
-  })
+  const rows = await runQuery(sql)
+  return rows
+    .map(r => ({
+      time: Number(r.time),
+      open: r.open == null ? null : Number(r.open),
+      high: r.high == null ? null : Number(r.high),
+      low: r.low == null ? null : Number(r.low),
+      close: r.close == null ? null : Number(r.close),
+      adjClose: r.adjClose == null ? null : Number(r.adjClose),
+      volume: r.volume == null ? null : Number(r.volume),
+    }))
+    .sort((a, b) => a.time - b.time)
 }
 
 async function fetchOhlcSeries(ticker, limit = 20000) {
@@ -1102,6 +1112,7 @@ const emptyCache = () => ({
   ppo: new Map(),
   trendClarity: new Map(),
   ultimateSmoother: new Map(),
+  ultSmooth: new Map(),
   // New Moving Averages
   hma: new Map(),
   wma: new Map(),
@@ -1143,11 +1154,20 @@ const emptyCache = () => ({
   mfi: new Map(),
   obv: new Map(),
   vwapRatio: new Map(),
+  // FRD-021: Branch equity curves cache (for subspell support)
+  // Key: nodeId, Value: { equity: Float64Array, returns: Float64Array }
+  branchEquity: new Map(),
 })
 
 const getCachedSeries = (cache, kind, ticker, period, compute) => {
   const t = getSeriesKey(ticker)
-  const map = cache[kind]
+  let map = cache[kind]
+  if (!map) {
+    // Dynamically add missing cache key (for new indicators)
+    console.warn(`[getCachedSeries] cache[${kind}] missing, creating dynamically`)
+    map = new Map()
+    cache[kind] = map
+  }
   let byTicker = map.get(t)
   if (!byTicker) {
     byTicker = new Map()
@@ -1425,12 +1445,27 @@ const rollingVwapRatio = (closes, volumes, window) => {
 // METRIC CALCULATION
 // ============================================
 
-const metricAt = (ctx, ticker, metric, window) => {
+const metricAt = (ctx, ticker, metric, window, parentNode = null) => {
+  // FRD-021: Handle branch references (e.g., 'branch:from')
+  if (isBranchRef(ticker)) {
+    const branchName = parseBranchRef(ticker)
+    const branchNode = getBranchChildNode(parentNode || ctx.branchParentNode, branchName)
+    if (!branchNode) {
+      // Branch not found - return null (indicator will fail gracefully)
+      return null
+    }
+    const branchEquity = getBranchEquity(ctx, branchNode)
+    if (!branchEquity) return null
+    return branchMetricAt(ctx, branchEquity, metric, window, ctx.indicatorIndex)
+  }
+
   const t = getSeriesKey(ticker)
   if (!t || t === 'Empty') return null
 
   if (metric === 'Current Price') {
-    const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : ctx.db.close[t]
+    // For CC/CO modes (decisionPrice='close'), use adjClose to match indicator calculations
+    // For OO/OC modes (decisionPrice='open'), use open price
+    const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : (ctx.db.adjClose[t] || ctx.db.close[t])
     const v = arr?.[ctx.decisionIndex]
     return v == null ? null : v
   }
@@ -1700,13 +1735,307 @@ const metricAt = (ctx, ticker, metric, window) => {
   return null
 }
 
+// ============================================
+// FRD-021: BRANCH EQUITY SIMULATION (Subspell Support)
+// ============================================
+
+// Check if a ticker reference is a branch reference (e.g., 'branch:from' or 'BRANCH:FROM')
+const isBranchRef = (ticker) => {
+  return typeof ticker === 'string' && ticker.toUpperCase().startsWith('BRANCH:')
+}
+
+// Parse branch reference to get branch name ('branch:from' -> 'from', 'BRANCH:FROM' -> 'from')
+const parseBranchRef = (ticker) => {
+  if (!isBranchRef(ticker)) return null
+  return ticker.slice(7).toLowerCase() // Remove 'branch:' or 'BRANCH:' prefix, normalize to lowercase
+}
+
+// Get the child node for a branch reference from the parent node
+// branchName: 'from', 'to', 'then', 'else', 'enter', 'exit'
+const getBranchChildNode = (parentNode, branchName) => {
+  if (!parentNode || !branchName) return null
+
+  // Map branch names to slot names
+  const slotMap = {
+    'from': 'then',   // Scaling: from_incantation maps to 'then' slot
+    'to': 'else',     // Scaling: to_incantation maps to 'else' slot
+    'then': 'then',   // Indicator: then_incantation
+    'else': 'else',   // Indicator: else_incantation
+    'enter': 'then',  // AltExit: entry maps to 'then' slot
+    'exit': 'else',   // AltExit: exit maps to 'else' slot
+  }
+
+  const slotName = slotMap[branchName]
+  if (!slotName) return null
+
+  const children = parentNode.children?.[slotName]
+  if (!Array.isArray(children) || children.length === 0) return null
+
+  return children[0] // Return first child in the slot
+}
+
+// Simulate a branch's equity curve starting at $1
+// Returns { equity: Float64Array, returns: Float64Array } aligned with db.dates
+// NOTE: Using regular function declaration for hoisting (called from metricAt before evaluateNode is defined)
+function simulateBranchEquity(ctx, branchNode) {
+  if (!branchNode) return null
+
+  const numDates = ctx.db.dates.length
+  const equity = new Float64Array(numDates)
+  const returns = new Float64Array(numDates)
+
+  // Start with $1 equity
+  let currentEquity = 1.0
+
+  // Use same lookback as main evaluation
+  const lookback = Math.max(50, collectMaxLookback(branchNode))
+  const startIndex = ctx.decisionPrice === 'open' ? (lookback > 0 ? lookback + 1 : 0) : lookback
+
+  // Fill initial values
+  for (let i = 0; i < startIndex && i < numDates; i++) {
+    equity[i] = 1.0
+    returns[i] = 0.0
+  }
+
+  // Create persistent state for altExit nodes across all days in this simulation
+  const altExitState = {}
+
+  // Simulate daily returns
+  for (let i = startIndex; i < numDates; i++) {
+    const indicatorIndex = ctx.decisionPrice === 'open' ? i - 1 : i
+
+    // Create a sub-context for evaluating the branch
+    // Important: We don't include branchParentNode to avoid infinite recursion
+    const subCtx = {
+      db: ctx.db,
+      cache: ctx.cache,
+      decisionIndex: i,
+      indicatorIndex,
+      decisionPrice: ctx.decisionPrice,
+      warnings: [],
+      tickerLocations: ctx.tickerLocations,
+      altExitState, // Persist Enter/Exit state across days
+      // Note: No branchParentNode - subspells are evaluated independently
+    }
+
+    // Get allocation for this day
+    const allocation = evaluateNode(subCtx, branchNode)
+
+    // Calculate portfolio return for this day
+    let portfolioReturn = 0
+    for (const [ticker, weight] of Object.entries(allocation)) {
+      const t = getSeriesKey(ticker)
+      if (!t || t === 'Empty' || weight === 0) continue
+
+      // Get daily return using close prices (subspells always use CC pricing)
+      const closes = ctx.db.close[t]
+      if (!closes || i === 0) continue
+
+      const prevClose = closes[i - 1]
+      const currClose = closes[i]
+      if (prevClose == null || currClose == null || prevClose === 0) continue
+
+      const tickerReturn = (currClose - prevClose) / prevClose
+      portfolioReturn += tickerReturn * weight
+    }
+
+    returns[i] = portfolioReturn
+    currentEquity *= (1 + portfolioReturn)
+    equity[i] = currentEquity
+  }
+
+  return { equity, returns }
+}
+
+// Get or compute cached branch equity curve
+const getBranchEquity = (ctx, branchNode) => {
+  if (!branchNode || !branchNode.id) return null
+
+  // Check cache first
+  const cached = ctx.cache.branchEquity.get(branchNode.id)
+  if (cached) return cached
+
+  // Simulate and cache
+  const result = simulateBranchEquity(ctx, branchNode)
+  if (result) {
+    ctx.cache.branchEquity.set(branchNode.id, result)
+  }
+  return result
+}
+
+// Compute metric on branch equity curve
+const branchMetricAt = (ctx, branchEquity, metric, window, index) => {
+  if (!branchEquity || index < 0) return null
+
+  const { equity, returns } = branchEquity
+  const w = Math.max(1, Math.floor(Number(window || 0)))
+
+  // For Current Price, return the equity value
+  if (metric === 'Current Price') {
+    return equity[index] ?? null
+  }
+
+  // Create a cache key for branch-based indicators
+  // We'll use the branchEquity object reference as part of caching
+  switch (metric) {
+    case 'Simple Moving Average': {
+      const series = rollingSma(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Exponential Moving Average': {
+      const series = rollingEma(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Relative Strength Index': {
+      const series = rollingWilderRsi(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Standard Deviation': {
+      // Volatility uses returns, not equity
+      const series = rollingStdDev(Array.from(returns), w)
+      return series[index] ?? null
+    }
+    case 'Max Drawdown': {
+      const series = rollingMaxDrawdown(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Cumulative Return': {
+      const series = rollingCumulativeReturn(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Drawdown': {
+      const series = rollingDrawdown(Array.from(equity))
+      return series[index] ?? null
+    }
+    case 'SMA of Returns': {
+      const series = rollingSmaOfReturns(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    // Momentum indicators
+    case 'Momentum (Weighted)':
+    case '13612W Momentum': {
+      const series = rolling13612W(Array.from(equity))
+      return series[index] ?? null
+    }
+    case 'Momentum (Unweighted)':
+    case '13612U Momentum': {
+      const series = rolling13612U(Array.from(equity))
+      return series[index] ?? null
+    }
+    case 'Momentum (12-Month SMA)':
+    case 'SMA12 Momentum': {
+      const series = rollingSMA12Momentum(Array.from(equity))
+      return series[index] ?? null
+    }
+    // Rate of change
+    case 'Rate of Change': {
+      const series = rollingRoc(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    // Moving averages
+    case 'Hull Moving Average': {
+      const series = rollingHma(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Weighted Moving Average': {
+      const series = rollingWma(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case "Wilder's Smoothing": {
+      const series = rollingWildersMa(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'DEMA': {
+      const series = rollingDema(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'TEMA': {
+      const series = rollingTema(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'KAMA': {
+      const series = rollingKama(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Ultimate Smoother': {
+      const series = rollingUltimateSmoother(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    // Trend
+    case 'Linear Regression Slope': {
+      const series = rollingLinRegSlope(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Linear Regression Value': {
+      const series = rollingLinRegValue(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Price vs SMA': {
+      const series = rollingPriceVsSma(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Trend Clarity': {
+      const series = rollingTrendClarity(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    // MACD / PPO
+    case 'MACD Histogram': {
+      const series = rollingMACD(Array.from(equity))
+      return series[index] ?? null
+    }
+    case 'PPO Histogram': {
+      const series = rollingPPO(Array.from(equity))
+      return series[index] ?? null
+    }
+    // Volatility
+    case 'Historical Volatility': {
+      const series = rollingHistoricalVolatility(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Ulcer Index': {
+      const series = rollingUlcerIndex(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Bollinger %B': {
+      const series = rollingBollingerB(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Bollinger Bandwidth': {
+      const series = rollingBollingerBandwidth(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    // RSI variants
+    case 'RSI SMA': {
+      const series = rollingRsiSma(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'RSI EMA': {
+      const series = rollingRsiEma(Array.from(equity), w)
+      return series[index] ?? null
+    }
+    case 'Stochastic RSI': {
+      const series = rollingStochRsi(Array.from(equity), w, w)
+      return series[index] ?? null
+    }
+    case 'Laguerre RSI': {
+      const series = rollingLaguerreRsi(Array.from(equity))
+      return series[index] ?? null
+    }
+    default:
+      // Unsupported indicator for branch equity
+      return null
+  }
+}
+
 // Evaluate a metric at a specific index (for forDays support)
 const metricAtIndex = (ctx, ticker, metric, window, index) => {
   const t = getSeriesKey(ticker)
   if (!t || t === 'Empty') return null
 
   if (metric === 'Current Price') {
-    const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : ctx.db.close[t]
+    // For CC/CO modes (decisionPrice='close'), use adjClose to match indicator calculations
+    // For OO/OC modes (decisionPrice='open'), use open price
+    const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : (ctx.db.adjClose[t] || ctx.db.close[t])
     const v = arr?.[index]
     return v == null ? null : v
   }
@@ -2152,19 +2481,35 @@ const getIndicatorLookback = (metric, window) => {
 }
 
 // Walk a node tree and collect the maximum lookback needed
-const collectMaxLookback = (node) => {
+// NOTE: Using regular function declaration for hoisting (called from simulateBranchEquity)
+function collectMaxLookback(node) {
   if (!node) return 0
   let maxLookback = 0
 
+  // Helper to process a conditions array
+  const processConditions = (conditions) => {
+    for (const cond of conditions || []) {
+      const forDaysOffset = Math.max(0, (cond.forDays || 1) - 1)
+      maxLookback = Math.max(maxLookback, getIndicatorLookback(cond.metric, cond.window || 0) + forDaysOffset)
+      if (cond.expanded) {
+        const rightMetric = cond.rightMetric ?? cond.metric
+        const rightWindow = cond.rightWindow ?? cond.window
+        maxLookback = Math.max(maxLookback, getIndicatorLookback(rightMetric, rightWindow || 0) + forDaysOffset)
+      }
+    }
+  }
+
   // Check conditions on indicator/numbered/scaling nodes
-  const conditions = node.conditions || []
-  for (const cond of conditions) {
-    const forDaysOffset = Math.max(0, (cond.forDays || 1) - 1)
-    maxLookback = Math.max(maxLookback, getIndicatorLookback(cond.metric, cond.window || 0) + forDaysOffset)
-    if (cond.expanded) {
-      const rightMetric = cond.rightMetric ?? cond.metric
-      const rightWindow = cond.rightWindow ?? cond.window
-      maxLookback = Math.max(maxLookback, getIndicatorLookback(rightMetric, rightWindow || 0) + forDaysOffset)
+  processConditions(node.conditions)
+
+  // Check entry/exit conditions on altExit nodes
+  processConditions(node.entryConditions)
+  processConditions(node.exitConditions)
+
+  // Check numbered node items
+  if (node.numbered?.items) {
+    for (const item of node.numbered.items) {
+      processConditions(item.conditions)
     }
   }
 
@@ -2199,7 +2544,8 @@ const collectMaxLookback = (node) => {
 // NODE EVALUATION
 // ============================================
 
-const evaluateNode = (ctx, node) => {
+// NOTE: Using regular function declaration for hoisting (called from simulateBranchEquity)
+function evaluateNode(ctx, node) {
   if (!node) return {}
 
   if (node.kind === 'position') {
@@ -2236,7 +2582,10 @@ const evaluateNode = (ctx, node) => {
 
     // Collect values for each child
     const childValues = children.map((child) => {
-      const tickers = collectPositionTickers(child)
+      // Use pre-computed ticker locations for O(1) lookup, fallback to tree walk
+      const tickers = ctx.tickerLocations?.get(child.id)
+        ? Array.from(ctx.tickerLocations.get(child.id))
+        : collectPositionTickers(child)
       if (tickers.length === 0) return { child, value: null }
       const avgValue = tickers.reduce((sum, t) => {
         const v = metricAt(ctx, t, metric, window)
@@ -2271,7 +2620,15 @@ const evaluateNode = (ctx, node) => {
     const scaleFrom = Number(node.scaleFrom ?? 0)
     const scaleTo = Number(node.scaleTo ?? 100)
 
-    const val = metricAt(ctx, scaleTicker, scaleMetric, scaleWindow)
+    // DEBUG: Log branch reference resolution
+    if (isBranchRef(scaleTicker)) {
+      const branchName = parseBranchRef(scaleTicker)
+      const branchNode = getBranchChildNode(node, branchName)
+      console.log(`[Scaling] Branch ref: ${scaleTicker} -> ${branchName}, branchNode: ${branchNode ? branchNode.kind : 'null'}, children.then: ${node.children?.then?.length || 0}`)
+    }
+
+    // FRD-021: Pass the scaling node as parent for branch reference resolution
+    const val = metricAt(ctx, scaleTicker, scaleMetric, scaleWindow, node)
 
     // Calculate blend factor: 0 = all "then", 1 = all "else"
     // If val is below scaleFrom, blend = 0 (100% then)
@@ -2304,6 +2661,47 @@ const evaluateNode = (ctx, node) => {
     }
 
     return alloc
+  }
+
+  if (node.kind === 'altExit') {
+    // Enter/Exit node: stateful node that tracks whether we're "entered" or "exited"
+    // Entry conditions determine when to enter (go to then branch)
+    // Exit conditions determine when to exit (go to else branch)
+    // State persists across days via ctx.altExitState
+
+    const entryConditions = node.entryConditions || []
+    const exitConditions = node.exitConditions || []
+
+    // Initialize state tracking if not present
+    if (!ctx.altExitState) ctx.altExitState = {}
+    const nodeId = node.id || 'unknown'
+    const isEntered = ctx.altExitState[nodeId] ?? false
+
+    // Evaluate conditions
+    const entryLogic = node.entryConditionLogic || 'and'
+    const exitLogic = node.exitConditionLogic || 'and'
+
+    const entryMet = entryConditions.length > 0 ? evaluateConditions(ctx, entryConditions, entryLogic) : false
+    const exitMet = exitConditions.length > 0 ? evaluateConditions(ctx, exitConditions, exitLogic) : false
+
+    // State machine:
+    // - If not entered and entry conditions met → enter (then branch)
+    // - If entered and exit conditions met → exit (else branch)
+    // - Otherwise maintain current state
+    let newState = isEntered
+    if (!isEntered && entryMet === true) {
+      newState = true // Enter
+    } else if (isEntered && exitMet === true) {
+      newState = false // Exit
+    }
+
+    // Update state
+    ctx.altExitState[nodeId] = newState
+
+    // Choose branch based on current state
+    const branch = newState ? 'then' : 'else'
+    const children = (node.children?.[branch] || []).filter(Boolean)
+    return evaluateChildren(ctx, node, branch, children)
   }
 
   if (node.kind === 'numbered') {
@@ -2499,8 +2897,13 @@ const collectIndicatorTickers = (node) => {
 
   const addConditionTickers = (conditions) => {
     for (const cond of conditions || []) {
-      if (cond.ticker) addTickerWithComponents(tickers, cond.ticker)
-      if (cond.rightTicker) addTickerWithComponents(tickers, cond.rightTicker)
+      // FRD-021: Skip branch references - they're computed from child equity, not external tickers
+      if (cond.ticker && !isBranchRef(cond.ticker)) {
+        addTickerWithComponents(tickers, cond.ticker)
+      }
+      if (cond.rightTicker && !isBranchRef(cond.rightTicker)) {
+        addTickerWithComponents(tickers, cond.rightTicker)
+      }
     }
   }
 
@@ -2521,7 +2924,10 @@ const collectIndicatorTickers = (node) => {
 
     // Scaling nodes - collect scale ticker
     if (n.kind === 'scaling') {
-      if (n.scaleTicker) addTickerWithComponents(tickers, n.scaleTicker)
+      // FRD-021: Skip branch references - they're computed from child equity, not external tickers
+      if (n.scaleTicker && !isBranchRef(n.scaleTicker)) {
+        addTickerWithComponents(tickers, n.scaleTicker)
+      }
       addConditionTickers(n.conditions)
     }
 
@@ -2550,8 +2956,13 @@ const collectAllTickers = (node) => {
 
   const addConditionTickers = (conditions) => {
     for (const cond of conditions || []) {
-      if (cond.ticker) addTickerWithComponents(tickers, cond.ticker)
-      if (cond.rightTicker) addTickerWithComponents(tickers, cond.rightTicker)
+      // FRD-021: Skip branch references - they're computed from child equity, not external tickers
+      if (cond.ticker && !isBranchRef(cond.ticker)) {
+        addTickerWithComponents(tickers, cond.ticker)
+      }
+      if (cond.rightTicker && !isBranchRef(cond.rightTicker)) {
+        addTickerWithComponents(tickers, cond.rightTicker)
+      }
     }
   }
 
@@ -2579,7 +2990,10 @@ const collectAllTickers = (node) => {
 
     // Scaling nodes - collect scale ticker
     if (n.kind === 'scaling') {
-      if (n.scaleTicker) addTickerWithComponents(tickers, n.scaleTicker)
+      // FRD-021: Skip branch references - they're computed from child equity, not external tickers
+      if (n.scaleTicker && !isBranchRef(n.scaleTicker)) {
+        addTickerWithComponents(tickers, n.scaleTicker)
+      }
       // Also check conditions array (used in UI display)
       addConditionTickers(n.conditions)
     }
@@ -2661,12 +3075,24 @@ const turnoverFraction = (prevAlloc, alloc) => {
 export { initTickerCache }
 
 export async function runBacktest(payload, options = {}) {
+  console.log(`[Backtest] >>> runBacktest called`)
   const backtestMode = options.mode || 'OC' // OO, CC, CO, OC
   const costBps = options.costBps ?? 0
   const indicatorOverlays = options.indicatorOverlays || [] // Conditions to show as chart overlays
 
   // Parse payload if string
-  const node = typeof payload === 'string' ? JSON.parse(payload) : payload
+  const rawNode = typeof payload === 'string' ? JSON.parse(payload) : payload
+  console.log(`[Backtest] >>> Parsed payload, rawNode kind=${rawNode?.kind}, has children=${!!rawNode?.children}`)
+
+  console.log(`[Backtest] >>> Starting compression...`)
+  const compressionStart = Date.now()
+  const { tree: node, tickerLocations, stats: compressionStats } = compressTree(rawNode)
+  const compressionTime = Date.now() - compressionStart
+  console.log(`[Backtest] Tree compression: ${compressionStats.originalNodes} → ${compressionStats.compressedNodes} nodes (${compressionStats.nodesRemoved} removed, ${compressionStats.gateChainsMerged} gates merged) in ${compressionTime}ms`)
+
+  if (!node) {
+    throw new Error('Strategy tree is empty')
+  }
 
   // Collect all tickers from the strategy (positions + conditions + scaling + ratio components)
   const tickers = collectAllTickers(node)
@@ -2759,6 +3185,9 @@ export async function runBacktest(payload, options = {}) {
     firstValidPosIndex
   )
 
+  // Persistent state for altExit (Enter/Exit) nodes across all days
+  const altExitState = {}
+
   for (let i = startEvalIndex; i < db.dates.length; i++) {
     const indicatorIndex = decisionPrice === 'open' ? i - 1 : i
     const ctx = {
@@ -2768,6 +3197,8 @@ export async function runBacktest(payload, options = {}) {
       indicatorIndex,
       decisionPrice,
       warnings: [],
+      tickerLocations, // Pre-computed ticker locations for O(1) lookup
+      altExitState, // Persist Enter/Exit state across days
     }
     allocationsAt[i] = evaluateNode(ctx, node)
   }
@@ -2814,8 +3245,8 @@ export async function runBacktest(payload, options = {}) {
     totalHoldings += holdingsThisDay
     holdingsCount++
 
-    // Store daily allocation for allocations tab (use end date = holding date, matching QuantMage)
-    const dateStr = safeIsoDate(db.dates[end])
+    // Store daily allocation for allocations tab (use start date = entry/holding date, matching QuantMage)
+    const dateStr = safeIsoDate(db.dates[start])
     dailyAllocations.push({ date: dateStr, alloc: { ...alloc } })
 
     let gross = 0
@@ -3009,5 +3440,13 @@ export async function runBacktest(payload, options = {}) {
     indicatorOverlays: overlaySeriesResult.length > 0 ? overlaySeriesResult : undefined,
     // Include daily returns for sanity report
     dailyReturns: returns,
+    // Compression stats for debugging (logged to F12 console)
+    compression: {
+      originalNodes: compressionStats.originalNodes,
+      compressedNodes: compressionStats.compressedNodes,
+      nodesRemoved: compressionStats.nodesRemoved,
+      gatesMerged: compressionStats.gateChainsMerged,
+      compressionTimeMs: compressionTime,
+    },
   }
 }

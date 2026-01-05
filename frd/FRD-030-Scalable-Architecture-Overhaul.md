@@ -1547,6 +1547,103 @@ export function useTreeUndo() {
 - `src/stores/index.ts`
 - `src/stores/useTreeStore.ts`
 
+#### Phase 2N-26: Master Feature Integration ⬜ PLANNED
+
+**Goal:** Merge new features from master branch into the refactored feature branch architecture without losing any functionality.
+
+**Context:**
+- Feature branch App.tsx: **1,343 lines** (refactored into hooks/stores)
+- Master App.tsx: **23,575 lines** (monolithic with new features)
+- Strategy: ADD master features TO feature branch architecture (not merge monolithic files)
+
+**New Features to Integrate from Master:**
+
+| Feature | Source | Target Location | Lines |
+|---------|--------|-----------------|-------|
+| authFetch + Token Refresh | master App.tsx:470-575 | `src/lib/authFetch.ts` (new) | ~100 |
+| Server-Side Backtests | master App.tsx:16707-16897 | `src/hooks/useBacktestRunner.ts` | ~150 |
+| Trading Control Tab | master App.tsx:6708-6850 | `src/features/admin/components/TradingControlTab.tsx` (new) | ~300 |
+| Atlas Systems Tab | master App.tsx:7127-7210 | `src/features/admin/components/AtlasSystemsTab.tsx` (new) | ~200 |
+| New Admin State | master App.tsx:4891-4960 | `src/stores/useUIStore.ts` | ~50 |
+
+**New Server Endpoints (auto-merge from master):**
+- `POST /api/backtest` - Run ad-hoc backtest on server
+- `GET/POST/PUT/DELETE /api/atlas/bots/*` - Atlas bot management (main_admin only)
+- `GET/POST /api/admin/broker/*` - Alpaca broker credentials
+- `/api/oauth/*` - OAuth authentication routes
+- `POST /api/internal/preload-cache` - Background cache preloading
+
+**New Dependencies to Add:**
+- `@alpacahq/alpaca-trade-api` - Alpaca trading integration
+- `ioredis` - Redis client
+- `jsonwebtoken` - JWT auth
+- `zod` - Schema validation
+
+**Bug Fixes to Port:**
+- [ ] QM import indicator mapping fix
+- [ ] Current Price uses adjClose in CC mode
+- [ ] Drawdown Recovery fingerprint calculation fix
+- [ ] Aroon indicators fix
+- [ ] Robustness auto-run after backtest
+
+**Implementation Steps:**
+
+**2N-26a: Server Merge** ⬜
+- [ ] `git checkout origin/master -- System.app/server/` (cleanest merge)
+- [ ] Verify server starts and endpoints work
+
+**2N-26b: authFetch Utility** ⬜
+- [ ] Create `src/lib/authFetch.ts`
+- [ ] Token refresh with concurrent request batching
+- [ ] Update API functions to use authFetch
+
+**2N-26c: Server-Side Backtests** ⬜
+- [ ] Update `useBacktestRunner.ts` to call `/api/backtest`
+- [ ] Transform server response to frontend format
+- [ ] Keep existing error handling
+
+**2N-26d: Trading Control Tab** ⬜
+- [ ] Create `TradingControlTab.tsx` component
+- [ ] Add broker state to useUIStore
+- [ ] Integrate into AdminPanel
+
+**2N-26e: Atlas Systems Tab** ⬜
+- [ ] Create `AtlasSystemsTab.tsx` component
+- [ ] Add atlas systems state to useUIStore
+- [ ] Integrate into AdminPanel
+
+**2N-26f: Dependencies & Bug Fixes** ⬜
+- [ ] Merge package.json dependencies
+- [ ] Port bug fixes to appropriate files
+- [ ] Run `npm install`
+
+**2N-26g: Testing** ⬜
+- [ ] Build passes
+- [ ] All existing tabs work
+- [ ] Backtest runs via server
+- [ ] New admin tabs render (super admin)
+- [ ] No console errors
+
+**Files to Create:**
+| File | Purpose |
+|------|---------|
+| `src/lib/authFetch.ts` | Token refresh wrapper |
+| `src/features/admin/components/TradingControlTab.tsx` | Alpaca broker UI |
+| `src/features/admin/components/AtlasSystemsTab.tsx` | Atlas systems table |
+
+**Files to Modify:**
+| File | Changes |
+|------|---------|
+| `src/hooks/useBacktestRunner.ts` | Server-side backtest calls |
+| `src/stores/useUIStore.ts` | New admin state (broker, atlas) |
+| `src/features/admin/components/AdminPanel.tsx` | New tab buttons |
+| `package.json` | New dependencies |
+
+**Risk Assessment:**
+- Low risk: authFetch, new tabs (additive)
+- Medium risk: Server-side backtests (changes existing logic)
+- No risk: Server changes (separate from frontend refactoring)
+
 #### Phase 2N Progress Summary
 
 **App.tsx Reduction Progress:**

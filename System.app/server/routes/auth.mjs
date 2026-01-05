@@ -203,6 +203,16 @@ router.post('/login', async (req, res) => {
       UPDATE users SET last_login_at = datetime('now'), updated_at = datetime('now') WHERE id = ?
     `).run(user.id)
 
+    // Trigger background cache preload (fire-and-forget)
+    // This preloads all ticker data into memory for faster subsequent requests
+    const apiPort = process.env.PORT || 8787
+    fetch(`http://localhost:${apiPort}/api/internal/preload-cache`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(() => {
+      // Ignore errors - preload is optional
+    })
+
     res.json({
       accessToken,
       refreshToken,

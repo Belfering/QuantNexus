@@ -139,37 +139,79 @@ export async function saveScheduleConfig(database, config) {
 }
 
 /**
- * Get last sync info
+ * Get last sync info for a specific source or all sources
+ * @param {object} database - Database connection
+ * @param {string|null} source - 'yfinance', 'tiingo', or null for all
  */
-export async function getLastSyncInfo(database) {
+export async function getLastSyncInfo(database, source = null) {
   try {
     const { adminConfig } = await import('./db/schema.mjs')
-    const { eq } = await import('drizzle-orm')
+    const { eq, like } = await import('drizzle-orm')
 
-    const [row] = await database.db.select()
+    if (source) {
+      // Get specific source
+      const key = `ticker_sync_last_run_${source}`
+      const [row] = await database.db.select()
+        .from(adminConfig)
+        .where(eq(adminConfig.key, key))
+        .limit(1)
+
+      if (row?.value) {
+        return JSON.parse(row.value)
+      }
+      return null
+    }
+
+    // Get both sources
+    const rows = await database.db.select()
+      .from(adminConfig)
+      .where(like(adminConfig.key, 'ticker_sync_last_run_%'))
+
+    const result = { yfinance: null, tiingo: null }
+    for (const row of rows) {
+      if (row.key === 'ticker_sync_last_run_yfinance' && row.value) {
+        result.yfinance = JSON.parse(row.value)
+      } else if (row.key === 'ticker_sync_last_run_tiingo' && row.value) {
+        result.tiingo = JSON.parse(row.value)
+      }
+    }
+
+    // Migration: check for legacy single key and migrate if needed
+    const [legacyRow] = await database.db.select()
       .from(adminConfig)
       .where(eq(adminConfig.key, 'ticker_sync_last_run'))
       .limit(1)
 
-    if (row?.value) {
-      return JSON.parse(row.value)
+    if (legacyRow?.value) {
+      const legacyInfo = JSON.parse(legacyRow.value)
+      // Assign legacy to appropriate source based on what was tracked
+      const legacySource = legacyInfo.source || 'yfinance'
+      if (!result[legacySource]) {
+        result[legacySource] = legacyInfo
+      }
     }
+
+    return result
   } catch (e) {
-    // Ignore errors
+    console.error('[scheduler] Error getting last sync info:', e)
   }
-  return null
+  return { yfinance: null, tiingo: null }
 }
 
 /**
- * Save last sync info
+ * Save last sync info for a specific source
+ * @param {object} database - Database connection
+ * @param {object} info - Sync info object (must include 'source' field)
  */
 async function saveLastSyncInfo(database, info) {
   try {
     const { adminConfig } = await import('./db/schema.mjs')
+    const source = info.source || 'yfinance'
+    const key = `ticker_sync_last_run_${source}`
 
     await database.db.insert(adminConfig)
       .values({
-        key: 'ticker_sync_last_run',
+        key,
         value: JSON.stringify(info),
         updatedAt: new Date(),
       })
@@ -301,6 +343,7 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       }).format(new Date())
 
       await saveLastSyncInfo(database, {
+        source,
         date: today,
         status: 'skipped',
         message: 'All tickers already synced',
@@ -380,9 +423,15 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       source,
     }
 
+    // Buffer to accumulate partial lines across data events (fixes progress stuck at 0%)
+    let stdoutBuffer = ''
+
     child.stdout.on('data', (buf) => {
-      const output = String(buf)
-      for (const line of output.split(/\r?\n/)) {
+      stdoutBuffer += String(buf)
+      const lines = stdoutBuffer.split(/\r?\n/)
+      stdoutBuffer = lines.pop() || '' // Keep last (possibly incomplete) line
+
+      for (const line of lines) {
         const s = line.trimEnd()
         if (!s) continue
         console.log('[scheduler] stdout:', s)
@@ -422,12 +471,27 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
     })
 
     child.on('close', async (code) => {
+      // Process any remaining data in stdoutBuffer
+      if (stdoutBuffer.trim()) {
+        console.log('[scheduler] stdout (final):', stdoutBuffer.trim())
+        try {
+          const ev = JSON.parse(stdoutBuffer.trim())
+          if (ev?.type === 'ticker_saved' && ev.ticker && currentJob) {
+            currentJob.syncedCount++
+            tickerRegistry.markTickerSynced(ev.ticker, today).catch(() => {})
+          }
+        } catch {
+          // Non-JSON remaining output
+        }
+      }
+
       const finishedAt = Date.now()
       const duration = Math.round((finishedAt - startedAt) / 1000)
 
       if (code === 0) {
         console.log(`[scheduler] Sync completed successfully in ${duration}s`)
         await saveLastSyncInfo(database, {
+          source,
           date: today,
           status: 'success',
           tickerCount: tickers.length,
@@ -440,6 +504,7 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
         console.error(`[scheduler] Sync failed with code ${code}`)
         console.error(`[scheduler] stderr output:\n${stderrOutput}`)
         await saveLastSyncInfo(database, {
+          source,
           date: today,
           status: 'error',
           error: `Process exited with code ${code}. stderr: ${stderrOutput.slice(0, 500)}`,
@@ -466,6 +531,7 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
     child.on('error', async (err) => {
       console.error('[scheduler] Process error:', err)
       await saveLastSyncInfo(database, {
+        source,
         date: today,
         status: 'error',
         error: String(err?.message || err),
@@ -479,6 +545,7 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
   } catch (e) {
     console.error('[scheduler] Error starting sync:', e)
     await saveLastSyncInfo(database, {
+      source,
       date: today,
       status: 'error',
       error: String(e?.message || e),

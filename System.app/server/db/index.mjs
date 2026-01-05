@@ -270,6 +270,19 @@ export function initializeDatabase() {
       used_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS oauth_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL CHECK(provider IN ('google', 'discord', 'github')),
+      provider_account_id TEXT NOT NULL,
+      email TEXT,
+      display_name TEXT,
+      avatar_url TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      UNIQUE(provider, provider_account_id)
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_id);
     CREATE INDEX IF NOT EXISTS idx_bots_visibility ON bots(visibility);
@@ -286,6 +299,8 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_invite_code ON invite_codes(code);
     CREATE INDEX IF NOT EXISTS idx_session_user ON user_sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_session_token ON user_sessions(refresh_token_hash);
+    CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_accounts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_oauth_provider ON oauth_accounts(provider, provider_account_id);
   `)
 
   // Migration: Add backtest_mode and backtest_cost_bps columns to bots table
@@ -599,13 +614,12 @@ export async function getBotsByOwner(ownerId) {
 }
 
 export async function getNexusBots() {
-  // Get all Nexus bots (visibility = 'nexus') OR Atlas-tagged bots - NO payload for security
+  // Get all Nexus bots (visibility = 'nexus') - NO payload for security
+  // Note: Atlas bots are now stored in a separate private database (atlas-db.mjs)
+  // and are only accessible to main_admin via /api/atlas/bots endpoints
   const bots = await db.query.bots.findMany({
     where: and(
-      or(
-        eq(schema.bots.visibility, 'nexus'),
-        like(schema.bots.tags, '%"Atlas"%')
-      ),
+      eq(schema.bots.visibility, 'nexus'),
       isNull(schema.bots.deletedAt)
     ),
     orderBy: desc(schema.bots.createdAt),
@@ -1161,7 +1175,7 @@ export async function deleteCallChain(id, ownerId) {
 }
 
 // Export the raw sqlite connection for advanced queries
-export { sqlite }
+export { sqlite, decompressPayload }
 
 // Auto-initialize database on module load
 initializeDatabase()
