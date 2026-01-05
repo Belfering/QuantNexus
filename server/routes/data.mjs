@@ -2,6 +2,13 @@ import express from 'express';
 import { atlasDb } from '../db/index.mjs';
 import { downloadJobs, tickerLists } from '../db/schema.mjs';
 import { eq } from 'drizzle-orm';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs/promises';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -18,7 +25,49 @@ router.post('/download', async (req, res) => {
       status: 'pending',
     }).returning();
 
-    // TODO: Trigger Python download script
+    const jobId = result[0].id;
+
+    // Trigger Python download script in background
+    const pythonScript = path.join(__dirname, '../../python/download_data.py');
+    const params = JSON.stringify({ ticker, start_date: startDate, end_date: endDate });
+
+    const python = spawn('python', [pythonScript, params]);
+
+    python.stdout.on('data', async (data) => {
+      try {
+        const downloadResult = JSON.parse(data.toString());
+
+        if (downloadResult.success) {
+          await atlasDb.update(downloadJobs)
+            .set({
+              status: 'completed',
+              filePath: downloadResult.file_path,
+              completedAt: new Date().toISOString(),
+            })
+            .where(eq(downloadJobs.id, jobId));
+        } else {
+          await atlasDb.update(downloadJobs)
+            .set({
+              status: 'failed',
+              error: downloadResult.error,
+              completedAt: new Date().toISOString(),
+            })
+            .where(eq(downloadJobs.id, jobId));
+        }
+      } catch (error) {
+        console.error('Error parsing download result:', error);
+      }
+    });
+
+    python.on('error', async (error) => {
+      await atlasDb.update(downloadJobs)
+        .set({
+          status: 'failed',
+          error: error.message,
+          completedAt: new Date().toISOString(),
+        })
+        .where(eq(downloadJobs.id, jobId));
+    });
 
     res.json({ success: true, job: result[0] });
   } catch (error) {
@@ -52,10 +101,14 @@ router.delete('/downloads/:id', async (req, res) => {
 // GET /api/data/tickers - List available parquet files
 router.get('/tickers', async (req, res) => {
   try {
-    // TODO: Scan parquet directory for available files
-    res.json({ tickers: [] });
+    const parquetDir = path.join(__dirname, '../../data/parquet');
+    const files = await fs.readdir(parquetDir);
+    const parquetFiles = files
+      .filter(f => f.endsWith('.parquet'))
+      .map(f => f.replace('.parquet', ''));
+    res.json({ tickers: parquetFiles });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.json({ tickers: [] });
   }
 });
 

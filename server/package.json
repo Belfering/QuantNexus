@@ -9,11 +9,10 @@
   "dependencies": {
     "express": "^5.0.1",
     "cors": "^2.8.5",
-    "better-sqlite3": "^11.8.1",
-    "drizzle-orm": "^0.38.3",
-    "duckdb": "^1.2.1"
+    "better-sqlite3": "^11.8.0",
+    "drizzle-orm": "^0.38.3"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.32.0"
+    "drizzle-kit": "^0.31.0"
   }
 }
