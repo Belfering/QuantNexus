@@ -62,3 +62,11 @@ export {
   cloneAndNormalize,
   expandToNode,
 } from './treeOperations'
+
+// Ticker search utilities
+export {
+  findTickerInstances,
+  collectUsedTickers,
+  collectEnabledConditions,
+  replaceTickerInTree,
+} from './tickerSearch'

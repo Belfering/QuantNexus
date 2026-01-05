@@ -1,5 +1,13 @@
 // src/features/bots/api/index.ts
-// Bot CRUD API functions
+// Bot and watchlist CRUD API functions
+
+// Re-export watchlist functions
+export {
+  loadWatchlistsFromApi,
+  createWatchlistInApi,
+  addBotToWatchlistInApi,
+  removeBotFromWatchlistInApi,
+} from './watchlists'
 
 import { API_BASE } from '@/constants'
 import { normalizeForImport } from '@/features/builder'

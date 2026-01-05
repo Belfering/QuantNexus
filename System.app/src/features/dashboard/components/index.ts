@@ -3,3 +3,4 @@
 
 export { DashboardEquityChart } from './DashboardEquityChart'
 export { PartnerTBillChart } from './PartnerTBillChart'
+export { DashboardPanel, type DashboardPanelProps } from './DashboardPanel'

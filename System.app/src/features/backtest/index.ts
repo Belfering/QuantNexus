@@ -17,5 +17,8 @@ export { normalizeChoice } from './types'
 // Utilities
 export * from './utils'
 
+// Engine (core evaluation logic)
+export * from './engine'
+
 // Components
 export * from './components'

@@ -8,5 +8,19 @@ export type {
   PartnerTBillChartProps,
 } from './types'
 
+// Hooks
+export {
+  useDashboardInvestments,
+  calculateInvestmentPnl,
+  type InvestmentWithPnl,
+  type UseDashboardInvestmentsParams,
+  type UseDashboardInvestmentsResult,
+} from './hooks'
+
 // Components
-export * from './components'
+export {
+  DashboardEquityChart,
+  PartnerTBillChart,
+  DashboardPanel,
+  type DashboardPanelProps,
+} from './components'

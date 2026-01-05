@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import LandingPage from './pages/LandingPage.tsx'
+import { AppProvider } from './context'
 
 // Phase-based routing: Show landing page in "coming-soon" mode
 // Set VITE_LAUNCH_PHASE=coming-soon to show landing page
@@ -17,6 +18,8 @@ const RootComponent = LAUNCH_PHASE === 'coming-soon' && !isAppRoute ? LandingPag
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <RootComponent />
+    <AppProvider>
+      <RootComponent />
+    </AppProvider>
   </StrictMode>,
 )

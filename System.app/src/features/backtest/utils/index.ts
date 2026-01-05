@@ -71,3 +71,21 @@ export {
   rollingTrendClarity,
   rollingUltimateSmoother,
 } from './indicators'
+
+export {
+  type TickerRef,
+  type BacktestInputs,
+  collectBacktestInputs,
+  collectPositionTickers,
+  isEtfsOnlyBot,
+  collectIndicatorTickers,
+} from './inputCollection'
+
+export {
+  normalizeConditions,
+  normalizeNodeForBacktest,
+} from './normalization'
+
+export {
+  buildPriceDb,
+} from './priceDb'
