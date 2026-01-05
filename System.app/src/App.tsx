@@ -36,7 +36,6 @@ import type {
   NumberedQuantifier,
   ThemeMode,
   UserId,
-  BacktestMode,
   BacktestError,
   BacktestWarning,
   BacktestResult,
@@ -45,15 +44,12 @@ import type {
   EquityPoint,
   EquityMarker,
   BotBacktestState,
-  AnalyzeBacktestState,
-  TickerContributionState,
   BotVisibility,
   SavedBot,
   Watchlist,
   BotSession,
   EquityCurvePoint,
   DashboardInvestment,
-  DashboardPortfolio,
   DbPosition,
   EligibilityRequirement,
   FundZones,
@@ -110,10 +106,7 @@ import {
   cloneAndNormalize,
   expandToNode,
   findNode,
-  findTickerInstances,
-  collectUsedTickers,
   collectEnabledConditions,
-  replaceTickerInTree,
 } from './features/builder'
 import {
   // Backtest utilities
@@ -146,14 +139,10 @@ import {
   // Backtest types
   type ComparisonMetrics,
   type SanityReport,
-  type SanityReportState,
 } from './features/backtest'
 import { type BotReturnSeries } from './features/dashboard'
 import { useCorrelation } from './features/nexus'
-import {
-  type AdminSubtab,
-  type DatabasesSubtab,
-} from './features/admin'
+// AdminSubtab, DatabasesSubtab types now used via useUIStore
 import {
   fetchNexusBotsFromApi,
   loadBotsFromApi,
@@ -169,7 +158,6 @@ import {
 import {
   loadPreferencesFromApi,
   savePreferencesToApi,
-  loadCallChainsFromApi,
 } from './features/auth'
 import {
   detectImportFormat,
@@ -183,13 +171,13 @@ import {
   TickerDatalist,
   normalizeChoice,
 } from './shared'
-import { useTickerModal } from './hooks/useTickerModal'
-import { useFindReplace } from './hooks/useFindReplace'
-import { useIndicatorOverlays } from './hooks/useIndicatorOverlays'
-import { useSaveMenu } from './hooks/useSaveMenu'
-import { useDisplayNameState } from './hooks/useDisplayNameState'
-import { useCommunityState } from './hooks/useCommunityState'
-import { useDashboardUIState } from './hooks/useDashboardUIState'
+// useTickerModal - migrated to stores/useUIStore.ts (Phase 2N-13b)
+// useFindReplace - migrated to stores/useBotStore.ts (Phase 2N-13c)
+// useIndicatorOverlays - migrated to stores/useBacktestStore.ts (Phase 2N-13d)
+// useSaveMenu - migrated to stores/useUIStore.ts (Phase 2N-13b)
+import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useDashboardStore } from './stores'
+// useCommunityState - migrated to stores/useDashboardStore.ts (Phase 2N-13e)
+// useDashboardUIState - migrated to stores/useDashboardStore.ts (Phase 2N-13e)
 import type { UTCTimestamp } from 'lightweight-charts'
 
 // Normalization functions imported from @/features/backtest
@@ -413,112 +401,59 @@ function App() {
   const [deviceTheme] = useState<ThemeMode>(() => loadDeviceThemeMode())
 
   // Ticker search modal hook
-  const {
-    tickerModalOpen,
-    tickerModalCallback,
-    tickerModalRestriction,
-    setTickerModalOpen,
-    openTickerModal,
-  } = useTickerModal()
-
-  // Find/Replace hook
-  const {
-    findTicker,
-    setFindTicker,
-    replaceTicker,
-    setReplaceTicker,
-    includePositions,
-    setIncludePositions,
-    includeIndicators,
-    setIncludeIndicators,
-    includeCallChains,
-    setIncludeCallChains,
-    foundInstances,
-    setFoundInstances,
-    currentInstanceIndex,
-    setCurrentInstanceIndex,
-    highlightedInstance,
-    setHighlightedInstance,
-  } = useFindReplace()
+  // UI Store - ticker modal
+  const tickerModalOpen = useUIStore(s => s.tickerModalOpen)
+  const tickerModalCallback = useUIStore(s => s.tickerModalCallback)
+  const tickerModalRestriction = useUIStore(s => s.tickerModalRestriction)
+  const setTickerModalOpen = useUIStore(s => s.setTickerModalOpen)
 
   // Indicator overlay hook
-  const {
-    enabledOverlays,
-    indicatorOverlayData,
-    setIndicatorOverlayData,
-    handleToggleOverlay,
-  } = useIndicatorOverlays()
+  // Backtest Store - indicator overlays (migrated from useIndicatorOverlays, Phase 2N-13d)
+  const enabledOverlays = useBacktestStore(s => s.enabledOverlays)
+  const setIndicatorOverlayData = useBacktestStore(s => s.setIndicatorOverlayData)
 
-  // Save menu hook
-  const {
-    saveMenuOpen,
-    setSaveMenuOpen,
-    saveNewWatchlistName,
-    setSaveNewWatchlistName,
-    justSavedFeedback,
-    setJustSavedFeedback,
-    addToWatchlistBotId: _addToWatchlistBotId,
-    setAddToWatchlistBotId,
-    addToWatchlistNewName: _addToWatchlistNewName,
-    setAddToWatchlistNewName,
-  } = useSaveMenu()
+  // UI Store - save menu
+  const saveMenuOpen = useUIStore(s => s.saveMenuOpen)
+  const setSaveMenuOpen = useUIStore(s => s.setSaveMenuOpen)
+  const saveNewWatchlistName = useUIStore(s => s.saveNewWatchlistName)
+  const setSaveNewWatchlistName = useUIStore(s => s.setSaveNewWatchlistName)
+  const justSavedFeedback = useUIStore(s => s.justSavedFeedback)
+  const setJustSavedFeedback = useUIStore(s => s.setJustSavedFeedback)
+  const setAddToWatchlistBotId = useUIStore(s => s.setAddToWatchlistBotId)
 
-  // Display name state hook
-  const {
-    displayNameInput,
-    setDisplayNameInput,
-    displayNameSaving,
-    setDisplayNameSaving,
-    displayNameError,
-    setDisplayNameError,
-    displayNameSuccess,
-    setDisplayNameSuccess,
-    displayNameAvailable,
-    setDisplayNameAvailable,
-    displayNameChecking,
-  } = useDisplayNameState()
+  // Auth store - for debounced availability check
+  const displayNameInput = useAuthStore(s => s.displayNameInput)
+  const setDisplayNameAvailable = useAuthStore(s => s.setDisplayNameAvailable)
+  const checkDisplayNameAvailability = useAuthStore(s => s.checkDisplayNameAvailability)
 
-  // Community sort/filter state hook
-  const {
-    communityTopSort,
-    setCommunityTopSort,
-    communitySearchFilters,
-    setCommunitySearchFilters,
-    communitySearchSort,
-    setCommunitySearchSort,
-    atlasSort,
-    setAtlasSort,
-  } = useCommunityState()
+  // Debounced availability check for display name
+  useEffect(() => {
+    if (!displayNameInput.trim()) {
+      setDisplayNameAvailable(null)
+      return
+    }
+    const timeoutId = setTimeout(() => {
+      checkDisplayNameAvailability(displayNameInput)
+    }, 500)
+    return () => clearTimeout(timeoutId)
+  }, [displayNameInput, checkDisplayNameAvailability, setDisplayNameAvailable])
 
-  // Dashboard UI state hook
-  const {
-    dashboardTimePeriod,
-    setDashboardTimePeriod,
-    dashboardBotExpanded,
-    setDashboardBotExpanded,
-    dashboardBuyBotId,
-    setDashboardBuyBotId,
-    dashboardBuyBotSearch,
-    setDashboardBuyBotSearch,
-    dashboardBuyBotDropdownOpen,
-    setDashboardBuyBotDropdownOpen,
-    dashboardBuyAmount,
-    setDashboardBuyAmount,
-    dashboardBuyMode,
-    setDashboardBuyMode,
-    dashboardSellBotId,
-    setDashboardSellBotId,
-    dashboardSellAmount,
-    setDashboardSellAmount,
-    dashboardSellMode,
-    setDashboardSellMode,
-    dashboardBuyMoreBotId,
-    setDashboardBuyMoreBotId,
-    dashboardBuyMoreAmount,
-    setDashboardBuyMoreAmount,
-    dashboardBuyMoreMode,
-    setDashboardBuyMoreMode,
-  } = useDashboardUIState()
+  // Dashboard Store - values and setters needed by callbacks
+  // Phase 2N-14c: Removed UI-only state (timePeriod, botExpanded, buyBotDropdownOpen) - now used via store in DashboardPanel
+  const dashboardBuyBotId = useDashboardStore(s => s.dashboardBuyBotId)
+  const setDashboardBuyBotId = useDashboardStore(s => s.setDashboardBuyBotId)
+  const setDashboardBuyBotSearch = useDashboardStore(s => s.setDashboardBuyBotSearch)
+  const dashboardBuyAmount = useDashboardStore(s => s.dashboardBuyAmount)
+  const setDashboardBuyAmount = useDashboardStore(s => s.setDashboardBuyAmount)
+  const dashboardBuyMode = useDashboardStore(s => s.dashboardBuyMode)
+  const setDashboardSellBotId = useDashboardStore(s => s.setDashboardSellBotId)
+  const dashboardSellAmount = useDashboardStore(s => s.dashboardSellAmount)
+  const setDashboardSellAmount = useDashboardStore(s => s.setDashboardSellAmount)
+  const dashboardSellMode = useDashboardStore(s => s.dashboardSellMode)
+  const setDashboardBuyMoreBotId = useDashboardStore(s => s.setDashboardBuyMoreBotId)
+  const dashboardBuyMoreAmount = useDashboardStore(s => s.dashboardBuyMoreAmount)
+  const setDashboardBuyMoreAmount = useDashboardStore(s => s.setDashboardBuyMoreAmount)
+  const dashboardBuyMoreMode = useDashboardStore(s => s.dashboardBuyMoreMode)
 
   // Load initial user from stored user object (set by LoginScreen)
   const initialUserId: UserId | null = (() => {
@@ -581,33 +516,39 @@ function App() {
   // Engineer access = engineer or higher (for Databases tab)
   const hasEngineerAccess = userRole === 'engineer' || userRole === 'sub_admin' || userRole === 'main_admin' || userRole === 'admin'
 
-  const [savedBots, setSavedBots] = useState<SavedBot[]>(() => initialUserData.savedBots)
-  const [watchlists, setWatchlists] = useState<Watchlist[]>(() => initialUserData.watchlists)
+  // Bot Store - saved bots and watchlists (migrated from useState in Phase 2N-13c)
+  const savedBots = useBotStore(s => s.savedBots)
+  const setSavedBots = useBotStore(s => s.setSavedBots)
+  const watchlists = useBotStore(s => s.watchlists)
+  const setWatchlists = useBotStore(s => s.setWatchlists)
   // NOTE: callChains is now per-bot (stored in BotSession.callChains), not global state
   const [uiState, setUiState] = useState<UserUiState>(() => initialUserData.ui)
-  // Portfolio is now loaded from database API, start with default
-  const [dashboardPortfolio, setDashboardPortfolio] = useState<DashboardPortfolio>(defaultDashboardPortfolio)
+
+  // Initialize saved bots and watchlists from localStorage on mount
+  useEffect(() => {
+    setSavedBots(initialUserData.savedBots)
+    setWatchlists(initialUserData.watchlists)
+  }, [setSavedBots, setWatchlists])
+  // Dashboard Store - portfolio state (migrated from useState, Phase 2N-13e)
+  const dashboardPortfolio = useDashboardStore(s => s.dashboardPortfolio)
+  const setDashboardPortfolio = useDashboardStore(s => s.setDashboardPortfolio)
   const [_portfolioLoading, setPortfolioLoading] = useState(false) // TODO: show loading state in UI
-  const [analyzeBacktests, setAnalyzeBacktests] = useState<Record<string, AnalyzeBacktestState>>({})
-  const [analyzeTickerContrib, setAnalyzeTickerContrib] = useState<Record<string, TickerContributionState>>({})
-  const [sanityReports, setSanityReports] = useState<Record<string, SanityReportState>>({})
 
-  // Benchmark metrics state (fetched once, reused across all cards)
-  const [benchmarkMetrics, setBenchmarkMetrics] = useState<{
-    status: 'idle' | 'loading' | 'done' | 'error'
-    data?: Record<string, ComparisonMetrics>
-    error?: string
-  }>({ status: 'idle' })
-
-  // Model tab sanity report state (for unsaved models being built)
-  const [modelSanityReport, setModelSanityReport] = useState<SanityReportState>({ status: 'idle' })
+  // Backtest Store - analyze state (migrated from useState, Phase 2N-13d)
+  const analyzeBacktests = useBacktestStore(s => s.analyzeBacktests)
+  const setAnalyzeBacktests = useBacktestStore(s => s.setAnalyzeBacktests)
+  const analyzeTickerContrib = useBacktestStore(s => s.analyzeTickerContrib)
+  const setAnalyzeTickerContrib = useBacktestStore(s => s.setAnalyzeTickerContrib)
+  const sanityReports = useBacktestStore(s => s.sanityReports)
+  const setSanityReports = useBacktestStore(s => s.setSanityReports)
+  const benchmarkMetrics = useBacktestStore(s => s.benchmarkMetrics)
+  const setBenchmarkMetrics = useBacktestStore(s => s.setBenchmarkMetrics)
+  const setModelSanityReport = useBacktestStore(s => s.setModelSanityReport)
 
   // Cross-user Nexus bots for Nexus tab (populated via API in useEffect)
-  const [allNexusBots, setAllNexusBots] = useState<SavedBot[]>([])
-  const [analyzeTickerSort, setAnalyzeTickerSort] = useState<{ column: string; dir: 'asc' | 'desc' }>({
-    column: 'ticker',
-    dir: 'asc',
-  })
+  // Migrated from useState to useBotStore in Phase 2N-13c
+  const allNexusBots = useBotStore(s => s.allNexusBots)
+  const setAllNexusBots = useBotStore(s => s.setAllNexusBots)
 
   // Correlation hook for Analyze tab (manages correlation state internally)
   const correlation = useCorrelation({
@@ -621,11 +562,13 @@ function App() {
   const [availableTickers, setAvailableTickers] = useState<string[]>([])
   const [tickerMetadata, setTickerMetadata] = useState<Map<string, { assetType?: string; name?: string; exchange?: string }>>(new Map())
   const [tickerApiError, setTickerApiError] = useState<string | null>(null)
-  const [etfsOnlyMode, setEtfsOnlyMode] = useState(false)
-  const [backtestMode, setBacktestMode] = useState<BacktestMode>('CC')
-  const [backtestCostBps, setBacktestCostBps] = useState<number>(5)
-  const [backtestBenchmark, setBacktestBenchmark] = useState<string>('SPY')
-  const [backtestShowBenchmark, setBacktestShowBenchmark] = useState<boolean>(true)
+
+  // Backtest Store - ETF/backtest settings (migrated from useState, Phase 2N-13d)
+  // Note: setters moved to ModelTab via useBacktestStore (Phase 2N-14)
+  const etfsOnlyMode = useBacktestStore(s => s.etfsOnlyMode)
+  const backtestMode = useBacktestStore(s => s.backtestMode)
+  const backtestCostBps = useBacktestStore(s => s.backtestCostBps)
+  const backtestBenchmark = useBacktestStore(s => s.backtestBenchmark)
   // Per-bot backtest state moved to BotSession.backtest - see derived values after activeBot
 
   // Load bots from API on mount/user change (database is source of truth)
@@ -961,44 +904,45 @@ function App() {
     })
   }, [availableTickers, etfsOnlyMode, tickerMetadata])
 
-  const createBotSession = useCallback((title: string): BotSession => {
-    const root = ensureSlots(createNode('basic'))
-    root.title = title
-    return {
-      id: `bot-${newId()}`,
-      history: [root],
-      historyIndex: 0,
-      backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
-      callChains: [], // Per-bot call chains (stored with bot payload)
-    }
-  }, [])
-
-  const initialBot = useMemo(() => createBotSession('Algo Name Here'), [createBotSession])
-  const [bots, setBots] = useState<BotSession[]>(() => [initialBot])
-  const [activeBotId, setActiveBotId] = useState<string>(() => initialBot.id)
-  const [clipboard, setClipboard] = useState<FlowNode | null>(null)
-  const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null) // Track original node ID that was copied
-  const [copiedCallChainId, setCopiedCallChainId] = useState<string | null>(null) // Track copied Call Chain ID
-  const [isImporting, setIsImporting] = useState(false)
-  const [tab, setTab] = useState<'Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'>('Model')
-  const [dashboardSubtab, setDashboardSubtab] = useState<'Portfolio' | 'Partner Program'>('Portfolio')
-  const [analyzeSubtab, setAnalyzeSubtab] = useState<'Systems' | 'Correlation Tool'>('Systems')
-  const [adminTab, setAdminTab] = useState<AdminSubtab>('Atlas Overview')
-  const [databasesTab, setDatabasesTab] = useState<DatabasesSubtab>('Systems')
-  const [helpTab, setHelpTab] = useState<'Changelog' | 'Settings'>('Changelog')
-  const [changelogContent, setChangelogContent] = useState<string>('')
-  const [changelogLoading, setChangelogLoading] = useState(false)
+  // Bot Store - bot sessions (migrated from useState in Phase 2N-13c)
+  // createBotSession is now in the store
+  const createBotSession = useBotStore(s => s.createBotSession)
+  const bots = useBotStore(s => s.bots)
+  const setBots = useBotStore(s => s.setBots)
+  const activeBotId = useBotStore(s => s.activeBotId)
+  const setActiveBotId = useBotStore(s => s.setActiveBotId)
+  const setClipboard = useBotStore(s => s.setClipboard)
+  const setCopiedNodeId = useBotStore(s => s.setCopiedNodeId)
+  const isImporting = useBotStore(s => s.isImporting)
+  const setIsImporting = useBotStore(s => s.setIsImporting)
+  // UI Store - tabs and navigation
+  const tab = useUIStore(s => s.tab)
+  const setTab = useUIStore(s => s.setTab)
+  const dashboardSubtab = useUIStore(s => s.dashboardSubtab)
+  // Note: setDashboardSubtab now accessed directly by DashboardPanel via store (Phase 2N-14c)
+  // Note: adminTab, setAdminTab now accessed directly by AdminPanel via store (Phase 2N-14f)
+  const databasesTab = useUIStore(s => s.databasesTab)
+  const setDatabasesTab = useUIStore(s => s.setDatabasesTab)
+  const helpTab = useUIStore(s => s.helpTab)
+  const setHelpTab = useUIStore(s => s.setHelpTab)
+  const changelogContent = useUIStore(s => s.changelogContent)
+  const setChangelogContent = useUIStore(s => s.setChangelogContent)
+  const changelogLoading = useUIStore(s => s.changelogLoading)
+  const setChangelogLoading = useUIStore(s => s.setChangelogLoading)
 
   // Eligibility requirements (fetched for Admin tab and Partner Program page)
   const [appEligibilityRequirements, setAppEligibilityRequirements] = useState<EligibilityRequirement[]>([])
-  const [callbackNodesCollapsed, setCallbackNodesCollapsed] = useState(true)
-  const [customIndicatorsCollapsed, setCustomIndicatorsCollapsed] = useState(true)
+
+  // UI Store - collapse states (setCallbackNodesCollapsed still needed in App.tsx)
+  const setCallbackNodesCollapsed = useUIStore(s => s.setCallbackNodesCollapsed)
 
   // Flowchart scroll state for floating scrollbar
   const flowchartScrollRef = useRef<HTMLDivElement>(null)
   const floatingScrollRef = useRef<HTMLDivElement>(null)
-  const [flowchartScrollWidth, setFlowchartScrollWidth] = useState(0)
-  const [flowchartClientWidth, setFlowchartClientWidth] = useState(0)
+  const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
+  const setFlowchartScrollWidth = useUIStore(s => s.setFlowchartScrollWidth)
+  const flowchartClientWidth = useUIStore(s => s.flowchartClientWidth)
+  const setFlowchartClientWidth = useUIStore(s => s.setFlowchartClientWidth)
 
   // Update scroll dimensions when tab changes or window resizes
   useEffect(() => {
@@ -1038,9 +982,12 @@ function App() {
   }, [tab])
 
   // Inline buy state for Nexus bots (in Analyze tab, Nexus, watchlists)
-  const [nexusBuyBotId, setNexusBuyBotId] = useState<string | null>(null)
-  const [nexusBuyAmount, setNexusBuyAmount] = useState<string>('')
-  const [nexusBuyMode, setNexusBuyMode] = useState<'$' | '%'>('$')
+  // Migrated from useState to useUIStore in Phase 2N-14b
+  // Phase 2N-14d: Removed nexusBuyBotId, setNexusBuyMode - now used via store in NexusPanel/AnalyzePanel
+  const setNexusBuyBotId = useUIStore(s => s.setNexusBuyBotId)
+  const nexusBuyAmount = useUIStore(s => s.nexusBuyAmount)
+  const setNexusBuyAmount = useUIStore(s => s.setNexusBuyAmount)
+  const nexusBuyMode = useUIStore(s => s.nexusBuyMode)
 
   const activeBot = useMemo(() => {
     return bots.find((b) => b.id === activeBotId) ?? bots[0]
@@ -1150,32 +1097,6 @@ function App() {
   }, [tab, dashboardSubtab, appEligibilityRequirements.length])
 
   const backtestErrorNodeIds = useMemo(() => new Set(backtestErrors.map((e) => e.nodeId)), [backtestErrors])
-
-  const watchlistsById = useMemo(() => new Map(watchlists.map((w) => [w.id, w])), [watchlists])
-  const watchlistsByBotId = useMemo(() => {
-    const map = new Map<string, Watchlist[]>()
-    for (const wl of watchlists) {
-      for (const botId of wl.botIds) {
-        const arr = map.get(botId) ?? []
-        arr.push(wl)
-        map.set(botId, arr)
-      }
-    }
-    return map
-  }, [watchlists])
-
-  const allWatchlistedBotIds = useMemo(() => {
-    const set = new Set<string>()
-    for (const wl of watchlists) for (const id of wl.botIds) set.add(id)
-    return Array.from(set)
-  }, [watchlists])
-
-  const analyzeVisibleBotIds = useMemo(() => {
-    const filterId = uiState.analyzeFilterWatchlistId
-    if (!filterId) return allWatchlistedBotIds
-    const wl = watchlistsById.get(filterId)
-    return wl ? wl.botIds : []
-  }, [allWatchlistedBotIds, uiState.analyzeFilterWatchlistId, watchlistsById])
 
   const callChainsById = useMemo(() => new Map(callChains.map((c) => [c.id, c])), [callChains])
 
@@ -3543,57 +3464,6 @@ function App() {
     setAddToWatchlistBotId(null)
   }
 
-  const handleSaveDisplayName = async () => {
-    if (!displayNameInput.trim()) {
-      setDisplayNameError('Display name cannot be empty')
-      return
-    }
-    setDisplayNameSaving(true)
-    setDisplayNameError(null)
-    setDisplayNameSuccess(false)
-
-    try {
-      const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
-      const res = await fetch('/api/user/display-name', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ displayName: displayNameInput.trim() })
-      })
-
-      const data = await res.json()
-      if (!res.ok) {
-        setDisplayNameError(data.error || 'Failed to update display name')
-        return
-      }
-
-      // Update state and localStorage
-      setUserDisplayName(data.displayName)
-      setDisplayNameSuccess(true)
-
-      // Update the stored user object
-      try {
-        const userJson = localStorage.getItem('user')
-        if (userJson) {
-          const user = JSON.parse(userJson)
-          user.displayName = data.displayName
-          localStorage.setItem('user', JSON.stringify(user))
-        }
-      } catch {
-        // ignore
-      }
-
-      // Clear success message after 3 seconds
-      setTimeout(() => setDisplayNameSuccess(false), 3000)
-    } catch {
-      setDisplayNameError('Network error. Please try again.')
-    } finally {
-      setDisplayNameSaving(false)
-    }
-  }
-
   const colorTheme = uiState.colorTheme ?? 'slate'
 
   // Helper to find fund slot from uiState.fundZones (used in Dashboard and Nexus)
@@ -3691,7 +3561,7 @@ function App() {
               <Button onClick={handleNewBot} className="flex-1 rounded-none border-r border-border h-10">New System</Button>
               <div className="relative flex-1">
                 <Button
-                  onClick={() => setSaveMenuOpen((v) => !v)}
+                  onClick={() => setSaveMenuOpen(!saveMenuOpen)}
                   title="Save this system to a watchlist"
                   variant={justSavedFeedback ? 'accent' : 'default'}
                   className={`w-full h-full rounded-none border-r border-border ${justSavedFeedback ? 'transition-colors duration-300' : ''}`}
@@ -3839,34 +3709,20 @@ function App() {
         {tab === 'Model' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Model...</div>}>
             <ModelTab
-              backtestMode={backtestMode}
-              setBacktestMode={setBacktestMode}
-              backtestCostBps={backtestCostBps}
-              setBacktestCostBps={setBacktestCostBps}
-              backtestBenchmark={backtestBenchmark}
-              setBacktestBenchmark={setBacktestBenchmark}
-              backtestShowBenchmark={backtestShowBenchmark}
-              setBacktestShowBenchmark={setBacktestShowBenchmark}
+              // Backtest panel props (derived or callback)
               tickerOptions={tickerOptions}
               backtestStatus={backtestStatus}
               backtestResult={backtestResult}
               backtestErrors={backtestErrors}
               handleRunBacktest={handleRunBacktest}
               handleJumpToBacktestError={handleJumpToBacktestError}
-              indicatorOverlayData={indicatorOverlayData}
               theme={uiState.theme}
-              benchmarkMetrics={benchmarkMetrics}
               fetchBenchmarkMetrics={fetchBenchmarkMetrics}
-              modelSanityReport={modelSanityReport}
               runModelRobustness={runModelRobustness}
               undo={undo}
               redo={redo}
               activeBot={activeBot}
-              openTickerModal={openTickerModal}
-              callbackNodesCollapsed={callbackNodesCollapsed}
-              setCallbackNodesCollapsed={setCallbackNodesCollapsed}
-              customIndicatorsCollapsed={customIndicatorsCollapsed}
-              setCustomIndicatorsCollapsed={setCustomIndicatorsCollapsed}
+              // Call chain props
               callChains={callChains}
               setCallChains={setCallChains}
               handleAddCallChain={handleAddCallChain}
@@ -3874,34 +3730,7 @@ function App() {
               handleToggleCallChainCollapse={handleToggleCallChainCollapse}
               handleDeleteCallChain={handleDeleteCallChain}
               pushCallChain={pushCallChain}
-              loadCallChainsFromApi={loadCallChainsFromApi}
-              userId={userId}
-              clipboard={clipboard}
-              setClipboard={setClipboard}
-              copiedNodeId={copiedNodeId}
-              copiedCallChainId={copiedCallChainId}
-              setCopiedCallChainId={setCopiedCallChainId}
-              etfsOnlyMode={etfsOnlyMode}
-              setEtfsOnlyMode={setEtfsOnlyMode}
-              findTicker={findTicker}
-              setFindTicker={setFindTicker}
-              replaceTicker={replaceTicker}
-              setReplaceTicker={setReplaceTicker}
-              includePositions={includePositions}
-              setIncludePositions={setIncludePositions}
-              includeIndicators={includeIndicators}
-              setIncludeIndicators={setIncludeIndicators}
-              includeCallChains={includeCallChains}
-              setIncludeCallChains={setIncludeCallChains}
-              foundInstances={foundInstances}
-              setFoundInstances={setFoundInstances}
-              currentInstanceIndex={currentInstanceIndex}
-              setCurrentInstanceIndex={setCurrentInstanceIndex}
-              highlightedInstance={highlightedInstance}
-              setHighlightedInstance={setHighlightedInstance}
-              collectUsedTickers={collectUsedTickers}
-              findTickerInstances={findTickerInstances}
-              replaceTickerInTree={replaceTickerInTree}
+              // Main flowchart
               current={current}
               push={push}
               backtestErrorNodeIds={backtestErrorNodeIds}
@@ -3940,8 +3769,7 @@ function App() {
               handleUpdateEntryCondition={handleUpdateEntryCondition}
               handleUpdateExitCondition={handleUpdateExitCondition}
               handleUpdateScaling={handleUpdateScaling}
-              enabledOverlays={enabledOverlays}
-              handleToggleOverlay={handleToggleOverlay}
+              // Refs
               flowchartScrollRef={flowchartScrollRef}
               floatingScrollRef={floatingScrollRef}
             />
@@ -3949,24 +3777,12 @@ function App() {
         ) : tab === 'Help/Support' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Help...</div>}>
             <HelpTab
-              helpTab={helpTab}
-              userDisplayName={userDisplayName}
-              displayNameInput={displayNameInput}
-              setDisplayNameInput={setDisplayNameInput}
-              displayNameAvailable={displayNameAvailable}
-              displayNameChecking={displayNameChecking}
-              displayNameError={displayNameError}
-              setDisplayNameError={setDisplayNameError}
-              setDisplayNameAvailable={setDisplayNameAvailable}
-              displayNameSuccess={displayNameSuccess}
-              displayNameSaving={displayNameSaving}
-              handleSaveDisplayName={handleSaveDisplayName}
-              colorTheme={colorTheme}
-              theme={theme}
-              setUiState={setUiState}
-              savePreferencesToApi={savePreferencesToApi}
-              userId={userId}
+              // UI state (API-persisted)
               uiState={uiState}
+              setUiState={setUiState}
+              // Callbacks
+              savePreferencesToApi={savePreferencesToApi}
+              // Changelog API state
               changelogLoading={changelogLoading}
               changelogContent={changelogContent}
             />
@@ -3974,13 +3790,10 @@ function App() {
         ) : tab === 'Admin' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Admin...</div>}>
             <AdminTab
-              adminTab={adminTab}
-              setAdminTab={setAdminTab}
+              // Callbacks
               onTickersUpdated={(next) => {
                 setAvailableTickers(next)
               }}
-              savedBots={savedBots}
-              setSavedBots={setSavedBots}
               onRefreshNexusBots={refreshAllNexusBots}
               onPrewarmComplete={() => {
                 // Clear frontend state so tabs will refetch fresh cached data
@@ -3989,7 +3802,6 @@ function App() {
                 // Refresh Nexus bots from API to get updated metrics
                 void refreshAllNexusBots()
               }}
-              userId={userId || ''}
               updateBotInApi={updateBotInApi}
             />
           </Suspense>
@@ -4006,108 +3818,41 @@ function App() {
         ) : tab === 'Analyze' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Analyze...</div>}>
             <AnalyzeTab
-              // Core data
-              savedBots={savedBots}
-              allNexusBots={allNexusBots}
-              analyzeBacktests={analyzeBacktests}
-              watchlists={watchlists}
-              watchlistsByBotId={watchlistsByBotId}
-              analyzeVisibleBotIds={analyzeVisibleBotIds}
-              // User info
-              userId={userId}
-              userDisplayName={userDisplayName}
-              isAdmin={isAdmin}
-              // UI state
+              // UI state (persisted to API)
               uiState={uiState}
               setUiState={setUiState}
-              analyzeSubtab={analyzeSubtab}
-              setAnalyzeSubtab={setAnalyzeSubtab}
-              // Ticker sorting
-              analyzeTickerSort={analyzeTickerSort}
-              setAnalyzeTickerSort={setAnalyzeTickerSort}
-              analyzeTickerContrib={analyzeTickerContrib}
-              // Backtest config
-              backtestMode={backtestMode}
-              backtestBenchmark={backtestBenchmark}
               // Dashboard integration
               dashboardCash={dashboardCash}
               dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
-              // Buy form state
-              nexusBuyBotId={nexusBuyBotId}
-              setNexusBuyBotId={setNexusBuyBotId}
-              nexusBuyAmount={nexusBuyAmount}
-              setNexusBuyAmount={setNexusBuyAmount}
-              nexusBuyMode={nexusBuyMode}
-              setNexusBuyMode={setNexusBuyMode}
+              // Action callbacks
               handleNexusBuy={handleNexusBuy}
-              // Watchlist actions
-              setAddToWatchlistBotId={setAddToWatchlistBotId}
-              setAddToWatchlistNewName={setAddToWatchlistNewName}
               removeBotFromWatchlist={removeBotFromWatchlist}
-              setWatchlists={setWatchlists}
-              // Bot actions
               runAnalyzeBacktest={runAnalyzeBacktest}
               handleCopyToNew={handleCopyToNew}
               handleOpenSaved={handleOpenSaved}
               handleCopySaved={handleCopySaved}
               handleDeleteSaved={handleDeleteSaved}
-              // Sanity reports
-              sanityReports={sanityReports}
               runSanityReport={runSanityReport}
-              benchmarkMetrics={benchmarkMetrics}
               fetchBenchmarkMetrics={fetchBenchmarkMetrics}
               // Correlation hook
               correlation={correlation}
               // Call chains
               callChainsById={callChainsById}
-              // Helpers
-              normalizeNodeForBacktest={normalizeNodeForBacktest}
             />
           </Suspense>
         ) : tab === 'Nexus' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Nexus...</div>}>
             <NexusTab
-              // Core data
-              allNexusBots={allNexusBots}
-              savedBots={savedBots}
-              analyzeBacktests={analyzeBacktests}
-              watchlists={watchlists}
-              // User info
-              userId={userId}
-              userDisplayName={userDisplayName}
-              isAdmin={isAdmin}
-              // UI state
+              // UI state (persisted to API)
               uiState={uiState}
               setUiState={setUiState}
-              // Dashboard integration
+              // Dashboard integration (computed from API data)
               dashboardCash={dashboardCash}
               dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
-              // Nexus buy state
-              nexusBuyBotId={nexusBuyBotId}
-              setNexusBuyBotId={setNexusBuyBotId}
-              nexusBuyAmount={nexusBuyAmount}
-              setNexusBuyAmount={setNexusBuyAmount}
-              nexusBuyMode={nexusBuyMode}
-              setNexusBuyMode={setNexusBuyMode}
+              // Callbacks
               handleNexusBuy={handleNexusBuy}
-              // Sort state
-              communityTopSort={communityTopSort}
-              setCommunityTopSort={setCommunityTopSort}
-              communitySearchSort={communitySearchSort}
-              setCommunitySearchSort={setCommunitySearchSort}
-              atlasSort={atlasSort}
-              setAtlasSort={setAtlasSort}
-              // Search state
-              communitySearchFilters={communitySearchFilters}
-              setCommunitySearchFilters={setCommunitySearchFilters}
-              // Watchlist actions
-              setAddToWatchlistBotId={setAddToWatchlistBotId}
-              setAddToWatchlistNewName={setAddToWatchlistNewName}
               removeBotFromWatchlist={removeBotFromWatchlist}
-              // Navigation
-              setTab={setTab}
               push={push}
-              // Actions
               runAnalyzeBacktest={runAnalyzeBacktest}
               handleCopyToNew={handleCopyToNew}
               // Helpers
@@ -4118,28 +3863,11 @@ function App() {
         ) : tab === 'Dashboard' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Dashboard...</div>}>
             <DashboardTab
-              // Core data
-              savedBots={savedBots}
-              allNexusBots={allNexusBots}
-              eligibleBots={eligibleBots}
-              dashboardPortfolio={dashboardPortfolio}
-              setDashboardPortfolio={setDashboardPortfolio}
-              analyzeBacktests={analyzeBacktests}
-              sanityReports={sanityReports}
-              watchlists={watchlists}
-              // User info
-              userId={userId}
-              userDisplayName={userDisplayName}
-              // UI state
+              // UI state (persisted to API)
               uiState={uiState}
               setUiState={setUiState}
-              dashboardSubtab={dashboardSubtab}
-              setDashboardSubtab={setDashboardSubtab}
-              dashboardTimePeriod={dashboardTimePeriod}
-              setDashboardTimePeriod={setDashboardTimePeriod}
-              dashboardBotExpanded={dashboardBotExpanded}
-              setDashboardBotExpanded={setDashboardBotExpanded}
-              // Derived dashboard values
+              // Computed/derived dashboard values
+              eligibleBots={eligibleBots}
               dashboardCash={dashboardCash}
               dashboardTotalValue={dashboardTotalValue}
               dashboardTotalPnl={dashboardTotalPnl}
@@ -4147,43 +3875,11 @@ function App() {
               dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
               dashboardEquityCurve={dashboardEquityCurve}
               dashboardBotSeries={dashboardBotSeries}
-              // Buy form state
-              dashboardBuyBotId={dashboardBuyBotId}
-              setDashboardBuyBotId={setDashboardBuyBotId}
-              dashboardBuyBotSearch={dashboardBuyBotSearch}
-              setDashboardBuyBotSearch={setDashboardBuyBotSearch}
-              dashboardBuyBotDropdownOpen={dashboardBuyBotDropdownOpen}
-              setDashboardBuyBotDropdownOpen={setDashboardBuyBotDropdownOpen}
-              dashboardBuyAmount={dashboardBuyAmount}
-              setDashboardBuyAmount={setDashboardBuyAmount}
-              dashboardBuyMode={dashboardBuyMode}
-              setDashboardBuyMode={setDashboardBuyMode}
+              // Action callbacks
               handleDashboardBuy={handleDashboardBuy}
-              // Sell form state
-              dashboardSellBotId={dashboardSellBotId}
-              setDashboardSellBotId={setDashboardSellBotId}
-              dashboardSellAmount={dashboardSellAmount}
-              setDashboardSellAmount={setDashboardSellAmount}
-              dashboardSellMode={dashboardSellMode}
-              setDashboardSellMode={setDashboardSellMode}
               handleDashboardSell={handleDashboardSell}
-              // Buy more form state
-              dashboardBuyMoreBotId={dashboardBuyMoreBotId}
-              setDashboardBuyMoreBotId={setDashboardBuyMoreBotId}
-              dashboardBuyMoreAmount={dashboardBuyMoreAmount}
-              setDashboardBuyMoreAmount={setDashboardBuyMoreAmount}
-              dashboardBuyMoreMode={dashboardBuyMoreMode}
-              setDashboardBuyMoreMode={setDashboardBuyMoreMode}
               handleDashboardBuyMore={handleDashboardBuyMore}
-              // Nexus inline buy state
-              nexusBuyBotId={nexusBuyBotId}
-              setNexusBuyBotId={setNexusBuyBotId}
-              nexusBuyAmount={nexusBuyAmount}
-              setNexusBuyAmount={setNexusBuyAmount}
-              nexusBuyMode={nexusBuyMode}
-              setNexusBuyMode={setNexusBuyMode}
               handleNexusBuy={handleNexusBuy}
-              // Actions
               runAnalyzeBacktest={runAnalyzeBacktest}
               runSanityReport={runSanityReport}
               updateBotInApi={updateBotInApi}
@@ -4193,11 +3889,6 @@ function App() {
               getFundSlotForBot={getFundSlotForBot}
               // Eligibility requirements
               appEligibilityRequirements={appEligibilityRequirements}
-              // Backtest config
-              backtestBenchmark={backtestBenchmark}
-              // Watchlist actions
-              setAddToWatchlistBotId={setAddToWatchlistBotId}
-              setAddToWatchlistNewName={setAddToWatchlistNewName}
             />
           </Suspense>
         

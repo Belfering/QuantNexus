@@ -6,53 +6,48 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { COLOR_THEMES } from '@/constants'
+import { useAuthStore, useUIStore } from '@/stores'
 import type { ColorTheme, UserUiState, UserId } from '@/types'
 
 export interface HelpTabProps {
-  helpTab: string
-  userDisplayName: string | null
-  displayNameInput: string
-  setDisplayNameInput: (value: string) => void
-  displayNameAvailable: boolean | null
-  displayNameChecking: boolean
-  displayNameError: string | null
-  setDisplayNameError: (value: string | null) => void
-  setDisplayNameAvailable: (value: boolean | null) => void
-  displayNameSuccess: boolean
-  displayNameSaving: boolean
-  handleSaveDisplayName: () => void
-  colorTheme: string
-  theme: string
-  setUiState: React.Dispatch<React.SetStateAction<UserUiState>>
-  savePreferencesToApi: (userId: UserId, uiState: UserUiState) => Promise<boolean>
-  userId: UserId
+  // UI state (API-persisted)
   uiState: UserUiState
+  setUiState: React.Dispatch<React.SetStateAction<UserUiState>>
+  // Callbacks
+  savePreferencesToApi: (userId: UserId, uiState: UserUiState) => Promise<boolean>
+  // Changelog API state
   changelogLoading: boolean
   changelogContent: string | null
 }
 
 export function HelpTab({
-  helpTab,
-  userDisplayName,
-  displayNameInput,
-  setDisplayNameInput,
-  displayNameAvailable,
-  displayNameChecking,
-  displayNameError,
-  setDisplayNameError,
-  setDisplayNameAvailable,
-  displayNameSuccess,
-  displayNameSaving,
-  handleSaveDisplayName,
-  colorTheme,
-  theme,
+  uiState,
   setUiState,
   savePreferencesToApi,
-  userId,
-  uiState,
   changelogLoading,
   changelogContent,
 }: HelpTabProps) {
+  // ─── Stores ───────────────────────────────────────────────────────────────────
+  const { userId } = useAuthStore()
+  const helpTab = useUIStore(s => s.helpTab)
+
+  // Derived from uiState
+  const colorTheme = uiState.colorTheme ?? 'slate'
+  const theme = uiState.theme
+
+  // Auth store for display name state
+  const userDisplayName = useAuthStore(s => s.userDisplayName)
+  const displayNameInput = useAuthStore(s => s.displayNameInput)
+  const setDisplayNameInput = useAuthStore(s => s.setDisplayNameInput)
+  const displayNameAvailable = useAuthStore(s => s.displayNameAvailable)
+  const setDisplayNameAvailable = useAuthStore(s => s.setDisplayNameAvailable)
+  const displayNameChecking = useAuthStore(s => s.displayNameChecking)
+  const displayNameError = useAuthStore(s => s.displayNameError)
+  const setDisplayNameError = useAuthStore(s => s.setDisplayNameError)
+  const displayNameSuccess = useAuthStore(s => s.displayNameSuccess)
+  const displayNameSaving = useAuthStore(s => s.displayNameSaving)
+  const saveDisplayName = useAuthStore(s => s.saveDisplayName)
+
   return (
     <Card className="h-full flex flex-col overflow-hidden m-4">
       <CardContent className="p-6 flex flex-col h-full overflow-auto">
@@ -103,7 +98,7 @@ export function HelpTab({
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={handleSaveDisplayName}
+                  onClick={saveDisplayName}
                   disabled={displayNameSaving || !displayNameInput.trim() || displayNameAvailable === false}
                 >
                   {displayNameSaving ? 'Saving...' : 'Save'}
@@ -153,6 +148,7 @@ export function HelpTab({
                   variant="accent"
                   size="sm"
                   onClick={async () => {
+                    if (!userId) return
                     const success = await savePreferencesToApi(userId, uiState)
                     if (success) {
                       alert('Theme preferences saved!')

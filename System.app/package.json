@@ -39,7 +39,9 @@
     "tailwind-merge": "^3.4.0",
     "technicalindicators": "^3.1.0",
     "whatwg-url": "^15.1.0",
-    "zod": "^4.3.4"
+    "zod": "^4.3.4",
+    "zundo": "^2.3.0",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

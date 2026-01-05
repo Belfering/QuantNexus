@@ -8,17 +8,16 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { formatPct, formatUsd, formatSignedUsd } from '@/shared/utils'
-import { EquityChart, DrawdownChart, type SanityReportState } from '@/features/backtest'
+import { EquityChart, DrawdownChart } from '@/features/backtest'
 import { DashboardEquityChart } from './DashboardEquityChart'
 import { PartnerTBillChart } from './PartnerTBillChart'
+import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useDashboardStore } from '@/stores'
 import type {
   SavedBot,
-  AnalyzeBacktestState,
   UserId,
   UserUiState,
   Watchlist,
   DashboardTimePeriod,
-  DashboardPortfolio,
   EquityCurvePoint,
   FundZones,
   EligibilityRequirement,
@@ -47,31 +46,12 @@ const METRIC_LABELS: Record<string, string> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface DashboardPanelProps {
-  // Core data
-  savedBots: SavedBot[]
-  allNexusBots: SavedBot[]
-  eligibleBots: SavedBot[]
-  dashboardPortfolio: DashboardPortfolio
-  setDashboardPortfolio: Dispatch<SetStateAction<DashboardPortfolio>>
-  analyzeBacktests: Record<string, AnalyzeBacktestState>
-  sanityReports: Record<string, SanityReportState>
-  watchlists: Watchlist[]
-
-  // User info
-  userId: UserId | null
-  userDisplayName: string | null
-
-  // UI state
+  // UI state (persisted to API - kept as prop for now)
   uiState: UserUiState
   setUiState: Dispatch<SetStateAction<UserUiState>>
-  dashboardSubtab: 'Portfolio' | 'Partner Program'
-  setDashboardSubtab: (subtab: 'Portfolio' | 'Partner Program') => void
-  dashboardTimePeriod: DashboardTimePeriod
-  setDashboardTimePeriod: (period: DashboardTimePeriod) => void
-  dashboardBotExpanded: Record<string, boolean>
-  setDashboardBotExpanded: Dispatch<SetStateAction<Record<string, boolean>>>
 
-  // Derived dashboard values
+  // Computed/derived dashboard values (computed in App.tsx)
+  eligibleBots: SavedBot[]
   dashboardCash: number
   dashboardTotalValue: number
   dashboardTotalPnl: number
@@ -80,47 +60,11 @@ export interface DashboardPanelProps {
   dashboardEquityCurve: EquityCurvePoint[]
   dashboardBotSeries: BotReturnSeries[]
 
-  // Buy form state
-  dashboardBuyBotId: string
-  setDashboardBuyBotId: (id: string) => void
-  dashboardBuyBotSearch: string
-  setDashboardBuyBotSearch: (search: string) => void
-  dashboardBuyBotDropdownOpen: boolean
-  setDashboardBuyBotDropdownOpen: (open: boolean) => void
-  dashboardBuyAmount: string
-  setDashboardBuyAmount: (amount: string) => void
-  dashboardBuyMode: '$' | '%'
-  setDashboardBuyMode: (mode: '$' | '%') => void
+  // Action callbacks
   handleDashboardBuy: () => Promise<void>
-
-  // Sell form state
-  dashboardSellBotId: string | null
-  setDashboardSellBotId: (id: string | null) => void
-  dashboardSellAmount: string
-  setDashboardSellAmount: (amount: string) => void
-  dashboardSellMode: '$' | '%'
-  setDashboardSellMode: (mode: '$' | '%') => void
   handleDashboardSell: (botId: string, sellAll: boolean) => Promise<void>
-
-  // Buy more form state
-  dashboardBuyMoreBotId: string | null
-  setDashboardBuyMoreBotId: (id: string | null) => void
-  dashboardBuyMoreAmount: string
-  setDashboardBuyMoreAmount: (amount: string) => void
-  dashboardBuyMoreMode: '$' | '%'
-  setDashboardBuyMoreMode: (mode: '$' | '%') => void
   handleDashboardBuyMore: (botId: string) => Promise<void>
-
-  // Nexus inline buy state
-  nexusBuyBotId: string | null
-  setNexusBuyBotId: (id: string | null) => void
-  nexusBuyAmount: string
-  setNexusBuyAmount: (amount: string) => void
-  nexusBuyMode: '$' | '%'
-  setNexusBuyMode: (mode: '$' | '%') => void
   handleNexusBuy: (botId: string) => Promise<void>
-
-  // Actions
   runAnalyzeBacktest: (bot: SavedBot, force?: boolean) => void
   runSanityReport: (bot: SavedBot) => void
   updateBotInApi: (userId: UserId, bot: SavedBot) => Promise<boolean>
@@ -132,13 +76,6 @@ export interface DashboardPanelProps {
 
   // Eligibility requirements
   appEligibilityRequirements: EligibilityRequirement[]
-
-  // Backtest config
-  backtestBenchmark: string
-
-  // Watchlist actions
-  setAddToWatchlistBotId: (id: string | null) => void
-  setAddToWatchlistNewName: (name: string) => void
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,30 +84,12 @@ export interface DashboardPanelProps {
 
 export function DashboardPanel(props: DashboardPanelProps) {
   const {
-    // Core data
-    savedBots,
-    allNexusBots,
-    eligibleBots,
-    dashboardPortfolio,
-    analyzeBacktests,
-    sanityReports,
-    watchlists,
-
-    // User info
-    userId,
-    userDisplayName,
-
-    // UI state
+    // UI state (from props - persisted to API)
     uiState,
     setUiState,
-    dashboardSubtab,
-    setDashboardSubtab,
-    dashboardTimePeriod,
-    setDashboardTimePeriod,
-    dashboardBotExpanded,
-    setDashboardBotExpanded,
 
-    // Derived dashboard values
+    // Computed/derived dashboard values
+    eligibleBots,
     dashboardCash,
     dashboardTotalValue,
     dashboardTotalPnl,
@@ -179,47 +98,11 @@ export function DashboardPanel(props: DashboardPanelProps) {
     dashboardEquityCurve,
     dashboardBotSeries,
 
-    // Buy form state
-    dashboardBuyBotId,
-    setDashboardBuyBotId,
-    dashboardBuyBotSearch,
-    setDashboardBuyBotSearch,
-    dashboardBuyBotDropdownOpen,
-    setDashboardBuyBotDropdownOpen,
-    dashboardBuyAmount,
-    setDashboardBuyAmount,
-    dashboardBuyMode,
-    setDashboardBuyMode,
+    // Action callbacks
     handleDashboardBuy,
-
-    // Sell form state
-    dashboardSellBotId,
-    setDashboardSellBotId,
-    dashboardSellAmount,
-    setDashboardSellAmount,
-    dashboardSellMode,
-    setDashboardSellMode,
     handleDashboardSell,
-
-    // Buy more form state
-    dashboardBuyMoreBotId,
-    setDashboardBuyMoreBotId,
-    dashboardBuyMoreAmount,
-    setDashboardBuyMoreAmount,
-    dashboardBuyMoreMode,
-    setDashboardBuyMoreMode,
     handleDashboardBuyMore,
-
-    // Nexus inline buy state
-    nexusBuyBotId,
-    setNexusBuyBotId,
-    nexusBuyAmount,
-    setNexusBuyAmount,
-    nexusBuyMode,
-    setNexusBuyMode,
     handleNexusBuy,
-
-    // Actions
     runAnalyzeBacktest,
     runSanityReport,
     updateBotInApi,
@@ -231,14 +114,62 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
     // Eligibility requirements
     appEligibilityRequirements,
+  } = props
 
-    // Backtest config
-    backtestBenchmark,
+  // --- Zustand stores ---
+  // Auth store
+  const { userId, userDisplayName } = useAuthStore()
 
-    // Watchlist actions
+  // UI store
+  const {
+    dashboardSubtab,
+    setDashboardSubtab,
+    nexusBuyBotId,
+    setNexusBuyBotId,
+    nexusBuyAmount,
+    setNexusBuyAmount,
+    nexusBuyMode,
+    setNexusBuyMode,
     setAddToWatchlistBotId,
     setAddToWatchlistNewName,
-  } = props
+  } = useUIStore()
+
+  // Bot store
+  const { savedBots, allNexusBots, watchlists } = useBotStore()
+
+  // Backtest store
+  const { analyzeBacktests, sanityReports, backtestBenchmark } = useBacktestStore()
+
+  // Dashboard store
+  const {
+    dashboardPortfolio,
+    dashboardTimePeriod,
+    setDashboardTimePeriod,
+    dashboardBotExpanded,
+    setDashboardBotExpanded,
+    dashboardBuyBotId,
+    setDashboardBuyBotId,
+    dashboardBuyBotSearch,
+    setDashboardBuyBotSearch,
+    dashboardBuyBotDropdownOpen,
+    setDashboardBuyBotDropdownOpen,
+    dashboardBuyAmount,
+    setDashboardBuyAmount,
+    dashboardBuyMode,
+    setDashboardBuyMode,
+    dashboardSellBotId,
+    setDashboardSellBotId,
+    dashboardSellAmount,
+    setDashboardSellAmount,
+    dashboardSellMode,
+    setDashboardSellMode,
+    dashboardBuyMoreBotId,
+    setDashboardBuyMoreBotId,
+    dashboardBuyMoreAmount,
+    setDashboardBuyMoreAmount,
+    dashboardBuyMoreMode,
+    setDashboardBuyMoreMode,
+  } = useDashboardStore()
 
   // Derived: watchlists by bot ID
   const watchlistsByBotId = useMemo(() => {

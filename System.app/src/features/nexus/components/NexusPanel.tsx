@@ -10,13 +10,12 @@ import { Select } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { formatPct, formatUsd } from '@/shared/utils'
 import { EquityChart } from '@/features/backtest'
+import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useDashboardStore } from '@/stores'
 import type {
   SavedBot,
-  AnalyzeBacktestState,
-  UserId,
   UserUiState,
-  Watchlist,
   FlowNode,
+  Watchlist,
 } from '@/types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,56 +54,18 @@ export type InvestmentWithPnl = {
 }
 
 export interface NexusPanelProps {
-  // Core data
-  allNexusBots: SavedBot[]
-  savedBots: SavedBot[]
-  analyzeBacktests: Record<string, AnalyzeBacktestState>
-  watchlists: Watchlist[]
-
-  // User info
-  userId: UserId | null
-  userDisplayName: string | null
-  isAdmin: boolean
-
-  // UI state
+  // UI state (API-persisted)
   uiState: UserUiState
   setUiState: Dispatch<SetStateAction<UserUiState>>
 
-  // Dashboard integration
+  // Dashboard integration (computed from API data)
   dashboardCash: number
   dashboardInvestmentsWithPnl: InvestmentWithPnl[]
 
-  // Nexus buy state
-  nexusBuyBotId: string | null
-  setNexusBuyBotId: (id: string | null) => void
-  nexusBuyAmount: string
-  setNexusBuyAmount: (amount: string) => void
-  nexusBuyMode: '$' | '%'
-  setNexusBuyMode: (mode: '$' | '%') => void
+  // Callbacks
   handleNexusBuy: (botId: string) => Promise<void>
-
-  // Sort state
-  communityTopSort: CommunitySort
-  setCommunityTopSort: Dispatch<SetStateAction<CommunitySort>>
-  communitySearchSort: CommunitySort
-  setCommunitySearchSort: Dispatch<SetStateAction<CommunitySort>>
-  atlasSort: CommunitySort
-  setAtlasSort: Dispatch<SetStateAction<CommunitySort>>
-
-  // Search state
-  communitySearchFilters: CommunitySearchFilter[]
-  setCommunitySearchFilters: Dispatch<SetStateAction<CommunitySearchFilter[]>>
-
-  // Watchlist actions
-  setAddToWatchlistBotId: (id: string | null) => void
-  setAddToWatchlistNewName: (name: string) => void
   removeBotFromWatchlist: (botId: string, watchlistId: string) => void
-
-  // Navigation
-  setTab: (tab: 'Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases') => void
   push: (node: FlowNode) => void
-
-  // Actions
   runAnalyzeBacktest: (bot: SavedBot) => void
   handleCopyToNew: (bot: SavedBot) => void
 
@@ -118,24 +79,34 @@ export interface NexusPanelProps {
 
 export function NexusPanel(props: NexusPanelProps) {
   const {
-    allNexusBots,
-    savedBots,
-    analyzeBacktests,
-    watchlists,
-    userId,
-    userDisplayName,
-    isAdmin,
     uiState,
     setUiState,
     dashboardCash,
     dashboardInvestmentsWithPnl,
+    handleNexusBuy,
+    removeBotFromWatchlist,
+    push,
+    runAnalyzeBacktest,
+    handleCopyToNew,
+    getFundSlotForBot,
+  } = props
+
+  // ─── Stores ───────────────────────────────────────────────────────────────────
+  const { userId, userDisplayName, isAdmin } = useAuthStore()
+  const {
     nexusBuyBotId,
     setNexusBuyBotId,
     nexusBuyAmount,
     setNexusBuyAmount,
     nexusBuyMode,
     setNexusBuyMode,
-    handleNexusBuy,
+    setAddToWatchlistBotId,
+    setAddToWatchlistNewName,
+    setTab,
+  } = useUIStore()
+  const { savedBots, allNexusBots, watchlists } = useBotStore()
+  const { analyzeBacktests } = useBacktestStore()
+  const {
     communityTopSort,
     setCommunityTopSort,
     communitySearchSort,
@@ -144,15 +115,7 @@ export function NexusPanel(props: NexusPanelProps) {
     setAtlasSort,
     communitySearchFilters,
     setCommunitySearchFilters,
-    setAddToWatchlistBotId,
-    setAddToWatchlistNewName,
-    removeBotFromWatchlist,
-    setTab,
-    push,
-    runAnalyzeBacktest,
-    handleCopyToNew,
-    getFundSlotForBot,
-  } = props
+  } = useDashboardStore()
 
   // Derived: watchlists by bot ID
   const watchlistsByBotId = useMemo(() => {

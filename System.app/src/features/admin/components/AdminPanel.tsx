@@ -18,32 +18,27 @@ import {
   type EligibilityMetric,
   type UserId,
 } from '@/types'
-import type { AdminSubtab } from '../types'
 import { AdminDataPanel } from './AdminDataPanel'
+import { useAuthStore, useUIStore, useBotStore } from '@/stores'
 
 export interface AdminPanelProps {
-  adminTab: AdminSubtab
-  setAdminTab: (t: AdminSubtab) => void
+  // Callbacks
   onTickersUpdated?: (tickers: string[]) => void
-  savedBots: SavedBot[]
-  setSavedBots: React.Dispatch<React.SetStateAction<SavedBot[]>>
   onRefreshNexusBots?: () => Promise<void>
   onPrewarmComplete?: () => void
-  userId: string
   updateBotInApi: (userId: UserId, bot: SavedBot) => Promise<boolean>
 }
 
 export function AdminPanel({
-  adminTab,
-  setAdminTab,
   onTickersUpdated,
-  savedBots,
-  setSavedBots,
   onRefreshNexusBots,
   onPrewarmComplete,
-  userId,
   updateBotInApi,
 }: AdminPanelProps) {
+  // ─── Stores ───────────────────────────────────────────────────────────────────
+  const { userId } = useAuthStore()
+  const { adminTab, setAdminTab } = useUIStore()
+  const { savedBots, setSavedBots } = useBotStore()
   // Helper to get auth token from either localStorage or sessionStorage
   const getAuthToken = () => localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
 
@@ -432,7 +427,7 @@ export function AdminPanel({
 
     // Sync bot tags to API
     try {
-      await updateBotInApi(userId, updatedBot)
+      if (userId) await updateBotInApi(userId, updatedBot)
     } catch (e) {
       console.error('Failed to sync Atlas bot tags:', e)
     }
@@ -476,7 +471,7 @@ export function AdminPanel({
 
     // Sync bot tags to API
     try {
-      await updateBotInApi(userId, updatedBot)
+      if (userId) await updateBotInApi(userId, updatedBot)
     } catch (e) {
       console.error('Failed to sync Atlas bot tags:', e)
     }

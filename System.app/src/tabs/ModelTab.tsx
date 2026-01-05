@@ -15,17 +15,12 @@ import type {
   MetricChoice,
   RankChoice,
   WeightMode,
-  TickerInstance,
-  IndicatorOverlayData,
-  BacktestMode,
   BacktestError,
   BacktestResult,
   NumberedQuantifier,
   ConditionLine,
   BotSession,
-  UserId,
 } from '@/types'
-import type { BenchmarkMetricsState, SanityReportState } from '@/features/backtest'
 import {
   createNode,
   ensureSlots,
@@ -64,56 +59,32 @@ import {
   deleteNumberedItem,
   cloneNode,
   cloneAndNormalize,
+  findNode,
+  collectUsedTickers,
+  findTickerInstances,
+  replaceTickerInTree,
   NodeCard,
 } from '@/features/builder'
 import { BacktesterPanel } from '@/features/backtest'
-
-// Helper to find a node in tree
-function findNode(tree: FlowNode, id: string): FlowNode | null {
-  if (tree.id === id) return tree
-  for (const slot of Object.keys(tree.children || {}) as SlotId[]) {
-    for (const child of tree.children?.[slot] || []) {
-      if (child) {
-        const found = findNode(child, id)
-        if (found) return found
-      }
-    }
-  }
-  return null
-}
+import { loadCallChainsFromApi } from '@/features/auth'
+import { useAuthStore, useUIStore, useBotStore, useBacktestStore } from '@/stores'
 
 export interface ModelTabProps {
-  // Backtest panel props
-  backtestMode: BacktestMode
-  setBacktestMode: (mode: BacktestMode) => void
-  backtestCostBps: number
-  setBacktestCostBps: (bps: number) => void
-  backtestBenchmark: string
-  setBacktestBenchmark: (b: string) => void
-  backtestShowBenchmark: boolean
-  setBacktestShowBenchmark: (show: boolean) => void
+  // Backtest panel props (from App.tsx - derived or callback)
   tickerOptions: string[]
   backtestStatus: 'idle' | 'running' | 'done' | 'error'
   backtestResult: BacktestResult | null
   backtestErrors: BacktestError[]
   handleRunBacktest: () => void
   handleJumpToBacktestError: (err: BacktestError) => void
-  indicatorOverlayData: IndicatorOverlayData[]
   theme: 'light' | 'dark'
-  benchmarkMetrics: BenchmarkMetricsState | undefined
   fetchBenchmarkMetrics: () => void
-  modelSanityReport: SanityReportState | undefined
   runModelRobustness: () => void
   undo: () => void
   redo: () => void
   activeBot: BotSession | undefined
-  openTickerModal: (onSelect: (ticker: string) => void, restrictTo?: string[]) => void
 
-  // Callback nodes state
-  callbackNodesCollapsed: boolean
-  setCallbackNodesCollapsed: (c: boolean) => void
-  customIndicatorsCollapsed: boolean
-  setCustomIndicatorsCollapsed: (c: boolean) => void
+  // Call chain props (from App.tsx - per-bot state)
   callChains: CallChain[]
   setCallChains: (chains: CallChain[]) => void
   handleAddCallChain: () => void
@@ -121,40 +92,8 @@ export interface ModelTabProps {
   handleToggleCallChainCollapse: (id: string) => void
   handleDeleteCallChain: (id: string) => void
   pushCallChain: (id: string, newRoot: FlowNode) => void
-  loadCallChainsFromApi: (userId: UserId) => Promise<CallChain[]>
-  userId: UserId
 
-  // Clipboard
-  clipboard: FlowNode | null
-  setClipboard: (node: FlowNode | null) => void
-  copiedNodeId: string | null
-  copiedCallChainId: string | null
-  setCopiedCallChainId: (id: string | null) => void
-
-  // Find/Replace
-  etfsOnlyMode: boolean
-  setEtfsOnlyMode: (m: boolean) => void
-  findTicker: string
-  setFindTicker: (t: string) => void
-  replaceTicker: string
-  setReplaceTicker: (t: string) => void
-  includePositions: boolean
-  setIncludePositions: (i: boolean) => void
-  includeIndicators: boolean
-  setIncludeIndicators: (i: boolean) => void
-  includeCallChains: boolean
-  setIncludeCallChains: (i: boolean) => void
-  foundInstances: TickerInstance[]
-  setFoundInstances: (instances: TickerInstance[]) => void
-  currentInstanceIndex: number
-  setCurrentInstanceIndex: (i: number) => void
-  highlightedInstance: TickerInstance | null
-  setHighlightedInstance: (instance: TickerInstance | null) => void
-  collectUsedTickers: (tree: FlowNode, chains?: CallChain[]) => string[]
-  findTickerInstances: (tree: FlowNode, ticker: string, positions: boolean, indicators: boolean, chainId?: string) => TickerInstance[]
-  replaceTickerInTree: (tree: FlowNode, find: string, replace: string, positions: boolean, indicators: boolean) => FlowNode
-
-  // Main flowchart
+  // Main flowchart (from App.tsx - derived or callback)
   current: FlowNode
   push: (node: FlowNode) => void
   backtestErrorNodeIds: Set<string>
@@ -193,8 +132,6 @@ export interface ModelTabProps {
   handleUpdateEntryCondition: (id: string, condId: string, updates: Partial<ConditionLine>) => void
   handleUpdateExitCondition: (id: string, condId: string, updates: Partial<ConditionLine>) => void
   handleUpdateScaling: (id: string, updates: Record<string, unknown>) => void
-  enabledOverlays: Set<string>
-  handleToggleOverlay: (key: string) => void
 
   // Scroll refs for floating scrollbar sync
   flowchartScrollRef: RefObject<HTMLDivElement | null>
@@ -202,34 +139,20 @@ export interface ModelTabProps {
 }
 
 export function ModelTab({
-  backtestMode,
-  setBacktestMode,
-  backtestCostBps,
-  setBacktestCostBps,
-  backtestBenchmark,
-  setBacktestBenchmark,
-  backtestShowBenchmark,
-  setBacktestShowBenchmark,
+  // Props from App.tsx (derived or callback)
   tickerOptions,
   backtestStatus,
   backtestResult,
   backtestErrors,
   handleRunBacktest,
   handleJumpToBacktestError,
-  indicatorOverlayData,
   theme,
-  benchmarkMetrics,
   fetchBenchmarkMetrics,
-  modelSanityReport,
   runModelRobustness,
   undo,
   redo,
   activeBot,
-  openTickerModal,
-  callbackNodesCollapsed,
-  setCallbackNodesCollapsed,
-  customIndicatorsCollapsed,
-  setCustomIndicatorsCollapsed,
+  // Call chain props
   callChains,
   setCallChains,
   handleAddCallChain,
@@ -237,34 +160,7 @@ export function ModelTab({
   handleToggleCallChainCollapse,
   handleDeleteCallChain,
   pushCallChain,
-  loadCallChainsFromApi,
-  userId,
-  clipboard,
-  setClipboard,
-  copiedNodeId,
-  copiedCallChainId,
-  setCopiedCallChainId,
-  etfsOnlyMode,
-  setEtfsOnlyMode,
-  findTicker,
-  setFindTicker,
-  replaceTicker,
-  setReplaceTicker,
-  includePositions,
-  setIncludePositions,
-  includeIndicators,
-  setIncludeIndicators,
-  includeCallChains,
-  setIncludeCallChains,
-  foundInstances,
-  setFoundInstances,
-  currentInstanceIndex,
-  setCurrentInstanceIndex,
-  highlightedInstance,
-  setHighlightedInstance,
-  collectUsedTickers,
-  findTickerInstances,
-  replaceTickerInTree,
+  // Main flowchart
   current,
   push,
   backtestErrorNodeIds,
@@ -303,11 +199,66 @@ export function ModelTab({
   handleUpdateEntryCondition,
   handleUpdateExitCondition,
   handleUpdateScaling,
-  enabledOverlays,
-  handleToggleOverlay,
+  // Refs
   flowchartScrollRef,
   floatingScrollRef,
 }: ModelTabProps) {
+  // --- Zustand stores ---
+  // Auth store
+  const userId = useAuthStore((s) => s.userId)
+
+  // UI store
+  const {
+    callbackNodesCollapsed,
+    setCallbackNodesCollapsed,
+    customIndicatorsCollapsed,
+    setCustomIndicatorsCollapsed,
+    openTickerModal,
+  } = useUIStore()
+
+  // Bot store
+  const {
+    clipboard,
+    setClipboard,
+    copiedNodeId,
+    copiedCallChainId,
+    setCopiedCallChainId,
+    findTicker,
+    setFindTicker,
+    replaceTicker,
+    setReplaceTicker,
+    includePositions,
+    setIncludePositions,
+    includeIndicators,
+    setIncludeIndicators,
+    includeCallChains,
+    setIncludeCallChains,
+    foundInstances,
+    setFoundInstances,
+    currentInstanceIndex,
+    setCurrentInstanceIndex,
+    highlightedInstance,
+    setHighlightedInstance,
+  } = useBotStore()
+
+  // Backtest store
+  const {
+    backtestMode,
+    setBacktestMode,
+    backtestCostBps,
+    setBacktestCostBps,
+    backtestBenchmark,
+    setBacktestBenchmark,
+    backtestShowBenchmark,
+    setBacktestShowBenchmark,
+    etfsOnlyMode,
+    setEtfsOnlyMode,
+    indicatorOverlayData,
+    benchmarkMetrics,
+    modelSanityReport,
+    enabledOverlays,
+    toggleOverlay: handleToggleOverlay,
+  } = useBacktestStore()
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
       <CardContent className="flex-1 flex flex-col gap-4 p-4 overflow-auto min-h-0">
@@ -809,7 +760,7 @@ export function ModelTab({
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ root: JSON.stringify(updatedRoot) })
-                          }).then(() => loadCallChainsFromApi(userId).then(setCallChains))
+                          }).then(() => { if (userId) loadCallChainsFromApi(userId).then(setCallChains) })
                         } catch { /* ignore parse errors */ }
                       })
                     }

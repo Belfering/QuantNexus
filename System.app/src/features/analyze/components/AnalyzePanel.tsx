@@ -1,7 +1,7 @@
 // src/features/analyze/components/AnalyzePanel.tsx
 // Analyze tab component - displays bot analysis with Systems and Correlation Tool subtabs
 
-import { type Dispatch, type SetStateAction } from 'react'
+import { type Dispatch, type SetStateAction, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -10,17 +10,19 @@ import { Select } from '@/components/ui/select'
 import {
   type SanityReportState,
   type BenchmarkMetricsState,
+  normalizeNodeForBacktest,
 } from '@/features/backtest'
 export type { BenchmarkMetricsState }
+import { useAuthStore, useUIStore, useBotStore, useBacktestStore } from '@/stores'
 import type {
   FlowNode,
   CallChain,
   SavedBot,
+  UserUiState,
+  Watchlist,
   AnalyzeBacktestState,
   TickerContributionState,
   UserId,
-  UserUiState,
-  Watchlist,
   BacktestMode,
 } from '@/types'
 import type { InvestmentWithPnl } from '@/features/dashboard/hooks/useDashboardInvestments'
@@ -83,74 +85,30 @@ export interface CorrelationHookResult {
 }
 
 export interface AnalyzePanelProps {
-  // Core data
-  savedBots: SavedBot[]
-  allNexusBots: SavedBot[]
-  analyzeBacktests: Record<string, AnalyzeBacktestState>
-  watchlists: Watchlist[]
-  watchlistsByBotId: Map<string, Watchlist[]>
-  analyzeVisibleBotIds: string[]
-
-  // User info
-  userId: UserId | null
-  userDisplayName: string | null
-  isAdmin: boolean
-
-  // UI state
+  // UI state (persisted to API - kept as prop for now)
   uiState: UserUiState
   setUiState: Dispatch<SetStateAction<UserUiState>>
-  analyzeSubtab: AnalyzeSubtab
-  setAnalyzeSubtab: (subtab: AnalyzeSubtab) => void
 
-  // Ticker sorting
-  analyzeTickerSort: { column: string; dir: 'asc' | 'desc' }
-  setAnalyzeTickerSort: Dispatch<SetStateAction<{ column: string; dir: 'asc' | 'desc' }>>
-  analyzeTickerContrib: Record<string, TickerContributionState>
-
-  // Backtest config
-  backtestMode: BacktestMode
-  backtestBenchmark: string
-
-  // Dashboard integration
+  // Dashboard integration (computed values)
   dashboardCash: number
   dashboardInvestmentsWithPnl: InvestmentWithPnl[]
 
-  // Buy form state
-  nexusBuyBotId: string | null
-  setNexusBuyBotId: (id: string | null) => void
-  nexusBuyAmount: string
-  setNexusBuyAmount: (amount: string) => void
-  nexusBuyMode: '$' | '%'
-  setNexusBuyMode: (mode: '$' | '%') => void
+  // Action callbacks
   handleNexusBuy: (botId: string) => Promise<void>
-
-  // Watchlist actions
-  setAddToWatchlistBotId: (id: string | null) => void
-  setAddToWatchlistNewName: (name: string) => void
   removeBotFromWatchlist: (botId: string, watchlistId: string) => Promise<void>
-  setWatchlists: Dispatch<SetStateAction<Watchlist[]>>
-
-  // Bot actions
   runAnalyzeBacktest: (bot: SavedBot, force?: boolean) => void
   handleCopyToNew: (bot: SavedBot) => void
   handleOpenSaved: (bot: SavedBot) => void
   handleCopySaved: (bot: SavedBot) => void
   handleDeleteSaved: (id: string) => Promise<void>
-
-  // Sanity reports
-  sanityReports: Record<string, SanityReportState>
   runSanityReport: (bot: SavedBot) => void
-  benchmarkMetrics: BenchmarkMetricsState
   fetchBenchmarkMetrics: () => Promise<void>
 
-  // Correlation hook
+  // Correlation hook result
   correlation: CorrelationHookResult
 
   // Call chains for ticker extraction
   callChainsById: Map<string, CallChain>
-
-  // Helpers
-  normalizeNodeForBacktest: (node: FlowNode) => FlowNode
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,64 +117,23 @@ export interface AnalyzePanelProps {
 
 export function AnalyzePanel(props: AnalyzePanelProps) {
   const {
-    // Core data
-    savedBots,
-    allNexusBots,
-    analyzeBacktests,
-    watchlists,
-    watchlistsByBotId,
-    analyzeVisibleBotIds,
-
-    // User info
-    userId,
-    userDisplayName,
-    isAdmin,
-
-    // UI state
+    // UI state (from props - persisted to API)
     uiState,
     setUiState,
-    analyzeSubtab,
-    setAnalyzeSubtab,
-
-    // Ticker sorting
-    analyzeTickerSort,
-    setAnalyzeTickerSort,
-    analyzeTickerContrib,
-
-    // Backtest config
-    backtestMode,
-    backtestBenchmark,
 
     // Dashboard integration
     dashboardCash,
     dashboardInvestmentsWithPnl,
 
-    // Buy form state
-    nexusBuyBotId,
-    setNexusBuyBotId,
-    nexusBuyAmount,
-    setNexusBuyAmount,
-    nexusBuyMode,
-    setNexusBuyMode,
+    // Action callbacks
     handleNexusBuy,
-
-    // Watchlist actions
-    setAddToWatchlistBotId,
-    setAddToWatchlistNewName,
     removeBotFromWatchlist,
-    setWatchlists,
-
-    // Bot actions
     runAnalyzeBacktest,
     handleCopyToNew,
     handleOpenSaved,
     handleCopySaved,
     handleDeleteSaved,
-
-    // Sanity reports
-    sanityReports,
     runSanityReport,
-    benchmarkMetrics,
     fetchBenchmarkMetrics,
 
     // Correlation hook
@@ -224,10 +141,66 @@ export function AnalyzePanel(props: AnalyzePanelProps) {
 
     // Call chains
     callChainsById,
-
-    // Helpers
-    normalizeNodeForBacktest,
   } = props
+
+  // --- Zustand stores ---
+  // Auth store
+  const { userId, userDisplayName, isAdmin } = useAuthStore()
+
+  // UI store
+  const {
+    analyzeSubtab,
+    setAnalyzeSubtab,
+    nexusBuyBotId,
+    setNexusBuyBotId,
+    nexusBuyAmount,
+    setNexusBuyAmount,
+    nexusBuyMode,
+    setNexusBuyMode,
+    setAddToWatchlistBotId,
+    setAddToWatchlistNewName,
+  } = useUIStore()
+
+  // Bot store
+  const { savedBots, allNexusBots, watchlists, setWatchlists } = useBotStore()
+
+  // Backtest store
+  const {
+    analyzeBacktests,
+    analyzeTickerSort,
+    setAnalyzeTickerSort,
+    analyzeTickerContrib,
+    backtestMode,
+    backtestBenchmark,
+    sanityReports,
+    benchmarkMetrics,
+  } = useBacktestStore()
+
+  // --- Computed values ---
+  // Map watchlists by botId for quick lookup
+  const watchlistsByBotId = useMemo(() => {
+    const map = new Map<string, Watchlist[]>()
+    for (const w of watchlists) {
+      for (const botId of w.botIds) {
+        const existing = map.get(botId) ?? []
+        existing.push(w)
+        map.set(botId, existing)
+      }
+    }
+    return map
+  }, [watchlists])
+
+  // Compute visible bot IDs based on filter
+  const analyzeVisibleBotIds = useMemo(() => {
+    const filterWatchlistId = uiState.analyzeFilterWatchlistId
+    if (!filterWatchlistId) {
+      // Show all saved bots
+      return savedBots.map((b) => b.id)
+    }
+    // Filter to bots in the selected watchlist
+    const watchlist = watchlists.find((w) => w.id === filterWatchlistId)
+    return watchlist?.botIds ?? []
+  }, [savedBots, watchlists, uiState.analyzeFilterWatchlistId])
 
   return (
     <Card className="h-full flex flex-col overflow-hidden m-4">

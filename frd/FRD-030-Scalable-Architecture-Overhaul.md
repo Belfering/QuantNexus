@@ -7,7 +7,7 @@
 - **Priority**: Critical (Infrastructure)
 - **Owner**: System
 - **Created**: 2025-01-03
-- **Last Updated**: 2026-01-03
+- **Last Updated**: 2026-01-05 (Phase 2N-14: Tab Store Integration COMPLETE)
 - **Depends On**: FRD-028 (Development Workflow)
 
 ---
@@ -189,7 +189,7 @@ System.app/
 │   │       ├── formatters.ts
 │   │       └── validators.ts
 │   │
-│   ├── App.tsx                       # Just routing & layout (slim)
+│   ├── App.tsx                       # Just wiring (~100-200 lines)
 │   ├── main.tsx                      # Entry point
 │   └── styles/
 │       └── globals.css
@@ -716,60 +716,63 @@ Users can then re-import their strategies via the UI after migration.
 - [x] `shared/utils/ticker.ts` - Ticker normalization utilities (~30 lines)
 - [x] `features/backtest/utils/indicators.ts` - All rolling indicator functions (~540 lines)
 
-**Current App.tsx: 11,205 lines (down from ~21,000)**
+**Current App.tsx: 4,580 lines (down from ~21,000 original, 9,392 at start of Phase 2N)**
 
-#### Phase 2J: Backtest Engine Extraction (⬜ PENDING - ~1000 lines)
+#### Phase 2J: Backtest Engine Extraction ✅ COMPLETE
 
-The backtest engine is tightly coupled and needs careful extraction in stages:
+**2J-1: EvalCtx and Metric Functions**
+- [x] `backtest/engine/evalContext.ts` - EvalCtx type, metricAtIndex, metricAt functions
 
-**2J-1: EvalCtx and Metric Functions** (~250 lines)
-- [ ] `backtest/engine/types.ts` - EvalCtx type definition
-- [ ] `backtest/engine/metrics.ts` - metricAtIndex, metricAt functions
+**2J-2: Condition Evaluation**
+- [x] `backtest/engine/conditions.ts` - conditionExpr, evalConditionAtIndex, evalCondition, evalConditions
 
-**2J-2: Condition Evaluation** (~200 lines)
-- [ ] `backtest/engine/conditions.ts` - conditionExpr, evalConditionAtIndex, evalCondition, evalConditions
+**2J-3: Trace Collector**
+- [x] `backtest/engine/traceCollector.ts` - createBacktestTraceCollector
 
-**2J-3: Trace Collector** (~80 lines)
-- [ ] `backtest/engine/trace.ts` - createBacktestTraceCollector
+**2J-4: Allocation Functions**
+- [x] `backtest/engine/allocation.ts` - volForAlloc, weightChildren, turnoverFraction
 
-**2J-4: Allocation Functions** (~100 lines)
-- [ ] `backtest/engine/allocation.ts` - volForAlloc, weightChildren, turnoverFraction
-
-**2J-5: Node Evaluation** (~400 lines)
-- [ ] `backtest/engine/evaluator.ts` - evaluateNode, tracePositionContributions
+**2J-5: Node Evaluation**
+- [x] `backtest/engine/evaluator.ts` - evaluateNode
+- [x] `backtest/engine/traceContributions.ts` - tracePositionContributions
 
 **2J-6: Engine Barrel Export**
-- [ ] `backtest/engine/index.ts` - Export all engine functions
+- [x] `backtest/engine/index.ts` - Export all engine functions
 
-#### Phase 2K: Nexus Feature (⬜ PENDING)
+#### Phase 2K: Nexus Feature ✅ COMPLETE
 
 **2K-1: Nexus API**
-- [ ] `nexus/api/index.ts` - fetchNexusBots, correlation endpoints
+- [x] `nexus/api/index.ts` - optimizeCorrelation, getCorrelationRecommendations (~124 lines)
 
 **2K-2: Nexus Hooks**
-- [ ] `nexus/hooks/useNexusBots.ts` - Load/cache Nexus bots
-- [ ] `nexus/hooks/useCorrelation.ts` - Correlation matrix data
-- [ ] `nexus/hooks/useLeaderboard.ts` - Leaderboard queries
+- [x] `nexus/hooks/useCorrelation.ts` - Full correlation state, effects, and actions (~299 lines)
+- [x] `nexus/index.ts` - Barrel export (~26 lines)
 
-**2K-3: Nexus Components**
-- [ ] `nexus/components/NexusBrowser.tsx` - Browse community bots
-- [ ] `nexus/components/CorrelationMatrix.tsx` - Visual correlation display
-- [ ] `nexus/components/PortfolioBuilder.tsx` - Multi-bot portfolio
-- [ ] `nexus/components/LeaderboardTable.tsx` - Ranked bot list
+**App.tsx Integration:**
+- [x] Import from `'./features/nexus'`
+- [x] Hook call: `const correlation = useCorrelation({ savedBots, allNexusBots, analyzeBacktests })`
+- [x] Updated ~30 JSX references to use `correlation.*` pattern
 
-#### Phase 2L: Auth Feature (⬜ PENDING)
+**Net reduction: ~190 lines from App.tsx**
 
-**2L-1: Auth API**
-- [ ] `auth/api/index.ts` - Login, register, token refresh endpoints
+#### Phase 2L: Auth Feature ✅ COMPLETE
 
-**2L-2: Auth Hooks**
-- [ ] `auth/hooks/useAuth.ts` - Auth state, login/logout
-- [ ] `auth/hooks/useUser.ts` - Current user info
+**2L-1: Auth Hook**
+- [x] `auth/hooks/useAuth.ts` - Auth state management (~260 lines)
+  - userId, userRole, userDisplayName state
+  - isAdmin, hasEngineerAccess derived values
+  - login(), logout() actions
+  - Display name editing (input, save, availability check)
+- [x] `auth/index.ts` - Barrel export (~13 lines)
 
-**2L-3: Auth Components**
-- [ ] `auth/components/LoginForm.tsx` - Email/password login
-- [ ] `auth/components/RegisterForm.tsx` - New user registration
-- [ ] `auth/components/AuthGuard.tsx` - Protected route wrapper
+**App.tsx Integration:**
+- [x] Import from `'./features/auth'`
+- [x] Hook call: `const auth = useAuth()`
+- [x] Destructure: `{ userId, userDisplayName, isAdmin, hasEngineerAccess }`
+- [x] Updated displayName UI to use `auth.*` pattern
+- [x] Wrapper functions for handleLogin/handleLogout (App-specific state reset)
+
+**Net reduction: ~110 lines from App.tsx**
 
 #### Phase 2M: Data/Import Feature (⬜ PENDING)
 
@@ -780,14 +783,733 @@ The backtest engine is tightly coupled and needs careful extraction in stages:
 **2M-2: Data Hooks**
 - [ ] `data/hooks/useTickerData.ts` - Load/cache ticker data
 
-#### Phase 2N: Final Cleanup
-- [ ] Slim down App.tsx to routing/layout only (<500 lines target)
-- [ ] Remove all extracted code from App.tsx
-- [ ] Update all imports to use feature modules
-- [ ] Verify all imports work
-- [ ] Run full test suite
-- [ ] Update CLAUDE.md for new structure
-- [ ] Update vite.config.ts path aliases if needed
+#### Phase 2N: Tab Extraction + Code Splitting 🔄 IN PROGRESS
+
+**Goal**: App.tsx → ~4,000 lines, Bundle → ~1,100 KB initial load
+
+**Approach**: React.lazy + minimal context (props for most state)
+
+**2N-1: Create AppContext** ✅ COMPLETE
+- [x] `src/context/AppContext.tsx` - Minimal context (auth only)
+- [x] `src/context/index.ts` - Barrel export
+- Note: Simplified to auth-only context. Other state passed as props to tabs.
+
+**2N-2: Extract Dashboard Hook** ✅ COMPLETE
+- [x] `features/dashboard/hooks/useDashboardInvestments.ts` - Investment actions (~500 lines)
+- Note: Refactored to accept params instead of using context (more flexible)
+
+**2N-3: Extract Tab Components + Lazy Loading**
+| Tab | Status | File | Chunk Size |
+|-----|--------|------|------------|
+| Admin | ✅ Fully integrated | `src/tabs/AdminTab.tsx` | 124 KB |
+| Databases | ✅ Fully integrated | `src/tabs/DatabasesTab.tsx` | 11 KB |
+| Nexus | ✅ Fully integrated | `src/tabs/NexusTab.tsx` + `features/nexus/components/NexusPanel.tsx` | 29 KB |
+| Dashboard | ✅ Fully integrated | `src/tabs/DashboardTab.tsx` + `features/dashboard/components/DashboardPanel.tsx` | 91 KB |
+| Analyze | ✅ Fully integrated | `src/tabs/AnalyzeTab.tsx` + `features/analyze/components/AnalyzePanel.tsx` | 123 KB |
+| Help | ✅ Fully integrated | `src/tabs/HelpTab.tsx` | 12 KB |
+| Model | ✅ Fully integrated | `src/tabs/ModelTab.tsx` | 200 KB |
+
+**Results (as of 2026-01-05):**
+- App.tsx: 9,392 → 4,580 lines (-4,812 lines from start of Phase 2N, **51% reduction**)
+- Main bundle: 925 KB (gzip: 241 KB) - down from 1,279 KB (-28%)
+- Lazy-loaded chunks:
+  - AdminTab: 124 KB (gzip: 16 KB)
+  - DatabasesTab: 11 KB (gzip: 3 KB)
+  - NexusTab: 29 KB (gzip: 5 KB)
+  - DashboardTab: 91 KB (gzip: 12 KB)
+  - AnalyzeTab: 123 KB (gzip: 14 KB)
+  - HelpTab: 12 KB (gzip: 3 KB)
+  - ModelTab: 200 KB (gzip: 31 KB)
+- All tabs lazy loaded
+- Correlation hook extracted to `features/nexus/hooks/useCorrelation.ts`
+- Duplicate backtest engine code removed (~850 lines)
+- Ticker search utilities extracted to `features/builder/utils/tickerSearch.ts`
+
+**2N-4: Configure Vite Chunking** ⏳ PENDING
+```ts
+// vite.config.ts - optional, only if more splitting needed
+manualChunks: {
+  'charts': ['lightweight-charts'],
+  'flowchart': ['reactflow'],
+  'indicators': ['technicalindicators'],
+}
+```
+
+**2N-5: API Function Consolidation** ✅ COMPLETE
+- [x] Move watchlist API functions to `features/bots/api/watchlists.ts`
+- [x] Move preferences API functions to `features/auth/api/preferences.ts`
+- [x] Import `calculateInvestmentPnl` from `features/dashboard`
+- [x] Import `findNode`, `expandToNode` from `features/builder`
+- Result: App.tsx 9,474 → 9,261 lines (-213 lines)
+
+**2N-6: Extract Remaining Tabs** ⏳ IN PROGRESS
+
+Pattern established with Nexus extraction - apply same pattern to remaining tabs:
+
+**Step-by-step for each tab:**
+1. Create `src/features/{feature}/components/{Tab}Panel.tsx` with props interface
+2. Create `src/features/{feature}/components/index.ts` barrel export
+3. Update `src/features/{feature}/index.ts` to export component
+4. Create `src/tabs/{Tab}Tab.tsx` thin wrapper
+5. Add lazy import in App.tsx: `const {Tab}Tab = lazy(() => import('./tabs/{Tab}Tab'))`
+6. Replace inline JSX with `<Suspense><{Tab}Tab {...props} /></Suspense>`
+7. Remove unused types/imports from App.tsx
+
+**Dashboard Tab** ✅ COMPLETE
+- [x] Create `features/dashboard/components/DashboardPanel.tsx`
+- [x] Create `src/tabs/DashboardTab.tsx`
+- [x] Uses `useDashboardInvestments` hook internally
+- Actual reduction: ~1,700 lines from App.tsx
+
+**Analyze Tab** ✅ COMPLETE
+- [x] Create `features/analyze/` feature folder
+- [x] Create `features/analyze/components/AnalyzePanel.tsx` with subtab components:
+  - `OverviewTabContent.tsx` - Live stats, equity charts, historical stats
+  - `AdvancedTabContent.tsx` - Benchmarks comparison table
+  - `RobustnessTabContent.tsx` - Fragility fingerprints, drawdown probabilities
+- [x] Create `src/tabs/AnalyzeTab.tsx`
+- [x] Integrated `useCorrelation` hook from `features/nexus`
+- [x] Removed duplicate correlation state management from App.tsx
+- Actual reduction: ~1,800 lines from App.tsx
+
+**Model Tab** ✅ COMPLETE
+- [x] Created `src/tabs/ModelTab.tsx` thin wrapper
+- [x] Model tab remains tightly coupled to builder state (by design)
+- [x] Uses props pattern for state injection
+- Actual chunk size: 200 KB
+
+**Help Tab** ✅ COMPLETE
+- [x] Created `src/tabs/HelpTab.tsx` with full settings + changelog
+- [x] Mostly static content with minimal props
+- Actual chunk size: 12 KB
+
+**Current State (after Phase 2N-12):**
+- App.tsx: 4,238 lines (down from ~21,000 original, **80% reduction**)
+- All 7 tabs lazy-loaded
+- Main bundle: 925 KB (gzip: 241 KB)
+- Duplicate code eliminated
+- Pure functions extracted to feature modules
+- OHLC API, preferences API, watchlist API fully extracted
+
+#### Phase 2N-7: Integrate Remaining Tab Wrappers ✅ COMPLETE
+All tabs integrated and lazy-loaded:
+1. Add lazy import: `const XxxTab = lazy(() => import('./tabs/XxxTab'))`
+2. Replace inline JSX with `<Suspense><XxxTab {...props} /></Suspense>`
+3. Delete inline code
+
+| Tab | Inline Lines | Status |
+|-----|-------------|--------|
+| Nexus | ~752 | ✅ COMPLETE (2026-01-05) |
+| Dashboard | ~1,689 | ✅ COMPLETE (2026-01-05) |
+| Admin | ~24 | ✅ COMPLETE (2026-01-05) |
+| Databases | ~12 | ✅ COMPLETE (2026-01-05) |
+| Help | ~200 | ✅ COMPLETE (2026-01-05) |
+| Model | ~618 | ✅ COMPLETE (2026-01-05) |
+
+#### Phase 2N-11: Duplicate Code Removal + Extractions ✅ COMPLETE
+
+Removed duplicate code from App.tsx that already existed in features/ modules:
+
+**Duplicate Backtest Engine Code (~850 lines)**
+- [x] Removed duplicate `metricAtIndex`, `metricAt` - already in `features/backtest/engine/evalContext.ts`
+- [x] Removed duplicate `evalCondition`, `evalConditions` - already in `features/backtest/engine/conditions.ts`
+- [x] Removed duplicate `evaluateNode` - already in `features/backtest/engine/evaluator.ts`
+- [x] Removed duplicate `tracePositionContributions` - already in `features/backtest/engine/traceContributions.ts`
+- [x] Removed duplicate `turnoverFraction` - already in `features/backtest/engine/allocation.ts`
+- [x] Removed duplicate `createBacktestTraceCollector` - already in `features/backtest/engine/traceCollector.ts`
+
+**Duplicate Input Collection Functions (~200 lines)**
+- [x] Removed duplicate `collectBacktestInputs` - already in `features/backtest/utils/inputCollection.ts`
+- [x] Removed duplicate `collectPositionTickers` - already in `features/backtest/utils/inputCollection.ts`
+- [x] Removed duplicate `isEtfsOnlyBot` - already in `features/backtest/utils/inputCollection.ts`
+- [x] Removed duplicate `collectIndicatorTickers` - already in `features/backtest/utils/inputCollection.ts`
+
+**New Extractions**
+
+*Ticker Search Utilities → `features/builder/utils/tickerSearch.ts` (~330 lines)*
+- [x] `findTickerInstances` - Find all instances of a ticker in tree
+- [x] `collectUsedTickers` - Collect unique tickers for Find/Replace
+- [x] `collectEnabledConditions` - Collect enabled conditions for overlay
+- [x] `replaceTickerInTree` - Replace all ticker instances in tree
+
+*Backtest Normalization → `features/backtest/utils/normalization.ts` (~55 lines)*
+- [x] `normalizeConditions` - Normalize condition array for backtest
+- [x] `normalizeNodeForBacktest` - Recursively normalize nodes
+
+*Also removed:*
+- [x] `findNode` duplicate (already in `features/builder/utils/treeOperations.ts`)
+- [x] Unused imports: `SLOT_ORDER`, `normalizeComparatorChoice`, `ConditionLine`, etc.
+
+**Result: App.tsx 6,358 → 4,580 lines (-1,778 lines, -28%)**
+
+#### Phase 2N-12: Remaining Pure Function Extractions ✅ COMPLETE
+
+Functions in App.tsx that have no React state dependencies - now moved to feature modules:
+
+**OHLC Fetching → `features/data/api/ohlc.ts` (~115 lines)**
+- [x] `fetchOhlcSeries` - Fetch OHLC data for single ticker
+- [x] `fetchOhlcSeriesBatch` - Batch fetch OHLC data with caching
+- [x] `ohlcDataCache` - Module-level Map cache
+
+**Price DB Builder → `features/backtest/utils/priceDb.ts` (~75 lines)**
+- [x] `buildPriceDb` - Build PriceDB object from OHLC data
+
+**Watchlist API → `features/bots/api/watchlists.ts` (~80 lines)**
+- [x] `loadWatchlistsFromApi` (already extracted in Phase 2N-11, now using import)
+- [x] `createWatchlistInApi` (already extracted in Phase 2N-11, now using import)
+- [x] `addBotToWatchlistInApi` (already extracted in Phase 2N-11, now using import)
+- [x] `removeBotFromWatchlistInApi` (already extracted in Phase 2N-11, now using import)
+
+**Preferences API → `features/auth/api/preferences.ts` (~60 lines)**
+- [x] `loadPreferencesFromApi` (already extracted in Phase 2N-11, now using import)
+- [x] `savePreferencesToApi` (already extracted in Phase 2N-11, now using import)
+- [x] `loadCallChainsFromApi` (already extracted in Phase 2N-11, now using import)
+
+**Result: App.tsx 4,580 → 4,238 lines (-342 lines)**
+
+#### Phase 2N-13: Zustand State Management ✅ COMPLETE
+
+**Decision: Zustand over custom hooks**
+
+Replaces Phase 2N-8/9/10 with a cleaner approach using Zustand stores instead of scattered hooks.
+
+**Why Zustand:**
+- Minimal disruption after FRD-030 refactoring
+- Existing API patterns (optimistic updates) already work well
+- 1:1 mental model mapping from useState
+- Eliminates 107 props drilling to ModelTab
+- Can add TanStack Query later if caching becomes needed
+- DevTools for state debugging
+
+**Current State (Phase 2N-14 COMPLETE):**
+| Metric | Before | After Stores | Target |
+|--------|--------|--------------|--------|
+| App.tsx lines | 4,229 | **3,920** | ~2,500 |
+| App.tsx useState calls | 51 | **18** | ~10 |
+| ModelTab props | 107 | **59** (Phase 2N-14a) | ~25 |
+| AnalyzeTab props | 45 | **15** (Phase 2N-14b) | ~10 |
+| DashboardTab props | 55 | **22** (Phase 2N-14c) | ~15 |
+| NexusTab props | 46 | **11** (Phase 2N-14d) | ~8 |
+| HelpTab props | 9 | **5** (Phase 2N-14e) | ~5 |
+| AdminTab props | 9 | **4** (Phase 2N-14f) | ~4 |
+
+**Note:** Phase 2N-14 complete. All 6 tabs now use Zustand stores directly.
+
+**Store Structure:**
+```
+src/stores/
+├── index.ts              # Re-exports all stores
+├── useAuthStore.ts       # userId, userRole, displayName, isAdmin (5 states)
+├── useUIStore.ts         # tabs, modals, collapse states (15 states)
+├── useBotStore.ts        # bots, activeBotId, clipboard, undo/redo (12 states)
+├── useBacktestStore.ts   # backtestMode, results, sanityReports (12 states)
+└── useDashboardStore.ts  # portfolio, buy/sell forms (27 states)
+```
+
+**State → Store Mapping:**
+
+| Store | States From | Line References |
+|-------|-------------|-----------------|
+| useAuthStore | userId, userRole, userDisplayName + useDisplayNameState hook | App.tsx:574-576 |
+| useUIStore | tab, subtabs, collapse states, changelog | App.tsx:983-995 |
+| useBotStore | bots, activeBotId, clipboard, savedBots, watchlists | App.tsx:977-985 |
+| useBacktestStore | backtestMode, analyzeBacktests, sanityReports, benchmarks | App.tsx:591-628 |
+| useDashboardStore | portfolio + useDashboardUIState + useCommunityState hooks | App.tsx:589, hooks |
+
+**Migration Phases:**
+
+| Phase | Risk | Files | Status |
+|-------|------|-------|--------|
+| 2N-13a: Auth Store | Low | 6 | ✅ COMPLETE |
+| 2N-13b: UI Store | Low | 8 | ✅ COMPLETE |
+| 2N-13c: Bot Store | Medium | 10 | ✅ COMPLETE |
+| 2N-13d: Backtest Store | Medium | 6 | ✅ COMPLETE |
+| 2N-13e: Dashboard Store | Medium | 5 | ✅ COMPLETE |
+
+**Stores Created:**
+- `src/stores/useAuthStore.ts` - Auth + display name editing
+- `src/stores/useUIStore.ts` - Tabs, modals, collapse states, scroll
+- `src/stores/useBotStore.ts` - Bot sessions, saved bots, watchlists, find/replace
+- `src/stores/useBacktestStore.ts` - ETF/backtest settings, analyze state, indicator overlays
+- `src/stores/useDashboardStore.ts` - Dashboard portfolio, UI state, community state
+
+**Hooks Deleted (merged into stores):**
+- `useDisplayNameState.ts` → useAuthStore
+- `useTickerModal.ts` → useUIStore
+- `useSaveMenu.ts` → useUIStore
+- `useFindReplace.ts` → useBotStore
+- `useIndicatorOverlays.ts` → useBacktestStore
+- `useCommunityState.ts` → useDashboardStore
+- `useDashboardUIState.ts` → useDashboardStore
+
+**Files to Modify:**
+
+*New Files (6):*
+| File | States | Est. Lines |
+|------|--------|------------|
+| `src/stores/index.ts` | - | ~10 |
+| `src/stores/useAuthStore.ts` | 5 | ~50 |
+| `src/stores/useUIStore.ts` | 15 | ~80 |
+| `src/stores/useBotStore.ts` | 12 + undo/redo | ~200 |
+| `src/stores/useBacktestStore.ts` | 12 | ~100 |
+| `src/stores/useDashboardStore.ts` | 27 | ~150 |
+
+*Modified Files:*
+| File | Changes |
+|------|---------|
+| `package.json` | Add `zustand` dependency |
+| `src/App.tsx` | Remove ~41 useState, use stores, remove ~1,700 lines |
+| `src/tabs/ModelTab.tsx` | Remove 82 props, use stores directly |
+| `src/tabs/AnalyzeTab.tsx` | Remove ~40 props, use stores |
+| `src/tabs/DashboardTab.tsx` | Remove ~30 props, use stores |
+| `src/tabs/NexusTab.tsx` | Remove ~15 props, use stores |
+| `src/tabs/HelpTab.tsx` | Remove ~20 props, use stores |
+| `src/tabs/AdminTab.tsx` | Remove ~10 props, use stores |
+
+*Deleted Files (hooks merged into stores):*
+| Hook | Merged Into |
+|------|-------------|
+| `src/hooks/useDisplayNameState.ts` | useAuthStore |
+| `src/hooks/useDashboardUIState.ts` | useDashboardStore |
+| `src/hooks/useCommunityState.ts` | useDashboardStore |
+| `src/hooks/useTickerModal.ts` | useUIStore |
+| `src/hooks/useFindReplace.ts` | useBotStore |
+| `src/hooks/useIndicatorOverlays.ts` | useBacktestStore |
+| `src/hooks/useSaveMenu.ts` | useUIStore |
+
+**Example Store (useAuthStore):**
+```typescript
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+interface AuthState {
+  userId: string | null
+  userRole: string | null
+  userDisplayName: string | null
+  isAdmin: boolean
+  hasEngineerAccess: boolean
+  setUser: (id: string | null, role: string | null, displayName: string | null) => void
+  logout: () => void
+}
+
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      userId: null,
+      userRole: null,
+      userDisplayName: null,
+      isAdmin: false,
+      hasEngineerAccess: false,
+      setUser: (userId, userRole, userDisplayName) => set({
+        userId,
+        userRole,
+        userDisplayName,
+        isAdmin: ['admin', 'main_admin', 'sub_admin'].includes(userRole || ''),
+        hasEngineerAccess: ['engineer', 'sub_admin', 'main_admin', 'admin'].includes(userRole || ''),
+      }),
+      logout: () => set({
+        userId: null,
+        userRole: null,
+        userDisplayName: null,
+        isAdmin: false,
+        hasEngineerAccess: false,
+      }),
+    }),
+    { name: 'auth-storage' }
+  )
+)
+```
+
+**Example Usage in Component:**
+```typescript
+// BEFORE: 107 props drilled through
+function ModelTab({ userId, userRole, bots, activeBotId, ... }) {
+  // ...
+}
+
+// AFTER: Direct store access
+function ModelTab() {
+  const userId = useAuthStore(s => s.userId)
+  const { bots, activeBotId } = useBotStore()
+  // Only ~25 props for callbacks that truly need to be passed
+}
+```
+
+**Success Metrics (Phase 2N-13):**
+- [x] ModelTab props: 107 → 59 (Phase 2N-14a complete, target ~25)
+- [x] App.tsx lines: 4,229 → 4,096 (-133 lines: -53 store migration, -80 ModelTab props)
+- [x] useState calls in App.tsx: 51 → 24 (-27 useState calls)
+- [x] All 7 extracted hooks merged into stores
+- [ ] No prop drilling for userId, bots, backtest state (pending Phase 2N-14)
+- [x] Build passes (`npm run build`)
+- [ ] All features work (manual test)
+
+#### Phase 2N-14: Tab Store Integration ✅ COMPLETE
+
+**Goal:** Have tab components use Zustand stores directly instead of receiving props from App.tsx.
+
+**Why This Matters:**
+- ModelTab originally received **107 props** - most replaced with store access
+- App.tsx has ~1,700 lines of prop passing that can be removed
+- Tabs become self-contained and easier to maintain
+
+**Tabs to Update:**
+
+| Tab | Current Props | After Stores | Reduction | Status |
+|-----|---------------|--------------|-----------|--------|
+| ModelTab | 107 → 59 | ~25 | -48 props | ✅ Done |
+| AnalyzeTab | ~45 → 15 | ~10 | -30 props | ✅ Done |
+| DashboardTab | ~55 → 22 | ~15 | -33 props | ✅ Done |
+| NexusTab | ~46 → 11 | ~8 | -35 props | ✅ Done |
+| HelpTab | 9 → 5 | ~5 | -4 props | ✅ Done |
+| AdminTab | 9 → 4 | ~4 | -5 props | ✅ Done |
+
+**Migration Order (by impact):**
+
+| Phase | Tab | Risk | Notes |
+|-------|-----|------|-------|
+| 2N-14a | ModelTab | High | ✅ Complete - 107 → 59 props |
+| 2N-14b | AnalyzeTab | Medium | ✅ Complete - 45 → 15 props |
+| 2N-14c | DashboardTab | Medium | ✅ Complete - 55 → 22 props |
+| 2N-14d | NexusTab | Low | ✅ Complete - 46 → 11 props |
+| 2N-14e | HelpTab | Low | ✅ Complete - 9 → 5 props |
+| 2N-14f | AdminTab | Low | ✅ Complete - 9 → 4 props |
+
+**Phase 2N-14a Complete (ModelTab):**
+- Props reduced: 107 → 59 (-48 props)
+- App.tsx lines: 4,176 → 4,096 (-80 lines)
+- Now uses: useAuthStore, useUIStore, useBotStore, useBacktestStore
+- Imported functions: collectUsedTickers, findTickerInstances, replaceTickerInTree, loadCallChainsFromApi
+
+**Phase 2N-14b Complete (AnalyzeTab):**
+- Props reduced: ~45 → 15 (-30 props, ~67% reduction)
+- App.tsx lines: 4,096 → 4,034 (-62 lines)
+- Added to useUIStore: nexusBuyBotId, nexusBuyAmount, nexusBuyMode + setters
+- AnalyzePanel now uses: useAuthStore, useUIStore, useBotStore, useBacktestStore
+- Computed values now inside AnalyzePanel: watchlistsByBotId, analyzeVisibleBotIds
+- Imported directly: normalizeNodeForBacktest from @/features/backtest
+- Migrated nexusBuy* from useState to useUIStore in App.tsx (shared across tabs)
+- Removed from App.tsx: watchlistsByBotId, analyzeVisibleBotIds, allWatchlistedBotIds, analyzeSubtab/setAnalyzeSubtab, analyzeTickerSort/setAnalyzeTickerSort
+
+**Phase 2N-14c Complete (DashboardTab):**
+- Props reduced: ~55 → 22 (-33 props, ~60% reduction)
+- App.tsx lines: 4,034 → 3,969 (-65 lines)
+- DashboardPanel now uses: useAuthStore, useUIStore, useBotStore, useBacktestStore, useDashboardStore
+- All dashboard form state (buy/sell/buyMore) now via useDashboardStore
+- Removed from App.tsx: dashboardTimePeriod, dashboardBotExpanded, dashboardBuyBotDropdownOpen, setDashboardSubtab (UI-only state)
+- Kept in App.tsx: dashboardBuy* values needed by handleDashboardBuy callback
+
+**Phase 2N-14d Complete (NexusTab):**
+- Props reduced: ~46 → 11 (-35 props, ~76% reduction)
+- App.tsx lines: 3,969 → 3,926 (-43 lines)
+- NexusPanel now uses all 5 stores: useAuthStore, useUIStore, useBotStore, useBacktestStore, useDashboardStore
+- Community sort/search state now via useDashboardStore directly
+- Removed from App.tsx: communityTopSort, communitySearchSort, atlasSort, communitySearchFilters + setters, setAddToWatchlistNewName, nexusBuyBotId, setNexusBuyMode
+- Remaining props: uiState, setUiState, dashboardCash, dashboardInvestmentsWithPnl, handleNexusBuy, removeBotFromWatchlist, push, runAnalyzeBacktest, handleCopyToNew, getFundSlotForBot
+
+**Phase 2N-14e Complete (HelpTab):**
+- Props reduced: 9 → 5 (-4 props, ~44% reduction)
+- App.tsx lines: 3,926 → 3,925 (-1 line)
+- HelpTab now uses: useAuthStore (userId), useUIStore (helpTab)
+- Derived colorTheme/theme from uiState inside component
+- Remaining props: uiState, setUiState, savePreferencesToApi, changelogLoading, changelogContent
+
+**Phase 2N-14f Complete (AdminTab):**
+- Props reduced: 9 → 4 (-5 props, ~56% reduction)
+- App.tsx lines: 3,925 → 3,920 (-5 lines)
+- AdminPanel now uses: useAuthStore (userId), useUIStore (adminTab, setAdminTab), useBotStore (savedBots, setSavedBots)
+- Removed from App.tsx: adminTab, setAdminTab accessors
+- Remaining props: onTickersUpdated, onRefreshNexusBots, onPrewarmComplete, updateBotInApi (all callbacks)
+
+**Pattern for Each Tab:**
+```typescript
+// BEFORE: Props drilling
+function ModelTab({ userId, bots, activeBotId, savedBots, ... }: ModelTabProps) {
+  // 107 props destructured
+}
+
+// AFTER: Direct store access
+function ModelTab({ /* only callbacks that need App.tsx context */ }: ModelTabProps) {
+  const userId = useAuthStore(s => s.userId)
+  const { bots, activeBotId, savedBots } = useBotStore()
+  const { backtestMode, analyzeBacktests } = useBacktestStore()
+  // 59 remaining props for App-specific callbacks
+}
+```
+
+**Phase 2N-14 COMPLETE - Final Results:**
+- App.tsx: 4,176 → 3,920 lines (-256 lines, 6% reduction)
+- Total props reduced: 155 props removed across all tabs
+  - ModelTab: 107 → 59 (-48 props)
+  - AnalyzeTab: 45 → 15 (-30 props)
+  - DashboardTab: 55 → 22 (-33 props)
+  - NexusTab: 46 → 11 (-35 props)
+  - HelpTab: 9 → 5 (-4 props)
+  - AdminTab: 9 → 4 (-5 props)
+- All 6 tabs now use Zustand stores directly for shared state
+- Pattern established: stores for shared state, props for callbacks + API-persisted state
+
+**Future: TanStack Query Integration**
+
+Zustand and TanStack Query are complementary:
+- **Zustand**: Client state (UI, forms, local preferences)
+- **TanStack Query**: Server state (API data, caching, background refetch)
+
+Can add TanStack Query later without changing Zustand stores - they handle different concerns
+
+#### Phase 2N-15: Tree Store Migration (zundo) ⬜ PENDING
+
+**Goal:** Move all 58 tree handlers from App.tsx to a Zustand store with automatic undo/redo via `zundo` middleware.
+
+**Why This Matters:**
+- Tree handlers are **~2,000 lines** in App.tsx (the biggest remaining chunk)
+- All handlers follow same pattern: mutate tree → push to history
+- `zundo` handles undo/redo automatically, eliminating manual history management
+- ModelTab props can drop from 59 → ~15 (removes all tree callbacks)
+
+**Expected Impact:**
+| Metric | Before | After | Reduction |
+|--------|--------|-------|-----------|
+| App.tsx lines | 3,920 | ~1,800-2,000 | -1,900 to -2,100 |
+| Tree handlers in App.tsx | 58 | 0 | -58 |
+| ModelTab props | 59 | ~15 | -44 |
+| Manual history code | ~100 lines | 0 | -100 |
+
+**Setup (2N-15a):**
+- [ ] Install zundo: `npm install zundo`
+- [ ] Create `src/stores/useTreeStore.ts` with temporal middleware
+- [ ] Set up basic structure with `root` state and `setRoot` action
+- [ ] Verify undo/redo works with simple test
+
+**Store Structure:**
+```typescript
+// src/stores/useTreeStore.ts
+import { create } from 'zustand'
+import { temporal } from 'zundo'
+
+interface TreeState {
+  root: FlowNode
+
+  // Node CRUD
+  setRoot: (root: FlowNode) => void
+  addNode: (parentId: string, slot: string, kind: BlockKind) => void
+  appendNode: (parentId: string, slot: string, kind: BlockKind) => void
+  deleteNode: (nodeId: string) => void
+  removeSlotEntry: (parentId: string, slot: string, index: number) => void
+
+  // Node properties
+  renameNode: (nodeId: string, title: string) => void
+  updateWeight: (nodeId: string, weight: WeightMode, detail?: WeightDetail) => void
+  updateColor: (nodeId: string, color: string) => void
+  toggleCollapse: (nodeId: string) => void
+
+  // Function node
+  updateFunctionWindow: (nodeId: string, window: number) => void
+  updateFunctionBottom: (nodeId: string, bottom: boolean) => void
+  updateFunctionMetric: (nodeId: string, metric: string) => void
+  updateFunctionRank: (nodeId: string, rank: number) => void
+
+  // Indicator/condition
+  addCondition: (nodeId: string) => void
+  deleteCondition: (nodeId: string, conditionId: string) => void
+  updateCondition: (nodeId: string, conditionId: string, text: string) => void
+
+  // Position node
+  addPosition: (nodeId: string) => void
+  removePosition: (nodeId: string, index: number) => void
+  choosePosition: (nodeId: string, index: number, ticker: string) => void
+
+  // Numbered node
+  updateNumberedQuantifier: (nodeId: string, quantifier: string) => void
+  updateNumberedN: (nodeId: string, n: number) => void
+  addNumberedItem: (nodeId: string) => void
+  deleteNumberedItem: (nodeId: string, index: number) => void
+
+  // Enter/Exit node
+  addEntryCondition: (nodeId: string) => void
+  addExitCondition: (nodeId: string) => void
+  deleteEntryCondition: (nodeId: string, index: number) => void
+  deleteExitCondition: (nodeId: string, index: number) => void
+  updateEntryCondition: (nodeId: string, index: number, condition: Condition) => void
+  updateExitCondition: (nodeId: string, index: number, condition: Condition) => void
+
+  // Scaling node
+  updateScaling: (nodeId: string, scaling: ScalingConfig) => void
+
+  // Call reference
+  updateCallRef: (nodeId: string, callChainId: string) => void
+
+  // Capped weight
+  updateCappedFallback: (nodeId: string, fallback: string) => void
+  updateVolWindow: (nodeId: string, window: number) => void
+
+  // Clipboard
+  copyNode: (nodeId: string) => void
+  pasteNode: (parentId: string, slot: string) => void
+  pasteAsCallRef: (parentId: string, slot: string) => void
+}
+
+export const useTreeStore = create<TreeState>()(
+  temporal(
+    (set, get) => ({
+      root: createDefaultRoot(),
+
+      // Each method calls the pure function and updates state
+      addNode: (parentId, slot, kind) => set((state) => ({
+        root: replaceSlot(state.root, parentId, slot, createNode(kind))
+      })),
+
+      deleteNode: (nodeId) => set((state) => ({
+        root: deleteNode(state.root, nodeId)
+      })),
+
+      // ... etc for all 58 handlers
+    }),
+    {
+      limit: 100,  // Keep last 100 states for undo
+      equality: (a, b) => a.root === b.root,  // Only track root changes
+    }
+  )
+)
+
+// Export temporal controls for undo/redo
+export const useTreeHistory = () => useTreeStore.temporal.getState()
+```
+
+**Migration Phases (by handler group):**
+
+| Phase | Handler Group | Count | Lines | Risk |
+|-------|---------------|-------|-------|------|
+| 2N-15b | Node CRUD (add, delete, append) | 4 | ~100 | Low |
+| 2N-15c | Node properties (rename, weight, color) | 6 | ~150 | Low |
+| 2N-15d | Function node handlers | 4 | ~100 | Low |
+| 2N-15e | Condition handlers | 3 | ~80 | Low |
+| 2N-15f | Position handlers | 3 | ~80 | Low |
+| 2N-15g | Numbered node handlers | 4 | ~100 | Low |
+| 2N-15h | Enter/Exit handlers | 6 | ~200 | Medium |
+| 2N-15i | Scaling + Call ref handlers | 3 | ~100 | Low |
+| 2N-15j | Clipboard handlers | 3 | ~150 | Medium |
+| 2N-15k | Remaining handlers + cleanup | ~22 | ~500 | Medium |
+
+**Detailed Migration Steps:**
+
+**2N-15b: Node CRUD (~100 lines)**
+- [ ] `handleAdd` → `useTreeStore.addNode`
+- [ ] `handleAppend` → `useTreeStore.appendNode`
+- [ ] `handleDelete` → `useTreeStore.deleteNode`
+- [ ] `handleRemoveSlotEntry` → `useTreeStore.removeSlotEntry`
+- [ ] Update NodeCard to use store
+- [ ] Test: add node, delete node, undo, redo
+
+**2N-15c: Node Properties (~150 lines)**
+- [ ] `handleRename` → `useTreeStore.renameNode`
+- [ ] `handleWeightChange` → `useTreeStore.updateWeight`
+- [ ] `handleColorChange` → `useTreeStore.updateColor`
+- [ ] `handleToggleCollapse` → `useTreeStore.toggleCollapse`
+- [ ] `handleUpdateCappedFallback` → `useTreeStore.updateCappedFallback`
+- [ ] `handleUpdateVolWindow` → `useTreeStore.updateVolWindow`
+- [ ] Test: rename, change weight, undo
+
+**2N-15d: Function Node (~100 lines)**
+- [ ] `handleFunctionWindow` → `useTreeStore.updateFunctionWindow`
+- [ ] `handleFunctionBottom` → `useTreeStore.updateFunctionBottom`
+- [ ] `handleFunctionMetric` → `useTreeStore.updateFunctionMetric`
+- [ ] `handleFunctionRank` → `useTreeStore.updateFunctionRank`
+- [ ] Test: modify function node, undo
+
+**2N-15e: Conditions (~80 lines)**
+- [ ] `handleAddCondition` → `useTreeStore.addCondition`
+- [ ] `handleDeleteCondition` → `useTreeStore.deleteCondition`
+- [ ] Update ConditionEditor to use store
+- [ ] Test: add/delete conditions, undo
+
+**2N-15f: Positions (~80 lines)**
+- [ ] `handleAddPos` → `useTreeStore.addPosition`
+- [ ] `handleRemovePos` → `useTreeStore.removePosition`
+- [ ] `handleChoosePos` → `useTreeStore.choosePosition`
+- [ ] Update PositionBody to use store
+- [ ] Test: add/remove tickers, undo
+
+**2N-15g: Numbered Node (~100 lines)**
+- [ ] `handleNumberedQuantifier` → `useTreeStore.updateNumberedQuantifier`
+- [ ] `handleNumberedN` → `useTreeStore.updateNumberedN`
+- [ ] `handleAddNumberedItem` → `useTreeStore.addNumberedItem`
+- [ ] `handleDeleteNumberedItem` → `useTreeStore.deleteNumberedItem`
+- [ ] Test: modify numbered node, undo
+
+**2N-15h: Enter/Exit Node (~200 lines)**
+- [ ] `handleAddEntryCondition` → `useTreeStore.addEntryCondition`
+- [ ] `handleAddExitCondition` → `useTreeStore.addExitCondition`
+- [ ] `handleDeleteEntryCondition` → `useTreeStore.deleteEntryCondition`
+- [ ] `handleDeleteExitCondition` → `useTreeStore.deleteExitCondition`
+- [ ] `handleUpdateEntryCondition` → `useTreeStore.updateEntryCondition`
+- [ ] `handleUpdateExitCondition` → `useTreeStore.updateExitCondition`
+- [ ] Test: modify enter/exit conditions, undo
+
+**2N-15i: Scaling + Call Ref (~100 lines)**
+- [ ] `handleUpdateScaling` → `useTreeStore.updateScaling`
+- [ ] `handleUpdateCallRef` → `useTreeStore.updateCallRef`
+- [ ] Test: modify scaling/call ref, undo
+
+**2N-15j: Clipboard (~150 lines)**
+- [ ] `handleCopy` → `useTreeStore.copyNode`
+- [ ] `handlePaste` → `useTreeStore.pasteNode`
+- [ ] `handlePasteCallRef` → `useTreeStore.pasteAsCallRef`
+- [ ] Move clipboard state to store
+- [ ] Test: copy, paste, undo paste
+
+**2N-15k: Cleanup + Integration (~500 lines)**
+- [ ] Remove old handlers from App.tsx
+- [ ] Update ModelTab props interface (remove ~44 handler props)
+- [ ] Update ModelTab to use `useTreeStore` directly
+- [ ] Add keyboard shortcuts (Ctrl+Z, Ctrl+Shift+Z) in App.tsx
+- [ ] Remove manual history state (`history`, `historyIndex`, `push`)
+- [ ] Update undo/redo buttons to use `useTreeHistory()`
+- [ ] Full regression test of all tree operations
+- [ ] Verify backtest still works with tree from store
+
+**Files to Create:**
+| File | Purpose | Est. Lines |
+|------|---------|------------|
+| `src/stores/useTreeStore.ts` | Tree state + all mutations | ~400 |
+
+**Files to Modify:**
+| File | Changes |
+|------|---------|
+| `package.json` | Add `zundo` |
+| `src/stores/index.ts` | Export useTreeStore |
+| `src/App.tsx` | Remove 58 handlers, history state (~2,000 lines) |
+| `src/tabs/ModelTab.tsx` | Remove handler props, use store (~44 props removed) |
+| `src/features/builder/components/NodeCard.tsx` | Use store for mutations |
+| `src/features/builder/components/*Body.tsx` | Use store for mutations |
+
+**Testing Strategy:**
+1. After each migration phase, run manual test:
+   - Create node of that type
+   - Modify properties
+   - Undo (Ctrl+Z)
+   - Redo (Ctrl+Shift+Z)
+   - Verify tree structure correct
+2. After full migration:
+   - Full tree building test
+   - Save/load bot
+   - Run backtest
+   - Copy/paste between sessions
+
+**Rollback Plan:**
+- Each phase is independent
+- If issues found, revert that phase only
+- Keep old handlers commented until phase verified
+- Can partially complete (some handlers migrated, some not)
+
+**Success Criteria:**
+- [ ] App.tsx < 2,000 lines
+- [ ] ModelTab props < 20
+- [ ] All tree operations work
+- [ ] Undo/redo works for all operations
+- [ ] Backtest produces same results
+- [ ] No performance regression
+- [ ] Build passes (`npm run build`)
 
 ### Phase 3: Redis Integration (Days 8-10)
 - [ ] Add Redis to Railway
@@ -841,9 +1563,19 @@ The backtest engine is tightly coupled and needs careful extraction in stages:
 | `src/features/backtest/*` | Backtest components/hooks | ~400 |
 | `src/features/watchlist/*` | Watchlist components/hooks | ~300 |
 | `src/features/nexus/*` | Nexus components/hooks | ~400 |
+| `src/features/analyze/*` | Analyze panel + subtabs | ~1,800 |
+| `src/features/dashboard/*` | Dashboard panel + hooks | ~1,700 |
 | `src/features/data/*` | IndexedDB, delta sync | ~250 |
 | `src/features/auth/*` | Auth components/hooks | ~200 |
 | `src/shared/*` | Shared components/utils | ~300 |
+| `src/hooks/useAuthState.ts` | Auth state hook | ~150 |
+| `src/hooks/useBotState.ts` | Bot/watchlist state hook | ~200 |
+| `src/hooks/useBacktestState.ts` | Backtest state hook | ~150 |
+| `src/hooks/useBotCallbacks.ts` | Bot CRUD callbacks | ~400 |
+| `src/hooks/useBacktestCallbacks.ts` | Backtest callbacks | ~300 |
+| `src/hooks/useTreeCallbacks.ts` | Tree operation callbacks | ~500 |
+| `src/hooks/useDataSync.ts` | Data loading effects | ~200 |
+| `src/components/AppShell.tsx` | Main layout/routing | ~300 |
 
 ### New Files (Backend)
 
@@ -863,7 +1595,7 @@ The backtest engine is tightly coupled and needs careful extraction in stages:
 
 | File | Change |
 |------|--------|
-| `src/App.tsx` | Slim to routing/layout only |
+| `src/App.tsx` | Extract everything, reduce to ~100-200 lines |
 | `server/index.mjs` | Slim to route wiring only |
 | `drizzle.config.ts` | Add PostgreSQL support |
 | `package.json` | Add new dependencies |
@@ -1127,8 +1859,8 @@ Each feature fails independently - a crash in Nexus won't break the Builder.
 | Backtest execution | ~500ms | <100ms |
 | Correlation matrix load | ~2 sec | <50ms |
 | Concurrent users | ~50 | 500+ |
-| App.tsx lines | 20,945 | <500 |
-| index.mjs lines | 3500+ | <200 |
+| App.tsx lines | 20,945 | <200 |
+| index.mjs lines | 3500+ | <500 |
 
 ---
 
