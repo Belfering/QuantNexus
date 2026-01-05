@@ -709,57 +709,78 @@ Users can then re-import their strategies via the UI after migration.
 - [x] `admin/types.ts`
 - [x] `admin/index.ts`
 
-#### Phase 2I: Nexus Feature (⬜ PENDING)
+#### Phase 2I: Recent Extractions ✅ COMPLETE
+- [x] `features/bots/api/index.ts` - Bot CRUD API functions (~200 lines)
+- [x] `features/data/utils/importParsers.ts` - Composer/QuantMage parsers (~660 lines)
+- [x] `shared/components/TickerSearchModal.tsx` - Ticker search modal (~180 lines)
+- [x] `shared/utils/ticker.ts` - Ticker normalization utilities (~30 lines)
+- [x] `features/backtest/utils/indicators.ts` - All rolling indicator functions (~540 lines)
 
-**2I-1: Nexus API**
+**Current App.tsx: 11,205 lines (down from ~21,000)**
+
+#### Phase 2J: Backtest Engine Extraction (⬜ PENDING - ~1000 lines)
+
+The backtest engine is tightly coupled and needs careful extraction in stages:
+
+**2J-1: EvalCtx and Metric Functions** (~250 lines)
+- [ ] `backtest/engine/types.ts` - EvalCtx type definition
+- [ ] `backtest/engine/metrics.ts` - metricAtIndex, metricAt functions
+
+**2J-2: Condition Evaluation** (~200 lines)
+- [ ] `backtest/engine/conditions.ts` - conditionExpr, evalConditionAtIndex, evalCondition, evalConditions
+
+**2J-3: Trace Collector** (~80 lines)
+- [ ] `backtest/engine/trace.ts` - createBacktestTraceCollector
+
+**2J-4: Allocation Functions** (~100 lines)
+- [ ] `backtest/engine/allocation.ts` - volForAlloc, weightChildren, turnoverFraction
+
+**2J-5: Node Evaluation** (~400 lines)
+- [ ] `backtest/engine/evaluator.ts` - evaluateNode, tracePositionContributions
+
+**2J-6: Engine Barrel Export**
+- [ ] `backtest/engine/index.ts` - Export all engine functions
+
+#### Phase 2K: Nexus Feature (⬜ PENDING)
+
+**2K-1: Nexus API**
 - [ ] `nexus/api/index.ts` - fetchNexusBots, correlation endpoints
 
-**2I-2: Nexus Hooks**
+**2K-2: Nexus Hooks**
 - [ ] `nexus/hooks/useNexusBots.ts` - Load/cache Nexus bots
 - [ ] `nexus/hooks/useCorrelation.ts` - Correlation matrix data
 - [ ] `nexus/hooks/useLeaderboard.ts` - Leaderboard queries
 
-**2I-3: Nexus Components**
+**2K-3: Nexus Components**
 - [ ] `nexus/components/NexusBrowser.tsx` - Browse community bots
 - [ ] `nexus/components/CorrelationMatrix.tsx` - Visual correlation display
 - [ ] `nexus/components/PortfolioBuilder.tsx` - Multi-bot portfolio
 - [ ] `nexus/components/LeaderboardTable.tsx` - Ranked bot list
 
-#### Phase 2J: Auth Feature (⬜ PENDING)
+#### Phase 2L: Auth Feature (⬜ PENDING)
 
-**2J-1: Auth API**
+**2L-1: Auth API**
 - [ ] `auth/api/index.ts` - Login, register, token refresh endpoints
 
-**2J-2: Auth Hooks**
+**2L-2: Auth Hooks**
 - [ ] `auth/hooks/useAuth.ts` - Auth state, login/logout
 - [ ] `auth/hooks/useUser.ts` - Current user info
 
-**2J-3: Auth Components**
+**2L-3: Auth Components**
 - [ ] `auth/components/LoginForm.tsx` - Email/password login
 - [ ] `auth/components/RegisterForm.tsx` - New user registration
 - [ ] `auth/components/AuthGuard.tsx` - Protected route wrapper
 
-#### Phase 2K: Data/Import Feature (⬜ PENDING - ~630 lines)
+#### Phase 2M: Data/Import Feature (⬜ PENDING)
 
-**2K-1: Import Parsers**
-- [ ] `data/utils/composerParser.ts` - Parse Composer symphony format (~300 lines)
-- [ ] `data/utils/quantMageParser.ts` - Parse QuantMage format (~300 lines)
-- [ ] `data/utils/importDetector.ts` - Detect import format (~30 lines)
-
-**2K-2: Client-Side Caching (new)**
+**2M-1: Client-Side Caching (new)**
 - [ ] `data/tickerCache.ts` - IndexedDB operations
 - [ ] `data/deltaSync.ts` - Fetch only new data since last sync
 
-**2K-3: Data Hooks**
+**2M-2: Data Hooks**
 - [ ] `data/hooks/useTickerData.ts` - Load/cache ticker data
 
-#### Phase 2L: Shared UI Components (⬜ PENDING - ~350 lines)
-- [ ] `shared/components/IndicatorDropdown.tsx` (~140 lines) - Metric/indicator selector
-- [ ] `shared/components/TickerSearchModal.tsx` (~180 lines) - Ticker search dialog
-- [ ] `shared/components/IndicatorTooltip.tsx` (~40 lines) - Indicator info tooltip
-- [ ] `shared/components/TickerDatalist.tsx` (~30 lines) - Ticker autocomplete datalist
-
-#### Phase 2M: Final Cleanup
+#### Phase 2N: Final Cleanup
 - [ ] Slim down App.tsx to routing/layout only (<500 lines target)
 - [ ] Remove all extracted code from App.tsx
 - [ ] Update all imports to use feature modules
