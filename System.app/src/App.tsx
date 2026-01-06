@@ -258,6 +258,9 @@ function App() {
   const tickerModalOpen = useUIStore(s => s.tickerModalOpen)
   const tickerModalCallback = useUIStore(s => s.tickerModalCallback)
   const tickerModalRestriction = useUIStore(s => s.tickerModalRestriction)
+  const tickerModalModes = useUIStore(s => s.tickerModalModes)
+  const tickerModalNodeKind = useUIStore(s => s.tickerModalNodeKind)
+  const tickerModalInitialValue = useUIStore(s => s.tickerModalInitialValue)
   const setTickerModalOpen = useUIStore(s => s.setTickerModalOpen)
 
   // Indicator overlay hook
@@ -1165,6 +1168,9 @@ function App() {
         tickerOptions={tickerOptions}
         tickerMetadata={tickerMetadata}
         restrictToTickers={tickerModalRestriction}
+        allowedModes={tickerModalModes}
+        nodeKind={tickerModalNodeKind}
+        initialValue={tickerModalInitialValue}
       />
       <main className="flex-1 overflow-hidden min-h-0">
         {tab === 'Model' ? (

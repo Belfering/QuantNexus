@@ -1,7 +1,8 @@
 // src/features/backtest/types.ts
 // Additional types for backtest feature
 
-import type { BacktestMode, BacktestError, BacktestResult, IndicatorOverlayData, PositionChoice } from '@/types'
+import type { BacktestMode, BacktestError, BacktestResult, IndicatorOverlayData, PositionChoice, BlockKind } from '@/types'
+import type { TickerModalMode } from '@/shared/components'
 
 /**
  * Percentile distribution for robustness analysis
@@ -128,7 +129,7 @@ export interface BacktesterPanelProps {
   canUndo?: boolean
   canRedo?: boolean
   // Ticker modal
-  openTickerModal?: (onSelect: (ticker: string) => void) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
 }
 
 /**

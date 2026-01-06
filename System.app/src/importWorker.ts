@@ -45,6 +45,9 @@ interface FlowNode {
   weightingThen?: WeightMode
   weightingElse?: WeightMode
   conditions?: ConditionLine[]
+  // Alt Exit node properties (entry/exit conditions)
+  entryConditions?: ConditionLine[]
+  exitConditions?: ConditionLine[]
   metric?: MetricChoice
   window?: number
   rank?: 'Top' | 'Bottom'
@@ -662,11 +665,12 @@ const parseIncantation = (
   // Used in QuantMage for strategies that enter on one condition and exit on another
   if (incType === 'EnterExit') {
     const enterCondition = node.enter_condition as Record<string, unknown> | undefined
+    const exitCondition = node.exit_condition as Record<string, unknown> | undefined
     const enterInc = node.enter_incantation as Record<string, unknown> | undefined
     const exitInc = node.exit_incantation as Record<string, unknown> | undefined
 
-    // Parse the enter condition (this triggers buying the enter position)
-    const enterConditions = enterCondition ? parseCondition(enterCondition, idGen) : [{
+    // Parse entry condition (triggers entering the position)
+    const entryConditions = enterCondition ? parseCondition(enterCondition, idGen) : [{
       id: idGen.condId(),
       type: 'if' as const,
       metric: 'Relative Strength Index' as MetricChoice,
@@ -677,10 +681,13 @@ const parseIncantation = (
       expanded: false,
     }]
 
+    // Parse exit condition (triggers exiting the position)
+    const exitConditions = exitCondition ? parseCondition(exitCondition, idGen) : undefined
+
     const enterBranch = enterInc ? parseIncantation(enterInc, idGen) : null
     const exitBranch = exitInc ? parseIncantation(exitInc, idGen) : null
 
-    // Model EnterExit as an altExit node (if enter condition -> enter position, else exit position)
+    // Model EnterExit as an altExit node with entryConditions and exitConditions
     return {
       id: idGen.nodeId(),
       kind: 'altExit',
@@ -689,7 +696,8 @@ const parseIncantation = (
       weighting: 'equal',
       weightingThen: 'equal',
       weightingElse: 'equal',
-      conditions: enterConditions,
+      entryConditions,
+      exitConditions,
       children: {
         then: enterBranch ? [enterBranch] : [null],
         else: exitBranch ? [exitBranch] : [null],

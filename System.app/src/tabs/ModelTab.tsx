@@ -348,6 +348,217 @@ export function ModelTab({
           />
         </div>
 
+        {/* Flowchart Toolbar - ETFs Only + Find/Replace + Undo/Redo - Floating above flowchart */}
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg shrink-0 sticky top-0 z-20" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
+          {/* Left section: ETFs Only checkbox + ticker count */}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={etfsOnlyMode}
+                onChange={(e) => setEtfsOnlyMode(e.target.checked)}
+                className="w-4 h-4 rounded border-border cursor-pointer"
+              />
+              <span className="text-sm font-semibold">ETFs Only</span>
+            </label>
+            <span className="text-xs text-black">
+              {etfsOnlyMode
+                ? `Showing ${tickerOptions.length} ETFs`
+                : `Showing all ${tickerOptions.length} tickers`}
+            </span>
+          </div>
+          {/* Center section: Find/Replace Controls */}
+          <div className="flex items-center gap-2">
+            <datalist id={USED_TICKERS_DATALIST_ID}>
+              {collectUsedTickers(current, includeCallChains ? callChains : undefined).map(t => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-black">Replace</span>
+              <button
+                className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
+                onClick={() => openTickerModal((ticker) => {
+                  setFindTicker(ticker)
+                  let instances = findTickerInstances(current, ticker, includePositions, includeIndicators)
+                  if (includeCallChains && callChains.length > 0) {
+                    callChains.forEach(chain => {
+                      try {
+                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                        const chainInstances = findTickerInstances(chainRoot, ticker, includePositions, includeIndicators, chain.id)
+                        instances = [...instances, ...chainInstances]
+                      } catch { /* ignore parse errors */ }
+                    })
+                  }
+                  setFoundInstances(instances)
+                  setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                  setHighlightedInstance(instances.length > 0 ? instances[0] : null)
+                }, collectUsedTickers(current, includeCallChains ? callChains : undefined))}
+              >
+                {findTicker || 'Ticker'}
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-black">With</span>
+              <button
+                className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
+                onClick={() => openTickerModal((ticker) => setReplaceTicker(ticker))}
+              >
+                {replaceTicker || 'Ticker'}
+              </button>
+              {findTicker && foundInstances.length > 0 && (
+                <span className="text-xs text-black bg-white px-1.5 py-0.5 rounded">
+                  {foundInstances.length} {foundInstances.length === 1 ? 'instance' : 'instances'}
+                </span>
+              )}
+            </div>
+            <label className="flex items-center gap-1 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includePositions}
+                onChange={(e) => {
+                  setIncludePositions(e.target.checked)
+                  let instances = findTickerInstances(current, findTicker, e.target.checked, includeIndicators)
+                  if (includeCallChains && callChains.length > 0) {
+                    callChains.forEach(chain => {
+                      try {
+                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                        instances = [...instances, ...findTickerInstances(chainRoot, findTicker, e.target.checked, includeIndicators, chain.id)]
+                      } catch { /* ignore */ }
+                    })
+                  }
+                  setFoundInstances(instances)
+                  setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                }}
+              />
+              Trade Tickers
+            </label>
+            <label className="flex items-center gap-1 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeIndicators}
+                onChange={(e) => {
+                  setIncludeIndicators(e.target.checked)
+                  let instances = findTickerInstances(current, findTicker, includePositions, e.target.checked)
+                  if (includeCallChains && callChains.length > 0) {
+                    callChains.forEach(chain => {
+                      try {
+                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                        instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, e.target.checked, chain.id)]
+                      } catch { /* ignore */ }
+                    })
+                  }
+                  setFoundInstances(instances)
+                  setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                }}
+              />
+              Indicator Tickers
+            </label>
+            <label className="flex items-center gap-1 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeCallChains}
+                onChange={(e) => {
+                  setIncludeCallChains(e.target.checked)
+                  let instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
+                  if (e.target.checked && callChains.length > 0) {
+                    callChains.forEach(chain => {
+                      try {
+                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                        instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, includeIndicators, chain.id)]
+                      } catch { /* ignore */ }
+                    })
+                  }
+                  setFoundInstances(instances)
+                  setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                }}
+              />
+              Call Chains
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              className="active:bg-accent/30"
+              disabled={foundInstances.length === 0}
+              onClick={() => {
+                const newIdx = (currentInstanceIndex - 1 + foundInstances.length) % foundInstances.length
+                setCurrentInstanceIndex(newIdx)
+                const instance = foundInstances[newIdx]
+                setHighlightedInstance(instance)
+                const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
+                if (nodeEl) nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }}
+            >
+              ◀ Prev
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="active:bg-accent/30"
+              disabled={foundInstances.length === 0}
+              onClick={() => {
+                const newIdx = (currentInstanceIndex + 1) % foundInstances.length
+                setCurrentInstanceIndex(newIdx)
+                const instance = foundInstances[newIdx]
+                setHighlightedInstance(instance)
+                const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
+                if (nodeEl) nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }}
+            >
+              Next ▶
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              className="active:bg-accent/50"
+              disabled={!findTicker || !replaceTicker || foundInstances.length === 0}
+              onClick={() => {
+                const nextRoot = replaceTickerInTree(current, findTicker, replaceTicker, includePositions, includeIndicators)
+                push(nextRoot)
+                if (includeCallChains && callChains.length > 0) {
+                  callChains.forEach(chain => {
+                    try {
+                      const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                      const updatedRoot = replaceTickerInTree(chainRoot, findTicker, replaceTicker, includePositions, includeIndicators)
+                      fetch(`/api/call-chains/${chain.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ root: JSON.stringify(updatedRoot) })
+                      }).then(() => { if (userId) loadCallChainsFromApi(userId).then(setCallChains) })
+                    } catch { /* ignore parse errors */ }
+                  })
+                }
+                setFindTicker('')
+                setReplaceTicker('')
+                setFoundInstances([])
+                setCurrentInstanceIndex(-1)
+                setHighlightedInstance(null)
+              }}
+            >
+              Replace{foundInstances.length > 0 ? ` (${foundInstances.length})` : ''}
+            </Button>
+          </div>
+          {/* Right section: Undo/Redo */}
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="secondary"
+              className="px-4 py-2 text-sm font-semibold active:bg-accent/30"
+              onClick={undo}
+              disabled={!activeBot || activeBot.historyIndex <= 0}
+            >
+              Undo
+            </Button>
+            <Button
+              variant="secondary"
+              className="px-4 py-2 text-sm font-semibold active:bg-accent/30"
+              onClick={redo}
+              disabled={!activeBot || activeBot.historyIndex >= activeBot.history.length - 1}
+            >
+              Redo
+            </Button>
+          </div>
+        </div>
+
         {/* Bottom Row - 2 Zones Side by Side */}
         <div className="flex gap-4 flex-1">
           {/* Bottom Left Zone - Sticky Labels + Content */}
@@ -637,219 +848,9 @@ export function ModelTab({
             </div>
           </div>
 
-          {/* Bottom Right Zone - Flow Tree Builder with Floating Toolbar */}
+          {/* Bottom Right Zone - Flow Tree Builder */}
           <div className={`flex flex-col transition-all relative min-h-0 overflow-hidden ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
-            {/* ETFs Only Toggle + Find/Replace - FLOATING TOOLBAR (sticky like Callback Nodes) */}
-            <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg mb-2 sticky top-4 z-20" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
-              {/* Left section: ETFs Only checkbox + ticker count */}
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={etfsOnlyMode}
-                    onChange={(e) => setEtfsOnlyMode(e.target.checked)}
-                    className="w-4 h-4 rounded border-border cursor-pointer"
-                  />
-                  <span className="text-sm font-semibold">ETFs Only</span>
-                </label>
-                <span className="text-xs text-muted">
-                  {etfsOnlyMode
-                    ? `Showing ${tickerOptions.length} ETFs`
-                    : `Showing all ${tickerOptions.length} tickers`}
-                </span>
-              </div>
-              {/* Center section: Find/Replace Controls */}
-              <div className="flex items-center gap-2">
-                <datalist id={USED_TICKERS_DATALIST_ID}>
-                  {collectUsedTickers(current, includeCallChains ? callChains : undefined).map(t => (
-                    <option key={t} value={t} />
-                  ))}
-                </datalist>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted">Replace</span>
-                  <button
-                    className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
-                    onClick={() => openTickerModal((ticker) => {
-                      setFindTicker(ticker)
-                      let instances = findTickerInstances(current, ticker, includePositions, includeIndicators)
-                      if (includeCallChains && callChains.length > 0) {
-                        callChains.forEach(chain => {
-                          try {
-                            const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                            const chainInstances = findTickerInstances(chainRoot, ticker, includePositions, includeIndicators, chain.id)
-                            instances = [...instances, ...chainInstances]
-                          } catch { /* ignore parse errors */ }
-                        })
-                      }
-                      setFoundInstances(instances)
-                      setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
-                      setHighlightedInstance(instances.length > 0 ? instances[0] : null)
-                    }, collectUsedTickers(current, includeCallChains ? callChains : undefined))}
-                  >
-                    {findTicker || 'Ticker'}
-                  </button>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted">With</span>
-                  <button
-                    className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
-                    onClick={() => openTickerModal((ticker) => setReplaceTicker(ticker))}
-                  >
-                    {replaceTicker || 'Ticker'}
-                  </button>
-                  {findTicker && foundInstances.length > 0 && (
-                    <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                      {foundInstances.length} {foundInstances.length === 1 ? 'instance' : 'instances'}
-                    </span>
-                  )}
-                </div>
-                <label className="flex items-center gap-1 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includePositions}
-                    onChange={(e) => {
-                      setIncludePositions(e.target.checked)
-                      let instances = findTickerInstances(current, findTicker, e.target.checked, includeIndicators)
-                      if (includeCallChains && callChains.length > 0) {
-                        callChains.forEach(chain => {
-                          try {
-                            const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                            instances = [...instances, ...findTickerInstances(chainRoot, findTicker, e.target.checked, includeIndicators, chain.id)]
-                          } catch { /* ignore */ }
-                        })
-                      }
-                      setFoundInstances(instances)
-                      setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
-                    }}
-                  />
-                  Trade Tickers
-                </label>
-                <label className="flex items-center gap-1 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeIndicators}
-                    onChange={(e) => {
-                      setIncludeIndicators(e.target.checked)
-                      let instances = findTickerInstances(current, findTicker, includePositions, e.target.checked)
-                      if (includeCallChains && callChains.length > 0) {
-                        callChains.forEach(chain => {
-                          try {
-                            const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                            instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, e.target.checked, chain.id)]
-                          } catch { /* ignore */ }
-                        })
-                      }
-                      setFoundInstances(instances)
-                      setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
-                    }}
-                  />
-                  Indicator Tickers
-                </label>
-                <label className="flex items-center gap-1 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeCallChains}
-                    onChange={(e) => {
-                      setIncludeCallChains(e.target.checked)
-                      let instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
-                      if (e.target.checked && callChains.length > 0) {
-                        callChains.forEach(chain => {
-                          try {
-                            const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                            instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, includeIndicators, chain.id)]
-                          } catch { /* ignore */ }
-                        })
-                      }
-                      setFoundInstances(instances)
-                      setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
-                    }}
-                  />
-                  Call Chains
-                </label>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="active:bg-accent/30"
-                  disabled={foundInstances.length === 0}
-                  onClick={() => {
-                    const newIdx = (currentInstanceIndex - 1 + foundInstances.length) % foundInstances.length
-                    setCurrentInstanceIndex(newIdx)
-                    const instance = foundInstances[newIdx]
-                    setHighlightedInstance(instance)
-                    const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
-                    if (nodeEl) nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                  }}
-                >
-                  Prev
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="active:bg-accent/30"
-                  disabled={foundInstances.length === 0}
-                  onClick={() => {
-                    const newIdx = (currentInstanceIndex + 1) % foundInstances.length
-                    setCurrentInstanceIndex(newIdx)
-                    const instance = foundInstances[newIdx]
-                    setHighlightedInstance(instance)
-                    const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
-                    if (nodeEl) nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                  }}
-                >
-                  Next
-                </Button>
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="active:bg-accent/50"
-                  disabled={!findTicker || !replaceTicker || foundInstances.length === 0}
-                  onClick={() => {
-                    const nextRoot = replaceTickerInTree(current, findTicker, replaceTicker, includePositions, includeIndicators)
-                    push(nextRoot)
-                    if (includeCallChains && callChains.length > 0) {
-                      callChains.forEach(chain => {
-                        try {
-                          const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
-                          const updatedRoot = replaceTickerInTree(chainRoot, findTicker, replaceTicker, includePositions, includeIndicators)
-                          fetch(`/api/call-chains/${chain.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ root: JSON.stringify(updatedRoot) })
-                          }).then(() => { if (userId) loadCallChainsFromApi(userId).then(setCallChains) })
-                        } catch { /* ignore parse errors */ }
-                      })
-                    }
-                    setFindTicker('')
-                    setReplaceTicker('')
-                    setFoundInstances([])
-                    setCurrentInstanceIndex(-1)
-                    setHighlightedInstance(null)
-                  }}
-                >
-                  Replace{foundInstances.length > 0 ? ` (${foundInstances.length})` : ''}
-                </Button>
-              </div>
-              {/* Right section: Undo/Redo */}
-              <div className="flex gap-2 justify-end">
-                <Button
-                  variant="secondary"
-                  className="px-4 py-2 text-sm font-semibold active:bg-accent/30"
-                  onClick={undo}
-                  disabled={!activeBot || activeBot.historyIndex <= 0}
-                >
-                  Undo
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="px-4 py-2 text-sm font-semibold active:bg-accent/30"
-                  onClick={redo}
-                  disabled={!activeBot || activeBot.historyIndex >= activeBot.history.length - 1}
-                >
-                  Redo
-                </Button>
-              </div>
-            </div>
-            {/* Flowchart Card - separate from toolbar */}
+            {/* Flowchart Card */}
             <div className="flex-1 border border-border rounded-lg bg-card min-h-0 p-4 relative" style={{ height: 'calc(100vh - 340px)', overflow: 'hidden' }}>
               <div
                 ref={flowchartScrollRef}

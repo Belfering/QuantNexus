@@ -801,7 +801,6 @@ h1 {
   flex-direction: column;
   width: max(1000px, fit-content);
   min-width: 1000px;
-  max-width: 100%;
   flex: 1;
 }
 

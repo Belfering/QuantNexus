@@ -14,6 +14,7 @@ import type {
   CallChain,
   TickerInstance,
 } from '../../../../types'
+import type { TickerModalMode } from '@/shared/components'
 
 /**
  * Line types used by buildLines for rendering node body
@@ -147,7 +148,7 @@ export interface CardProps {
   onToggleOverlay?: (key: string) => void
 
   // Ticker search modal
-  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[]) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
 }
 
 /**
@@ -187,7 +188,7 @@ export interface PositionBodyProps {
   onAddPosition: (id: string) => void
   onRemovePosition: (id: string, index: number) => void
   onChoosePosition: (id: string, index: number, choice: PositionChoice) => void
-  openTickerModal?: (onSelect: (ticker: string) => void) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
 }
 
 /**

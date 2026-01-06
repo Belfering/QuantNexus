@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { IndicatorDropdown } from '../IndicatorDropdown'
 import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
-import type { FlowNode, MetricChoice, WeightMode, PositionChoice } from '../../../../types'
+import type { FlowNode, MetricChoice, WeightMode, PositionChoice, BlockKind } from '../../../../types'
+import type { TickerModalMode } from '@/shared/components'
 import { isWindowlessIndicator } from '../../../../constants'
 
 export interface ScalingBodyProps {
@@ -27,7 +28,7 @@ export interface ScalingBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
-  openTickerModal?: (onSelect: (ticker: string) => void) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
 }
@@ -96,7 +97,7 @@ export const ScalingBody = ({
             <button
               className="h-7 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
               onClick={() =>
-                openTickerModal?.((ticker) => onUpdateScaling(node.id, { scaleTicker: ticker }))
+                openTickerModal?.((ticker) => onUpdateScaling(node.id, { scaleTicker: ticker }), undefined, ['tickers', 'ratios', 'branches'], node.kind, node.scaleTicker ?? 'SPY')
               }
             >
               {node.scaleTicker ?? 'SPY'}

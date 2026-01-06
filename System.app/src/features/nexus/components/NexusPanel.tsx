@@ -1,8 +1,8 @@
 // src/features/nexus/components/NexusPanel.tsx
 // Nexus tab component - displays community bots, top performers, and search
 
-import { useState, useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
+import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -276,7 +276,7 @@ export function NexusPanel(props: NexusPanelProps) {
   }, [])
 
   // Render bot card
-  const renderBotCard = useCallback((r: CommunityBotRow, opts?: { showCollapsedMetrics?: boolean }) => {
+  const renderBotCard = useCallback((r: CommunityBotRow, _opts?: { showCollapsedMetrics?: boolean }) => {
     const collapsed = uiState.communityCollapsedByBotId[r.id] ?? true
     const b = allNexusBots.find((bot) => bot.id === r.id) ?? savedBots.find((bot) => bot.id === r.id)
     const analyzeState = analyzeBacktests[r.id]
@@ -306,7 +306,7 @@ export function NexusPanel(props: NexusPanelProps) {
         : b.name
 
     return (
-      <Card key={r.id} className="grid gap-2.5">
+      <Card key={r.id} className="grid gap-2.5 p-2">
         <div className="flex items-center gap-2.5 flex-wrap">
           <Button variant="ghost" size="sm" onClick={toggleCollapse}>
             {collapsed ? 'Expand' : 'Collapse'}
@@ -336,56 +336,6 @@ export function NexusPanel(props: NexusPanelProps) {
             ))}
           </div>
           <div className="ml-auto flex gap-2 flex-wrap items-center">
-            {collapsed && opts?.showCollapsedMetrics && r.oosCagr != null && (
-              <div className="flex gap-3 mr-4 text-xs">
-                <span className={r.oosCagr >= 0 ? 'text-success' : 'text-danger'}>
-                  CAGR: {(r.oosCagr * 100).toFixed(1)}%
-                </span>
-                <span className={r.oosSharpe >= 1 ? 'text-success' : 'text-muted'}>
-                  Sharpe: {r.oosSharpe?.toFixed(2) ?? '--'}
-                </span>
-                <span className="text-danger">
-                  MaxDD: {((r.oosMaxdd ?? 0) * 100).toFixed(1)}%
-                </span>
-              </div>
-            )}
-            {(b.builderId === userId || isAdmin) && b.payload && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const blob = new Blob([typeof b.payload === 'string' ? b.payload : JSON.stringify(b.payload, null, 2)], { type: 'application/json' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `${b.name || 'system'}.json`
-                  a.click()
-                  URL.revokeObjectURL(url)
-                }}
-              >
-                Export JSON
-              </Button>
-            )}
-            {b.payload && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  try {
-                    const parsed = typeof b.payload === 'string' ? JSON.parse(b.payload) : b.payload
-                    push(parsed)
-                    setTab('Model')
-                  } catch (e) {
-                    console.error('Failed to open model:', e)
-                  }
-                }}
-              >
-                Open in Model
-              </Button>
-            )}
-            {b.builderId === userId && (
-              <Button size="sm" onClick={() => handleCopyToNew(b)}>Copy to New System</Button>
-            )}
             <Button
               size="sm"
               onClick={() => {
@@ -402,7 +352,7 @@ export function NexusPanel(props: NexusPanelProps) {
           <div className="flex flex-col gap-2.5 w-full">
             <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
               {analyzeState?.status === 'loading' ? (
-                <div className="text-muted">Running backtest…</div>
+                <div className="text-muted">Running backtest...</div>
               ) : analyzeState?.status === 'error' ? (
                 <div className="grid gap-2">
                   <div className="text-muted">{analyzeState.error ?? 'Failed to run backtest.'}</div>
@@ -417,7 +367,7 @@ export function NexusPanel(props: NexusPanelProps) {
                       <span className="text-muted">Cash Available:</span>{' '}
                       <span className="font-bold">{formatUsd(dashboardCash)}</span>
                       {nexusBuyBotId === b.id && nexusBuyMode === '%' && nexusBuyAmount && (
-                        <span className="text-muted"> · Amount: {formatUsd((parseFloat(nexusBuyAmount) / 100) * dashboardCash)}</span>
+                        <span className="text-muted"> - Amount: {formatUsd((parseFloat(nexusBuyAmount) / 100) * dashboardCash)}</span>
                       )}
                     </div>
                     <div className="flex gap-2 items-center">
@@ -540,6 +490,8 @@ export function NexusPanel(props: NexusPanelProps) {
                           points={analyzeState.result.points}
                           markers={[]}
                           heightPx={180}
+                          logScale
+                          showCursorStats={false}
                         />
                       </div>
                     )}
@@ -600,138 +552,221 @@ export function NexusPanel(props: NexusPanelProps) {
     )
   }, [sortRows, renderBotCard])
 
-  // Local tab state for Top/Search sections
-  const [communityTopSection, setCommunityTopSection] = useState<'cagr' | 'calmar' | 'sharpe'>('cagr')
-
   return (
-    <Card className="h-full flex flex-col overflow-hidden m-4">
-      <CardContent className="p-4 flex flex-col h-full overflow-auto">
-        <div className="flex flex-col gap-4">
-          {/* Atlas Sponsored Section */}
-          {atlasBotRows.length > 0 && (
-            <div>
-              <div className="font-black text-lg mb-2">Atlas Sponsored</div>
-              {renderBotCards(atlasBotRows, atlasSort, setAtlasSort, { showCollapsedMetrics: true })}
-            </div>
-          )}
-
-          {/* Top Performers Section */}
-          <div>
-            <div className="font-black text-lg mb-2">Top Performers</div>
-            <div className="flex gap-2 mb-3">
-              <Button
-                size="sm"
-                variant={communityTopSection === 'cagr' ? 'accent' : 'outline'}
-                onClick={() => setCommunityTopSection('cagr')}
-              >
-                Top CAGR
-              </Button>
-              <Button
-                size="sm"
-                variant={communityTopSection === 'calmar' ? 'accent' : 'outline'}
-                onClick={() => setCommunityTopSection('calmar')}
-              >
-                Top Calmar
-              </Button>
-              <Button
-                size="sm"
-                variant={communityTopSection === 'sharpe' ? 'accent' : 'outline'}
-                onClick={() => setCommunityTopSection('sharpe')}
-              >
-                Top Sharpe
-              </Button>
-            </div>
-            {communityTopSection === 'cagr' && renderBotCards(topByCagr, communityTopSort, setCommunityTopSort)}
-            {communityTopSection === 'calmar' && renderBotCards(topByCalmar, communityTopSort, setCommunityTopSort)}
-            {communityTopSection === 'sharpe' && renderBotCards(topBySharpe, communityTopSort, setCommunityTopSort)}
-          </div>
-
-          {/* Search Section */}
-          <div>
-            <div className="font-black text-lg mb-2">Search</div>
-            <div className="flex flex-col gap-2 mb-3">
-              {communitySearchFilters.map((filter, idx) => (
-                <div key={filter.id} className="flex gap-2 items-center">
-                  <Select
-                    value={filter.mode}
-                    onChange={(e) => {
-                      const mode = e.target.value as CommunitySearchFilter['mode']
-                      setCommunitySearchFilters((prev) =>
-                        prev.map((f, i) => i === idx ? { ...f, mode } : f)
-                      )
-                    }}
-                    className="w-32"
-                  >
-                    <option value="builder">Builder</option>
-                    <option value="cagr">CAGR %</option>
-                    <option value="sharpe">Sharpe</option>
-                    <option value="calmar">Calmar</option>
-                    <option value="maxdd">MaxDD %</option>
-                  </Select>
-                  {filter.mode !== 'builder' && (
-                    <Select
-                      value={filter.comparison}
-                      onChange={(e) => {
-                        const comparison = e.target.value as 'greater' | 'less'
-                        setCommunitySearchFilters((prev) =>
-                          prev.map((f, i) => i === idx ? { ...f, comparison } : f)
-                        )
-                      }}
-                      className="w-24"
-                    >
-                      <option value="greater">≥</option>
-                      <option value="less">≤</option>
-                    </Select>
-                  )}
-                  <Input
-                    placeholder={filter.mode === 'builder' ? 'Builder name...' : 'Value...'}
-                    value={filter.value}
-                    onChange={(e) => {
-                      setCommunitySearchFilters((prev) =>
-                        prev.map((f, i) => i === idx ? { ...f, value: e.target.value } : f)
-                      )
-                    }}
-                    list={filter.mode === 'builder' ? 'builder-names' : undefined}
-                    className="flex-1"
-                  />
-                  {communitySearchFilters.length > 1 && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setCommunitySearchFilters((prev) => prev.filter((_, i) => i !== idx))
-                      }}
-                    >
-                      ×
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <datalist id="builder-names">
-                {allBuilderIds.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setCommunitySearchFilters((prev) => [
-                    ...prev,
-                    { id: `filter-${Date.now()}`, mode: 'builder', comparison: 'greater', value: '' }
-                  ])
+    <div className="grid grid-cols-2 gap-4 min-h-[calc(100vh-260px)] items-stretch m-4">
+      {/* Left Column - Atlas Systems and Search */}
+      <Card className="flex flex-col gap-4 p-4">
+        <Card className="flex-[2] flex flex-col p-4 border-2 overflow-auto">
+          <div className="flex items-center justify-between mb-3">
+            <div className="font-bold">Atlas Sponsored Systems</div>
+            {/* Sort dropdown */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted">Sort:</span>
+              <Select
+                className="h-7 px-2 text-xs"
+                value={`${atlasSort.key}-${atlasSort.dir}`}
+                onChange={(e) => {
+                  const [key, dir] = e.target.value.split('-')
+                  setAtlasSort({ key: key as CommunitySortKey, dir: dir as SortDir })
                 }}
               >
-                + Add Filter
-              </Button>
+                <option value="oosCagr-desc">CAGR (High-Low)</option>
+                <option value="oosCagr-asc">CAGR (Low-High)</option>
+                <option value="oosSharpe-desc">Sharpe (High-Low)</option>
+                <option value="oosSharpe-asc">Sharpe (Low-High)</option>
+                <option value="oosMaxdd-desc">MaxDD (Low-High)</option>
+                <option value="oosMaxdd-asc">MaxDD (High-Low)</option>
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="name-desc">Name (Z-A)</option>
+              </Select>
             </div>
-            {renderBotCards(searchedBots, communitySearchSort, setCommunitySearchSort, {
-              emptyMessage: 'Enter search criteria above to find systems.',
-            })}
           </div>
+          {renderBotCards(atlasBotRows, atlasSort, setAtlasSort, {
+            emptyMessage: 'No Atlas sponsored systems yet.',
+            showCollapsedMetrics: true,
+          })}
+        </Card>
+        <Card className="flex-1 flex flex-col p-3 border-2">
+          <div className="font-bold text-center mb-2">Search Nexus Strategies</div>
+          <div className="flex flex-col gap-2 mb-2">
+            {communitySearchFilters.map((filter, idx) => (
+              <div key={filter.id} className="flex gap-2 items-center">
+                <Select
+                  className="h-8 px-2 text-sm"
+                  value={filter.mode}
+                  onChange={(e) => {
+                    setCommunitySearchFilters(prev => prev.map((f, i) =>
+                      i === idx ? { ...f, mode: e.target.value as typeof filter.mode, value: '' } : f
+                    ))
+                  }}
+                >
+                  <option value="builder">Builder Name</option>
+                  <option value="cagr">CAGR</option>
+                  <option value="sharpe">Sharpe</option>
+                  <option value="calmar">Calmar</option>
+                  <option value="maxdd">Max Drawdown</option>
+                </Select>
+                {filter.mode !== 'builder' && (
+                  <Select
+                    className="h-8 px-2 text-sm"
+                    value={filter.comparison}
+                    onChange={(e) => {
+                      setCommunitySearchFilters(prev => prev.map((f, i) =>
+                        i === idx ? { ...f, comparison: e.target.value as 'greater' | 'less' } : f
+                      ))
+                    }}
+                  >
+                    <option value="greater">Greater Than</option>
+                    <option value="less">Less Than</option>
+                  </Select>
+                )}
+                {filter.mode === 'builder' ? (
+                  <div className="flex-1 relative">
+                    <Input
+                      type="text"
+                      list={`builder-list-${filter.id}`}
+                      placeholder="Search builder..."
+                      value={filter.value}
+                      onChange={(e) => {
+                        setCommunitySearchFilters(prev => prev.map((f, i) =>
+                          i === idx ? { ...f, value: e.target.value } : f
+                        ))
+                      }}
+                      className="h-8 w-full"
+                    />
+                    <datalist id={`builder-list-${filter.id}`}>
+                      {allBuilderIds.map((id) => (
+                        <option key={id} value={id} />
+                      ))}
+                    </datalist>
+                  </div>
+                ) : (
+                  <Input
+                    type="number"
+                    placeholder={
+                      filter.mode === 'cagr'
+                        ? 'CAGR %'
+                        : filter.mode === 'sharpe'
+                          ? 'Sharpe'
+                          : filter.mode === 'calmar'
+                            ? 'Calmar'
+                            : 'Max DD %'
+                    }
+                    value={filter.value}
+                    onChange={(e) => {
+                      setCommunitySearchFilters(prev => prev.map((f, i) =>
+                        i === idx ? { ...f, value: e.target.value } : f
+                      ))
+                    }}
+                    className="flex-1 h-8"
+                  />
+                )}
+                {communitySearchFilters.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-muted hover:text-danger"
+                    onClick={() => {
+                      setCommunitySearchFilters(prev => prev.filter((_, i) => i !== idx))
+                    }}
+                    title="Remove filter"
+                  >
+                    X
+                  </Button>
+                )}
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs self-start"
+              onClick={() => {
+                setCommunitySearchFilters(prev => [
+                  ...prev,
+                  { id: `filter-${Date.now()}`, mode: 'cagr', comparison: 'greater', value: '' }
+                ])
+              }}
+            >
+              + Add Filter
+            </Button>
+          </div>
+          {/* Sort dropdown for search results */}
+          {communitySearchFilters.some(f => f.value.trim()) && searchedBots.length > 0 && (
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-bold">Results: {searchedBots.length} systems</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted">Sort:</span>
+                <Select
+                  className="h-7 px-2 text-xs"
+                  value={`${communitySearchSort.key}-${communitySearchSort.dir}`}
+                  onChange={(e) => {
+                    const [key, dir] = e.target.value.split('-')
+                    setCommunitySearchSort({ key: key as CommunitySortKey, dir: dir as SortDir })
+                  }}
+                >
+                  <option value="oosCagr-desc">CAGR (High-Low)</option>
+                  <option value="oosCagr-asc">CAGR (Low-High)</option>
+                  <option value="oosSharpe-desc">Sharpe (High-Low)</option>
+                  <option value="oosSharpe-asc">Sharpe (Low-High)</option>
+                  <option value="oosMaxdd-desc">MaxDD (Low-High)</option>
+                  <option value="oosMaxdd-asc">MaxDD (High-Low)</option>
+                  <option value="name-asc">Name (A-Z)</option>
+                  <option value="name-desc">Name (Z-A)</option>
+                </Select>
+              </div>
+            </div>
+          )}
+          <div className="flex-1 overflow-auto">
+            {communitySearchFilters.some(f => f.value.trim()) ? (
+              searchedBots.length > 0 ? (
+                renderBotCards(searchedBots.slice(0, 20), communitySearchSort, setCommunitySearchSort, {
+                  emptyMessage: 'No matching systems found.',
+                })
+              ) : (
+                <div className="text-muted text-center p-3">
+                  No systems match these criteria.
+                </div>
+              )
+            ) : (
+              <div className="text-muted text-center p-3">
+                Enter filter values to search.
+              </div>
+            )}
+          </div>
+        </Card>
+      </Card>
+
+      {/* Right Column - Nexus Select Zone */}
+      <Card className="flex flex-col p-4">
+        <div className="font-black text-center mb-4">Nexus Select Zone</div>
+        <div className="flex flex-col gap-4 flex-1">
+          <Card className="flex-1 flex flex-col p-3 border-2">
+            <div className="font-bold text-center mb-2">Top Systems by CAGR</div>
+            <div className="flex-1 overflow-auto max-h-[400px]">
+              {renderBotCards(topByCagr, communityTopSort, setCommunityTopSort, {
+                emptyMessage: 'No Nexus systems with backtest data.',
+              })}
+            </div>
+          </Card>
+          <Card className="flex-1 flex flex-col p-3 border-2">
+            <div className="font-bold text-center mb-2">Top Systems by Calmar Ratio</div>
+            <div className="flex-1 overflow-auto max-h-[400px]">
+              {renderBotCards(topByCalmar, communityTopSort, setCommunityTopSort, {
+                emptyMessage: 'No Nexus systems with backtest data.',
+              })}
+            </div>
+          </Card>
+          <Card className="flex-1 flex flex-col p-3 border-2">
+            <div className="font-bold text-center mb-2">Top Systems by Sharpe Ratio</div>
+            <div className="flex-1 overflow-auto max-h-[400px]">
+              {renderBotCards(topBySharpe, communityTopSort, setCommunityTopSort, {
+                emptyMessage: 'No Nexus systems with backtest data.',
+              })}
+            </div>
+          </Card>
         </div>
-      </CardContent>
-    </Card>
+      </Card>
+    </div>
   )
 }
 

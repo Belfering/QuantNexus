@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import type { ConditionLine, MetricChoice, ComparatorChoice, PositionChoice } from '../../../types'
+import type { ConditionLine, MetricChoice, ComparatorChoice, PositionChoice, BlockKind } from '../../../types'
+import type { TickerModalMode } from '@/shared/components'
 import { isWindowlessIndicator } from '../../../constants'
 import { IndicatorDropdown } from './IndicatorDropdown'
 
@@ -22,7 +23,9 @@ export interface ConditionEditorProps {
   /** Called to delete this condition */
   onDelete: () => void
   /** Optional function to open ticker search modal */
-  openTickerModal?: (onSelect: (ticker: string) => void) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  /** Node kind for the ticker modal context */
+  nodeKind?: BlockKind
 }
 
 export const ConditionEditor = ({
@@ -33,6 +36,7 @@ export const ConditionEditor = ({
   onUpdate,
   onDelete,
   openTickerModal,
+  nodeKind,
 }: ConditionEditorProps) => {
   const prefix = cond.type === 'and' ? 'And if the ' : cond.type === 'or' ? 'Or if the ' : 'If the '
   const isSingleLineItem = total === 1
@@ -66,7 +70,7 @@ export const ConditionEditor = ({
         {' of '}
         <button
           className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
-          onClick={() => openTickerModal?.((ticker) => onUpdate({ ticker: ticker as PositionChoice }))}
+          onClick={() => openTickerModal?.((ticker) => onUpdate({ ticker: ticker as PositionChoice }), undefined, ['tickers', 'ratios', 'branches'], nodeKind, cond.ticker)}
         >
           {cond.ticker}
         </button>
@@ -116,7 +120,7 @@ export const ConditionEditor = ({
             of{' '}
             <button
               className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
-              onClick={() => openTickerModal?.((ticker) => onUpdate({ rightTicker: ticker as PositionChoice }))}
+              onClick={() => openTickerModal?.((ticker) => onUpdate({ rightTicker: ticker as PositionChoice }), undefined, ['tickers', 'ratios', 'branches'], nodeKind, cond.rightTicker ?? 'SPY')}
             >
               {cond.rightTicker ?? 'SPY'}
             </button>

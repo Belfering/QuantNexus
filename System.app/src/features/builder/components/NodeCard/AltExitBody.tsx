@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { ConditionEditor } from '../ConditionEditor'
 import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
-import type { FlowNode, ConditionLine, WeightMode, PositionChoice } from '../../../../types'
+import type { FlowNode, ConditionLine, WeightMode, PositionChoice, BlockKind } from '../../../../types'
+import type { TickerModalMode } from '@/shared/components'
 
 export interface AltExitBodyProps {
   node: FlowNode
@@ -18,7 +19,7 @@ export interface AltExitBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
-  openTickerModal?: (onSelect: (ticker: string) => void) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
 }
@@ -59,6 +60,7 @@ export const AltExitBody = ({
               onUpdate={(updates) => onUpdateEntryCondition(node.id, cond.id, updates)}
               onDelete={() => onDeleteEntryCondition(node.id, cond.id)}
               openTickerModal={openTickerModal}
+              nodeKind={node.kind}
             />
           </div>
         ))}
@@ -131,6 +133,7 @@ export const AltExitBody = ({
               onUpdate={(updates) => onUpdateExitCondition(node.id, cond.id, updates)}
               onDelete={() => onDeleteExitCondition(node.id, cond.id)}
               openTickerModal={openTickerModal}
+              nodeKind={node.kind}
             />
           </div>
         ))}

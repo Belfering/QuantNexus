@@ -16,7 +16,9 @@ import type {
   NumberedQuantifier,
   PositionChoice,
   SlotId,
+  BlockKind,
 } from '../../../../types'
+import type { TickerModalMode } from '@/shared/components'
 
 // Generate ladder slot labels for N conditions: "All (N)", "N-1 of N", ..., "None"
 const getLadderSlotLabel = (matchCount: number, totalConditions: number): string => {
@@ -42,7 +44,7 @@ export interface NumberedBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
-  openTickerModal?: (onSelect: (ticker: string) => void) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: SlotId, depthPx: number) => React.ReactNode
 }
@@ -101,6 +103,7 @@ export const NumberedBody = ({
         }
       }}
       openTickerModal={openTickerModal}
+      nodeKind={node.kind}
     />
   )
 

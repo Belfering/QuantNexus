@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { AdminSubtab, DatabasesSubtab } from '@/features/admin'
+import type { TickerModalMode, BlockKind } from '@/shared/components'
 
 // Tab types
 type MainTab = 'Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'
@@ -32,6 +33,9 @@ interface UIState {
   tickerModalOpen: boolean
   tickerModalCallback: ((ticker: string) => void) | null
   tickerModalRestriction: string[] | undefined
+  tickerModalModes: TickerModalMode[]
+  tickerModalNodeKind: BlockKind | undefined
+  tickerModalInitialValue: string | undefined
 
   // Save menu (from useSaveMenu)
   saveMenuOpen: boolean
@@ -69,7 +73,13 @@ interface UIState {
 
   // Actions - Ticker modal
   setTickerModalOpen: (open: boolean) => void
-  openTickerModal: (onSelect: (ticker: string) => void, restrictTo?: string[]) => void
+  openTickerModal: (
+    onSelect: (ticker: string) => void,
+    restrictTo?: string[],
+    modes?: TickerModalMode[],
+    nodeKind?: BlockKind,
+    initialValue?: string
+  ) => void
   closeTickerModal: () => void
 
   // Actions - Save menu
@@ -110,6 +120,9 @@ export const useUIStore = create<UIState>()((set) => ({
   tickerModalOpen: false,
   tickerModalCallback: null,
   tickerModalRestriction: undefined,
+  tickerModalModes: ['tickers'],
+  tickerModalNodeKind: undefined,
+  tickerModalInitialValue: undefined,
 
   // Initial state - Save menu
   saveMenuOpen: false,
@@ -147,15 +160,21 @@ export const useUIStore = create<UIState>()((set) => ({
 
   // Actions - Ticker modal
   setTickerModalOpen: (tickerModalOpen) => set({ tickerModalOpen }),
-  openTickerModal: (onSelect, restrictTo) => set({
+  openTickerModal: (onSelect, restrictTo, modes, nodeKind, initialValue) => set({
     tickerModalCallback: onSelect,
     tickerModalRestriction: restrictTo,
+    tickerModalModes: modes || ['tickers'],
+    tickerModalNodeKind: nodeKind,
+    tickerModalInitialValue: initialValue,
     tickerModalOpen: true,
   }),
   closeTickerModal: () => set({
     tickerModalOpen: false,
     tickerModalCallback: null,
     tickerModalRestriction: undefined,
+    tickerModalModes: ['tickers'],
+    tickerModalNodeKind: undefined,
+    tickerModalInitialValue: undefined,
   }),
 
   // Actions - Save menu

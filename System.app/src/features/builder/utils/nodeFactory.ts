@@ -185,11 +185,23 @@ export const normalizeForImport = (node: FlowNode): FlowNode => {
       const arr = n.children[slot] ?? [null]
       children[slot] = arr.map((c) => (c ? walk(c) : c))
     })
+
+    // Migration: altExit nodes with legacy 'conditions' field should use 'entryConditions'
+    // Old format: conditions array for entry, no exit conditions
+    // New format: entryConditions + exitConditions separate arrays
+    let entryConditions = n.entryConditions
+    let exitConditions = n.exitConditions
+    if (n.kind === 'altExit' && n.conditions && !n.entryConditions) {
+      entryConditions = n.conditions
+    }
+
     return {
       ...n,
       id: needsNewIds ? newId() : n.id,
       collapsed: true, // Collapse all nodes for performance
       children,
+      // Apply migrated conditions for altExit nodes
+      ...(n.kind === 'altExit' ? { entryConditions, exitConditions } : {}),
     }
   }
   const result = walk(node)

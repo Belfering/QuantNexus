@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { ConditionEditor } from '../ConditionEditor'
 import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
-import type { FlowNode, ConditionLine, WeightMode, PositionChoice } from '../../../../types'
+import type { FlowNode, ConditionLine, WeightMode, PositionChoice, BlockKind } from '../../../../types'
+import type { TickerModalMode } from '@/shared/components'
 
 export interface IndicatorBodyProps {
   node: FlowNode
@@ -17,7 +18,7 @@ export interface IndicatorBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
-  openTickerModal?: (onSelect: (ticker: string) => void) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
 }
@@ -76,6 +77,7 @@ export const IndicatorBody = ({
                 onUpdate={(updates) => onUpdateCondition(node.id, cond.id, updates)}
                 onDelete={() => onDeleteCondition(node.id, cond.id)}
                 openTickerModal={openTickerModal}
+                nodeKind={node.kind}
               />
             </div>
           )
