@@ -16,6 +16,8 @@ data/parquet/*.parquet
 data/sqlite/*.db
 data/sqlite/*.db-shm
 data/sqlite/*.db-wal
+data/json/db.json
+data/tiingo_registry.json
 
 # Python
 __pycache__/
@@ -25,6 +27,17 @@ __pycache__/
 .Python
 venv/
 env/
+
+# Python test/temp files
+python/test_*.py
+python/*_old.py
+python/*.bak
+python/analyze_db.py
+python/read_parquet.py
+
+# Backup files
+*.bak
+*-sqlite.mjs.bak
 
 # Logs
 logs/
