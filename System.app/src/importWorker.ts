@@ -81,33 +81,51 @@ const createIdGenerator = () => {
   }
 }
 
+// FRD-021: Detect and parse QuantMage subspell references
+// Subspells appear as ticker_symbol values like 'Subspell "From"', 'Subspell "Enter"', etc.
+const isSubspellReference = (tickerSymbol: string | undefined): boolean => {
+  return typeof tickerSymbol === 'string' && tickerSymbol.startsWith('Subspell "')
+}
+
+// Parse subspell reference into Atlas branch format
+// 'Subspell "From"' -> 'branch:from', 'Subspell "Enter"' -> 'branch:enter', etc.
+const parseSubspellReference = (tickerSymbol: string): string => {
+  const match = tickerSymbol.match(/^Subspell "(\w+)"$/)
+  if (match) {
+    return `branch:${match[1].toLowerCase()}`
+  }
+  return tickerSymbol // Return as-is if doesn't match pattern
+}
+
 // Map QuantMage indicator types to Atlas metric names
 const mapIndicator = (type: string): MetricChoice => {
+  // Case-insensitive mapping - QM exports use inconsistent casing
   const mapping: Record<string, MetricChoice> = {
-    'CurrentPrice': 'Current Price',
-    'MovingAverage': 'Simple Moving Average',
-    'SimpleMovingAverage': 'Simple Moving Average',
-    'ExponentialMovingAverage': 'Exponential Moving Average',
-    'RelativeStrengthIndex': 'Relative Strength Index',
-    'CumulativeReturn': 'Cumulative Return',
-    'Volatility': 'Standard Deviation',
-    'MaxDrawdown': 'Max Drawdown',
+    'currentprice': 'Current Price',
+    'movingaverage': 'Simple Moving Average',
+    'simplemovingaverage': 'Simple Moving Average',
+    'exponentialmovingaverage': 'Exponential Moving Average',
+    'relativestrengthi': 'Relative Strength Index', // Sometimes truncated
+    'relativestrengthindex': 'Relative Strength Index',
+    'cumulativereturn': 'Cumulative Return',
+    'volatility': 'Standard Deviation',
+    'maxdrawdown': 'Max Drawdown',
     // Momentum indicators
-    '13612wMomentum': 'Momentum (Weighted)',
-    '13612uMomentum': 'Momentum (Unweighted)',
-    'SMA12Momentum': 'Momentum (12-Month SMA)',
+    '13612wmomentum': 'Momentum (Weighted)',
+    '13612umomentum': 'Momentum (Unweighted)',
+    'sma12momentum': 'Momentum (12-Month SMA)',
     // Additional indicators
-    'UltimateSmoother': 'Ultimate Smoother',
-    'Drawdown': 'Drawdown',
-    'AroonUp': 'Aroon Up',
-    'AroonDown': 'Aroon Down',
-    'Aroon': 'Aroon Oscillator',
-    'MACD': 'MACD Histogram',
-    'PPO': 'PPO Histogram',
-    'TrendClarity': 'Trend Clarity',
-    'MovingAverageReturn': 'SMA of Returns',
+    'ultimatesmoother': 'Ultimate Smoother',
+    'drawdown': 'Drawdown',
+    'aroonup': 'Aroon Up',
+    'aroondown': 'Aroon Down',
+    'aroon': 'Aroon Oscillator',
+    'macd': 'MACD Histogram',
+    'ppo': 'PPO Histogram',
+    'trendclarity': 'Trend Clarity',
+    'movingaveragereturn': 'SMA of Returns',
   }
-  return mapping[type] || 'Relative Strength Index'
+  return mapping[type.toLowerCase()] || 'Relative Strength Index'
 }
 
 // Parse QuantMage condition
@@ -123,12 +141,18 @@ const parseCondition = (
     const type = cond.type as string
     const forDays = (cond.for_days as number) || 1
 
+    // FRD-021: Handle subspell references in ticker fields
+    const lhTicker = cond.lh_ticker_symbol as string | undefined
+    const parsedLhTicker = isSubspellReference(lhTicker)
+      ? parseSubspellReference(lhTicker!)
+      : (lhTicker || 'SPY')
+
     const base: ConditionLine = {
       id: idGen.condId(),
       type: 'if',
       metric: lhIndicator ? mapIndicator(lhIndicator.type) : 'Relative Strength Index',
       window: lhIndicator?.window || 14,
-      ticker: (cond.lh_ticker_symbol as string) || 'SPY',
+      ticker: parsedLhTicker,
       comparator: (cond.greater_than as boolean) ? 'gt' : 'lt',
       threshold: (cond.rh_value as number) ?? 50,
       expanded: false,
@@ -137,7 +161,11 @@ const parseCondition = (
 
     if ((type === 'IndicatorAndIndicator' || type === 'BothIndicators') && rhIndicator) {
       base.expanded = true
-      base.rightTicker = (cond.rh_ticker_symbol as string) || 'SPY'
+      // FRD-021: Handle subspell references in right ticker field
+      const rhTicker = cond.rh_ticker_symbol as string | undefined
+      base.rightTicker = isSubspellReference(rhTicker)
+        ? parseSubspellReference(rhTicker!)
+        : (rhTicker || 'SPY')
       base.rightMetric = mapIndicator(rhIndicator.type)
       base.rightWindow = rhIndicator.window || 14
     }
@@ -305,12 +333,18 @@ const parseIncantation = (
   const incType = node.incantation_type as string
 
   if (incType === 'Ticker') {
+    // FRD-021: Handle subspell references in ticker positions
+    const symbol = node.symbol as string | undefined
+    const parsedSymbol = isSubspellReference(symbol)
+      ? parseSubspellReference(symbol!)
+      : (symbol || 'SPY')
+
     return {
       id: idGen.nodeId(),
       kind: 'position',
       title: 'Position',
       collapsed: true,
-      positions: [(node.symbol as string) || 'SPY'],
+      positions: [parsedSymbol],
       weighting: 'equal',
       children: {},
     }
@@ -580,7 +614,11 @@ const parseIncantation = (
 
   if (incType === 'Mixed') {
     const indicator = node.indicator as { type: string; window: number } | undefined
-    const tickerSymbol = (node.ticker_symbol as string) || 'SPY'
+    // FRD-021: Handle subspell references in scaling ticker
+    const rawTicker = node.ticker_symbol as string | undefined
+    const tickerSymbol = isSubspellReference(rawTicker)
+      ? parseSubspellReference(rawTicker!)
+      : (rawTicker || 'SPY')
     const fromValue = (node.from_value as number) || 0
     const toValue = (node.to_value as number) || 100
     const fromInc = node.from_incantation as Record<string, unknown> | undefined
@@ -616,6 +654,45 @@ const parseIncantation = (
       children: {
         then: thenBranch ? [thenBranch] : [null],
         else: elseBranch ? [elseBranch] : [null],
+      },
+    }
+  }
+
+  // EnterExit: condition-based entry/exit with separate positions for each state
+  // Used in QuantMage for strategies that enter on one condition and exit on another
+  if (incType === 'EnterExit') {
+    const enterCondition = node.enter_condition as Record<string, unknown> | undefined
+    const enterInc = node.enter_incantation as Record<string, unknown> | undefined
+    const exitInc = node.exit_incantation as Record<string, unknown> | undefined
+
+    // Parse the enter condition (this triggers buying the enter position)
+    const enterConditions = enterCondition ? parseCondition(enterCondition, idGen) : [{
+      id: idGen.condId(),
+      type: 'if' as const,
+      metric: 'Relative Strength Index' as MetricChoice,
+      window: 14,
+      ticker: 'SPY',
+      comparator: 'gt' as const,
+      threshold: 50,
+      expanded: false,
+    }]
+
+    const enterBranch = enterInc ? parseIncantation(enterInc, idGen) : null
+    const exitBranch = exitInc ? parseIncantation(exitInc, idGen) : null
+
+    // Model EnterExit as an altExit node (if enter condition -> enter position, else exit position)
+    return {
+      id: idGen.nodeId(),
+      kind: 'altExit',
+      title: (node.name as string) || 'Enter/Exit',
+      collapsed: true,
+      weighting: 'equal',
+      weightingThen: 'equal',
+      weightingElse: 'equal',
+      conditions: enterConditions,
+      children: {
+        then: enterBranch ? [enterBranch] : [null],
+        else: exitBranch ? [exitBranch] : [null],
       },
     }
   }

@@ -31,7 +31,7 @@ import {
   createBotInApi,
   deleteBotFromApi,
 } from '@/features/bots'
-import { useBotStore, useTreeStore } from '@/stores'
+import { useBotStore, useTreeStore, useBacktestStore } from '@/stores'
 
 interface UseBotOperationsOptions {
   userId: UserId | null
@@ -72,6 +72,11 @@ export function useBotOperations({
   const setClipboard = useBotStore((s) => s.setClipboard)
   const setCopiedNodeId = useBotStore((s) => s.setCopiedNodeId)
 
+  // Backtest Store - for auto-run robustness
+  const backtestMode = useBacktestStore((s) => s.backtestMode)
+  const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
+  const setModelSanityReport = useBacktestStore((s) => s.setModelSanityReport)
+
   // Get active bot
   const activeBot = bots.find((b) => b.id === activeBotId) ?? bots[0]
 
@@ -111,15 +116,22 @@ export function useBotOperations({
   )
 
   /**
-   * Update backtest state for the active bot
+   * Update backtest state for a specific bot by ID
    */
-  const updateActiveBotBacktest = useCallback((update: Partial<BotBacktestState>) => {
+  const updateBotBacktest = useCallback((botId: string, update: Partial<BotBacktestState>) => {
     setBots((prev) =>
       prev.map((b) =>
-        b.id === activeBotId ? { ...b, backtest: { ...b.backtest, ...update } } : b,
+        b.id === botId ? { ...b, backtest: { ...b.backtest, ...update } } : b,
       ),
     )
-  }, [activeBotId, setBots])
+  }, [setBots])
+
+  /**
+   * Update backtest state for the active bot (convenience wrapper)
+   */
+  const updateActiveBotBacktest = useCallback((update: Partial<BotBacktestState>) => {
+    updateBotBacktest(activeBotId, update)
+  }, [activeBotId, updateBotBacktest])
 
   /**
    * Jump to a backtest error node
@@ -138,22 +150,46 @@ export function useBotOperations({
 
   /**
    * Run backtest for current tree
+   * NOTE: Captures activeBotId at start to prevent results going to wrong bot
+   * if user switches bots during the async backtest operation
    */
   const handleRunBacktest = useCallback(async () => {
-    updateActiveBotBacktest({ status: 'running', focusNodeId: null, result: null, errors: [] })
+    // Capture bot ID at start - results should go to this bot even if user switches
+    const targetBotId = activeBotId
+    const capturedBot = activeBot // Capture for auto-robustness
+    updateBotBacktest(targetBotId, { status: 'running', focusNodeId: null, result: null, errors: [] })
     try {
       const { result } = await runBacktestForNode(current)
-      updateActiveBotBacktest({ result, status: 'done' })
+      updateBotBacktest(targetBotId, { result, status: 'done' })
+
+      // Auto-run robustness analysis after successful backtest (fire and forget)
+      const savedBotId = capturedBot?.savedBotId
+      setModelSanityReport({ status: 'loading' })
+      const payload = JSON.stringify(ensureSlots(cloneNode(current)))
+      const robustnessUrl = savedBotId
+        ? `${API_BASE}/bots/${savedBotId}/sanity-report`
+        : `${API_BASE}/sanity-report`
+      const robustnessBody = savedBotId
+        ? JSON.stringify({ mode: backtestMode, costBps: backtestCostBps })
+        : JSON.stringify({ payload, mode: backtestMode, costBps: backtestCostBps })
+      fetch(robustnessUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: robustnessBody,
+      })
+        .then((res) => res.ok ? res.json() : Promise.reject(new Error('Sanity report failed')))
+        .then((report) => setModelSanityReport({ status: 'done', report }))
+        .catch(() => setModelSanityReport({ status: 'error', error: 'Failed to generate robustness report' }))
     } catch (e) {
       if (isBacktestValidationError(e)) {
-        updateActiveBotBacktest({ errors: e.errors, status: 'error' })
+        updateBotBacktest(targetBotId, { errors: e.errors, status: 'error' })
       } else {
         const msg = String((e as Error)?.message || e)
         const friendly = msg.includes('Failed to fetch') ? `${msg}. Is the backend running? (npm run api)` : msg
-        updateActiveBotBacktest({ errors: [{ nodeId: current.id, field: 'backtest', message: friendly }], status: 'error' })
+        updateBotBacktest(targetBotId, { errors: [{ nodeId: current.id, field: 'backtest', message: friendly }], status: 'error' })
       }
     }
-  }, [current, runBacktestForNode, updateActiveBotBacktest])
+  }, [activeBotId, activeBot, current, runBacktestForNode, updateBotBacktest, backtestMode, backtestCostBps, setModelSanityReport])
 
   /**
    * Create a new bot
@@ -498,6 +534,7 @@ export function useBotOperations({
     push,
     // Bot operations
     handleCloseBot,
+    updateBotBacktest,
     updateActiveBotBacktest,
     handleJumpToBacktestError,
     handleRunBacktest,

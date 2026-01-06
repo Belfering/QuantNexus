@@ -60,6 +60,11 @@ export type SanityReportFragility = {
   profitConcentration: { level: string; top5DaysPct: number; top10DaysPct: number; detail: string }
   smoothnessScore: { level: string; actualMaxDD: number; shuffledP50: number; ratio: number; detail: string }
   thinningFragility: { level: string; originalCagr: number; medianThinnedCagr: number; cagrDrop: number; detail: string }
+  // FRD-030: Extended fragility fingerprints (2x4 grid)
+  backtestLength?: { level: string; years: number; tradingDays: number; detail: string }
+  turnoverRisk?: { level: string; avgTurnover: number; detail: string }
+  concentrationRisk?: { level: string; avgHoldings: number; detail: string }
+  drawdownRecovery?: { level: string; recoveryDays: number; recoveryYears: number; detail: string }
 }
 
 /**
