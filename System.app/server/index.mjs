@@ -3836,7 +3836,7 @@ app.post('/api/correlation/recommend', async (req, res) => {
 // ============================================================================
 
 // GET /api/admin/cache/stats - Get cache statistics
-app.get('/api/admin/cache/stats', async (req, res) => {
+app.get('/api/admin/cache/stats', authenticate, requireAdmin, async (req, res) => {
   try {
     await ensureDbInitialized()
     const stats = backtestCache.getCacheStats()
@@ -4037,7 +4037,7 @@ app.post('/api/admin/cache/prewarm', async (req, res) => {
 // ============================================
 
 // GET /api/admin/sync-schedule - Get schedule configuration
-app.get('/api/admin/sync-schedule', async (req, res) => {
+app.get('/api/admin/sync-schedule', authenticate, requireAdmin, async (req, res) => {
   try {
     await ensureDbInitialized()
     const config = await scheduler.getScheduleConfig(database)
@@ -4059,7 +4059,7 @@ app.get('/api/admin/sync-schedule', async (req, res) => {
 })
 
 // PUT /api/admin/sync-schedule - Update schedule configuration
-app.put('/api/admin/sync-schedule', async (req, res) => {
+app.put('/api/admin/sync-schedule', authenticate, requireAdmin, async (req, res) => {
   try {
     await ensureDbInitialized()
     const { enabled, updateTime, batchSize, sleepSeconds } = req.body
@@ -4086,7 +4086,7 @@ app.put('/api/admin/sync-schedule', async (req, res) => {
 
 // POST /api/admin/sync-schedule/run-now - Trigger immediate sync
 // Body: { source: 'tiingo' | 'yfinance' } (optional, defaults to 'tiingo')
-app.post('/api/admin/sync-schedule/run-now', async (req, res) => {
+app.post('/api/admin/sync-schedule/run-now', authenticate, requireAdmin, async (req, res) => {
   try {
     await ensureDbInitialized()
 
@@ -4111,7 +4111,7 @@ app.post('/api/admin/sync-schedule/run-now', async (req, res) => {
 })
 
 // POST /api/admin/sync-schedule/kill - Kill currently running sync job
-app.post('/api/admin/sync-schedule/kill', (req, res) => {
+app.post('/api/admin/sync-schedule/kill', authenticate, requireAdmin, (req, res) => {
   try {
     const result = scheduler.killCurrentJob()
     if (result.success) {

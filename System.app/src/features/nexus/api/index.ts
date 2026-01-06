@@ -76,7 +76,7 @@ export const optimizeCorrelation = async (
     throw new Error('Authentication required')
   }
 
-  const res = await fetch(`${API_BASE}/api/correlation/optimize`, {
+  const res = await fetch(`${API_BASE}/correlation/optimize`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -105,7 +105,7 @@ export const getCorrelationRecommendations = async (
     throw new Error('Authentication required')
   }
 
-  const res = await fetch(`${API_BASE}/api/correlation/recommend`, {
+  const res = await fetch(`${API_BASE}/correlation/recommend`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
