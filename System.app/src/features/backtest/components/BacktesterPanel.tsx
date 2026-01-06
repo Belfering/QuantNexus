@@ -404,13 +404,13 @@ export function BacktesterPanel({
           </div>
         )}
 
-        {sanityState.status === 'done' && sanityState.report && (
+        {sanityState.status === 'done' && sanityState.report && sanityState.report.fragility && sanityState.report.pathRisk && (
           <div className="grid grid-cols-4 gap-3 w-full h-full">
             {/* Left Card: Summary & Fragility */}
             <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
               <div>
                 <div className="text-xs font-bold mb-1.5 text-center">Summary</div>
-                {sanityState.report.summary.length > 0 ? (
+                {sanityState.report.summary?.length > 0 ? (
                   <ul className="text-xs space-y-0.5">
                     {sanityState.report.summary.map((s, i) => (
                       <li key={i} className="flex items-start gap-1.5">
