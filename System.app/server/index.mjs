@@ -3851,7 +3851,7 @@ app.get('/api/admin/cache/stats', authenticate, requireAdmin, async (req, res) =
 })
 
 // POST /api/admin/cache/invalidate - Invalidate cache (all or specific bot)
-app.post('/api/admin/cache/invalidate', async (req, res) => {
+app.post('/api/admin/cache/invalidate', authenticate, requireAdmin, async (req, res) => {
   try {
     await ensureDbInitialized()
     const { botId } = req.body
@@ -3871,7 +3871,7 @@ app.post('/api/admin/cache/invalidate', async (req, res) => {
 })
 
 // POST /api/admin/cache/refresh - Force daily refresh (clears all cache)
-app.post('/api/admin/cache/refresh', async (req, res) => {
+app.post('/api/admin/cache/refresh', authenticate, requireAdmin, async (req, res) => {
   try {
     await ensureDbInitialized()
     const count = backtestCache.invalidateAllCache()
@@ -3887,7 +3887,7 @@ app.post('/api/admin/cache/refresh', async (req, res) => {
 })
 
 // POST /api/admin/cache/prewarm - Run backtests and sanity reports for all systems to pre-warm cache
-app.post('/api/admin/cache/prewarm', async (req, res) => {
+app.post('/api/admin/cache/prewarm', authenticate, requireAdmin, async (req, res) => {
   try {
     await ensureDbInitialized()
 

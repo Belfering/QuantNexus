@@ -215,7 +215,9 @@ export function AdminPanel({
 
       // FRD-014: Also fetch cache stats
       try {
-        const cacheRes = await fetch(`${API_BASE}/admin/cache/stats`)
+        const cacheRes = await fetch(`${API_BASE}/admin/cache/stats`, {
+          headers: { Authorization: `Bearer ${getAuthToken()}` }
+        })
         if (cacheRes.ok && !cancelled) {
           setCacheStats(await cacheRes.json())
         }
@@ -1699,8 +1701,13 @@ export function AdminPanel({
                     if (!confirm('Clear all cached backtest results?')) return
                     setCacheRefreshing(true)
                     try {
-                      await fetch(`${API_BASE}/admin/cache/invalidate`, { method: 'POST' })
-                      const res = await fetch(`${API_BASE}/admin/cache/stats`)
+                      await fetch(`${API_BASE}/admin/cache/invalidate`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${getAuthToken()}` }
+                      })
+                      const res = await fetch(`${API_BASE}/admin/cache/stats`, {
+                        headers: { Authorization: `Bearer ${getAuthToken()}` }
+                      })
                       if (res.ok) setCacheStats(await res.json())
                     } finally {
                       setCacheRefreshing(false)
@@ -1719,7 +1726,10 @@ export function AdminPanel({
                     try {
                       await fetch(`${API_BASE}/admin/cache/prewarm`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${getAuthToken()}`
+                        },
                         body: JSON.stringify({ includeSanity: true })
                       })
                       onPrewarmComplete?.()
