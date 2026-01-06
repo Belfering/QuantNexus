@@ -134,6 +134,30 @@ export function AdminPanel({
   const [adminUsersLoading, setAdminUsersLoading] = useState(false)
   const [adminUsersError, setAdminUsersError] = useState<string | null>(null)
 
+  // Atlas Systems state (super admin only - from private atlas-private.db)
+  type AtlasSystemLocal = {
+    id: string
+    ownerId: string
+    ownerName: string
+    ownerEmail: string
+    name: string
+    description: string | null
+    visibility: string
+    fundSlot: number | null
+    tags: string[]
+    createdAt: string
+    updatedAt: string
+    metrics: {
+      cagr: number | null
+      maxDrawdown: number | null
+      sharpeRatio: number | null
+      sortinoRatio: number | null
+    } | null
+  }
+  const [atlasSystems, setAtlasSystems] = useState<AtlasSystemLocal[]>([])
+  const [atlasSystemsLoading, setAtlasSystemsLoading] = useState(false)
+  const [atlasSystemsError, setAtlasSystemsError] = useState<string | null>(null)
+
   // Sanitize ticker for filename comparison (matches Python download.py sanitize_filename)
   const sanitizeTickerForFilename = (ticker: string) =>
     ticker.replace(/[/\\:*?"<>|]/g, '-').toUpperCase()
@@ -319,6 +343,35 @@ export function AdminPanel({
     }
     void fetchAdminUsers()
 
+    return () => { cancelled = true }
+  }, [adminTab, isSuperAdmin])
+
+  // Fetch Atlas Systems when tab is active
+  useEffect(() => {
+    if (adminTab !== 'Atlas Systems' || !isSuperAdmin) return
+    let cancelled = false
+
+    const fetchAtlasSystems = async () => {
+      setAtlasSystemsLoading(true)
+      setAtlasSystemsError(null)
+      try {
+        const res = await fetch('/api/admin/systems/atlas', {
+          headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || 'Failed to fetch atlas systems')
+        }
+        const data = await res.json()
+        if (!cancelled) setAtlasSystems(data.systems || [])
+      } catch (e) {
+        if (!cancelled) setAtlasSystemsError(String((e as Error)?.message || e))
+      } finally {
+        if (!cancelled) setAtlasSystemsLoading(false)
+      }
+    }
+
+    void fetchAtlasSystems()
     return () => { cancelled = true }
   }, [adminTab, isSuperAdmin])
 
@@ -626,6 +679,14 @@ export function AdminPanel({
             onClick={() => setAdminTab('User Management')}
           >
             User Management
+          </button>
+        )}
+        {isSuperAdmin && (
+          <button
+            className={`tab-btn ${adminTab === 'Atlas Systems' ? 'active' : ''}`}
+            onClick={() => setAdminTab('Atlas Systems')}
+          >
+            Atlas Systems
           </button>
         )}
       </div>
@@ -2196,6 +2257,88 @@ export function AdminPanel({
                             <option value="sub_admin">sub_admin</option>
                           </select>
                         )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Atlas Systems Tab - Super Admin Only */}
+      {adminTab === 'Atlas Systems' && isSuperAdmin && (
+        <div className="space-y-6">
+          <div className="font-black text-lg">Atlas Systems</div>
+          <p className="text-sm text-muted-foreground">
+            Private admin systems (stored in atlas-private.db). Hidden from engineers and regular users.
+          </p>
+
+          {atlasSystemsError && (
+            <div className="text-destructive text-sm p-3 bg-destructive/10 rounded-lg">
+              {atlasSystemsError}
+            </div>
+          )}
+
+          {atlasSystemsLoading ? (
+            <div className="text-muted-foreground">Loading atlas systems...</div>
+          ) : atlasSystems.length === 0 ? (
+            <Card className="p-6 text-center text-muted-foreground">
+              No Atlas systems yet. Create systems from the Build tab and they will appear here.
+            </Card>
+          ) : (
+            <Card className="p-4">
+              <div className="text-sm text-muted-foreground mb-2">
+                {atlasSystems.length} system{atlasSystems.length !== 1 ? 's' : ''} in Atlas
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Owner</TableHead>
+                    <TableHead>Fund Slot</TableHead>
+                    <TableHead>CAGR</TableHead>
+                    <TableHead>Max DD</TableHead>
+                    <TableHead>Sharpe</TableHead>
+                    <TableHead>Tags</TableHead>
+                    <TableHead>Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {atlasSystems.map(sys => (
+                    <TableRow key={sys.id}>
+                      <TableCell className="font-medium">{sys.name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {sys.ownerName || sys.ownerEmail || sys.ownerId}
+                      </TableCell>
+                      <TableCell>
+                        {sys.fundSlot != null ? (
+                          <span className="px-2 py-0.5 rounded text-xs bg-purple-500/20 text-purple-500">
+                            Slot {sys.fundSlot}
+                          </span>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell className={sys.metrics?.cagr != null && sys.metrics.cagr > 0 ? 'text-green-500' : 'text-red-500'}>
+                        {sys.metrics?.cagr != null ? `${(sys.metrics.cagr * 100).toFixed(1)}%` : '—'}
+                      </TableCell>
+                      <TableCell className="text-red-500">
+                        {sys.metrics?.maxDrawdown != null ? `${(sys.metrics.maxDrawdown * 100).toFixed(1)}%` : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {sys.metrics?.sharpeRatio != null ? sys.metrics.sharpeRatio.toFixed(2) : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 flex-wrap">
+                          {sys.tags.map((tag, i) => (
+                            <span key={i} className="px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(sys.updatedAt).toLocaleDateString()}
                       </TableCell>
                     </TableRow>
                   ))}

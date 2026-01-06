@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { API_BASE } from '@/constants'
+import { authFetch } from '@/lib/authFetch'
 
 export type DatabasesSubtab = 'Users' | 'Systems' | 'Portfolios' | 'Cache' | 'Admin Config' | 'Tickers'
 type DbSortConfig = { col: string; dir: 'asc' | 'desc' }
@@ -50,7 +51,7 @@ export function DatabasesPanel({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/admin/db/${table}`)
+      const res = await authFetch(`${API_BASE}/admin/db/${table}`)
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || `Failed to fetch ${table}`)
@@ -78,7 +79,7 @@ export function DatabasesPanel({
         limit: tickerLimit.toString(),
         offset: offset.toString(),
       })
-      const res = await fetch(`${API_BASE}/tickers/registry/all?${params}`)
+      const res = await authFetch(`${API_BASE}/tickers/registry/all?${params}`)
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || 'Failed to fetch tickers')
@@ -305,7 +306,7 @@ export function DatabasesPanel({
                                 variant="outline"
                                 onClick={async () => {
                                   try {
-                                    const res = await fetch('/api/tickers/registry/reactivate', {
+                                    const res = await authFetch(`${API_BASE}/tickers/registry/reactivate`, {
                                       method: 'POST',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ ticker: String(row['ticker']) }),

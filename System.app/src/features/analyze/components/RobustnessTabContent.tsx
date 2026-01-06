@@ -95,20 +95,24 @@ export function RobustnessTabContent(props: RobustnessTabContentProps) {
                 )}
               </div>
 
-              {/* Fragility Table (Condensed) */}
+              {/* Fragility Table (2x4 Grid) */}
               <div>
                 <div className="text-xs font-bold mb-1.5 text-center">Fragility Fingerprints</div>
-                <div className="space-y-1">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                   {[
+                    { name: 'History', data: sanityState.report.fragility.backtestLength, tooltip: 'Length of backtest data. <5yr = high risk, 5-15yr = caution, >15yr = good.' },
+                    { name: 'Turnover', data: sanityState.report.fragility.turnoverRisk, tooltip: 'Average daily turnover. >50% = high cost, 20-50% = moderate, <20% = reasonable.' },
+                    { name: 'Holdings', data: sanityState.report.fragility.concentrationRisk, tooltip: 'Average positions held. <3 = concentrated, 3-5 = moderate, >5 = diversified.' },
+                    { name: 'Recovery', data: sanityState.report.fragility.drawdownRecovery, tooltip: 'Time to recover from max drawdown. >2yr = high risk, 1-2yr = caution, <1yr = good.' },
                     { name: 'Sub-Period', data: sanityState.report.fragility.subPeriodStability, tooltip: 'Consistency of returns across different time periods. Low = stable across all periods.' },
                     { name: 'Profit Conc.', data: sanityState.report.fragility.profitConcentration, tooltip: 'How concentrated profits are in a few big days. Low = profits spread evenly.' },
                     { name: 'Smoothness', data: sanityState.report.fragility.smoothnessScore, tooltip: 'How smooth the equity curve is. Normal = acceptable volatility in growth.' },
                     { name: 'Thinning', data: sanityState.report.fragility.thinningFragility, tooltip: 'Sensitivity to removing random trades. Robust = performance holds when trades removed.' },
-                  ].map(({ name, data, tooltip }) => (
-                    <div key={name} className="flex items-center gap-2 text-xs" title={tooltip}>
-                      <span className="w-20 truncate text-muted cursor-help">{name}</span>
-                      <span className={cn("w-16", getLevelColor(data.level))}>
-                        {getLevelIcon(data.level)} {data.level}
+                  ].filter(({ data }) => data != null).map(({ name, data, tooltip }) => (
+                    <div key={name} className="flex items-center gap-1.5 text-xs" title={tooltip}>
+                      <span className="w-16 truncate text-muted cursor-help">{name}</span>
+                      <span className={cn("flex-1 truncate", getLevelColor(data!.level))}>
+                        {getLevelIcon(data!.level)} {data!.level}
                       </span>
                     </div>
                   ))}

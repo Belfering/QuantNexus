@@ -1,14 +1,54 @@
 // src/shared/components/TickerSearchModal.tsx
-// Ticker search modal with filtering and metadata display
+// Ticker search modal with filtering, metadata display, ratio tickers, and branch references
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { POPULAR_TICKERS } from '@/constants'
+import { Button } from '@/components/ui/button'
 
 export interface TickerMetadata {
   name?: string
   assetType?: string
   exchange?: string
+}
+
+export type TickerModalMode = 'tickers' | 'ratios' | 'branches'
+export type BlockKind = 'basic' | 'function' | 'indicator' | 'position' | 'numbered' | 'call' | 'altExit' | 'scaling'
+
+// Common ratio tickers used in QuantMage strategies
+const COMMON_RATIO_TICKERS = [
+  'SPY/AGG', 'SPY/TLT', 'SPY/BIL', 'SPY/SHY',
+  'JNK/TLT', 'JNK/XLP', 'JNK/LQD', 'JNK/IEI',
+  'HYG/TLT', 'HYG/SHY', 'HYG/IEF',
+  'VTI/BND', 'VTI/AGG',
+  'QQQ/AGG', 'QQQ/QQQE', 'QQQ/XLU',
+  'QQQE/AGG', 'RSP/AGG',
+]
+
+// Branch equity options for scaling/indicator nodes
+const BRANCH_OPTIONS = [
+  { value: 'branch:from', label: 'From Branch', description: 'Equity curve of the "From" child', nodeKinds: ['scaling'] },
+  { value: 'branch:to', label: 'To Branch', description: 'Equity curve of the "To" child', nodeKinds: ['scaling'] },
+  { value: 'branch:then', label: 'Then Branch', description: 'Equity curve of the "Then" child', nodeKinds: ['indicator'] },
+  { value: 'branch:else', label: 'Else Branch', description: 'Equity curve of the "Else" child', nodeKinds: ['indicator'] },
+  { value: 'branch:enter', label: 'Enter Branch', description: 'Equity curve of the "Enter" child', nodeKinds: ['altExit'] },
+  { value: 'branch:exit', label: 'Exit Branch', description: 'Equity curve of the "Exit" child', nodeKinds: ['altExit'] },
+  { value: 'branch:children', label: 'Children', description: 'Sort/rank children by their equity metrics', nodeKinds: ['function'] },
+]
+
+// Parse a ratio ticker like "SPY/AGG" into numerator/denominator
+export const parseRatioTicker = (ticker: string): { numerator: string; denominator: string } | null => {
+  const norm = ticker.toUpperCase().trim()
+  const parts = norm.split('/')
+  if (parts.length !== 2) return null
+  const [numerator, denominator] = parts.map((p) => p.trim())
+  if (!numerator || !denominator) return null
+  return { numerator, denominator }
+}
+
+// Check if a ticker is a ratio ticker
+export const isRatioTicker = (ticker: string): boolean => {
+  return parseRatioTicker(ticker) !== null
 }
 
 export interface TickerSearchModalProps {
@@ -18,6 +58,9 @@ export interface TickerSearchModalProps {
   tickerOptions: string[]
   tickerMetadata: Map<string, TickerMetadata>
   restrictToTickers?: string[]
+  allowedModes?: TickerModalMode[]
+  nodeKind?: BlockKind // Parent node type for contextual branch filtering
+  initialValue?: string // Current ticker value to pre-populate (e.g., "JNK/XLP" for ratios)
 }
 
 export function TickerSearchModal({
@@ -27,25 +70,46 @@ export function TickerSearchModal({
   tickerOptions,
   tickerMetadata,
   restrictToTickers,
+  allowedModes = ['tickers'],
+  nodeKind,
+  initialValue,
 }: TickerSearchModalProps) {
   const [search, setSearch] = useState('')
   const [includeETFs, setIncludeETFs] = useState(true)
   const [includeStocks, setIncludeStocks] = useState(true)
+  const [mode, setMode] = useState<TickerModalMode>('tickers')
+  const [ratioLeft, setRatioLeft] = useState('')
+  const [ratioRight, setRatioRight] = useState('')
+  const [ratioPickerTarget, setRatioPickerTarget] = useState<'left' | 'right' | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Determine base ticker list (restricted or full)
   const baseTickers = restrictToTickers || tickerOptions
 
-  // Auto-focus on open and reset search
+  // Auto-focus on open and detect initial mode based on current value
   useEffect(() => {
     if (open) {
-      // Defer state update to avoid cascading renders
-      setTimeout(() => {
-        inputRef.current?.focus()
-        setSearch('')
-      }, 50)
+      setTimeout(() => inputRef.current?.focus(), 50)
+      setSearch('')
+      setRatioPickerTarget(null)
+
+      // Check if initialValue is a ratio ticker (e.g., "JNK/XLP")
+      const ratio = initialValue ? parseRatioTicker(initialValue) : null
+      if (ratio && allowedModes.includes('ratios')) {
+        setMode('ratios')
+        setRatioLeft(ratio.numerator)
+        setRatioRight(ratio.denominator)
+      } else if (initialValue?.toUpperCase().startsWith('BRANCH:') && allowedModes.includes('branches')) {
+        setMode('branches')
+        setRatioLeft('')
+        setRatioRight('')
+      } else {
+        setMode(allowedModes[0] || 'tickers')
+        setRatioLeft('')
+        setRatioRight('')
+      }
     }
-  }, [open])
+  }, [open, allowedModes, initialValue])
 
   // Close on ESC
   useEffect(() => {
@@ -116,74 +180,261 @@ export function TickerSearchModal({
       <div className="relative bg-surface border border-border rounded-lg shadow-2xl w-[500px] max-h-[70vh] flex flex-col">
         {/* Header with search */}
         <div className="p-4 border-b border-border">
-          <input
-            ref={inputRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search ticker or company name..."
-            className="w-full px-3 py-2 border border-border rounded bg-card text-sm"
-          />
+          {mode === 'tickers' && (
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search ticker or company name..."
+              className="w-full px-3 py-2 border border-border rounded bg-card text-sm"
+            />
+          )}
 
-          {/* Filter checkboxes */}
-          <div className="flex gap-4 mt-3">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
+          {mode === 'ratios' && !ratioPickerTarget && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRatioPickerTarget('left')
+                  setSearch('')
+                  setTimeout(() => inputRef.current?.focus(), 50)
+                }}
+                className="flex-1 px-3 py-2 border border-border rounded bg-card text-sm font-mono text-center hover:bg-muted/50 cursor-pointer"
+              >
+                {ratioLeft || <span className="text-muted-foreground">SPY</span>}
+              </button>
+              <span className="text-xl font-bold text-muted-foreground">/</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setRatioPickerTarget('right')
+                  setSearch('')
+                  setTimeout(() => inputRef.current?.focus(), 50)
+                }}
+                className="flex-1 px-3 py-2 border border-border rounded bg-card text-sm font-mono text-center hover:bg-muted/50 cursor-pointer"
+              >
+                {ratioRight || <span className="text-muted-foreground">AGG</span>}
+              </button>
+              <Button
+                size="sm"
+                disabled={!ratioLeft || !ratioRight}
+                onClick={() => {
+                  if (ratioLeft && ratioRight) {
+                    onSelect(`${ratioLeft}/${ratioRight}`)
+                    onClose()
+                  }
+                }}
+              >
+                Use
+              </Button>
+            </div>
+          )}
+
+          {/* Ratio picker sub-mode: show ticker search to pick left or right ticker */}
+          {mode === 'ratios' && ratioPickerTarget && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setRatioPickerTarget(null)}
+                className="px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+              >
+                ← Back
+              </button>
+              <span className="text-sm text-muted-foreground">
+                Select {ratioPickerTarget === 'left' ? 'numerator' : 'denominator'} ticker
+              </span>
               <input
-                type="checkbox"
-                checked={includeETFs}
-                onChange={(e) => setIncludeETFs(e.target.checked)}
+                ref={inputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search ticker..."
+                className="flex-1 px-3 py-2 border border-border rounded bg-card text-sm"
               />
-              Include ETFs
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeStocks}
-                onChange={(e) => setIncludeStocks(e.target.checked)}
-              />
-              Include Stocks
-            </label>
+            </div>
+          )}
+
+          {mode === 'branches' && (
+            <div className="text-sm text-muted-foreground">
+              Select a branch equity curve to use as an indicator source
+            </div>
+          )}
+
+          {/* Filter row - checkboxes + mode dropdown */}
+          <div className="flex items-center gap-4 mt-3">
+            {(mode === 'tickers' || (mode === 'ratios' && ratioPickerTarget)) && (
+              <>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeETFs}
+                    onChange={(e) => setIncludeETFs(e.target.checked)}
+                  />
+                  Include ETFs
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeStocks}
+                    onChange={(e) => setIncludeStocks(e.target.checked)}
+                  />
+                  Include Stocks
+                </label>
+              </>
+            )}
+            {/* Mode dropdown - only show if multiple modes allowed and not in ratio picker sub-mode */}
+            {allowedModes.length > 1 && !ratioPickerTarget && (
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as TickerModalMode)}
+                className="ml-auto px-2 py-1 border border-border rounded bg-card text-sm"
+              >
+                {allowedModes.includes('tickers') && <option value="tickers">Tickers</option>}
+                {allowedModes.includes('ratios') && <option value="ratios">Ratios</option>}
+                {allowedModes.includes('branches') && <option value="branches">Branches</option>}
+              </select>
+            )}
           </div>
         </div>
 
         {/* Results list */}
         <div className="flex-1 overflow-y-auto">
-          {filteredResults.map(ticker => {
-            const meta = tickerMetadata.get(ticker.toUpperCase())
-            return (
-              <div
-                key={ticker}
-                className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
-                onClick={() => { onSelect(ticker); onClose() }}
-              >
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className="font-mono font-bold shrink-0 w-16">{ticker}</span>
-                  <span className="text-muted-foreground text-sm truncate flex-1">
-                    {ticker === 'Empty'
-                      ? 'No position'
-                      : (meta?.name || <span className="italic text-muted-foreground/60">Metadata Unavailable</span>)}
-                  </span>
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    {ticker === 'Empty'
-                      ? ''
-                      : (meta?.exchange || <span className="italic text-muted-foreground/60">Exchange Unavailable</span>)}
+          {/* Tickers mode */}
+          {mode === 'tickers' && (
+            <>
+              {filteredResults.map(ticker => {
+                const meta = tickerMetadata.get(ticker.toUpperCase())
+                return (
+                  <div
+                    key={ticker}
+                    className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
+                    onClick={() => { onSelect(ticker); onClose() }}
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="font-mono font-bold shrink-0 w-16">{ticker}</span>
+                      <span className="text-muted-foreground text-sm truncate flex-1">
+                        {ticker === 'Empty'
+                          ? 'No position'
+                          : (meta?.name || <span className="italic text-muted-foreground/60">Metadata Unavailable</span>)}
+                      </span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {ticker === 'Empty'
+                          ? ''
+                          : (meta?.exchange || <span className="italic text-muted-foreground/60">Exchange Unavailable</span>)}
+                      </span>
+                    </div>
+                    {meta?.assetType && (
+                      <span className={cn(
+                        'px-1.5 py-0.5 rounded text-xs shrink-0 ml-2',
+                        meta.assetType === 'ETF' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
+                      )}>
+                        {meta.assetType}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+              {filteredResults.length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">
+                  No tickers found
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Ratios mode - common ratios list (only when not picking a ticker) */}
+          {mode === 'ratios' && !ratioPickerTarget && (
+            <>
+              <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border">
+                Common ratios - click to use, or click ticker boxes above to search
+              </div>
+              {COMMON_RATIO_TICKERS.map(ratio => (
+                <div
+                  key={ratio}
+                  className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
+                  onClick={() => { onSelect(ratio); onClose() }}
+                >
+                  <span className="font-mono font-bold">{ratio}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {ratio.split('/').join(' vs ')}
                   </span>
                 </div>
-                {meta?.assetType && (
-                  <span className={cn(
-                    'px-1.5 py-0.5 rounded text-xs shrink-0 ml-2',
-                    meta.assetType === 'ETF' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
-                  )}>
-                    {meta.assetType}
-                  </span>
-                )}
-              </div>
-            )
-          })}
-          {filteredResults.length === 0 && (
-            <div className="px-4 py-8 text-center text-muted-foreground">
-              No tickers found
-            </div>
+              ))}
+            </>
+          )}
+
+          {/* Ratios mode - ticker picker (when selecting left or right ticker) */}
+          {mode === 'ratios' && ratioPickerTarget && (
+            <>
+              {filteredResults.filter(t => t !== 'Empty').map(ticker => {
+                const meta = tickerMetadata.get(ticker.toUpperCase())
+                return (
+                  <div
+                    key={ticker}
+                    className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
+                    onClick={() => {
+                      if (ratioPickerTarget === 'left') {
+                        setRatioLeft(ticker)
+                      } else {
+                        setRatioRight(ticker)
+                      }
+                      setRatioPickerTarget(null)
+                      setSearch('')
+                    }}
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="font-mono font-bold shrink-0 w-16">{ticker}</span>
+                      <span className="text-muted-foreground text-sm truncate flex-1">
+                        {meta?.name || <span className="italic text-muted-foreground/60">Metadata Unavailable</span>}
+                      </span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {meta?.exchange || ''}
+                      </span>
+                    </div>
+                    {meta?.assetType && (
+                      <span className={cn(
+                        'px-1.5 py-0.5 rounded text-xs shrink-0 ml-2',
+                        meta.assetType === 'ETF' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
+                      )}>
+                        {meta.assetType}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+              {filteredResults.filter(t => t !== 'Empty').length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">
+                  No tickers found
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Branches mode */}
+          {mode === 'branches' && (
+            <>
+              {BRANCH_OPTIONS
+                .filter(opt => !nodeKind || opt.nodeKinds.includes(nodeKind))
+                .map(opt => (
+                  <div
+                    key={opt.value}
+                    className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
+                    onClick={() => { onSelect(opt.value); onClose() }}
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-mono font-bold">{opt.label}</span>
+                      <span className="text-xs text-muted-foreground">{opt.description}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground font-mono">{opt.value}</span>
+                  </div>
+                ))}
+              {BRANCH_OPTIONS.filter(opt => !nodeKind || opt.nodeKinds.includes(nodeKind)).length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">
+                  No branch options available for this node type
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

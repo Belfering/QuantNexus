@@ -65,7 +65,9 @@ export const metricAtIndex = (
   if (!t || t === 'Empty') return null
 
   if (metric === 'Current Price') {
-    const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : ctx.db.close[t]
+    // For CC/CO modes (decisionPrice='close'), use adjClose to match indicator calculations
+    // For OO/OC modes (decisionPrice='open'), use open price
+    const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : (ctx.db.adjClose[t] || ctx.db.close[t])
     const v = arr?.[index]
     return v == null ? null : v
   }
@@ -184,7 +186,9 @@ export const metricAt = (
   if (!t || t === 'Empty') return null
 
   if (metric === 'Current Price') {
-    const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : ctx.db.close[t]
+    // For CC/CO modes (decisionPrice='close'), use adjClose to match indicator calculations
+    // For OO/OC modes (decisionPrice='open'), use open price
+    const arr = ctx.decisionPrice === 'open' ? ctx.db.open[t] : (ctx.db.adjClose[t] || ctx.db.close[t])
     const v = arr?.[ctx.decisionIndex]
     return v == null ? null : v
   }
