@@ -1547,7 +1547,7 @@ export function useTreeUndo() {
 - `src/stores/index.ts`
 - `src/stores/useTreeStore.ts`
 
-#### Phase 2N-26: Master Feature Integration ⬜ PLANNED
+#### Phase 2N-26: Master Feature Integration 🔄 IN PROGRESS
 
 **Goal:** Merge new features from master branch into the refactored feature branch architecture without losing any functionality.
 
@@ -1556,93 +1556,81 @@ export function useTreeUndo() {
 - Master App.tsx: **23,575 lines** (monolithic with new features)
 - Strategy: ADD master features TO feature branch architecture (not merge monolithic files)
 
-**New Features to Integrate from Master:**
+---
 
-| Feature | Source | Target Location | Lines |
-|---------|--------|-----------------|-------|
-| authFetch + Token Refresh | master App.tsx:470-575 | `src/lib/authFetch.ts` (new) | ~100 |
-| Server-Side Backtests | master App.tsx:16707-16897 | `src/hooks/useBacktestRunner.ts` | ~150 |
-| Trading Control Tab | master App.tsx:6708-6850 | `src/features/admin/components/TradingControlTab.tsx` (new) | ~300 |
-| Atlas Systems Tab | master App.tsx:7127-7210 | `src/features/admin/components/AtlasSystemsTab.tsx` (new) | ~200 |
-| New Admin State | master App.tsx:4891-4960 | `src/stores/useUIStore.ts` | ~50 |
+**✅ COMPLETED (2N-26a-c):**
 
-**New Server Endpoints (auto-merge from master):**
-- `POST /api/backtest` - Run ad-hoc backtest on server
-- `GET/POST/PUT/DELETE /api/atlas/bots/*` - Atlas bot management (main_admin only)
-- `GET/POST /api/admin/broker/*` - Alpaca broker credentials
-- `/api/oauth/*` - OAuth authentication routes
-- `POST /api/internal/preload-cache` - Background cache preloading
+| Item | Status | Commit |
+|------|--------|--------|
+| Server files (backtest.mjs, live/, routes/) | ✅ Merged | a9aa120 |
+| authFetch utility (`src/lib/authFetch.ts`) | ✅ Created | a9aa120 |
+| Server-side backtest (`useBacktestRunner.ts`) | ✅ Updated | a9aa120 |
+| @alpacahq dependency | ✅ Added | a9aa120 |
 
-**New Dependencies to Add:**
-- `@alpacahq/alpaca-trade-api` - Alpaca trading integration
-- `ioredis` - Redis client
-- `jsonwebtoken` - JWT auth
-- `zod` - Schema validation
+---
 
-**Bug Fixes to Port:**
-- [ ] QM import indicator mapping fix
-- [ ] Current Price uses adjClose in CC mode
-- [ ] Drawdown Recovery fingerprint calculation fix
-- [ ] Aroon indicators fix
-- [ ] Robustness auto-run after backtest
+**❌ STILL MISSING - Phase 2N-26d: Critical Bug Fixes**
 
-**Implementation Steps:**
+| Bug | File | Problem | Fix |
+|-----|------|---------|-----|
+| Case-insensitive indicator mapping | `src/importWorker.ts` | QM imports fail ('SMA12Momentum' vs 'sma12momentum') | Normalize keys to lowercase |
+| Frontend adjClose fix | `src/features/backtest/engine/metrics.ts` | Current Price uses `close` not `adjClose` in CC mode | Use `ctx.db.adjClose[t] \|\| ctx.db.close[t]` |
+| Backtest state closure bug | `src/hooks/useBotOperations.ts` | Results go to wrong bot if user switches during backtest | Capture `activeBotId` at start |
+| Database panel auth headers | `src/features/admin/components/DatabasesPanel.tsx` | Admin API calls missing auth | Add `Authorization: Bearer ${token}` |
 
-**2N-26a: Server Merge** ⬜
-- [ ] `git checkout origin/master -- System.app/server/` (cleanest merge)
-- [ ] Verify server starts and endpoints work
+---
 
-**2N-26b: authFetch Utility** ⬜
-- [ ] Create `src/lib/authFetch.ts`
-- [ ] Token refresh with concurrent request batching
-- [ ] Update API functions to use authFetch
+**❌ STILL MISSING - Phase 2N-26e: New Features**
 
-**2N-26c: Server-Side Backtests** ⬜
-- [ ] Update `useBacktestRunner.ts` to call `/api/backtest`
-- [ ] Transform server response to frontend format
-- [ ] Keep existing error handling
+| Feature | File(s) | Description |
+|---------|---------|-------------|
+| Subspell references | `importWorker.ts`, `TickerSearchModal.tsx` | Support `branch:from`, `branch:to` ticker values |
+| Ratio ticker support | `TickerSearchModal.tsx` | Support `SPY/AGG` style ratio tickers |
+| Atlas Systems tab | `AtlasSystemsTab.tsx` (new) | Super admin tab for private systems |
+| Trading Control tab | `TradingControlTab.tsx` (new) | Alpaca broker UI |
+| EnterExit import | `importWorker.ts` | Handle QM 'EnterExit' incantation type |
+| Auto-run robustness | `useBotOperations.ts` | Trigger sanity report after backtest |
+| Fragility fingerprints | `RobustnessTabContent.tsx` | 2x4 grid with new indicators |
 
-**2N-26d: Trading Control Tab** ⬜
-- [ ] Create `TradingControlTab.tsx` component
-- [ ] Add broker state to useUIStore
-- [ ] Integrate into AdminPanel
+---
 
-**2N-26e: Atlas Systems Tab** ⬜
-- [ ] Create `AtlasSystemsTab.tsx` component
-- [ ] Add atlas systems state to useUIStore
-- [ ] Integrate into AdminPanel
+**Implementation Order:**
 
-**2N-26f: Dependencies & Bug Fixes** ⬜
-- [ ] Merge package.json dependencies
-- [ ] Port bug fixes to appropriate files
-- [ ] Run `npm install`
+**2N-26d: Critical Bug Fixes** ⬜
+1. [ ] Case-insensitive indicator mapping in `importWorker.ts`
+2. [ ] Frontend adjClose fix in metrics calculation
+3. [ ] Backtest state closure bug in `useBotOperations.ts`
+4. [ ] Database panel auth headers
 
-**2N-26g: Testing** ⬜
-- [ ] Build passes
-- [ ] All existing tabs work
-- [ ] Backtest runs via server
-- [ ] New admin tabs render (super admin)
-- [ ] No console errors
+**2N-26e: Core Features** ⬜
+5. [ ] Subspell references support (`branch:from`, `branch:to`)
+6. [ ] Ratio ticker support in TickerSearchModal
+7. [ ] Auto-run robustness after backtest
 
-**Files to Create:**
-| File | Purpose |
-|------|---------|
-| `src/lib/authFetch.ts` | Token refresh wrapper |
-| `src/features/admin/components/TradingControlTab.tsx` | Alpaca broker UI |
-| `src/features/admin/components/AtlasSystemsTab.tsx` | Atlas systems table |
+**2N-26f: Admin Features (super admin only)** ⬜
+8. [ ] Create `AtlasSystemsTab.tsx`
+9. [ ] Create `TradingControlTab.tsx`
+10. [ ] Update `AdminPanel.tsx` with new tabs
 
-**Files to Modify:**
-| File | Changes |
-|------|---------|
-| `src/hooks/useBacktestRunner.ts` | Server-side backtest calls |
-| `src/stores/useUIStore.ts` | New admin state (broker, atlas) |
-| `src/features/admin/components/AdminPanel.tsx` | New tab buttons |
-| `package.json` | New dependencies |
+**2N-26g: Polish** ⬜
+11. [ ] EnterExit import handler
+12. [ ] Fragility fingerprints 2x4 grid
 
-**Risk Assessment:**
-- Low risk: authFetch, new tabs (additive)
-- Medium risk: Server-side backtests (changes existing logic)
-- No risk: Server changes (separate from frontend refactoring)
+---
+
+**Files Summary:**
+
+| File | Changes Needed |
+|------|----------------|
+| `src/importWorker.ts` | Indicator mapping, subspell refs, EnterExit |
+| `src/shared/components/TickerSearchModal.tsx` | Ratio/branch modes |
+| `src/hooks/useBotOperations.ts` | Closure fix, auto-robustness |
+| `src/features/backtest/engine/metrics.ts` | adjClose fix |
+| `src/features/admin/components/DatabasesPanel.tsx` | Auth headers |
+| `src/features/admin/components/AdminPanel.tsx` | New tabs |
+| `src/features/analyze/components/RobustnessTabContent.tsx` | Fingerprints grid |
+| `src/features/admin/components/AtlasSystemsTab.tsx` | **NEW** |
+| `src/features/admin/components/TradingControlTab.tsx` | **NEW**
 
 #### Phase 2N Progress Summary
 
