@@ -78,7 +78,10 @@ export function InteractiveNodeCard({ node, depth = 0 }: InteractiveNodeCardProp
 
   return (
     <div className="ml-4 my-2">
-      <Card className={`${depth === 0 ? 'border-2 border-primary' : ''}`}>
+      <Card
+        className={`${depth === 0 ? 'border-2 border-primary' : ''}`}
+        style={{ backgroundColor: node.bgColor || undefined }}
+      >
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-1">

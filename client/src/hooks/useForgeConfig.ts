@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ForgeConfig } from '@/types';
 import { useForgeJobPersistence } from './useForgeJobPersistence';
+import { createDefaultRoot } from '@/lib/flowchart/helpers';
 
 export interface UseForgeConfigReturn {
   config: ForgeConfig;
@@ -22,15 +23,9 @@ export interface UseForgeConfigReturn {
 }
 
 const DEFAULT_CONFIG: ForgeConfig = {
-  mode: 'simple', // Default to simple mode (Phase 1.5)
-  indicator: 'RSI',
-  periodMin: 5,
-  periodMax: 20,
+  flowchart: createDefaultRoot(),
+  parameterRanges: [],
   tickers: [],
-  comparator: 'BOTH',
-  thresholdMin: 1,
-  thresholdMax: 99,
-  thresholdStep: 1,
   minTIM: 5,
   minTIMAR: 30,
   maxDD: 20,
@@ -40,8 +35,6 @@ const DEFAULT_CONFIG: ForgeConfig = {
   splitStrategy: 'even_odd_month',
   oosStartDate: undefined,
   numWorkers: null,
-  flowchart: undefined,
-  parameterRanges: undefined,
 };
 
 /**
@@ -81,11 +74,8 @@ export function useForgeConfig(): UseForgeConfigReturn {
   // Validate configuration
   const isValid = useMemo(() => {
     // Check required fields
-    if (!config.indicator || config.indicator.trim() === '') return false;
+    if (!config.flowchart) return false;
     if (config.tickers.length === 0) return false;
-    if (config.periodMin < 1 || config.periodMax < config.periodMin) return false;
-    if (config.thresholdMin < 0 || config.thresholdMax <= config.thresholdMin) return false;
-    if (config.thresholdStep <= 0) return false;
 
     // Validate pass/fail criteria
     if (config.minTIM < 0 || config.minTIM > 100) return false;

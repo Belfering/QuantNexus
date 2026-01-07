@@ -53,7 +53,7 @@ export function useForgeEstimate(config: ForgeConfig): UseForgeEstimateReturn {
   // Debounced estimate updates
   useEffect(() => {
     // Don't estimate if config is invalid
-    if (!config.indicator || config.tickers.length === 0) {
+    if (!config.flowchart || config.tickers.length === 0) {
       setEstimate(null);
       return;
     }

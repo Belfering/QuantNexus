@@ -5,22 +5,10 @@
 import type { FlowNode, ParameterRange } from './flowchart';
 
 export interface ForgeConfig {
-  // Mode selection (Phase 1.5)
-  mode: 'simple' | 'flowchart';
-
-  // Simple mode fields (existing)
-  indicator: string;
-  periodMin: number;
-  periodMax: number;
+  // Flowchart (QuantNexus visual redesign - flowchart is the only mode)
+  flowchart: FlowNode;
+  parameterRanges: ParameterRange[];
   tickers: string[];
-  comparator: 'LT' | 'GT' | 'BOTH';
-  thresholdMin: number;
-  thresholdMax: number;
-  thresholdStep: number;
-
-  // Flowchart mode fields (Phase 1.5)
-  flowchart?: FlowNode;
-  parameterRanges?: ParameterRange[];
 
   // Shared fields
   minTIM: number;

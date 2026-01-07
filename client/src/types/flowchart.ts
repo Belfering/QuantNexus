@@ -209,6 +209,29 @@ export interface ParameterRange {
 }
 
 // ============================================================================
+// Visual Parameter Types (Phase 2: QuantNexus Redesign)
+// ============================================================================
+
+export type ParameterField = 'window' | 'metric' | 'comparator' | 'ticker' | 'threshold';
+
+export interface VisualParameter {
+  id: string;                       // ${nodeId}-${condId}-${field}
+  field: ParameterField;            // Which field this parameter represents
+  nodeId: string;                   // Source node ID
+  nodeTitle: string;                // Human-readable node title
+  conditionId: string;              // Source condition ID
+  currentValue: number | string;    // Current value in flowchart
+  nodeColor: string;                // Background color from node.bgColor
+  path: string;                     // Human-readable path (e.g., "Indicator Block 1 > Condition 1")
+
+  // Optimization config (for period/threshold only)
+  optimizationEnabled?: boolean;    // Is optimization enabled for this parameter
+  min?: number;                     // Range minimum
+  max?: number;                     // Range maximum
+  step?: number;                    // Step size
+}
+
+// ============================================================================
 // Utility Types
 // ============================================================================
 

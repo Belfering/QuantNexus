@@ -7,13 +7,11 @@ import { Card } from '@/components/ui/card';
 import { useFlowchartStore } from '@/stores/useFlowchartStore';
 import { FlowchartToolbar } from '@/components/Flowchart/FlowchartToolbar';
 import { InteractiveNodeCard } from '@/components/Flowchart/NodeCard/InteractiveNodeCard';
-import { ParameterExtractionPanel } from './ParameterExtractionPanel';
-import { useParameterExtraction } from '@/hooks/useParameterExtraction';
-import { useFlowchartEstimate } from '@/hooks/useFlowchartEstimate';
+import { ParameterBoxPanel } from '@/components/Flowchart/ParameterBoxes/ParameterBoxPanel';
 import { useFlowchartPersistence } from '@/hooks/useFlowchartPersistence';
 import type { ForgeConfig } from '@/types/forge';
-import type { ParameterRange } from '@/types/flowchart';
 import { useEffect } from 'react';
+import { getNodeColorAssignments } from '@/lib/flowchart/colors';
 
 interface FlowchartStrategyEditorProps {
   config: ForgeConfig;
@@ -22,33 +20,18 @@ interface FlowchartStrategyEditorProps {
 
 export function FlowchartStrategyEditor({ config, updateConfig }: FlowchartStrategyEditorProps) {
   const root = useFlowchartStore((state) => state.root);
+  const updateColor = useFlowchartStore((state) => state.updateColor);
+
+  // Auto-assign colors to indicator nodes (Phase 1: QuantNexus visual redesign)
+  useEffect(() => {
+    const assignments = getNodeColorAssignments(root);
+    assignments.forEach(({ nodeId, color }) => {
+      updateColor(nodeId, color);
+    });
+  }, [root, updateColor]);
 
   // Persist flowchart to localStorage
   useFlowchartPersistence(config, updateConfig);
-
-  // Extract parameters from flowchart
-  const extractedParameters = useParameterExtraction(root);
-
-  // Sync extracted parameters with config (initialize parameterRanges if needed)
-  useEffect(() => {
-    if (extractedParameters.length > 0 && !config.parameterRanges) {
-      updateConfig({ parameterRanges: extractedParameters });
-    }
-  }, [extractedParameters, config.parameterRanges, updateConfig]);
-
-  // Use parameterRanges from config, or fallback to extracted
-  const parameterRanges = config.parameterRanges || extractedParameters;
-
-  // Calculate branch estimate
-  const estimate = useFlowchartEstimate(parameterRanges, config.tickers.length);
-
-  // Update a specific parameter
-  const handleUpdateParameter = (id: string, updates: Partial<ParameterRange>) => {
-    const updatedRanges = parameterRanges.map((p) =>
-      p.id === id ? { ...p, ...updates } : p
-    );
-    updateConfig({ parameterRanges: updatedRanges });
-  };
 
   return (
     <div className="space-y-4">
@@ -57,12 +40,15 @@ export function FlowchartStrategyEditor({ config, updateConfig }: FlowchartStrat
         <FlowchartToolbar />
       </Card>
 
+      {/* Colored Parameter Boxes (QuantNexus Style) */}
+      <ParameterBoxPanel config={config} updateConfig={updateConfig} />
+
       {/* Flowchart Canvas */}
       <Card className="p-6">
         <div className="mb-4">
           <h3 className="text-lg font-semibold">Strategy Flowchart</h3>
           <p className="text-sm text-muted-foreground">
-            Build your strategy visually. Parameters will be automatically extracted.
+            Build your strategy visually. Click parameter boxes above to configure optimization ranges.
           </p>
         </div>
 
@@ -72,23 +58,14 @@ export function FlowchartStrategyEditor({ config, updateConfig }: FlowchartStrat
         </div>
       </Card>
 
-      {/* Parameter Extraction Panel */}
-      <ParameterExtractionPanel
-        parameters={parameterRanges}
-        onUpdateParameter={handleUpdateParameter}
-        branchCount={estimate?.totalBranches || 1}
-      />
-
       {/* Instructions */}
       <Card className="p-4 bg-blue-50 dark:bg-blue-950">
         <h4 className="font-semibold mb-2">💡 How to use:</h4>
         <ul className="text-sm space-y-1 list-disc list-inside">
-          <li>Click "+ Add Block" to insert new strategy blocks</li>
-          <li>Click on any block title to rename it</li>
-          <li>For Indicator blocks, edit conditions using the dropdowns</li>
-          <li>Use "+ AND" / "+ OR" to add multiple conditions</li>
-          <li>Click the × button to delete nodes or conditions</li>
-          <li>Use Undo/Redo buttons if you make a mistake</li>
+          <li>Click "+ Add Block" to insert indicators, positions, or logic blocks</li>
+          <li>Edit conditions in the flowchart tree</li>
+          <li>Click colored boxes above to set optimization ranges</li>
+          <li>Configure pass/fail criteria below, then click "Start Forge"</li>
         </ul>
       </Card>
     </div>

@@ -8,8 +8,6 @@ import {
   useForgeStream,
   useProgressMetrics,
 } from '@/hooks';
-import { ModeToggle } from './ModeToggle';
-import { SimpleStrategyEditor } from './SimpleStrategyEditor';
 import { FlowchartStrategyEditor } from './FlowchartStrategyEditor';
 
 export default function ForgeDashboard() {
@@ -48,15 +46,8 @@ export default function ForgeDashboard() {
         <h2 className="text-2xl font-bold">Forge Dashboard</h2>
       </div>
 
-      {/* Mode Toggle */}
-      <ModeToggle mode={config.mode} onChange={(mode) => updateConfig({ mode })} />
-
-      {/* Strategy Editor - Conditional based on mode */}
-      {config.mode === 'simple' ? (
-        <SimpleStrategyEditor config={config} updateConfig={updateConfig} />
-      ) : (
-        <FlowchartStrategyEditor config={config} updateConfig={updateConfig} />
-      )}
+      {/* Flowchart Strategy Editor (only mode) */}
+      <FlowchartStrategyEditor config={config} updateConfig={updateConfig} />
 
       {/* Progress and Controls */}
       <Card className="p-6">

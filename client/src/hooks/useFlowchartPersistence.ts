@@ -20,7 +20,7 @@ export function useFlowchartPersistence(
 
   // Load flowchart from config on mount (if it exists)
   useEffect(() => {
-    if (config.flowchart && config.mode === 'flowchart') {
+    if (config.flowchart) {
       setRoot(config.flowchart);
     }
     // Only run on mount
@@ -29,12 +29,10 @@ export function useFlowchartPersistence(
 
   // Save flowchart to config whenever it changes (debounced)
   useEffect(() => {
-    if (config.mode !== 'flowchart') return;
-
     const timeoutId = setTimeout(() => {
       updateConfig({ flowchart: root });
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [root, config.mode, updateConfig]);
+  }, [root, updateConfig]);
 }
