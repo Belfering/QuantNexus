@@ -12,7 +12,7 @@ FROM node:20-slim AS builder
 
 # Cache buster - Railway sets RAILWAY_GIT_COMMIT_SHA automatically
 ARG RAILWAY_GIT_COMMIT_SHA
-ARG CACHEBUST=1
+ARG CACHEBUST=20260107v2
 
 WORKDIR /app
 
@@ -23,7 +23,8 @@ RUN apt-get update && apt-get install -y python3 python3-pip g++ make && rm -rf 
 COPY System.app/package*.json ./
 
 # Install ALL dependencies (including dev)
-RUN npm ci
+# Use npm install instead of npm ci to resolve platform-specific optional deps
+RUN rm -f package-lock.json && npm install
 
 # Force cache invalidation when source changes (using commit SHA or manual bust)
 RUN echo "Build: ${RAILWAY_GIT_COMMIT_SHA:-$CACHEBUST}"
