@@ -258,6 +258,17 @@ export const tickerRegistry = sqliteTable('ticker_registry', {
 })
 
 // ============================================
+// NEXUS CORRELATIONS (Pre-computed pairwise correlations)
+// ============================================
+export const nexusCorrelations = sqliteTable('nexus_correlations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  bot1Id: text('bot1_id').notNull().references(() => bots.id, { onDelete: 'cascade' }),
+  bot2Id: text('bot2_id').notNull().references(() => bots.id, { onDelete: 'cascade' }),
+  correlation: real('correlation').notNull(),
+  computedAt: integer('computed_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+// ============================================
 // RELATIONS
 // ============================================
 export const usersRelations = relations(users, ({ many, one }) => ({

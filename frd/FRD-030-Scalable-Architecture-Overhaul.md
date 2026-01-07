@@ -7,7 +7,7 @@
 - **Priority**: Critical (Infrastructure)
 - **Owner**: System
 - **Created**: 2025-01-03
-- **Last Updated**: 2026-01-05 (Phase 2N-25 COMPLETED - React hooks/purity fixes)
+- **Last Updated**: 2026-01-06 (Phase 3 Redis code COMPLETE - integration remaining)
 - **Depends On**: FRD-028 (Development Workflow)
 
 ---
@@ -1669,14 +1669,22 @@ export function useTreeUndo() {
 |-----------|-------|---------|-------|
 | `AppHeader` | ~180 | Header/navigation | 2N-23 (planned) |
 
-### Phase 3: Redis Integration (Days 8-10)
-- [ ] Add Redis to Railway
-- [ ] Implement `server/lib/redis.mjs`
-- [ ] Update backtest cache to use Redis
-- [ ] Update indicator cache to use Redis
-- [ ] Create `server/jobs/prewarm-indicators.mjs`
-- [ ] Create `server/jobs/prewarm-correlations.mjs`
-- [ ] Set up cron schedule in Railway
+### Phase 3: Redis Integration (Days 8-10) - IN PROGRESS
+**Code Complete:**
+- [x] Implement `server/lib/redis.mjs` - Redis client wrapper with graceful fallback
+- [x] Implement `server/lib/config.mjs` - Added `REDIS_URL` export
+- [x] Implement `server/features/cache/redis-cache.mjs` - Multi-tier caching (Redis + SQLite fallback)
+- [x] Create `server/jobs/prewarm-candles.mjs` - Pre-warm candle data from parquet
+- [x] Create `server/jobs/prewarm-indicators.mjs` - Pre-compute SMA, EMA, RSI, etc.
+- [x] Create `server/jobs/prewarm-correlations.mjs` - Pre-compute Nexus bot correlations
+
+**Integration Remaining:**
+- [ ] Wire up cache to server endpoints (replace direct SQLite calls with redis-cache.mjs functions)
+- [ ] Call `initRedis()` on server startup in `server/index.mjs`
+- [ ] Add `/api/cache/prewarm` endpoints to trigger jobs manually
+- [ ] Add Redis service to Railway project
+- [ ] Set `REDIS_URL` environment variable in Railway
+- [ ] Set up cron schedule in Railway for nightly prewarm jobs
 
 ### Phase 4: Client-Side Caching (Days 11-12)
 - [ ] Implement `src/features/data/tickerCache.ts` (IndexedDB)

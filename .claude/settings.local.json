@@ -92,7 +92,17 @@
       "Bash(cmd //c \"taskkill /PID 149380 /F\")",
       "Bash(cmd //c \"taskkill /PID 157504 /F\")",
       "Bash(cmd //c \"taskkill /PID 174180 /F\")",
-      "Bash(cmd //c \"taskkill /PID 169260 /F\")"
+      "Bash(cmd //c \"taskkill /PID 169260 /F\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJ0ZXN0LWFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzY3NzEzNjgxLCJleHAiOjE3Njc3MTcyODF9.FDpbXR39n5S1wmAb4uJqKOT1GtM3lWY4zriVCnUY6nI\")",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_press_key",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "mcp__railway-mcp-server__list-services",
+      "mcp__railway-mcp-server__list-variables",
+      "mcp__railway-mcp-server__get-logs",
+      "Bash(python3:*)"
     ]
   }
 }

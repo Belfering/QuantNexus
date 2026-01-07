@@ -58,31 +58,113 @@ const BACKTEST_START_DATE = new Date(1993, 0, 1)
 const BACKTEST_START_EPOCH = Math.floor(BACKTEST_START_DATE.getTime() / 1000)
 
 // ============================================
-// TICKER DATA CACHE - Pre-cache common tickers for instant access
+// TICKER DATA CACHE - Cache ALL loaded tickers for instant access
 // ============================================
+// Common tickers to pre-load at startup (most frequently used)
 const COMMON_TICKERS = ['SPY', 'QQQ', 'IWM', 'EEM', 'AGG', 'GLD', 'TLT', 'BIL', 'VTI', 'DIA']
+
+// Full ticker cache - stores ALL loaded tickers (not just common ones)
+// Memory usage: ~100 tickers × 20k bars × 100 bytes = ~200MB (acceptable)
 const tickerDataCache = new Map()
+const tickerLastUsed = new Map()  // ticker -> timestamp (for LRU eviction)
 let cacheInitialized = false
+
+// LRU eviction settings
+const LRU_EVICTION_DAYS = 30
+const LRU_EVICTION_MS = LRU_EVICTION_DAYS * 24 * 60 * 60 * 1000
+
+// Track cache stats for monitoring
+const cacheStats = {
+  hits: 0,
+  misses: 0,
+  totalLoadTime: 0,
+}
 
 async function initTickerCache() {
   if (cacheInitialized) return
   console.log('[Backtest] Pre-caching common tickers for instant access...')
   const startTime = Date.now()
 
-  for (const ticker of COMMON_TICKERS) {
-    try {
+  // Load common tickers in parallel for faster startup
+  const results = await Promise.allSettled(
+    COMMON_TICKERS.map(async (ticker) => {
       const bars = await fetchOhlcSeriesUncached(ticker, 20000)
       if (bars && bars.length > 0) {
         tickerDataCache.set(ticker, bars)
+        tickerLastUsed.set(ticker, Date.now())  // Set initial LRU timestamp
+        return ticker
       }
-    } catch (err) {
-      console.warn(`[Backtest] Failed to pre-cache ${ticker}:`, err.message)
+      return null
+    })
+  )
+
+  const loaded = results.filter(r => r.status === 'fulfilled' && r.value).length
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(2)
+  console.log(`[Backtest] Pre-cached ${loaded} common tickers in ${elapsed}s`)
+  cacheInitialized = true
+}
+
+// Get cache statistics for monitoring
+function getCacheStats() {
+  const memoryUsage = tickerDataCache.size * 20000 * 100 // approximate bytes
+  const now = Date.now()
+
+  // Calculate oldest and newest ticker usage
+  let oldestAge = 0
+  let newestAge = Infinity
+  for (const [, lastUsed] of tickerLastUsed) {
+    const age = now - lastUsed
+    if (age > oldestAge) oldestAge = age
+    if (age < newestAge) newestAge = age
+  }
+
+  return {
+    cachedTickers: tickerDataCache.size,
+    tickerList: Array.from(tickerDataCache.keys()),
+    hits: cacheStats.hits,
+    misses: cacheStats.misses,
+    hitRate: cacheStats.hits + cacheStats.misses > 0
+      ? ((cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100).toFixed(1) + '%'
+      : 'N/A',
+    estimatedMemoryMB: (memoryUsage / 1024 / 1024).toFixed(1),
+    avgLoadTimeMs: cacheStats.misses > 0
+      ? (cacheStats.totalLoadTime / cacheStats.misses).toFixed(1)
+      : 'N/A',
+    lruEvictionDays: LRU_EVICTION_DAYS,
+    oldestTickerAgeDays: tickerLastUsed.size > 0 ? (oldestAge / (24 * 60 * 60 * 1000)).toFixed(1) : 'N/A',
+    newestTickerAgeDays: tickerLastUsed.size > 0 && newestAge !== Infinity ? (newestAge / (24 * 60 * 60 * 1000)).toFixed(1) : 'N/A',
+  }
+}
+
+// Clear cache (useful for memory management or data refresh)
+function clearTickerCache() {
+  const count = tickerDataCache.size
+  tickerDataCache.clear()
+  tickerLastUsed.clear()
+  cacheStats.hits = 0
+  cacheStats.misses = 0
+  cacheStats.totalLoadTime = 0
+  console.log(`[Cache] Cleared ${count} cached tickers`)
+  return count
+}
+
+// Evict tickers that haven't been used in LRU_EVICTION_DAYS
+function evictStaleTickers() {
+  const now = Date.now()
+  let evicted = 0
+
+  for (const [ticker, lastUsed] of tickerLastUsed) {
+    if (now - lastUsed > LRU_EVICTION_MS) {
+      tickerDataCache.delete(ticker)
+      tickerLastUsed.delete(ticker)
+      evicted++
     }
   }
 
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(2)
-  console.log(`[Backtest] Pre-cached ${tickerDataCache.size} common tickers in ${elapsed}s`)
-  cacheInitialized = true
+  if (evicted > 0) {
+    console.log(`[Cache] Evicted ${evicted} stale tickers (unused for ${LRU_EVICTION_DAYS}+ days)`)
+  }
+  return evicted
 }
 
 // Internal function without cache check (used for initial loading)
@@ -118,15 +200,30 @@ async function fetchOhlcSeriesUncached(ticker, limit = 20000) {
 }
 
 async function fetchOhlcSeries(ticker, limit = 20000) {
-  // Check cache first for common tickers (instant access)
+  // Check cache first (instant access for ANY previously loaded ticker)
   const cached = tickerDataCache.get(ticker)
   if (cached) {
+    cacheStats.hits++
+    tickerLastUsed.set(ticker, Date.now())  // Update LRU timestamp
     // Return cached data (may need to slice if limit is smaller)
     return limit < cached.length ? cached.slice(-limit) : cached
   }
 
-  // Not in cache, fetch from parquet
-  return fetchOhlcSeriesUncached(ticker, limit)
+  // Not in cache - fetch from parquet and CACHE IT for future requests
+  cacheStats.misses++
+  const loadStart = Date.now()
+  const bars = await fetchOhlcSeriesUncached(ticker, limit)
+  const loadTime = Date.now() - loadStart
+  cacheStats.totalLoadTime += loadTime
+
+  // Cache the ticker for future requests (all tickers, not just common ones)
+  if (bars && bars.length > 0) {
+    tickerDataCache.set(ticker, bars)
+    tickerLastUsed.set(ticker, Date.now())  // Set initial LRU timestamp
+    console.log(`[Cache] Added ${ticker} to cache (${bars.length} bars, ${loadTime}ms) - Total cached: ${tickerDataCache.size}`)
+  }
+
+  return bars
 }
 
 // ============================================
@@ -3875,7 +3972,9 @@ const collectAllTickers = (node) => {
     // Position nodes - collect position tickers
     if (n.kind === 'position') {
       for (const p of n.positions || []) {
-        addTickerWithComponents(tickers, p)
+        // p can be an object {ticker, allocation} or just a ticker string
+        const ticker = typeof p === 'object' ? p.ticker : p
+        addTickerWithComponents(tickers, ticker)
       }
     }
 
@@ -3974,17 +4073,8 @@ const turnoverFraction = (prevAlloc, alloc) => {
 // MAIN BACKTEST FUNCTION
 // ============================================
 
-// Export cache initialization function for server startup
-// Clear ticker data cache (for admin cache invalidation)
-function clearTickerDataCache() {
-  const count = tickerDataCache.size
-  tickerDataCache.clear()
-  cacheInitialized = false
-  console.log(`[Backtest] Cleared ticker data cache (${count} entries)`)
-  return count
-}
-
-export { initTickerCache, clearTickerDataCache }
+// Export cache functions for server startup and monitoring
+export { initTickerCache, getCacheStats, clearTickerCache, evictStaleTickers }
 
 export async function runBacktest(payload, options = {}) {
   console.log(`[Backtest] >>> runBacktest called`)
@@ -4097,6 +4187,7 @@ export async function runBacktest(payload, options = {}) {
 
   // Load price data
   const limit = 20000
+  const loadStart = Date.now()
   const loaded = await Promise.all(
     tickers.map(async (t) => {
       try {
@@ -4108,10 +4199,15 @@ export async function runBacktest(payload, options = {}) {
       }
     })
   )
+  const loadTime = Date.now() - loadStart
+  console.log(`[Backtest] Loaded ${tickers.length} tickers in ${loadTime}ms`)
 
   // Use indicator tickers for date intersection to get longer history for lookback calculations
   // Position tickers may have shorter history but get null values before their data starts
+  const buildDbStart = Date.now()
   const db = buildPriceDb(loaded.filter(l => l.bars.length > 0), indicatorTickers)
+  const buildDbTime = Date.now() - buildDbStart
+  console.log(`[Backtest] Built price DB (${db.dates.length} dates) in ${buildDbTime}ms`)
   if (db.dates.length < 3) {
     throw new Error('Not enough overlapping price data to run a backtest')
   }
@@ -4178,9 +4274,10 @@ export async function runBacktest(payload, options = {}) {
   // Persistent state for altExit (Enter/Exit) nodes across all days
   const altExitState = {}
 
-  // Track which days have valid scaling data (no null fallbacks)
+// Track which days have valid scaling data (no null fallbacks)
   const hasValidScalingData = new Array(db.dates.length).fill(true)
 
+  const evalStart = Date.now()
   for (let i = startEvalIndex; i < db.dates.length; i++) {
     const indicatorIndex = decisionPrice === 'open' ? i - 1 : i
     const ctx = {
@@ -4198,6 +4295,8 @@ export async function runBacktest(payload, options = {}) {
     allocationsAt[i] = evaluateNode(ctx, node)
     hasValidScalingData[i] = !ctx.usedScalingFallback
   }
+  const evalTime = Date.now() - evalStart
+  console.log(`[Backtest] Evaluated ${db.dates.length - startEvalIndex} days in ${evalTime}ms`)
 
   // Calculate equity curve
   // Find first day with non-empty allocation (skip days where indicators don't have enough data)

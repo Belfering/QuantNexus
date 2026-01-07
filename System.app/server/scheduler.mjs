@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { clearTickerCache, evictStaleTickers } from './backtest.mjs'
 
 // Schedule configuration (stored in adminConfig table)
 const DEFAULT_SCHEDULE = {
@@ -499,6 +500,16 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
           durationSeconds: duration,
           timestamp: new Date().toISOString(),
         })
+
+        // Clear in-memory ticker cache so new data is loaded on next backtest
+        clearTickerCache()
+        console.log(`[scheduler] Cleared in-memory ticker cache after sync`)
+
+        // Evict any tickers unused for 30+ days to free RAM
+        evictStaleTickers()
+
+        // Run post-sync prewarm jobs (Redis cache population)
+        await runPrewarmJobs(database)
       } else {
         const stderrOutput = currentJob?.stderrBuffer || ''
         console.error(`[scheduler] Sync failed with code ${code}`)
@@ -554,6 +565,53 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
     isRunning = false
     currentJob = null
     currentChildProcess = null
+  }
+}
+
+/**
+ * Run post-sync prewarm jobs (Redis cache population)
+ * These jobs populate the Redis cache with computed data to speed up backtests
+ * @param {object} database - Database instance
+ */
+export async function runPrewarmJobs(database) {
+  // Check if Redis is available
+  let redisAvailable = false
+  try {
+    const { isRedisAvailable } = await import('./lib/redis.mjs')
+    redisAvailable = isRedisAvailable()
+  } catch {
+    // Redis module not available
+  }
+
+  if (!redisAvailable) {
+    console.log('[scheduler] Redis not available, skipping prewarm jobs')
+    return
+  }
+
+  console.log('[scheduler] Starting post-sync prewarm jobs...')
+  const startTime = Date.now()
+
+  try {
+    // 1. Prewarm candles (load parquet data into Redis)
+    const { prewarmCandles } = await import('./jobs/prewarm-candles.mjs')
+    const candleResult = await prewarmCandles()
+    console.log(`[scheduler] Candle prewarm: ${candleResult.cached} cached in ${candleResult.duration}s`)
+
+    // 2. Prewarm indicators (compute indicators used by bots)
+    const { prewarmIndicators } = await import('./jobs/prewarm-indicators.mjs')
+    const indicatorResult = await prewarmIndicators({ database })
+    console.log(`[scheduler] Indicator prewarm: ${indicatorResult.cached} cached in ${indicatorResult.duration}s`)
+
+    // 3. Prewarm correlations (compute pairwise correlations for Nexus)
+    const { prewarmCorrelations } = await import('./jobs/prewarm-correlations.mjs')
+    const correlationResult = await prewarmCorrelations({ database })
+    console.log(`[scheduler] Correlation prewarm: ${correlationResult.computed} computed in ${correlationResult.duration}s`)
+
+    const totalDuration = Math.round((Date.now() - startTime) / 1000)
+    console.log(`[scheduler] Post-sync prewarm complete in ${totalDuration}s`)
+  } catch (e) {
+    console.error('[scheduler] Prewarm error:', e)
+    // Don't fail the whole sync if prewarm fails
   }
 }
 

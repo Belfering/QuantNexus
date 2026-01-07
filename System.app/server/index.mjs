@@ -2101,7 +2101,7 @@ app.get('/api/waitlist/position/:email', async (req, res) => {
 // Database-Backed API (Scalable Architecture)
 // ============================================================================
 import * as database from './db/index.mjs'
-import { runBacktest, initTickerCache, clearTickerDataCache } from './backtest.mjs'
+import { runBacktest, initTickerCache, getCacheStats, clearTickerCache } from './backtest.mjs'
 import { generateSanityReport, computeBenchmarkMetrics, computeBeta } from './sanity-report.mjs'
 import * as backtestCache from './db/cache.mjs'
 import authRoutes from './routes/auth.mjs'
@@ -3937,7 +3937,7 @@ app.post('/api/admin/cache/invalidate', authenticate, requireAdmin, async (req, 
     } else {
       // Invalidate all caches: SQLite backtest cache + in-memory ticker data cache
       const backtestCount = backtestCache.invalidateAllCache()
-      const tickerCount = clearTickerDataCache()
+      const tickerCount = clearTickerCache()
       res.json({ success: true, invalidatedCount: backtestCount, tickerCacheCleared: tickerCount })
     }
   } catch (e) {
@@ -4103,6 +4103,34 @@ app.post('/api/admin/cache/prewarm', authenticate, requireAdmin, async (req, res
     })
   } catch (e) {
     console.error('[Cache Prewarm] Fatal error:', e)
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// ============================================================================
+// Ticker Data In-Memory Cache Endpoints
+// ============================================================================
+
+// GET /api/admin/cache/ticker-stats - Get in-memory ticker cache statistics
+app.get('/api/admin/cache/ticker-stats', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const stats = getCacheStats()
+    res.json(stats)
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// POST /api/admin/cache/ticker-clear - Clear in-memory ticker cache
+app.post('/api/admin/cache/ticker-clear', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const cleared = clearTickerCache()
+    res.json({
+      success: true,
+      clearedTickers: cleared,
+      message: `Cleared ${cleared} tickers from in-memory cache`,
+    })
+  } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }
 })
