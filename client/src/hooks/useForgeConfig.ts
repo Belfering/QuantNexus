@@ -22,6 +22,7 @@ export interface UseForgeConfigReturn {
 }
 
 const DEFAULT_CONFIG: ForgeConfig = {
+  mode: 'simple', // Default to simple mode (Phase 1.5)
   indicator: 'RSI',
   periodMin: 5,
   periodMax: 20,
@@ -39,6 +40,8 @@ const DEFAULT_CONFIG: ForgeConfig = {
   splitStrategy: 'even_odd_month',
   oosStartDate: undefined,
   numWorkers: null,
+  flowchart: undefined,
+  parameterRanges: undefined,
 };
 
 /**

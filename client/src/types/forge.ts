@@ -2,7 +2,13 @@
  * TypeScript types for Forge-related functionality
  */
 
+import type { FlowNode, ParameterRange } from './flowchart';
+
 export interface ForgeConfig {
+  // Mode selection (Phase 1.5)
+  mode: 'simple' | 'flowchart';
+
+  // Simple mode fields (existing)
   indicator: string;
   periodMin: number;
   periodMax: number;
@@ -11,6 +17,12 @@ export interface ForgeConfig {
   thresholdMin: number;
   thresholdMax: number;
   thresholdStep: number;
+
+  // Flowchart mode fields (Phase 1.5)
+  flowchart?: FlowNode;
+  parameterRanges?: ParameterRange[];
+
+  // Shared fields
   minTIM: number;
   minTIMAR: number;
   maxDD: number;
