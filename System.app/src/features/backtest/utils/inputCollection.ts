@@ -305,6 +305,34 @@ export const isEtfsOnlyBot = (
   })
 }
 
+/**
+ * Check if ALL tickers in a bot (both positions AND indicators) are ETFs.
+ * This is a stricter check than isEtfsOnlyBot which only checks positions.
+ * Used for the "ETFs Only" badge on the Analyze tab.
+ */
+export const isAllTickersEtf = (
+  root: FlowNode,
+  callMap: Map<string, CallChain>,
+  tickerMetadata: Map<string, { assetType?: string; name?: string }>
+): boolean => {
+  const positionTickers = collectPositionTickers(root, callMap)
+  const indicatorTickers = collectIndicatorTickers(root, callMap)
+  const allTickers = [...new Set([...positionTickers, ...indicatorTickers])]
+
+  // Exclude special values that aren't real tickers
+  const realTickers = allTickers.filter((t) => t !== 'Empty' && t !== 'CASH' && t !== 'BIL')
+
+  // If no real tickers, consider it ETF-only (vacuously true)
+  if (realTickers.length === 0) return true
+
+  // Check if all tickers are ETFs
+  return realTickers.every((ticker) => {
+    const meta = tickerMetadata.get(ticker.toUpperCase())
+    // If we don't have metadata for the ticker, assume it's not an ETF (be conservative)
+    return meta?.assetType === 'ETF'
+  })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Indicator Ticker Collection
 // ─────────────────────────────────────────────────────────────────────────────

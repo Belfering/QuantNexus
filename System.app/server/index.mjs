@@ -3024,7 +3024,7 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
 // Routes all backtests through server to ensure consistent results
 app.post('/api/backtest', async (req, res) => {
   try {
-    const { payload, mode = 'CC', costBps = 5 } = req.body
+    const { payload, mode = 'CC', costBps = 5, customIndicators = [] } = req.body
 
     if (!payload) {
       return res.status(400).json({ error: 'payload is required' })
@@ -3032,10 +3032,10 @@ app.post('/api/backtest', async (req, res) => {
 
     const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload)
 
-    console.log(`[Backtest] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}...`)
+    console.log(`[Backtest] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}, customIndicators=${customIndicators.length}...`)
     const startTime = Date.now()
 
-    const result = await runBacktest(payloadStr, { mode, costBps })
+    const result = await runBacktest(payloadStr, { mode, costBps, customIndicators })
 
     const elapsed = Date.now() - startTime
     console.log(`[Backtest] Completed in ${elapsed}ms - CAGR: ${(result.metrics.cagr * 100).toFixed(2)}%`)

@@ -1482,6 +1482,279 @@ const rollingVwapRatio = (closes, volumes, window) => {
 }
 
 // ============================================
+// FRD-035: CUSTOM INDICATOR FORMULA PARSER & EVALUATOR
+// ============================================
+
+// Simple recursive descent parser for custom indicator formulas
+// Supports: +, -, *, /, %, parentheses, numbers, variables, functions
+
+const MATH_FUNCS = ['abs', 'sqrt', 'log', 'log10', 'exp', 'sign', 'floor', 'ceil', 'round']
+const BINARY_FUNCS = ['min', 'max', 'pow']
+const ROLLING_FUNCS = ['sma', 'ema', 'stdev', 'rmax', 'rmin', 'roc']
+
+function tokenizeFormula(input) {
+  const tokens = []
+  let pos = 0
+  const str = input.trim()
+
+  while (pos < str.length) {
+    // Skip whitespace
+    while (pos < str.length && /\s/.test(str[pos])) pos++
+    if (pos >= str.length) break
+
+    const ch = str[pos]
+
+    // Number
+    if (/[0-9.]/.test(ch)) {
+      let num = ''
+      while (pos < str.length && /[0-9.]/.test(str[pos])) {
+        num += str[pos++]
+      }
+      tokens.push({ type: 'NUMBER', value: num })
+      continue
+    }
+
+    // Identifier (variable or function)
+    if (/[a-zA-Z_]/.test(ch)) {
+      let id = ''
+      while (pos < str.length && /[a-zA-Z0-9_]/.test(str[pos])) {
+        id += str[pos++]
+      }
+      tokens.push({ type: 'IDENTIFIER', value: id.toLowerCase() })
+      continue
+    }
+
+    // Operators and parens
+    if ('+-*/%()'.includes(ch)) {
+      tokens.push({ type: ch === '(' ? 'LPAREN' : ch === ')' ? 'RPAREN' : 'OPERATOR', value: ch })
+      pos++
+      continue
+    }
+
+    // Comma
+    if (ch === ',') {
+      tokens.push({ type: 'COMMA', value: ch })
+      pos++
+      continue
+    }
+
+    throw new Error(`Unexpected char '${ch}' in formula`)
+  }
+
+  tokens.push({ type: 'EOF', value: '' })
+  return tokens
+}
+
+function parseFormula(formula) {
+  const tokens = tokenizeFormula(formula)
+  let idx = 0
+
+  const current = () => tokens[idx] || { type: 'EOF', value: '' }
+  const advance = () => tokens[idx++] || { type: 'EOF', value: '' }
+
+  function parseExpr() {
+    let left = parseTerm()
+    while (current().type === 'OPERATOR' && (current().value === '+' || current().value === '-')) {
+      const op = advance().value
+      const right = parseTerm()
+      left = { type: 'BinaryOp', operator: op, left, right }
+    }
+    return left
+  }
+
+  function parseTerm() {
+    let left = parseFactor()
+    while (current().type === 'OPERATOR' && '*/%'.includes(current().value)) {
+      const op = advance().value
+      const right = parseFactor()
+      left = { type: 'BinaryOp', operator: op, left, right }
+    }
+    return left
+  }
+
+  function parseFactor() {
+    if (current().type === 'OPERATOR' && current().value === '-') {
+      advance()
+      const operand = parseFactor()
+      return { type: 'UnaryOp', operator: '-', operand }
+    }
+    return parsePrimary()
+  }
+
+  function parsePrimary() {
+    const tok = current()
+
+    if (tok.type === 'NUMBER') {
+      advance()
+      return { type: 'Number', value: parseFloat(tok.value) }
+    }
+
+    if (tok.type === 'IDENTIFIER') {
+      const name = advance().value
+      if (current().type === 'LPAREN') {
+        advance() // consume '('
+        const args = []
+        if (current().type !== 'RPAREN') {
+          args.push(parseExpr())
+          while (current().type === 'COMMA') {
+            advance()
+            args.push(parseExpr())
+          }
+        }
+        if (current().type !== 'RPAREN') throw new Error('Expected )')
+        advance()
+        return { type: 'FunctionCall', name, args }
+      }
+      return { type: 'Variable', name }
+    }
+
+    if (tok.type === 'LPAREN') {
+      advance()
+      const expr = parseExpr()
+      if (current().type !== 'RPAREN') throw new Error('Expected )')
+      advance()
+      return expr
+    }
+
+    throw new Error(`Unexpected token: ${tok.value}`)
+  }
+
+  return parseExpr()
+}
+
+// Evaluate AST with a context that can resolve variables
+function evaluateFormulaAST(node, getVar, getSeries, defaultWindow = 20) {
+  switch (node.type) {
+    case 'Number':
+      return node.value
+
+    case 'Variable':
+      return getVar(node.name, defaultWindow)
+
+    case 'BinaryOp': {
+      const left = evaluateFormulaAST(node.left, getVar, getSeries, defaultWindow)
+      const right = evaluateFormulaAST(node.right, getVar, getSeries, defaultWindow)
+      if (left == null || right == null) return null
+      switch (node.operator) {
+        case '+': return left + right
+        case '-': return left - right
+        case '*': return left * right
+        case '/': return right !== 0 ? left / right : null
+        case '%': return right !== 0 ? left % right : null
+        default: return null
+      }
+    }
+
+    case 'UnaryOp':
+      const operand = evaluateFormulaAST(node.operand, getVar, getSeries, defaultWindow)
+      return operand != null ? -operand : null
+
+    case 'FunctionCall':
+      return evaluateFunctionCall(node, getVar, getSeries, defaultWindow)
+
+    default:
+      return null
+  }
+}
+
+function evaluateFunctionCall(node, getVar, getSeries, defaultWindow) {
+  const { name, args } = node
+
+  // Math functions (single argument)
+  if (MATH_FUNCS.includes(name)) {
+    if (args.length !== 1) return null
+    const arg = evaluateFormulaAST(args[0], getVar, getSeries, defaultWindow)
+    if (arg == null) return null
+    switch (name) {
+      case 'abs': return Math.abs(arg)
+      case 'sqrt': return arg >= 0 ? Math.sqrt(arg) : null
+      case 'log': return arg > 0 ? Math.log(arg) : null
+      case 'log10': return arg > 0 ? Math.log10(arg) : null
+      case 'exp': return Math.exp(arg)
+      case 'sign': return Math.sign(arg)
+      case 'floor': return Math.floor(arg)
+      case 'ceil': return Math.ceil(arg)
+      case 'round': return Math.round(arg)
+      default: return null
+    }
+  }
+
+  // Binary functions (two arguments)
+  if (BINARY_FUNCS.includes(name)) {
+    if (args.length !== 2) return null
+    const a = evaluateFormulaAST(args[0], getVar, getSeries, defaultWindow)
+    const b = evaluateFormulaAST(args[1], getVar, getSeries, defaultWindow)
+    if (a == null || b == null) return null
+    switch (name) {
+      case 'min': return Math.min(a, b)
+      case 'max': return Math.max(a, b)
+      case 'pow': return Math.pow(a, b)
+      default: return null
+    }
+  }
+
+  // Rolling functions (variable + window)
+  if (ROLLING_FUNCS.includes(name)) {
+    if (args.length !== 2) return null
+    if (args[1].type !== 'Number') return null
+    const window = Math.ceil(args[1].value)
+    if (args[0].type !== 'Variable') return null // Only simple variables for now
+    const varName = args[0].name
+    const series = getSeries(varName, defaultWindow, window + 50)
+    if (!series || series.length < window) return null
+
+    switch (name) {
+      case 'sma': {
+        const slice = series.slice(-window)
+        return slice.reduce((a, b) => a + b, 0) / window
+      }
+      case 'ema': {
+        const alpha = 2 / (window + 1)
+        let ema = series[0]
+        for (let i = 1; i < series.length; i++) {
+          ema = alpha * series[i] + (1 - alpha) * ema
+        }
+        return ema
+      }
+      case 'stdev': {
+        const slice = series.slice(-window)
+        const mean = slice.reduce((a, b) => a + b, 0) / window
+        const variance = slice.reduce((sum, v) => sum + (v - mean) ** 2, 0) / window
+        return Math.sqrt(variance)
+      }
+      case 'rmax': return Math.max(...series.slice(-window))
+      case 'rmin': return Math.min(...series.slice(-window))
+      case 'roc': {
+        if (series.length < window + 1) return null
+        const current = series[series.length - 1]
+        const previous = series[series.length - 1 - window]
+        return previous !== 0 ? ((current - previous) / previous) * 100 : null
+      }
+      default: return null
+    }
+  }
+
+  return null
+}
+
+// Cache for parsed formulas
+const formulaASTCache = new Map()
+
+function getParsedFormula(formula) {
+  if (formulaASTCache.has(formula)) {
+    return formulaASTCache.get(formula)
+  }
+  try {
+    const ast = parseFormula(formula)
+    formulaASTCache.set(formula, ast)
+    return ast
+  } catch (e) {
+    console.error(`[CustomIndicator] Failed to parse formula "${formula}":`, e.message)
+    return null
+  }
+}
+
+// ============================================
 // METRIC CALCULATION
 // ============================================
 
@@ -1537,6 +1810,122 @@ const metricAt = (ctx, ticker, metric, window, parentNode = null) => {
     // DEBUG: Print branch:from value for EVERY day
     console.log(`[BRANCH VALUE] day=${ctx.decisionIndex}, date=${ctx.db.dates[ctx.decisionIndex]}, ticker="${ticker}", metric="${metric}", window=${window}, value=${result}`)
 
+    return result
+  }
+
+  // FRD-035: Handle custom indicators (metric = 'custom:ci_xxxxx')
+  if (metric && metric.startsWith('custom:')) {
+    const customId = metric // e.g., 'custom:ci_abc123'
+    const customIndicator = ctx.customIndicators?.find(ci => `custom:${ci.id}` === customId)
+
+    if (!customIndicator) {
+      console.warn(`[CustomIndicator] Unknown custom indicator: ${customId}`)
+      return null
+    }
+
+    // Parse the formula (cached)
+    const ast = getParsedFormula(customIndicator.formula)
+    if (!ast) return null
+
+    // Get series key for the ticker
+    const t = getSeriesKey(ticker)
+    if (!t || t === 'Empty') return null
+
+    const i = ctx.indicatorIndex
+    if (i < 0) return null
+
+    // Create getVar function that maps variable names to built-in indicators
+    const getVar = (varName, defaultWindow) => {
+      // Map variable names to built-in metrics
+      const varToMetric = {
+        'close': 'Current Price',
+        'open': 'Current Price', // Will be handled specially
+        'high': 'Current Price', // Will be handled specially
+        'low': 'Current Price', // Will be handled specially
+        'volume': 'Volume',
+        'sma': 'Simple Moving Average',
+        'ema': 'Exponential Moving Average',
+        'rsi': 'Relative Strength Index',
+        'stdev': 'Standard Deviation',
+        'maxdd': 'Max Drawdown',
+        'drawdown': 'Drawdown',
+        'cumret': 'Cumulative Return',
+        'atr': 'ATR',
+        'atr_pct': 'ATR %',
+        'roc': 'Rate of Change',
+        'macd_hist': 'MACD Histogram',
+        'bbpctb': 'Bollinger %B',
+        'bbwidth': 'Bollinger Bandwidth',
+        'aroon_up': 'Aroon Up',
+        'aroon_down': 'Aroon Down',
+        'aroon_osc': 'Aroon Oscillator',
+        'momentum_w': '13612W Momentum',
+        'momentum_u': '13612U Momentum',
+        'stochk': 'Stochastic %K',
+        'stochd': 'Stochastic %D',
+        'willr': 'Williams %R',
+        'adx': 'ADX',
+        'hvol': 'Historical Volatility',
+        'ulcer': 'Ulcer Index',
+        'r2': 'Trend Clarity',
+        'hma': 'Hull Moving Average',
+        'kama': 'KAMA',
+        'mfi': 'Money Flow Index',
+      }
+
+      // Handle price variables specially
+      if (varName === 'close') {
+        const closes = getCachedCloseArray(ctx.cache, ctx.db, t)
+        return closes[i] ?? null
+      }
+      if (varName === 'open') {
+        const opens = ctx.db.open?.[t]
+        return opens?.[i] ?? null
+      }
+      if (varName === 'high') {
+        const highs = ctx.db.high?.[t]
+        return highs?.[i] ?? null
+      }
+      if (varName === 'low') {
+        const lows = ctx.db.low?.[t]
+        return lows?.[i] ?? null
+      }
+      if (varName === 'volume') {
+        const vols = ctx.db.volume?.[t]
+        return vols?.[i] ?? null
+      }
+
+      // Map to built-in metric
+      const metricName = varToMetric[varName]
+      if (metricName) {
+        // Use the window from the condition (passed as the outer window)
+        return metricAt(ctx, ticker, metricName, window, parentNode)
+      }
+
+      console.warn(`[CustomIndicator] Unknown variable in formula: ${varName}`)
+      return null
+    }
+
+    // Create getSeries function for rolling calculations
+    const getSeries = (varName, defaultWindow, length) => {
+      // Get historical values for rolling functions
+      if (varName === 'close') {
+        const closes = getCachedCloseArray(ctx.cache, ctx.db, t)
+        const startIdx = Math.max(0, i - length + 1)
+        return Array.from(closes.slice(startIdx, i + 1))
+      }
+      if (varName === 'open') {
+        const opens = ctx.db.open?.[t]
+        if (!opens) return null
+        const startIdx = Math.max(0, i - length + 1)
+        return Array.from({ length: i + 1 - startIdx }, (_, j) => opens[startIdx + j])
+      }
+      // Add more as needed...
+      return null
+    }
+
+    // Evaluate the formula
+    const result = evaluateFormulaAST(ast, getVar, getSeries, window)
     return result
   }
 
@@ -2165,6 +2554,77 @@ const metricAtIndex = (ctx, ticker, metric, window, index, parentNode = null) =>
     const branchEquity = getBranchEquity(ctx, branchNode)
     if (!branchEquity) return null
     return branchMetricAt(ctx, branchEquity, metric, window, index)
+  }
+
+  // FRD-035: Handle custom indicators (metric = 'custom:ci_xxxxx')
+  if (metric && metric.startsWith('custom:')) {
+    const customId = metric
+    const customIndicator = ctx.customIndicators?.find(ci => `custom:${ci.id}` === customId)
+
+    if (!customIndicator) {
+      return null
+    }
+
+    const ast = getParsedFormula(customIndicator.formula)
+    if (!ast) return null
+
+    const t = getSeriesKey(ticker)
+    if (!t || t === 'Empty') return null
+
+    if (index < 0) return null
+
+    // Create getVar function for this specific index
+    const getVar = (varName, defaultWindow) => {
+      if (varName === 'close') {
+        const closes = getCachedCloseArray(ctx.cache, ctx.db, t)
+        return closes[index] ?? null
+      }
+      if (varName === 'open') {
+        const opens = ctx.db.open?.[t]
+        return opens?.[index] ?? null
+      }
+      if (varName === 'high') {
+        const highs = ctx.db.high?.[t]
+        return highs?.[index] ?? null
+      }
+      if (varName === 'low') {
+        const lows = ctx.db.low?.[t]
+        return lows?.[index] ?? null
+      }
+      if (varName === 'volume') {
+        const vols = ctx.db.volume?.[t]
+        return vols?.[index] ?? null
+      }
+
+      // For other variables, delegate to metricAtIndex recursively
+      const varToMetric = {
+        'sma': 'Simple Moving Average',
+        'ema': 'Exponential Moving Average',
+        'rsi': 'Relative Strength Index',
+        'stdev': 'Standard Deviation',
+        'maxdd': 'Max Drawdown',
+        'drawdown': 'Drawdown',
+        'cumret': 'Cumulative Return',
+        'atr': 'ATR',
+        'roc': 'Rate of Change',
+      }
+      const metricName = varToMetric[varName]
+      if (metricName) {
+        return metricAtIndex(ctx, ticker, metricName, window, index, parentNode)
+      }
+      return null
+    }
+
+    const getSeries = (varName, defaultWindow, length) => {
+      if (varName === 'close') {
+        const closes = getCachedCloseArray(ctx.cache, ctx.db, t)
+        const startIdx = Math.max(0, index - length + 1)
+        return Array.from(closes.slice(startIdx, index + 1))
+      }
+      return null
+    }
+
+    return evaluateFormulaAST(ast, getVar, getSeries, window)
   }
 
   const t = getSeriesKey(ticker)
@@ -3531,6 +3991,7 @@ export async function runBacktest(payload, options = {}) {
   const backtestMode = options.mode || 'OC' // OO, CC, CO, OC
   const costBps = options.costBps ?? 0
   const indicatorOverlays = options.indicatorOverlays || [] // Conditions to show as chart overlays
+  const customIndicators = options.customIndicators || [] // FRD-035: Custom indicators
 
   // Parse payload if string
   const rawNode = typeof payload === 'string' ? JSON.parse(payload) : payload
@@ -3732,6 +4193,7 @@ export async function runBacktest(payload, options = {}) {
       tickerLocations, // Pre-computed ticker locations for O(1) lookup
       altExitState, // Persist Enter/Exit state across days
       usedScalingFallback: false, // Track if any scaling node used null fallback
+      customIndicators, // FRD-035: Custom indicators for formula evaluation
     }
     allocationsAt[i] = evaluateNode(ctx, node)
     hasValidScalingData[i] = !ctx.usedScalingFallback

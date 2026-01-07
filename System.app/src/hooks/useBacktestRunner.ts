@@ -10,6 +10,7 @@ import type {
   BacktestDayRow,
   BacktestAllocationRow,
   EquityPoint,
+  CustomIndicator,
 } from '@/types'
 import {
   cloneNode,
@@ -29,6 +30,7 @@ export interface BacktestRunResult {
 
 interface UseBacktestRunnerOptions {
   callChainsById: Map<string, CallChain>
+  customIndicators?: CustomIndicator[]
 }
 
 /**
@@ -36,7 +38,7 @@ interface UseBacktestRunnerOptions {
  * All backtests are now routed through the server for IP protection
  * and consistent results across all environments.
  */
-export function useBacktestRunner({ callChainsById: _callChainsById }: UseBacktestRunnerOptions) {
+export function useBacktestRunner({ callChainsById: _callChainsById, customIndicators = [] }: UseBacktestRunnerOptions) {
   const backtestMode = useBacktestStore((s) => s.backtestMode)
   const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
 
@@ -81,7 +83,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById }: UseBackte
       console.log('[PAYLOAD DUMP] ========== END ==========')
 
       // Call server API for backtest
-      console.log(`[Backtest] Calling server API with mode=${backtestMode}, costBps=${backtestCostBps}...`)
+      console.log(`[Backtest] Calling server API with mode=${backtestMode}, costBps=${backtestCostBps}, customIndicators=${customIndicators.length}...`)
       const response = await fetch(`${API_BASE}/backtest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,6 +91,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById }: UseBackte
           payload,
           mode: backtestMode,
           costBps: backtestCostBps,
+          customIndicators,
         }),
       })
 
@@ -204,7 +207,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById }: UseBackte
         },
       }
     },
-    [backtestMode, backtestCostBps]
+    [backtestMode, backtestCostBps, customIndicators]
   )
 
   return { runBacktestForNode }

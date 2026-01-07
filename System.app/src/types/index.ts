@@ -22,6 +22,7 @@ export type {
   CallChain,
   TickerInstance,
   ImportFormat,
+  CustomIndicator,
 } from './flowNode'
 export { SLOT_ORDER } from './flowNode'
 

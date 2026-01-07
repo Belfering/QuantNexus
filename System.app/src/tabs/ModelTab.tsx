@@ -1,11 +1,11 @@
 // src/tabs/ModelTab.tsx
 // Model tab component - lazy loadable wrapper for flowchart builder
 
-import { type RefObject } from 'react'
+import { type RefObject, useState, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
-import { USED_TICKERS_DATALIST_ID } from '@/constants'
+import { USED_TICKERS_DATALIST_ID, KNOWN_VARIABLES, VARIABLE_CATEGORIES } from '@/constants'
 import type {
   FlowNode,
   CallChain,
@@ -20,6 +20,7 @@ import type {
   NumberedQuantifier,
   ConditionLine,
   BotSession,
+  CustomIndicator,
 } from '@/types'
 import {
   createNode,
@@ -65,8 +66,9 @@ import {
   replaceTickerInTree,
   NodeCard,
 } from '@/features/builder'
-import { BacktesterPanel } from '@/features/backtest'
+import { BacktesterPanel, parseFormula, ROLLING_FUNCTIONS } from '@/features/backtest'
 import { loadCallChainsFromApi } from '@/features/auth'
+import { newId } from '@/features/builder'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
 import { useTreeSync, useTreeUndo } from '@/hooks'
 
@@ -132,6 +134,9 @@ export function ModelTab({
   const current = useTreeSync()
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
+
+  // Flowchart scroll width for the horizontal scrollbar (updated by App.tsx)
+  const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
 
   // Tree operation handlers from store
   const handleAdd = (parentId: string, slot: SlotId, index: number, kind: BlockKind) => {
@@ -271,6 +276,18 @@ export function ModelTab({
     openTickerModal,
   } = useUIStore()
 
+  // Recalculate scroll dimensions when sidebar collapse states change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (flowchartScrollRef.current) {
+        const { setFlowchartScrollWidth, setFlowchartClientWidth } = useUIStore.getState()
+        setFlowchartScrollWidth(flowchartScrollRef.current.scrollWidth)
+        setFlowchartClientWidth(flowchartScrollRef.current.clientWidth)
+      }
+    }, 100) // Small delay to let CSS transitions complete
+    return () => clearTimeout(timer)
+  }, [callbackNodesCollapsed, customIndicatorsCollapsed, flowchartScrollRef])
+
   // Bot store
   const {
     clipboard,
@@ -314,9 +331,59 @@ export function ModelTab({
     enabledOverlays,
     toggleOverlay: handleToggleOverlay,
   } = useBacktestStore()
+
+  // Custom Indicators state (FRD-035)
+  const [newIndicatorName, setNewIndicatorName] = useState('')
+  const [newIndicatorFormula, setNewIndicatorFormula] = useState('')
+  const [showVariableRef, setShowVariableRef] = useState(false)
+
+  // Get customIndicators from activeBot
+  const customIndicators = activeBot?.customIndicators || []
+
+  // Validate formula in real-time
+  const formulaValidation = useMemo(() => {
+    if (!newIndicatorFormula.trim()) {
+      return { valid: true, errors: [], variables: [], functions: [] }
+    }
+    return parseFormula(newIndicatorFormula, KNOWN_VARIABLES)
+  }, [newIndicatorFormula])
+
+  // Add new custom indicator
+  const handleAddCustomIndicator = () => {
+    if (!newIndicatorName.trim() || !newIndicatorFormula.trim()) return
+    if (!formulaValidation.valid) return
+    if (!activeBot) return
+
+    const newIndicator: CustomIndicator = {
+      id: `ci_${newId()}`,
+      name: newIndicatorName.trim(),
+      formula: newIndicatorFormula.trim(),
+      createdAt: Date.now(),
+    }
+
+    // Update the bot's custom indicators
+    const { updateBot } = useBotStore.getState()
+    updateBot(activeBot.id, {
+      customIndicators: [...customIndicators, newIndicator],
+    })
+
+    // Clear form
+    setNewIndicatorName('')
+    setNewIndicatorFormula('')
+  }
+
+  // Delete custom indicator
+  const handleDeleteCustomIndicator = (id: string) => {
+    if (!activeBot) return
+    const { updateBot } = useBotStore.getState()
+    updateBot(activeBot.id, {
+      customIndicators: customIndicators.filter(ci => ci.id !== id),
+    })
+  }
+
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
-      <CardContent className="flex-1 flex flex-col gap-4 p-4 overflow-auto min-h-0">
+      <CardContent className="flex-1 flex flex-col gap-4 p-4 pb-8 overflow-auto min-h-0">
         {/* Top Zone - Backtester */}
         <div className="shrink-0 border-b border-border pb-4">
           <BacktesterPanel
@@ -348,8 +415,8 @@ export function ModelTab({
           />
         </div>
 
-        {/* Flowchart Toolbar - ETFs Only + Find/Replace + Undo/Redo - Floating above flowchart */}
-        <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg shrink-0 sticky top-0 z-20" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
+        {/* Flowchart Toolbar - ETFs Only + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg shrink-0 z-20 sticky top-0" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
           {/* Left section: ETFs Only checkbox + ticker count */}
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -361,7 +428,7 @@ export function ModelTab({
               />
               <span className="text-sm font-semibold">ETFs Only</span>
             </label>
-            <span className="text-xs text-black">
+            <span className="text-xs text-muted-foreground">
               {etfsOnlyMode
                 ? `Showing ${tickerOptions.length} ETFs`
                 : `Showing all ${tickerOptions.length} tickers`}
@@ -375,7 +442,7 @@ export function ModelTab({
               ))}
             </datalist>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-black">Replace</span>
+              <span className="text-xs text-muted-foreground">Replace</span>
               <button
                 className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
                 onClick={() => openTickerModal((ticker) => {
@@ -399,7 +466,7 @@ export function ModelTab({
               </button>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-black">With</span>
+              <span className="text-xs text-muted-foreground">With</span>
               <button
                 className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
                 onClick={() => openTickerModal((ticker) => setReplaceTicker(ticker))}
@@ -407,7 +474,7 @@ export function ModelTab({
                 {replaceTicker || 'Ticker'}
               </button>
               {findTicker && foundInstances.length > 0 && (
-                <span className="text-xs text-black bg-white px-1.5 py-0.5 rounded">
+                <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                   {foundInstances.length} {foundInstances.length === 1 ? 'instance' : 'instances'}
                 </span>
               )}
@@ -460,23 +527,27 @@ export function ModelTab({
                 checked={includeCallChains}
                 onChange={(e) => {
                   setIncludeCallChains(e.target.checked)
-                  let instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
                   if (e.target.checked && callChains.length > 0) {
+                    let instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
                     callChains.forEach(chain => {
                       try {
                         const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
                         instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, includeIndicators, chain.id)]
                       } catch { /* ignore */ }
                     })
+                    setFoundInstances(instances)
+                    setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                  } else {
+                    const instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
+                    setFoundInstances(instances)
+                    setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
                   }
-                  setFoundInstances(instances)
-                  setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
                 }}
               />
               Call Chains
             </label>
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               className="active:bg-accent/30"
               disabled={foundInstances.length === 0}
@@ -492,7 +563,7 @@ export function ModelTab({
               ◀ Prev
             </Button>
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               className="active:bg-accent/30"
               disabled={foundInstances.length === 0}
@@ -563,8 +634,8 @@ export function ModelTab({
         <div className="flex gap-4 flex-1">
           {/* Bottom Left Zone - Sticky Labels + Content */}
           <div className={`flex items-start transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'w-auto' : 'w-1/2'}`}>
-            {/* Left Side - Labels and Buttons (sticky, fills visible height, split 50/50) */}
-            <div className="flex flex-col w-auto border border-border rounded-l-lg sticky top-4 z-10" style={{ height: 'calc(100vh - 240px)', backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))' }}>
+            {/* Left Side - Labels and Buttons (sticky below ETF toolbar, stops above scrollbar) */}
+            <div className="flex flex-col w-auto border border-border rounded-l-lg sticky top-[52px] z-10" style={{ height: 'calc(100vh - 300px)', backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))' }}>
               {/* Callback Nodes Label/Button Zone - takes 50% */}
               <div className="flex-1 flex flex-col items-center justify-center border-b border-border">
                 <button
@@ -604,7 +675,7 @@ export function ModelTab({
 
             {/* Right Side - Content Area (dynamic based on expanded state) */}
             <div
-              className="flex-1 grid overflow-hidden border border-l-0 border-border rounded-r-lg sticky top-4 z-10"
+              className="flex-1 grid overflow-hidden border border-l-0 border-border rounded-r-lg sticky top-[52px] z-10"
               style={{
                 backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))',
                 gridTemplateRows:
@@ -612,12 +683,11 @@ export function ModelTab({
                   callbackNodesCollapsed && !customIndicatorsCollapsed ? '0fr 1fr' :
                   !callbackNodesCollapsed && customIndicatorsCollapsed ? '1fr 0fr' :
                   '1fr 1fr',
-                height: 'calc(100vh - 240px)'
+                height: 'calc(100vh - 300px)'
               }}
             >
               {/* Callback Nodes Content */}
-              {!callbackNodesCollapsed && (
-                <div className="overflow-auto p-4 border-b border-border">
+              <div className={`overflow-auto min-h-0 ${!callbackNodesCollapsed ? 'p-4 border-b border-border' : ''}`}>
                 <div className="flex gap-2 mb-4">
                   <Button onClick={handleAddCallChain}>Make new Call</Button>
                 </div>
@@ -836,28 +906,116 @@ export function ModelTab({
                 ))
               )}
                 </div>
-                </div>
-              )}
+              </div>
 
               {/* Custom Indicators Content */}
-              {!customIndicatorsCollapsed && (
-                <div className="overflow-auto p-4">
-                  <div className="text-muted text-sm">Coming soon...</div>
-                </div>
-              )}
+              <div className={`overflow-auto min-h-0 ${!customIndicatorsCollapsed ? 'p-4' : ''}`}>
+                  {/* Create New Indicator Form */}
+                  <div className="space-y-3 mb-4 p-3 border border-border rounded-lg bg-card">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Indicator Name"
+                        value={newIndicatorName}
+                        onChange={(e) => setNewIndicatorName(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={handleAddCustomIndicator}
+                        disabled={!newIndicatorName.trim() || !newIndicatorFormula.trim() || !formulaValidation.valid}
+                      >
+                        Create
+                      </Button>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        placeholder="Formula: e.g., rsi / 100 or sma(close, 20) / close"
+                        value={newIndicatorFormula}
+                        onChange={(e) => setNewIndicatorFormula(e.target.value)}
+                        className={`font-mono text-sm ${newIndicatorFormula && !formulaValidation.valid ? 'border-red-500' : ''}`}
+                      />
+                      {newIndicatorFormula && !formulaValidation.valid && (
+                        <div className="text-xs text-red-500 mt-1">
+                          {formulaValidation.errors.join(', ')}
+                        </div>
+                      )}
+                      {newIndicatorFormula && formulaValidation.valid && formulaValidation.variables.length > 0 && (
+                        <div className="text-xs text-green-600 mt-1">
+                          Variables: {formulaValidation.variables.join(', ')}
+                          {formulaValidation.functions.length > 0 && ` | Functions: ${formulaValidation.functions.join(', ')}`}
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowVariableRef(!showVariableRef)}
+                      className="text-xs"
+                    >
+                      {showVariableRef ? '▲ Hide' : '▼ Show'} Variable Reference
+                    </Button>
+                    {showVariableRef && (
+                      <div className="text-xs bg-muted/50 p-2 rounded max-h-48 overflow-y-auto">
+                        <div className="font-semibold mb-1">Functions:</div>
+                        <div className="text-muted mb-2">
+                          Math: {['abs', 'sqrt', 'log', 'exp', 'sign', 'floor', 'ceil', 'round'].join(', ')}<br />
+                          Rolling: {ROLLING_FUNCTIONS.map(f => `${f}(var, N)`).join(', ')}<br />
+                          Binary: min(a, b), max(a, b), pow(a, b)
+                        </div>
+                        <div className="font-semibold mb-1">Variables by Category:</div>
+                        {Object.entries(VARIABLE_CATEGORIES).map(([cat, vars]) => (
+                          <div key={cat} className="mb-1">
+                            <span className="font-medium">{cat}:</span>{' '}
+                            <span className="text-muted">{vars.join(', ')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* List of Custom Indicators */}
+                  <div className="space-y-2">
+                    {customIndicators.length === 0 ? (
+                      <div className="text-muted text-sm text-center py-4">
+                        No custom indicators yet. Create one above!
+                      </div>
+                    ) : (
+                      customIndicators.map((ci) => (
+                        <div key={ci.id} className="flex items-center justify-between p-2 border border-border rounded-lg bg-card">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">{ci.name}</div>
+                            <div className="text-xs text-muted font-mono truncate">{ci.formula}</div>
+                            <div className="text-xs text-muted">ID: {ci.id}</div>
+                          </div>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`Delete custom indicator "${ci.name}"?`)) {
+                                handleDeleteCustomIndicator(ci.id)
+                              }
+                            }}
+                          >
+                            X
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+              </div>
             </div>
           </div>
 
           {/* Bottom Right Zone - Flow Tree Builder */}
-          <div className={`flex flex-col transition-all relative min-h-0 overflow-hidden ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
+          <div className={`flex flex-col transition-all relative min-h-0 ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
             {/* Flowchart Card */}
-            <div className="flex-1 border border-border rounded-lg bg-card min-h-0 p-4 relative" style={{ height: 'calc(100vh - 340px)', overflow: 'hidden' }}>
+            <div className="flex-1 border border-border rounded-lg bg-card min-h-0 relative" style={{ height: 'calc(100vh - 400px)', overflow: 'hidden' }}>
               <div
                 ref={flowchartScrollRef}
+                className="scrollbar-hidden"
                 style={{
                   width: '100%',
-                  height: 'calc(100% + 20px)',
-                  marginBottom: '-20px',
+                  height: '100%',
+                  padding: '1rem',
                   overflowY: 'auto',
                   overflowX: 'scroll',
                 }}
@@ -865,6 +1023,10 @@ export function ModelTab({
                   if (floatingScrollRef.current) {
                     floatingScrollRef.current.scrollLeft = e.currentTarget.scrollLeft
                   }
+                  // Update scroll dimensions in store for floating scrollbar
+                  const { setFlowchartScrollWidth, setFlowchartClientWidth } = useUIStore.getState()
+                  setFlowchartScrollWidth(e.currentTarget.scrollWidth)
+                  setFlowchartClientWidth(e.currentTarget.clientWidth)
                 }}
               >
                 <NodeCard
@@ -930,6 +1092,26 @@ export function ModelTab({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Horizontal scrollbar for flowchart - below the flowchart zone */}
+        <div
+          ref={floatingScrollRef}
+          className="border-t border-border"
+          style={{
+            height: '16px',
+            overflowX: 'scroll',
+            overflowY: 'hidden',
+            backgroundColor: 'var(--color-card)',
+          }}
+          onScroll={(e) => {
+            const scrollContainer = flowchartScrollRef.current
+            if (scrollContainer) {
+              scrollContainer.scrollLeft = e.currentTarget.scrollLeft
+            }
+          }}
+        >
+          <div style={{ width: flowchartScrollWidth > 0 ? flowchartScrollWidth : 1, height: '1px' }} />
         </div>
       </CardContent>
     </Card>

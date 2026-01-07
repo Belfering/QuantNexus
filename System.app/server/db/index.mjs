@@ -497,7 +497,106 @@ export function initializeDatabase() {
     console.log(`[DB] Cleaned up ${orphanedBots.changes} orphaned private bots (not in any watchlist)`)
   }
 
+  // FRD-035: Seed Variable Library with all built-in indicators
+  seedVariableLibrary()
+
   console.log('[DB] Database initialized')
+}
+
+/**
+ * Seed the Variable Library with all built-in indicators
+ * This provides documentation and enables custom indicator formula references
+ */
+function seedVariableLibrary() {
+  const existingCount = sqlite.prepare('SELECT COUNT(*) as count FROM metric_variables').get()
+  if (existingCount.count > 0) return // Already seeded
+
+  const now = Date.now()
+  const insertStmt = sqlite.prepare(`
+    INSERT INTO metric_variables (variable_name, display_name, description, formula, category, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `)
+
+  const variables = [
+    // Price
+    ['close', 'Current Price', 'The current closing price of the asset', 'Price = Close', 'Price'],
+    ['open', 'Open Price', 'The opening price of the current bar', 'Price = Open', 'Price'],
+    ['high', 'High Price', 'The highest price of the current bar', 'Price = High', 'Price'],
+    ['low', 'Low Price', 'The lowest price of the current bar', 'Price = Low', 'Price'],
+    ['volume', 'Volume', 'Trading volume for the current bar', 'Volume', 'Price'],
+
+    // Moving Averages
+    ['sma', 'Simple Moving Average', 'Average price over N periods, equal weight to all', 'SMA = Σ(Close) / N', 'Moving Averages'],
+    ['ema', 'Exponential Moving Average', 'Weighted average giving more weight to recent prices', 'EMA = α×Close + (1-α)×EMA_prev, α=2/(N+1)', 'Moving Averages'],
+    ['hma', 'Hull Moving Average', 'Reduced lag MA using weighted MAs', 'HMA = WMA(2×WMA(N/2) - WMA(N), √N)', 'Moving Averages'],
+    ['wma', 'Weighted Moving Average', 'Linear weighted average, recent prices weighted more', 'WMA = Σ(i×Close_i) / Σ(i), i=1..N', 'Moving Averages'],
+    ['wilderma', 'Wilder Moving Average', 'Smoothed MA used in RSI, slower response', 'WilderMA = (Prev×(N-1) + Close) / N', 'Moving Averages'],
+    ['dema', 'DEMA', 'Double EMA reduces lag vs single EMA', 'DEMA = 2×EMA - EMA(EMA)', 'Moving Averages'],
+    ['tema', 'TEMA', 'Triple EMA for even less lag', 'TEMA = 3×EMA - 3×EMA² + EMA³', 'Moving Averages'],
+    ['kama', 'KAMA', 'Kaufman Adaptive MA - adapts smoothing based on market noise', 'KAMA = KAMA_prev + SC²×(Close - KAMA_prev)', 'Moving Averages'],
+
+    // RSI & Variants
+    ['rsi', 'Relative Strength Index', "Wilder's RSI, momentum oscillator 0-100", 'RSI = 100 - 100/(1 + AvgGain/AvgLoss)', 'RSI & Variants'],
+    ['rsi_sma', 'RSI (SMA)', 'RSI using simple moving average smoothing', 'RSI_SMA = 100 - 100/(1 + SMA(Gains)/SMA(Losses))', 'RSI & Variants'],
+    ['rsi_ema', 'RSI (EMA)', 'RSI using exponential moving average smoothing', 'RSI_EMA = 100 - 100/(1 + EMA(Gains)/EMA(Losses))', 'RSI & Variants'],
+    ['stochrsi', 'Stochastic RSI', 'Stochastic applied to RSI values, more sensitive', 'StochRSI = (RSI - RSI_Low) / (RSI_High - RSI_Low)', 'RSI & Variants'],
+    ['laguerrersi', 'Laguerre RSI', "Ehlers' Laguerre filter RSI, smoother", 'Uses 4-element Laguerre filter with gamma', 'RSI & Variants'],
+
+    // Momentum
+    ['momentum_w', '13612W Momentum', 'Weighted momentum score using 1/3/6/12 month returns', '12×M1 + 4×M3 + 2×M6 + M12', 'Momentum'],
+    ['momentum_u', '13612U Momentum', 'Unweighted momentum score', 'M1 + M3 + M6 + M12 (equal weight)', 'Momentum'],
+    ['momentum_sma12', 'SMA12 Momentum', 'SMA of 12-month returns', 'SMA(12-month return, N)', 'Momentum'],
+    ['roc', 'Rate of Change', 'Percent change over N periods', 'ROC = (Close - Close_N) / Close_N × 100', 'Momentum'],
+    ['willr', 'Williams %R', 'Momentum indicator, inverse of Fast Stochastic', '%R = (High_N - Close) / (High_N - Low_N) × -100', 'Momentum'],
+    ['cci', 'CCI', 'Commodity Channel Index - measures price deviation from average', 'CCI = (TP - SMA(TP)) / (0.015 × MeanDev)', 'Momentum'],
+    ['stochk', 'Stochastic %K', 'Fast Stochastic, price position in range', '%K = (Close - Low_N) / (High_N - Low_N) × 100', 'Momentum'],
+    ['stochd', 'Stochastic %D', 'Slow Stochastic, SMA of %K', '%D = SMA(%K, 3)', 'Momentum'],
+    ['adx', 'ADX', 'Average Directional Index - trend strength 0-100', 'ADX = SMA(|+DI - -DI| / (+DI + -DI) × 100)', 'Momentum'],
+
+    // Volatility
+    ['stdev', 'Standard Deviation', 'Volatility of returns over N periods', 'StdDev = √(Σ(r - r̄)² / N)', 'Volatility'],
+    ['stdev_price', 'Standard Deviation of Price', 'Volatility of price levels (absolute $)', 'StdDev = √(Σ(P - P̄)² / N)', 'Volatility'],
+    ['maxdd', 'Max Drawdown', 'Largest peak-to-trough decline over N periods', 'MaxDD = max((Peak - Trough) / Peak)', 'Volatility'],
+    ['drawdown', 'Drawdown', 'Current decline from all-time high', 'DD = (Peak - Current) / Peak', 'Volatility'],
+    ['bbpctb', 'Bollinger %B', 'Position within Bollinger Bands (0-1)', '%B = (Close - LowerBand) / (UpperBand - LowerBand)', 'Volatility'],
+    ['bbwidth', 'Bollinger Bandwidth', 'Width of Bollinger Bands as % of middle', 'BW = (Upper - Lower) / Middle × 100', 'Volatility'],
+    ['atr', 'ATR', 'Average True Range, volatility measure', 'ATR = SMA(max(H-L, |H-C_prev|, |L-C_prev|))', 'Volatility'],
+    ['atr_pct', 'ATR %', 'ATR as percentage of price', 'ATR% = ATR / Close × 100', 'Volatility'],
+    ['hvol', 'Historical Volatility', 'Annualized standard deviation of returns', 'HV = StdDev(returns) × √252', 'Volatility'],
+    ['ulcer', 'Ulcer Index', 'Measures downside volatility/drawdown pain', 'UI = √(Σ(DD²) / N)', 'Volatility'],
+
+    // Trend
+    ['cumret', 'Cumulative Return', 'Total return over N periods', 'CumRet = (Close / Close_N) - 1', 'Trend'],
+    ['sma_ret', 'SMA of Returns', 'Smoothed average of daily returns', 'SMA(daily returns, N)', 'Trend'],
+    ['r2', 'Trend Clarity', 'R² of price regression, trend strength 0-1', 'R² = 1 - (SS_res / SS_tot)', 'Trend'],
+    ['ultsmooth', 'Ultimate Smoother', "Ehlers' low-lag 3-pole Butterworth filter", '3-pole Butterworth filter', 'Trend'],
+    ['linreg_slope', 'Linear Reg Slope', 'Slope of best-fit line through prices', 'Slope = Σ((x-x̄)(y-ȳ)) / Σ(x-x̄)²', 'Trend'],
+    ['linreg_value', 'Linear Reg Value', 'Current value on regression line', 'Value = Intercept + Slope × N', 'Trend'],
+    ['price_vs_sma', 'Price vs SMA', 'Ratio of price to its moving average', 'Ratio = Close / SMA(Close, N)', 'Trend'],
+
+    // Aroon
+    ['aroon_up', 'Aroon Up', 'Days since highest high (0-100)', 'AroonUp = ((N - DaysSinceHigh) / N) × 100', 'Aroon'],
+    ['aroon_down', 'Aroon Down', 'Days since lowest low (0-100)', 'AroonDown = ((N - DaysSinceLow) / N) × 100', 'Aroon'],
+    ['aroon_osc', 'Aroon Oscillator', 'Difference between Aroon Up and Down', 'AroonOsc = AroonUp - AroonDown', 'Aroon'],
+
+    // MACD/PPO
+    ['macd_hist', 'MACD Histogram', 'MACD minus signal line (fixed 12/26/9)', 'Hist = (EMA12 - EMA26) - EMA9(EMA12 - EMA26)', 'MACD/PPO'],
+    ['ppo_hist', 'PPO Histogram', 'Percentage Price Oscillator histogram', 'PPO = ((EMA12 - EMA26) / EMA26) × 100', 'MACD/PPO'],
+
+    // Volume-based
+    ['mfi', 'Money Flow Index', 'Volume-weighted RSI, measures buying/selling pressure', 'MFI = 100 - 100/(1 + PosMF/NegMF)', 'Volume'],
+    ['obv_roc', 'OBV Rate of Change', 'Momentum of cumulative On-Balance Volume', 'OBV ROC = (OBV - OBV_N) / |OBV_N| × 100', 'Volume'],
+    ['vwap_ratio', 'VWAP Ratio', 'Price vs Volume-Weighted Avg Price (100 = at VWAP)', 'Ratio = Close / VWAP × 100', 'Volume'],
+  ]
+
+  const transaction = sqlite.transaction(() => {
+    for (const [varName, displayName, desc, formula, category] of variables) {
+      insertStmt.run(varName, displayName, desc, formula, category, now)
+    }
+  })
+
+  transaction()
+  console.log(`[DB] Variable Library seeded with ${variables.length} indicators`)
 }
 
 // ============================================

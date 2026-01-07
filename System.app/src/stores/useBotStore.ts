@@ -83,6 +83,7 @@ function createInitialBotSession(title: string): BotSession {
     historyIndex: 0,
     backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
     callChains: [],
+    customIndicators: [],
   }
 }
 

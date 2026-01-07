@@ -92,6 +92,14 @@ export type TickerInstance = {
 
 export type ImportFormat = 'atlas' | 'composer' | 'quantmage' | 'unknown'
 
+// Custom Indicator (FRD-035) - bot-scoped custom indicator definitions
+export type CustomIndicator = {
+  id: string           // Unique ID (e.g., "ci_abc123")
+  name: string         // Display name (e.g., "My Momentum Score")
+  formula: string      // Formula expression (e.g., "rsi / volatility")
+  createdAt: number    // Timestamp
+}
+
 // Slot order for each node kind
 export const SLOT_ORDER: Record<BlockKind, SlotId[]> = {
   basic: ['next'],

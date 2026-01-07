@@ -30,3 +30,20 @@ export { evaluateNode } from './evaluator'
 
 export type { PositionContribution } from './traceContributions'
 export { tracePositionContributions } from './traceContributions'
+
+// Formula parser and evaluator (FRD-035 Custom Indicators)
+export type {
+  ASTNode,
+  ParseResult,
+  ValidationResult,
+} from './formulaParser'
+export {
+  parseFormula,
+  validateAST,
+  ALL_FUNCTIONS,
+  MATH_FUNCTIONS,
+  BINARY_FUNCTIONS,
+  ROLLING_FUNCTIONS,
+} from './formulaParser'
+export type { FormulaEvalContext } from './formulaEvaluator'
+export { evaluateAST } from './formulaEvaluator'

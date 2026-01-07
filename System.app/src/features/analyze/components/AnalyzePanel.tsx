@@ -11,7 +11,9 @@ import {
   type SanityReportState,
   type BenchmarkMetricsState,
   normalizeNodeForBacktest,
+  isAllTickersEtf,
 } from '@/features/backtest'
+import { useTickerManager } from '@/hooks/useTickerManager'
 export type { BenchmarkMetricsState }
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore } from '@/stores'
 import type {
@@ -417,7 +419,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
           </div>
           <div className="flex-1 overflow-hidden flex flex-col">
             {savedBots.filter(b => b.backtestResult || analyzeBacktests[b.id]?.result).length === 0 ? (
-              <div className="text-sm text-muted p-2">No backtested systems yet. Run backtests in the Analyze tab first.</div>
+              <div className="text-sm text-muted-foreground p-2">No backtested systems yet. Run backtests in the Analyze tab first.</div>
             ) : (
               <>
                 {/* Top 3 Recommended - Fixed Section (always visible) */}
@@ -452,7 +454,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                       }
 
                       if (top3.length === 0) {
-                        return <div className="text-xs text-muted">No recommendations available</div>
+                        return <div className="text-xs text-muted-foreground">No recommendations available</div>
                       }
 
                       return top3.map(bot => {
@@ -465,7 +467,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                           >
                             <div className="flex flex-col min-w-0 flex-1">
                               <div className="font-medium truncate">{bot.name}</div>
-                              <div className="text-xs text-muted">
+                              <div className="text-xs text-muted-foreground">
                                 {rec ? `Corr: ${rec.correlation.toFixed(2)} | ` : ''}CAGR: {((metrics?.cagr ?? 0) * 100).toFixed(1)}%
                               </div>
                             </div>
@@ -485,7 +487,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
 
                 {/* All Your Bots - Scrollable Section */}
                 <div className="flex-1 overflow-auto p-2">
-                  <div className="text-xs font-bold text-muted mb-2">All Systems</div>
+                  <div className="text-xs font-bold text-muted-foreground mb-2">All Systems</div>
                   <div className="grid gap-1">
                     {savedBots
                       .filter(b => b.backtestResult || analyzeBacktests[b.id]?.result)
@@ -504,7 +506,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                           >
                             <div className="flex flex-col min-w-0 flex-1">
                               <div className="font-medium truncate">{bot.name}</div>
-                              <div className="text-xs text-muted">
+                              <div className="text-xs text-muted-foreground">
                                 CAGR: {((metrics?.cagr ?? 0) * 100).toFixed(1)}% | DD: {((metrics?.maxDrawdown ?? 0) * 100).toFixed(1)}%
                               </div>
                             </div>
@@ -541,7 +543,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
           </div>
           <div className="flex-1 overflow-hidden flex flex-col">
             {allNexusBots.filter(b => b.backtestResult).length === 0 ? (
-              <div className="text-sm text-muted p-2">No Nexus systems with metrics available.</div>
+              <div className="text-sm text-muted-foreground p-2">No Nexus systems with metrics available.</div>
             ) : (
               <>
                 {/* Top 3 Recommended - Fixed Section (always visible) */}
@@ -569,7 +571,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                       }
 
                       if (top3.length === 0) {
-                        return <div className="text-xs text-muted">No recommendations available</div>
+                        return <div className="text-xs text-muted-foreground">No recommendations available</div>
                       }
 
                       return top3.map(bot => {
@@ -582,7 +584,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                           >
                             <div className="flex flex-col min-w-0 flex-1">
                               <div className="font-medium truncate">{bot.name}</div>
-                              <div className="text-xs text-muted">
+                              <div className="text-xs text-muted-foreground">
                                 {rec ? `Corr: ${rec.correlation.toFixed(2)} | ` : ''}CAGR: {((metrics?.cagr ?? 0) * 100).toFixed(1)}%
                               </div>
                             </div>
@@ -602,7 +604,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
 
                 {/* All Nexus Bots - Scrollable Section */}
                 <div className="flex-1 overflow-auto p-2">
-                  <div className="text-xs font-bold text-muted mb-2">All Systems</div>
+                  <div className="text-xs font-bold text-muted-foreground mb-2">All Systems</div>
                   <div className="grid gap-1">
                     {allNexusBots
                       .filter(b => b.backtestResult)
@@ -618,7 +620,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                           >
                             <div className="flex flex-col min-w-0 flex-1">
                               <div className="font-medium truncate">{bot.name}</div>
-                              <div className="text-xs text-muted">
+                              <div className="text-xs text-muted-foreground">
                                 {bot.builderDisplayName && <span className="mr-2">by {bot.builderDisplayName}</span>}
                                 CAGR: {((metrics?.cagr ?? 0) * 100).toFixed(1)}%
                               </div>
@@ -705,12 +707,12 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
           </div>
           <div className="flex-1 overflow-auto p-2">
             {correlation.selectedBotIds.length === 0 ? (
-              <div className="text-sm text-muted p-2">Add systems from the left panels or load a watchlist to build your portfolio.</div>
+              <div className="text-sm text-muted-foreground p-2">Add systems from the left panels or load a watchlist to build your portfolio.</div>
             ) : (
               <div className="grid gap-3">
                 {/* Selected Bots */}
                 <div>
-                  <div className="text-xs font-bold text-muted mb-2">Selected Systems</div>
+                  <div className="text-xs font-bold text-muted-foreground mb-2">Selected Systems</div>
                   <div className="grid gap-1">
                     {correlation.selectedBotIds.map(botId => {
                       const bot = savedBots.find(b => b.id === botId) ?? allNexusBots.find(b => b.id === botId)
@@ -720,7 +722,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                         <div key={botId} className="flex items-center justify-between p-2 rounded bg-accent/10 text-sm">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <span className="font-medium truncate">{bot.name}</span>
-                            <span className="text-xs text-muted">{weight.toFixed(1)}%</span>
+                            <span className="text-xs text-muted-foreground">{weight.toFixed(1)}%</span>
                           </div>
                           <Button
                             size="sm"
@@ -737,7 +739,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
 
                 {/* Loading/Error State */}
                 {correlation.loading && (
-                  <div className="text-xs text-muted p-2 text-center">
+                  <div className="text-xs text-muted-foreground p-2 text-center">
                     Calculating optimal weights...
                   </div>
                 )}
@@ -750,7 +752,7 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                 {/* Correlation Matrix */}
                 {correlation.selectedBotIds.length >= 2 && correlation.correlationMatrix && correlation.validBotIds.length >= 2 && (
                   <div>
-                    <div className="text-xs font-bold text-muted mb-2">Correlation Matrix</div>
+                    <div className="text-xs font-bold text-muted-foreground mb-2">Correlation Matrix</div>
                     <div className="overflow-x-auto">
                       <table className="text-xs w-full">
                         <thead>
@@ -779,11 +781,13 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
                                   // Color: green (negative/low) -> yellow (0.5) -> red (high positive)
                                   const hue = Math.max(0, 120 - corr * 120) // 120=green, 0=red
                                   const bgColor = i === j ? 'transparent' : `hsl(${hue}, 70%, 85%)`
+                                  // Text color: dark on light backgrounds (green/yellow), light on diagonal (transparent)
+                                  const textColor = i === j ? undefined : '#1a1a1a'
                                   return (
                                     <td
                                       key={colId}
                                       className="p-1 text-center"
-                                      style={{ backgroundColor: bgColor }}
+                                      style={{ backgroundColor: bgColor, color: textColor }}
                                     >
                                       {i === j ? '1.00' : corr.toFixed(2)}
                                     </td>
@@ -800,34 +804,34 @@ function CorrelationToolContent(props: CorrelationToolContentProps) {
 
                 {/* Portfolio Metrics */}
                 <div>
-                  <div className="text-xs font-bold text-muted mb-2">Portfolio Metrics</div>
+                  <div className="text-xs font-bold text-muted-foreground mb-2">Portfolio Metrics</div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="bg-accent/5 p-2 rounded">
-                      <div className="text-muted">Expected CAGR</div>
+                      <div className="text-muted-foreground">Expected CAGR</div>
                       <div className="font-bold">
                         {correlation.portfolioMetrics ? `${(correlation.portfolioMetrics.cagr * 100).toFixed(1)}%` : '--'}
                       </div>
                     </div>
                     <div className="bg-accent/5 p-2 rounded">
-                      <div className="text-muted">Volatility</div>
+                      <div className="text-muted-foreground">Volatility</div>
                       <div className="font-bold">
                         {correlation.portfolioMetrics ? `${(correlation.portfolioMetrics.volatility * 100).toFixed(1)}%` : '--'}
                       </div>
                     </div>
                     <div className="bg-accent/5 p-2 rounded">
-                      <div className="text-muted">Sharpe Ratio</div>
+                      <div className="text-muted-foreground">Sharpe Ratio</div>
                       <div className="font-bold">
                         {correlation.portfolioMetrics ? correlation.portfolioMetrics.sharpe.toFixed(2) : '--'}
                       </div>
                     </div>
                     <div className="bg-accent/5 p-2 rounded">
-                      <div className="text-muted">Max Drawdown</div>
+                      <div className="text-muted-foreground">Max Drawdown</div>
                       <div className="font-bold">
                         {correlation.portfolioMetrics ? `${(correlation.portfolioMetrics.maxDrawdown * 100).toFixed(1)}%` : '--'}
                       </div>
                     </div>
                     <div className="bg-accent/5 p-2 rounded col-span-2">
-                      <div className="text-muted">Portfolio Beta</div>
+                      <div className="text-muted-foreground">Portfolio Beta</div>
                       <div className="font-bold">
                         {correlation.portfolioMetrics ? correlation.portfolioMetrics.beta.toFixed(2) : '--'}
                       </div>
@@ -1068,6 +1072,13 @@ function BotCard(props: BotCardProps) {
   const analyzeState = analyzeBacktests[b.id]
   const tags = watchlistsByBotId.get(b.id) ?? []
 
+  // ETFs Only check - only compute if we have payload (not Nexus bots with hidden payload)
+  const { tickerMetadata } = useTickerManager({ etfsOnlyMode: false })
+  const isEtfsOnly = useMemo(() => {
+    if (!b.payload || !tickerMetadata) return false
+    return isAllTickersEtf(b.payload, callChainsById, tickerMetadata)
+  }, [b.payload, tickerMetadata, callChainsById])
+
   return (
     <Card className="grid gap-2.5">
       <div className="flex items-center gap-2.5 flex-wrap">
@@ -1093,22 +1104,9 @@ function BotCard(props: BotCardProps) {
           <Badge variant="secondary">Nexus Eligible</Badge>
         )}
         <Badge variant="default">{b.builderDisplayName || (b.builderId === userId ? userDisplayName : null) || b.builderId}</Badge>
-        <div className="flex gap-1.5 flex-wrap">
-          {tags.map((w) => (
-            <Badge key={w.id} variant="accent" className="gap-1.5">
-              {w.name}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-4 w-4 p-0 hover:bg-transparent"
-                onClick={() => removeBotFromWatchlist(b.id, w.id)}
-                title={`Remove from ${w.name}`}
-              >
-                X
-              </Button>
-            </Badge>
-          ))}
-        </div>
+        {isEtfsOnly && (
+          <Badge variant="secondary">ETFs Only</Badge>
+        )}
         <div className="ml-auto flex gap-2 flex-wrap">
           {/* FRD-012: Show Copy to New for published systems, Open in Build for private */}
           {b.builderId === userId && b.visibility !== 'community' && (
@@ -1165,6 +1163,8 @@ function BotCard(props: BotCardProps) {
           fetchBenchmarkMetrics={fetchBenchmarkMetrics}
           callChainsById={callChainsById}
           normalizeNodeForBacktest={normalizeNodeForBacktest}
+          watchlistTags={tags}
+          removeBotFromWatchlist={removeBotFromWatchlist}
         />
       )}
     </Card>
@@ -1201,6 +1201,8 @@ interface BotCardContentProps {
   fetchBenchmarkMetrics: () => Promise<void>
   callChainsById: Map<string, CallChain>
   normalizeNodeForBacktest: (node: FlowNode) => FlowNode
+  watchlistTags: Watchlist[]
+  removeBotFromWatchlist: (botId: string, watchlistId: string) => void
 }
 
 function BotCardContent(props: BotCardContentProps) {
@@ -1230,12 +1232,34 @@ function BotCardContent(props: BotCardContentProps) {
     fetchBenchmarkMetrics,
     callChainsById,
     normalizeNodeForBacktest,
+    watchlistTags,
+    removeBotFromWatchlist,
   } = props
 
   const currentTab = uiState.analyzeBotCardTab[b.id] ?? 'overview'
 
   return (
     <div className="flex flex-col gap-2.5 w-full">
+      {/* Watchlist Tags (moved from collapsed header) */}
+      {watchlistTags.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap">
+          {watchlistTags.map((w) => (
+            <Badge key={w.id} variant="accent" className="gap-1.5">
+              {w.name}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 p-0 hover:bg-transparent"
+                onClick={() => removeBotFromWatchlist(b.id, w.id)}
+                title={`Remove from ${w.name}`}
+              >
+                X
+              </Button>
+            </Badge>
+          ))}
+        </div>
+      )}
+
       {/* Tab Navigation */}
       <div className="flex gap-2 border-b border-border pb-2">
         <Button

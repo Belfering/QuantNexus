@@ -1,7 +1,7 @@
 // src/types/bot.ts
 // Bot/System and watchlist types
 
-import type { FlowNode, CallChain } from './flowNode'
+import type { FlowNode, CallChain, CustomIndicator } from './flowNode'
 import type { UserId } from './theme'
 import type { BacktestMode, BotBacktestState } from './backtest'
 
@@ -15,6 +15,7 @@ export type SavedSystem = {
   builderDisplayName?: string // Display name of the builder (for showing in UI)
   payload: FlowNode
   callChains?: CallChain[] // Per-bot call chains (stored with the system)
+  customIndicators?: CustomIndicator[] // Per-bot custom indicators (FRD-035)
   visibility: BotVisibility
   createdAt: number
   tags?: string[] // e.g., ['Atlas', 'Nexus']
@@ -51,6 +52,7 @@ export type BotSession = {
   savedBotId?: string
   backtest: BotBacktestState
   callChains: CallChain[] // Per-bot call chains (stored with bot payload)
+  customIndicators: CustomIndicator[] // Per-bot custom indicators (FRD-035)
 }
 
 // API type for Nexus bots (no payload for IP protection)

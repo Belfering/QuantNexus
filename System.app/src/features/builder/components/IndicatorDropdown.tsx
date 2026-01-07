@@ -1,10 +1,11 @@
 // src/features/builder/components/IndicatorDropdown.tsx
 // Hierarchical dropdown for selecting indicators with categories
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import type { MetricChoice } from '../../../types'
+import type { MetricChoice, CustomIndicator } from '../../../types'
 import { INDICATOR_CATEGORIES, INDICATOR_INFO } from '../../../constants'
+import { useBotStore } from '../../../stores'
 
 // Tooltip component for indicator info
 const IndicatorTooltip = ({ indicator }: { indicator: MetricChoice }) => {
@@ -53,12 +54,18 @@ export interface IndicatorDropdownProps {
   value: MetricChoice
   onChange: (metric: MetricChoice) => void
   className?: string
+  customIndicators?: CustomIndicator[] // Optional override - if not provided, fetches from store
 }
 
-export const IndicatorDropdown = ({ value, onChange, className }: IndicatorDropdownProps) => {
+export const IndicatorDropdown = ({ value, onChange, className, customIndicators: customIndicatorsProp }: IndicatorDropdownProps) => {
   const [open, setOpen] = useState(false)
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Get custom indicators from the active bot if not provided via props
+  const { bots, activeBotId } = useBotStore()
+  const activeBot = bots.find(b => b.id === activeBotId)
+  const customIndicators = customIndicatorsProp ?? activeBot?.customIndicators ?? []
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -73,12 +80,51 @@ export const IndicatorDropdown = ({ value, onChange, className }: IndicatorDropd
     }
   }, [open])
 
+  // Build categories including custom indicators
+  const allCategories = useMemo(() => {
+    const cats: Record<string, MetricChoice[]> = {}
+
+    // Add Custom category at the top if there are custom indicators
+    if (customIndicators.length > 0) {
+      cats['Custom Indicators'] = customIndicators.map(ci => `custom:${ci.id}` as MetricChoice)
+    }
+
+    // Add built-in categories
+    for (const [cat, indicators] of Object.entries(INDICATOR_CATEGORIES)) {
+      cats[cat] = indicators as MetricChoice[]
+    }
+
+    return cats
+  }, [customIndicators])
+
+  // Build custom indicator info lookup for display names
+  const customIndicatorInfo = useMemo(() => {
+    const lookup: Record<string, { name: string; formula: string }> = {}
+    for (const ci of customIndicators) {
+      lookup[`custom:${ci.id}`] = { name: ci.name, formula: ci.formula }
+    }
+    return lookup
+  }, [customIndicators])
+
   // Find which category the current value belongs to
   const findCategoryForValue = (v: MetricChoice): string => {
+    // Check custom indicators first
+    if (v.startsWith('custom:') && customIndicators.length > 0) {
+      return 'Custom Indicators'
+    }
     for (const [cat, indicators] of Object.entries(INDICATOR_CATEGORIES)) {
       if (indicators.includes(v)) return cat
     }
     return 'Moving Averages'
+  }
+
+  // Get display name for an indicator
+  const getDisplayName = (ind: MetricChoice): string => {
+    if (ind.startsWith('custom:')) {
+      const info = customIndicatorInfo[ind]
+      return info ? info.name : ind
+    }
+    return ind
   }
 
   return (
@@ -88,7 +134,7 @@ export const IndicatorDropdown = ({ value, onChange, className }: IndicatorDropd
         className="h-8 px-2 text-xs border border-border rounded bg-card text-left flex items-center gap-1 hover:bg-accent/50 min-w-[140px]"
         onClick={() => setOpen(!open)}
       >
-        <span className="truncate flex-1">{value}</span>
+        <span className="truncate flex-1">{getDisplayName(value)}</span>
         <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
@@ -96,7 +142,7 @@ export const IndicatorDropdown = ({ value, onChange, className }: IndicatorDropd
 
       {open && (
         <div className="absolute z-[200] mt-1 bg-card border border-border rounded shadow-lg min-w-[160px] left-0">
-          {Object.entries(INDICATOR_CATEGORIES).map(([category, indicators]) => (
+          {Object.entries(allCategories).map(([category, indicators]) => (
             <div
               key={category}
               className="relative"
@@ -107,7 +153,8 @@ export const IndicatorDropdown = ({ value, onChange, className }: IndicatorDropd
                 className={cn(
                   'px-3 py-1.5 text-xs cursor-pointer flex justify-between items-center',
                   hoveredCategory === category ? 'bg-accent' : 'hover:bg-accent/50',
-                  findCategoryForValue(value) === category && 'font-medium'
+                  findCategoryForValue(value) === category && 'font-medium',
+                  category === 'Custom Indicators' && 'text-blue-600 dark:text-blue-400'
                 )}
               >
                 <span>{category}</span>
@@ -130,8 +177,15 @@ export const IndicatorDropdown = ({ value, onChange, className }: IndicatorDropd
                         setOpen(false)
                       }}
                     >
-                      <span className="truncate">{ind}</span>
-                      <IndicatorTooltip indicator={ind} />
+                      <span className="truncate">{getDisplayName(ind)}</span>
+                      {/* Show tooltip for built-in indicators, formula for custom */}
+                      {ind.startsWith('custom:') ? (
+                        <span className="text-muted-foreground font-mono text-[10px] max-w-[100px] truncate" title={customIndicatorInfo[ind]?.formula}>
+                          {customIndicatorInfo[ind]?.formula}
+                        </span>
+                      ) : (
+                        <IndicatorTooltip indicator={ind} />
+                      )}
                     </div>
                   ))}
                 </div>

@@ -79,6 +79,7 @@ export {
   collectBacktestInputs,
   collectPositionTickers,
   isEtfsOnlyBot,
+  isAllTickersEtf,
   collectIndicatorTickers,
 } from './inputCollection'
 

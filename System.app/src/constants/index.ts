@@ -26,3 +26,6 @@ export {
   OHLC_CACHE_TTL,
   POPULAR_TICKERS,
 } from './config'
+
+// Formula variables (FRD-035 Custom Indicators)
+export { KNOWN_VARIABLES, VARIABLE_CATEGORIES } from './formulaVariables'

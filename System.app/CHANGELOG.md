@@ -4,6 +4,51 @@ All notable changes to Atlas Engine are documented here.
 
 ---
 
+## [1.6.0] - 2026-01-07
+
+### Added
+- **Date Indicator** - New condition type for seasonal/calendar-based strategies
+  - Select specific dates or date ranges (e.g., "Jan 1st to Mar 31st")
+  - Handles year-wrapping ranges (e.g., "Nov 1st to Feb 28th" for winter months)
+  - Appears in "Date/Calendar" category in indicator dropdown
+- **Crosses Above / Crosses Below Comparators** - New condition comparators for detecting threshold crossings
+  - Crosses Above: triggers when indicator rises from below to at/above threshold
+  - Crosses Below: triggers when indicator falls from above to at/below threshold
+  - Works with both static thresholds and dynamic indicator comparisons
+- **Custom Indicators** - Create user-defined indicators with formula expressions
+  - Define indicators using built-in variables (close, rsi, sma, ema, etc.)
+  - Support for rolling functions: sma(var, N), ema(var, N), stdev(var, N), etc.
+  - Math functions: abs, sqrt, log, exp, min, max, pow
+  - Custom indicators appear in Indicator dropdown alongside built-in indicators
+  - Collapsible Custom Indicators panel in Model tab sidebar
+- **Variable Library** - Foundation for custom indicator formulas
+  - 48 built-in indicators documented with descriptions and formulas
+  - Viewable in Admin panel (super admin only) for reference
+- **ETFs Only Badge** - Analyze tab bot cards now auto-detect and display "ETFs Only" badge
+  - Checks both position tickers AND indicator tickers
+  - Badge appears after builder name for qualifying strategies
+
+### Changed
+- **Backtest Engine Refactored** - Significant code consolidation
+  - Merged duplicate indicator calculation functions
+  - Improved warm-up period calculations for consistent lookback handling
+  - Better caching for branch equity references
+- **Analyze Tab Card Layout** - Improved bot card organization
+  - Watchlist tags moved from main line to expanded card content (reduces clutter)
+  - Builder display name now shows correctly instead of UUID
+
+### Fixed
+- **Dark Mode Correlation Tool** - Fixed text readability issues
+  - Correlation matrix cells now use dark text on colored backgrounds
+  - Improved contrast for various text elements in dark mode
+- **Model Tab Layout** - Improved sidebar and scrollbar behavior
+  - Callback Nodes and Custom Indicators sidebar now pins below ETF toolbar
+  - Sidebar stops above the horizontal scrollbar area
+  - Horizontal scrollbar properly recalculates when sidebar expands/collapses
+  - Custom Indicators panel now fills available height when expanded alone
+
+---
+
 ## [1.5.2] - 2026-01-04
 
 ### Changed

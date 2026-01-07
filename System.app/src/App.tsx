@@ -358,6 +358,12 @@ function App() {
   // Engineer access = engineer or higher (for Databases tab)
   const hasEngineerAccess = userRole === 'engineer' || userRole === 'sub_admin' || userRole === 'main_admin' || userRole === 'admin'
 
+  // Sync local auth state to useAuthStore so components using the store see the same values
+  const setAuthUser = useAuthStore(s => s.setUser)
+  useEffect(() => {
+    setAuthUser(userId, userRole, userDisplayName)
+  }, [userId, userRole, userDisplayName, setAuthUser])
+
   // Bot Store - saved bots and watchlists (migrated from useState in Phase 2N-13c)
   const savedBots = useBotStore(s => s.savedBots)
   const setSavedBots = useBotStore(s => s.setSavedBots)
@@ -452,6 +458,11 @@ function App() {
   // setClipboard, setCopiedNodeId moved to useBotOperations (Phase 2N-19)
   const isImporting = useBotStore(s => s.isImporting)
   const setIsImporting = useBotStore(s => s.setIsImporting)
+
+  // Safety: clear isImporting on mount in case it got stuck
+  useEffect(() => {
+    setIsImporting(false)
+  }, [setIsImporting])
   // UI Store - tabs and navigation
   const tab = useUIStore(s => s.tab)
   const setTab = useUIStore(s => s.setTab)
@@ -475,9 +486,8 @@ function App() {
   // Flowchart scroll state for floating scrollbar
   const flowchartScrollRef = useRef<HTMLDivElement>(null)
   const floatingScrollRef = useRef<HTMLDivElement>(null)
-  const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
+  // Scroll dimensions stored in useUIStore, set by ModelTab, read by scrollbar
   const setFlowchartScrollWidth = useUIStore(s => s.setFlowchartScrollWidth)
-  const flowchartClientWidth = useUIStore(s => s.flowchartClientWidth)
   const setFlowchartClientWidth = useUIStore(s => s.setFlowchartClientWidth)
 
   // Update scroll dimensions when tab changes or window resizes
@@ -488,34 +498,25 @@ function App() {
       if (flowchartScrollRef.current) {
         const sw = flowchartScrollRef.current.scrollWidth
         const cw = flowchartScrollRef.current.clientWidth
-        setFlowchartScrollWidth(sw)
-        setFlowchartClientWidth(cw)
+        // Only update if values are valid (> 0) and changed
+        if (sw > 0) setFlowchartScrollWidth(sw)
+        if (cw > 0) setFlowchartClientWidth(cw)
       }
     }
 
-    // Initial update after delays to ensure DOM is ready
-    const timer1 = setTimeout(updateScrollDimensions, 100)
-    const timer2 = setTimeout(updateScrollDimensions, 500)
-    const timer3 = setTimeout(updateScrollDimensions, 1000)
+    // Initial update with multiple retries to ensure DOM is ready
+    const timers = [100, 500, 1000].map(delay =>
+      setTimeout(updateScrollDimensions, delay)
+    )
 
     // Also update on window resize
     window.addEventListener('resize', updateScrollDimensions)
 
-    // Use MutationObserver to detect DOM changes inside flowchart
-    let observer: MutationObserver | null = null
-    if (flowchartScrollRef.current) {
-      observer = new MutationObserver(updateScrollDimensions)
-      observer.observe(flowchartScrollRef.current, { childList: true, subtree: true })
-    }
-
     return () => {
-      clearTimeout(timer1)
-      clearTimeout(timer2)
-      clearTimeout(timer3)
+      timers.forEach(clearTimeout)
       window.removeEventListener('resize', updateScrollDimensions)
-      observer?.disconnect()
     }
-  }, [tab])
+  }, [tab, setFlowchartScrollWidth, setFlowchartClientWidth])
 
   // Nexus buy state moved to useDashboardHandlers hook (Phase 2N-18)
   // Phase 2N-14d: UI state used via store in NexusPanel/AnalyzePanel
@@ -634,7 +635,7 @@ function App() {
   const callChainsById = useMemo(() => new Map(callChains.map((c) => [c.id, c])), [callChains])
 
   // Phase 2N-16: Backtest runner hook
-  const { runBacktestForNode } = useBacktestRunner({ callChainsById })
+  const { runBacktestForNode } = useBacktestRunner({ callChainsById, customIndicators: activeBot?.customIndicators })
 
   // Phase 2N-17: Analyze runner hook
   const {
@@ -1173,7 +1174,7 @@ function App() {
         nodeKind={tickerModalNodeKind}
         initialValue={tickerModalInitialValue}
       />
-      <main className="flex-1 overflow-hidden min-h-0">
+      <main className={`flex-1 overflow-hidden min-h-0 ${tab === 'Model' ? 'pb-4' : ''}`}>
         {tab === 'Model' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Model...</div>}>
             <ModelTab
@@ -1324,25 +1325,6 @@ function App() {
         
         ) : null}
       </main>
-      {/* Floating horizontal scrollbar for flowchart - only visible on Model tab when content is wider than container */}
-      {tab === 'Model' && flowchartScrollWidth > flowchartClientWidth && (
-        <div
-          ref={floatingScrollRef}
-          className="fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-border"
-          style={{
-            height: '14px',
-            overflowX: 'scroll',
-            overflowY: 'hidden',
-          }}
-          onScroll={(e) => {
-            if (flowchartScrollRef.current) {
-              flowchartScrollRef.current.scrollLeft = e.currentTarget.scrollLeft
-            }
-          }}
-        >
-          <div style={{ width: flowchartScrollWidth, height: '1px' }} />
-        </div>
-      )}
     </div>
   )
 }

@@ -1528,6 +1528,15 @@ select {
   border-radius: 8px 8px 0 0;
 }
 
+/* Hide scrollbar but keep functionality */
+.scrollbar-hidden {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Opera */
+}
+
 .flowchart-scrollbar-fixed::-webkit-scrollbar {
   height: 18px;
   background: var(--color-surface);
