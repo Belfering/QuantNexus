@@ -1,7 +1,7 @@
 // src/tabs/ModelTab.tsx
 // Model tab component - lazy loadable wrapper for flowchart builder
 
-import { type RefObject, useState, useMemo, useEffect } from 'react'
+import { type RefObject, useState, useMemo, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -337,6 +337,9 @@ export function ModelTab({
   const [newIndicatorFormula, setNewIndicatorFormula] = useState('')
   const [showVariableRef, setShowVariableRef] = useState(false)
 
+  // Floating scrollbar position tracking
+  const [flowchartRect, setFlowchartRect] = useState({ left: 0, width: 0 })
+
   // Get customIndicators from activeBot
   const customIndicators = activeBot?.customIndicators || []
 
@@ -380,6 +383,36 @@ export function ModelTab({
       customIndicators: customIndicators.filter(ci => ci.id !== id),
     })
   }
+
+  // Track flowchart container position for floating scrollbar
+  useEffect(() => {
+    const updateRect = () => {
+      const container = flowchartScrollRef.current?.parentElement
+      if (container) {
+        const rect = container.getBoundingClientRect()
+        setFlowchartRect({ left: rect.left, width: rect.width })
+      }
+    }
+
+    // Initial update
+    updateRect()
+
+    // Update on resize
+    window.addEventListener('resize', updateRect)
+
+    // Also observe the container for size changes (e.g., sidebar collapse)
+    const container = flowchartScrollRef.current?.parentElement
+    let resizeObserver: ResizeObserver | null = null
+    if (container) {
+      resizeObserver = new ResizeObserver(updateRect)
+      resizeObserver.observe(container)
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateRect)
+      resizeObserver?.disconnect()
+    }
+  }, [flowchartScrollRef])
 
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
@@ -633,7 +666,7 @@ export function ModelTab({
         {/* Bottom Row - 2 Zones Side by Side */}
         <div className="flex gap-4 flex-1">
           {/* Bottom Left Zone - Sticky Labels + Content */}
-          <div className={`flex items-start transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'w-auto' : 'w-1/2'}`}>
+          <div className={`flex items-start transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? '' : 'w-1/2'}`}>
             {/* Left Side - Labels and Buttons (sticky below ETF toolbar, stops above scrollbar) */}
             <div className="flex flex-col w-auto border border-border rounded-l-lg sticky top-[52px] z-10" style={{ height: 'calc(100vh - 300px)', backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))' }}>
               {/* Callback Nodes Label/Button Zone - takes 50% */}
@@ -675,7 +708,7 @@ export function ModelTab({
 
             {/* Right Side - Content Area (dynamic based on expanded state) */}
             <div
-              className="flex-1 grid overflow-hidden border border-l-0 border-border rounded-r-lg sticky top-[52px] z-10"
+              className={`grid overflow-hidden border border-l-0 border-border rounded-r-lg sticky top-[52px] z-10 ${callbackNodesCollapsed && customIndicatorsCollapsed ? '' : 'flex-1'}`}
               style={{
                 backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))',
                 gridTemplateRows:
@@ -683,7 +716,8 @@ export function ModelTab({
                   callbackNodesCollapsed && !customIndicatorsCollapsed ? '0fr 1fr' :
                   !callbackNodesCollapsed && customIndicatorsCollapsed ? '1fr 0fr' :
                   '1fr 1fr',
-                height: 'calc(100vh - 300px)'
+                height: 'calc(100vh - 300px)',
+                width: callbackNodesCollapsed && customIndicatorsCollapsed ? '0' : undefined
               }}
             >
               {/* Callback Nodes Content */}
@@ -1006,18 +1040,17 @@ export function ModelTab({
           </div>
 
           {/* Bottom Right Zone - Flow Tree Builder */}
-          <div className={`flex flex-col transition-all relative min-h-0 ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
+          <div className={`flex flex-col transition-all relative min-h-0 min-w-0 overflow-hidden ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
             {/* Flowchart Card */}
             <div className="flex-1 border border-border rounded-lg bg-card min-h-0 relative" style={{ height: 'calc(100vh - 400px)', overflow: 'hidden' }}>
               <div
                 ref={flowchartScrollRef}
-                className="scrollbar-hidden"
                 style={{
                   width: '100%',
                   height: '100%',
                   padding: '1rem',
                   overflowY: 'auto',
-                  overflowX: 'scroll',
+                  overflowX: 'auto',
                 }}
                 onScroll={(e) => {
                   if (floatingScrollRef.current) {
@@ -1094,25 +1127,32 @@ export function ModelTab({
           </div>
         </div>
 
-        {/* Horizontal scrollbar for flowchart - below the flowchart zone */}
-        <div
-          ref={floatingScrollRef}
-          className="border-t border-border"
-          style={{
-            height: '16px',
-            overflowX: 'scroll',
-            overflowY: 'hidden',
-            backgroundColor: 'var(--color-card)',
-          }}
-          onScroll={(e) => {
-            const scrollContainer = flowchartScrollRef.current
-            if (scrollContainer) {
-              scrollContainer.scrollLeft = e.currentTarget.scrollLeft
-            }
-          }}
-        >
-          <div style={{ width: flowchartScrollWidth > 0 ? flowchartScrollWidth : 1, height: '1px' }} />
-        </div>
+        {/* Horizontal scrollbar for flowchart - fixed at bottom, same width as flowchart */}
+        {flowchartRect.width > 0 && (
+          <div
+            ref={floatingScrollRef}
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: flowchartRect.left,
+              width: flowchartRect.width,
+              height: '16px',
+              overflowX: 'scroll',
+              overflowY: 'hidden',
+              backgroundColor: 'var(--color-card)',
+              borderTop: '1px solid var(--color-border)',
+              zIndex: 50,
+            }}
+            onScroll={(e) => {
+              const scrollContainer = flowchartScrollRef.current
+              if (scrollContainer) {
+                scrollContainer.scrollLeft = e.currentTarget.scrollLeft
+              }
+            }}
+          >
+            <div style={{ width: flowchartScrollWidth > 0 ? flowchartScrollWidth : 1, height: '1px' }} />
+          </div>
+        )}
       </CardContent>
     </Card>
   )

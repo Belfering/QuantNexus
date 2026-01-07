@@ -247,29 +247,28 @@ body {
 
 /* Hide horizontal scrollbar for elements using floating scrollbar */
 .hide-horizontal-scrollbar {
-  scrollbar-width: thin; /* Firefox - thin scrollbar */
+  scrollbar-gutter: stable;
 }
 
-.hide-horizontal-scrollbar::-webkit-scrollbar {
-  width: 8px; /* Keep vertical scrollbar visible */
-  height: 0; /* Hide horizontal scrollbar */
+.hide-horizontal-scrollbar::-webkit-scrollbar:vertical {
+  width: 8px;
 }
 
 .hide-horizontal-scrollbar::-webkit-scrollbar:horizontal {
-  height: 0;
-  display: none;
+  height: 0 !important;
+  display: none !important;
 }
 
-.hide-horizontal-scrollbar::-webkit-scrollbar-track {
+.hide-horizontal-scrollbar::-webkit-scrollbar-track:vertical {
   background: transparent;
 }
 
-.hide-horizontal-scrollbar::-webkit-scrollbar-thumb {
+.hide-horizontal-scrollbar::-webkit-scrollbar-thumb:vertical {
   background: var(--color-border);
   border-radius: 4px;
 }
 
-.hide-horizontal-scrollbar::-webkit-scrollbar-thumb:hover {
+.hide-horizontal-scrollbar::-webkit-scrollbar-thumb:vertical:hover {
   background: var(--color-muted);
 }
 
