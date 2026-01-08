@@ -40,12 +40,17 @@ interface UseBotOperationsOptions {
   setBots: React.Dispatch<React.SetStateAction<BotSession[]>>
   activeBotId: string
   setActiveBotId: (id: string) => void
+  activeForgeBotId: string
+  setActiveForgeBotId: (id: string) => void
+  activeModelBotId: string
+  setActiveModelBotId: (id: string) => void
   current: FlowNode
   setSavedBots: React.Dispatch<React.SetStateAction<SavedBot[]>>
   setWatchlists: React.Dispatch<React.SetStateAction<import('@/types').Watchlist[]>>
-  createBotSession: (name: string) => BotSession
+  createBotSession: (name: string, tabContext: 'Forge' | 'Model') => BotSession
   runBacktestForNode: (node: FlowNode) => Promise<{ result: import('@/types').BacktestResult }>
-  setTab: (tab: 'Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases') => void
+  tab: 'Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'
+  setTab: (tab: 'Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases') => void
   setIsImporting: (v: boolean) => void
 }
 
@@ -60,11 +65,16 @@ export function useBotOperations({
   setBots,
   activeBotId,
   setActiveBotId,
+  activeForgeBotId,
+  setActiveForgeBotId,
+  activeModelBotId,
+  setActiveModelBotId,
   current,
   setSavedBots,
   setWatchlists,
   createBotSession,
   runBacktestForNode,
+  tab,
   setTab,
   setIsImporting,
 }: UseBotOperationsOptions) {
@@ -195,12 +205,22 @@ export function useBotOperations({
    * Create a new bot
    */
   const handleNewBot = useCallback(() => {
-    const bot = createBotSession('Algo Name Here')
+    const tabContext = (tab === 'Forge' || tab === 'Model') ? tab : 'Model'
+    const botName = tabContext === 'Forge' ? 'Forge System' : 'Algo Name Here'
+    const bot = createBotSession(botName, tabContext)
     setBots((prev) => [...prev, bot])
-    setActiveBotId(bot.id)
+
+    // Update the correct active bot ID based on context
+    if (tabContext === 'Forge') {
+      setActiveForgeBotId(bot.id)
+    } else {
+      setActiveModelBotId(bot.id)
+    }
+
+    setActiveBotId(bot.id) // Also update legacy activeBotId
     setClipboard(null)
     setCopiedNodeId(null)
-  }, [createBotSession, setActiveBotId, setBots, setClipboard, setCopiedNodeId])
+  }, [tab, createBotSession, setActiveBotId, setActiveForgeBotId, setActiveModelBotId, setBots, setClipboard, setCopiedNodeId])
 
   /**
    * Duplicate an existing bot
@@ -219,12 +239,21 @@ export function useBotOperations({
       backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
       callChains: sourceBotSession.callChains.map(cc => ({ ...cc, id: `call-${newId()}` })),
       customIndicators: sourceBotSession.customIndicators?.map(ci => ({ ...ci, id: `ci-${newId()}` })) || [],
+      tabContext: sourceBotSession.tabContext, // Preserve tab context
     }
     setBots((prev) => [...prev, newBot])
-    setActiveBotId(newBot.id)
+
+    // Update the correct active bot ID based on context
+    if (newBot.tabContext === 'Forge') {
+      setActiveForgeBotId(newBot.id)
+    } else {
+      setActiveModelBotId(newBot.id)
+    }
+
+    setActiveBotId(newBot.id) // Also update legacy activeBotId
     setClipboard(null)
     setCopiedNodeId(null)
-  }, [bots, setActiveBotId, setBots, setClipboard, setCopiedNodeId])
+  }, [bots, setActiveBotId, setActiveForgeBotId, setActiveModelBotId, setBots, setClipboard, setCopiedNodeId])
 
   /**
    * Export current tree as JSON

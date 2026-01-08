@@ -14,7 +14,9 @@ type SetStateAction<T> = T | ((prev: T) => T)
 interface BotState {
   // Bot sessions
   bots: BotSession[]
-  activeBotId: string
+  activeBotId: string // Legacy - kept for compatibility
+  activeForgeBotId: string
+  activeModelBotId: string
   clipboard: FlowNode | null
   copiedNodeId: string | null
   copiedCallChainId: string | null
@@ -37,7 +39,9 @@ interface BotState {
 
   // Bot session actions - support both direct values and callbacks for useState compatibility
   setBots: (botsOrFn: SetStateAction<BotSession[]>) => void
-  setActiveBotId: (id: string) => void
+  setActiveBotId: (id: string) => void // Legacy - kept for compatibility
+  setActiveForgeBotId: (id: string) => void
+  setActiveModelBotId: (id: string) => void
   setClipboard: (node: FlowNode | null) => void
   setCopiedNodeId: (id: string | null) => void
   setCopiedCallChainId: (id: string | null) => void
@@ -64,7 +68,7 @@ interface BotState {
   redo: (botId: string) => void
 
   // Bot management
-  createBotSession: (title: string) => BotSession
+  createBotSession: (title: string, tabContext: 'Forge' | 'Model') => BotSession
   addBot: (bot: BotSession) => void
   closeBot: (botId: string) => void
   updateBot: (botId: string, updates: Partial<BotSession>) => void
@@ -74,7 +78,7 @@ interface BotState {
 }
 
 // Helper to create initial bot
-function createInitialBotSession(title: string): BotSession {
+function createInitialBotSession(title: string, tabContext: 'Forge' | 'Model'): BotSession {
   const root = ensureSlots(createNode('basic'))
   root.title = title
   return {
@@ -84,16 +88,20 @@ function createInitialBotSession(title: string): BotSession {
     backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
     callChains: [],
     customIndicators: [],
+    tabContext,
   }
 }
 
-// Create initial bot for store initialization
-const initialBot = createInitialBotSession('Algo Name Here')
+// Create initial bots for store initialization
+const initialForgeBot = createInitialBotSession('Forge System', 'Forge')
+const initialModelBot = createInitialBotSession('Algo Name Here', 'Model')
 
 export const useBotStore = create<BotState>()((set, get) => ({
   // Initial state - Bot sessions
-  bots: [initialBot],
-  activeBotId: initialBot.id,
+  bots: [initialForgeBot, initialModelBot],
+  activeBotId: initialModelBot.id, // Legacy - defaults to Model tab
+  activeForgeBotId: initialForgeBot.id,
+  activeModelBotId: initialModelBot.id,
   clipboard: null,
   copiedNodeId: null,
   copiedCallChainId: null,
@@ -122,7 +130,9 @@ export const useBotStore = create<BotState>()((set, get) => ({
       set({ bots: botsOrFn })
     }
   },
-  setActiveBotId: (activeBotId) => set({ activeBotId }),
+  setActiveBotId: (activeBotId) => set({ activeBotId }), // Legacy
+  setActiveForgeBotId: (activeForgeBotId) => set({ activeForgeBotId, activeBotId: activeForgeBotId }),
+  setActiveModelBotId: (activeModelBotId) => set({ activeModelBotId, activeBotId: activeModelBotId }),
   setClipboard: (clipboard) => set({ clipboard }),
   setCopiedNodeId: (copiedNodeId) => set({ copiedNodeId }),
   setCopiedCallChainId: (copiedCallChainId) => set({ copiedCallChainId }),
@@ -184,8 +194,8 @@ export const useBotStore = create<BotState>()((set, get) => ({
   },
 
   // Bot management
-  createBotSession: (title) => {
-    return createInitialBotSession(title)
+  createBotSession: (title, tabContext) => {
+    return createInitialBotSession(title, tabContext)
   },
 
   addBot: (bot) => {
@@ -193,25 +203,51 @@ export const useBotStore = create<BotState>()((set, get) => ({
   },
 
   closeBot: (botId) => {
-    const { bots, activeBotId, createBotSession } = get()
+    const { bots, activeForgeBotId, activeModelBotId, createBotSession } = get()
+    const botToClose = bots.find((b) => b.id === botId)
     const filtered = bots.filter((b) => b.id !== botId)
+    const tabContext = botToClose?.tabContext || 'Model'
 
-    if (filtered.length === 0) {
-      const newBot = createBotSession('Algo Name Here')
+    // Check if this is the last bot for this context
+    const contextBots = filtered.filter((b) => b.tabContext === tabContext)
+
+    if (contextBots.length === 0) {
+      // Create a new bot for this context
+      const newBot = createBotSession(
+        tabContext === 'Forge' ? 'Forge System' : 'Algo Name Here',
+        tabContext
+      )
+      const newBots = [...filtered, newBot]
       set({
-        bots: [newBot],
-        activeBotId: newBot.id,
+        bots: newBots,
+        ...(tabContext === 'Forge' ? {
+          activeForgeBotId: newBot.id,
+          activeBotId: newBot.id,
+        } : {
+          activeModelBotId: newBot.id,
+          activeBotId: newBot.id,
+        }),
         clipboard: null,
         copiedNodeId: null,
       })
       return
     }
 
-    const needsNewActive = botId === activeBotId
+    // Update active bot if we closed the active one for this context
+    const needsNewActiveForge = botId === activeForgeBotId
+    const needsNewActiveModel = botId === activeModelBotId
+
     set({
       bots: filtered,
-      ...(needsNewActive ? {
-        activeBotId: filtered[0].id,
+      ...(needsNewActiveForge && contextBots.length > 0 ? {
+        activeForgeBotId: contextBots[0].id,
+        activeBotId: contextBots[0].id,
+        clipboard: null,
+        copiedNodeId: null,
+      } : {}),
+      ...(needsNewActiveModel && contextBots.length > 0 ? {
+        activeModelBotId: contextBots[0].id,
+        activeBotId: contextBots[0].id,
         clipboard: null,
         copiedNodeId: null,
       } : {}),
@@ -228,10 +264,13 @@ export const useBotStore = create<BotState>()((set, get) => ({
 
   // Reset for logout
   reset: () => {
-    const newBot = createInitialBotSession('Algo Name Here')
+    const newForgeBot = createInitialBotSession('Forge System', 'Forge')
+    const newModelBot = createInitialBotSession('Algo Name Here', 'Model')
     set({
-      bots: [newBot],
-      activeBotId: newBot.id,
+      bots: [newForgeBot, newModelBot],
+      activeBotId: newModelBot.id,
+      activeForgeBotId: newForgeBot.id,
+      activeModelBotId: newModelBot.id,
       clipboard: null,
       copiedNodeId: null,
       copiedCallChainId: null,

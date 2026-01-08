@@ -5,6 +5,7 @@
 // Re-export props types (for type-safe prop passing)
 export type { AdminTabProps } from './AdminTab'
 export type { DatabasesTabProps } from './DatabasesTab'
+export type { ForgeTabProps } from './ForgeTab'
 
 // Default exports are used by React.lazy():
 // const AdminTab = lazy(() => import('./tabs/AdminTab'))

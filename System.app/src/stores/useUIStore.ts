@@ -3,8 +3,8 @@ import type { AdminSubtab, DatabasesSubtab } from '@/features/admin'
 import type { TickerModalMode, BlockKind } from '@/shared/components'
 
 // Tab types
-type MainTab = 'Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'
-type DashboardSubtab = 'Portfolio' | 'Partner Program'
+type MainTab = 'Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'
+type DashboardSubtab = 'Portfolio' | 'Partner Program' // Legacy - no longer used
 type AnalyzeSubtab = 'Systems' | 'Correlation Tool'
 type HelpSubtab = 'Changelog' | 'Settings'
 

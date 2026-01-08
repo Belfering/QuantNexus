@@ -53,6 +53,7 @@ export type BotSession = {
   backtest: BotBacktestState
   callChains: CallChain[] // Per-bot call chains (stored with bot payload)
   customIndicators: CustomIndicator[] // Per-bot custom indicators (FRD-035)
+  tabContext: 'Forge' | 'Model' // Which tab this bot belongs to
 }
 
 // API type for Nexus bots (no payload for IP protection)

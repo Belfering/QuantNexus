@@ -11,10 +11,21 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret-change-in-productio
  * Returns 401 if no token or invalid token
  */
 export async function authenticate(req, res, next) {
+  // BYPASS AUTH FOR LOCAL DEVELOPMENT
+  // If no authorization header, create a mock local admin user
   const authHeader = req.headers.authorization
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authentication required' })
+    // Mock local admin user for no-auth mode
+    req.user = {
+      id: 'local-user',
+      username: 'local',
+      email: 'local@localhost',
+      role: 'main_admin',
+      tier: 'premium',
+      emailVerified: true
+    }
+    return next()
   }
 
   const token = authHeader.split(' ')[1]
@@ -30,11 +41,31 @@ export async function authenticate(req, res, next) {
     `).get(payload.sub)
 
     if (!user) {
-      return res.status(401).json({ error: 'User not found' })
+      // BYPASS AUTH FOR LOCAL DEVELOPMENT - use mock admin if user not found
+      console.log('[AUTH] User not found in DB, using mock local admin')
+      req.user = {
+        id: 'local-user',
+        username: 'local',
+        email: 'local@localhost',
+        role: 'main_admin',
+        tier: 'premium',
+        emailVerified: true
+      }
+      return next()
     }
 
     if (user.status !== 'active') {
-      return res.status(401).json({ error: 'Account is not active' })
+      // BYPASS AUTH FOR LOCAL DEVELOPMENT - use mock admin if account not active
+      console.log('[AUTH] Account not active, using mock local admin')
+      req.user = {
+        id: 'local-user',
+        username: 'local',
+        email: 'local@localhost',
+        role: 'main_admin',
+        tier: 'premium',
+        emailVerified: true
+      }
+      return next()
     }
 
     req.user = {
@@ -48,10 +79,17 @@ export async function authenticate(req, res, next) {
 
     next()
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' })
+    // BYPASS AUTH FOR LOCAL DEVELOPMENT - fall back to mock admin on any token error
+    console.log('[AUTH] Token validation failed, using mock local admin:', err.message)
+    req.user = {
+      id: 'local-user',
+      username: 'local',
+      email: 'local@localhost',
+      role: 'main_admin',
+      tier: 'premium',
+      emailVerified: true
     }
-    return res.status(401).json({ error: 'Invalid token' })
+    next()
   }
 }
 

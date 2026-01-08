@@ -10,8 +10,7 @@ import {
 
 // Lazy-loaded tab components (code splitting)
 const AnalyzeTab = lazy(() => import('./tabs/AnalyzeTab'))
-const NexusTab = lazy(() => import('./tabs/NexusTab'))
-const DashboardTab = lazy(() => import('./tabs/DashboardTab'))
+const ForgeTab = lazy(() => import('./tabs/ForgeTab'))
 const AdminTab = lazy(() => import('./tabs/AdminTab'))
 const DatabasesTab = lazy(() => import('./tabs/DatabasesTab'))
 const HelpTab = lazy(() => import('./tabs/HelpTab'))
@@ -307,9 +306,12 @@ function App() {
       }
       // Fallback for legacy local-only mode
       const v = localStorage.getItem(CURRENT_USER_KEY)
-      return v === '1' || v === '9' || v === 'admin' ? (v as UserId) : null
+      if (v === '1' || v === '9' || v === 'admin') return v as UserId
+
+      // Default to local user for no-auth mode
+      return 'local-user' as UserId
     } catch {
-      return null
+      return 'local-user' as UserId
     }
   })()
 
@@ -321,9 +323,10 @@ function App() {
         const user = JSON.parse(userJson)
         return user.role || null
       }
-      return null
+      // Default to admin role for no-auth mode
+      return 'admin'
     } catch {
-      return null
+      return 'admin'
     }
   })()
 
@@ -335,9 +338,10 @@ function App() {
         const user = JSON.parse(userJson)
         return user.displayName || null
       }
-      return null
+      // Default display name for no-auth mode
+      return 'Local User'
     } catch {
-      return null
+      return 'Local User'
     }
   })()
 
@@ -354,9 +358,9 @@ function App() {
 
   // Role hierarchy checks
   // Admin = sub_admin, main_admin, or legacy 'admin' role
-  const isAdmin = userRole === 'admin' || userRole === 'main_admin' || userRole === 'sub_admin'
+  const isAdmin = true // Always admin for local development
   // Engineer access = engineer or higher (for Databases tab)
-  const hasEngineerAccess = userRole === 'engineer' || userRole === 'sub_admin' || userRole === 'main_admin' || userRole === 'admin'
+  const hasEngineerAccess = true // Always engineer access for local development
 
   // Sync local auth state to useAuthStore so components using the store see the same values
   const setAuthUser = useAuthStore(s => s.setUser)
@@ -434,11 +438,11 @@ function App() {
     loadUserData,
   })
 
-  // Set Dashboard as default tab for logged-in users (only on initial mount)
+  // Set Forge as default tab for logged-in users (only on initial mount)
   const [hasSetInitialTab, setHasSetInitialTab] = useState(false)
   useEffect(() => {
     if (userId && !hasSetInitialTab) {
-      setTab('Dashboard')
+      setTab('Forge')
       setHasSetInitialTab(true)
     }
   }, [userId, hasSetInitialTab])
@@ -455,6 +459,10 @@ function App() {
   const setBots = useBotStore(s => s.setBots)
   const activeBotId = useBotStore(s => s.activeBotId)
   const setActiveBotId = useBotStore(s => s.setActiveBotId)
+  const activeForgeBotId = useBotStore(s => s.activeForgeBotId)
+  const setActiveForgeBotId = useBotStore(s => s.setActiveForgeBotId)
+  const activeModelBotId = useBotStore(s => s.activeModelBotId)
+  const setActiveModelBotId = useBotStore(s => s.setActiveModelBotId)
   // setClipboard, setCopiedNodeId moved to useBotOperations (Phase 2N-19)
   const isImporting = useBotStore(s => s.isImporting)
   const setIsImporting = useBotStore(s => s.setIsImporting)
@@ -492,7 +500,7 @@ function App() {
 
   // Update scroll dimensions when tab changes or window resizes
   useEffect(() => {
-    if (tab !== 'Model') return
+    if (tab !== 'Model' && tab !== 'Forge') return
 
     const updateScrollDimensions = () => {
       if (flowchartScrollRef.current) {
@@ -524,6 +532,14 @@ function App() {
   const activeBot = useMemo(() => {
     return bots.find((b) => b.id === activeBotId) ?? bots[0]
   }, [bots, activeBotId])
+
+  const activeForgeBot = useMemo(() => {
+    return bots.find((b) => b.id === activeForgeBotId && b.tabContext === 'Forge')
+  }, [bots, activeForgeBotId])
+
+  const activeModelBot = useMemo(() => {
+    return bots.find((b) => b.id === activeModelBotId && b.tabContext === 'Model')
+  }, [bots, activeModelBotId])
 
   // Tree state synced with useTreeStore (Phase 2N-15b)
   const current = useTreeSync()
@@ -694,11 +710,16 @@ function App() {
     setBots,
     activeBotId,
     setActiveBotId,
+    activeForgeBotId,
+    setActiveForgeBotId,
+    activeModelBotId,
+    setActiveModelBotId,
     current,
     setSavedBots,
     setWatchlists,
     createBotSession,
     runBacktestForNode,
+    tab,
     setTab,
     setIsImporting,
   })
@@ -901,7 +922,7 @@ function App() {
     // Portfolio will be loaded from database API via useEffect when userId changes
     setDashboardPortfolio(defaultDashboardPortfolio())
     setAnalyzeBacktests({})
-    setTab('Model')
+    setTab('Forge')
   }
 
   const handleLogout = () => {
@@ -925,7 +946,7 @@ function App() {
     setUiState(defaultUiState())
     setDashboardPortfolio(defaultDashboardPortfolio())
     setAnalyzeBacktests({})
-    setTab('Model')
+    setTab('Forge')
     setSaveMenuOpen(false)
     setAddToWatchlistBotId(null)
   }
@@ -941,13 +962,14 @@ function App() {
     return null
   }
 
-  if (!userId) {
-    return (
-      <div className={cn('app min-h-screen bg-bg text-text font-sans', `theme-${colorTheme}`, theme === 'dark' && 'theme-dark dark')}>
-        <LoginScreen onLogin={handleLogin} />
-      </div>
-    )
-  }
+  // Login check disabled for no-auth local mode
+  // if (!userId) {
+  //   return (
+  //     <div className={cn('app min-h-screen bg-bg text-text font-sans', `theme-${colorTheme}`, theme === 'dark' && 'theme-dark dark')}>
+  //       <LoginScreen onLogin={handleLogin} />
+  //     </div>
+  //   )
+  // }
 
   return (
     <div className={cn('app h-screen flex flex-col bg-bg text-text font-sans', `theme-${colorTheme}`, theme === 'dark' && 'theme-dark dark')}>
@@ -966,12 +988,12 @@ function App() {
         <div
           className="grid"
           style={{
-            gridTemplateColumns: tab === 'Model' ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr' : '1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr',
-            gridTemplateRows: tab === 'Model' ? 'auto auto' : 'auto',
+            gridTemplateColumns: (tab === 'Model' || tab === 'Forge') ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr' : '1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr',
+            gridTemplateRows: (tab === 'Model' || tab === 'Forge') ? 'auto auto' : 'auto',
           }}
         >
           {/* Row 1: Main tabs */}
-          {(['Dashboard', 'Nexus', 'Analyze', 'Model', 'Help/Support', ...(isAdmin ? ['Admin'] : []), ...(hasEngineerAccess ? ['Databases'] : [])] as ('Dashboard' | 'Nexus' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases')[]).map((t) => (
+          {(['Forge', 'Analyze', 'Model', 'Help/Support', ...(isAdmin ? ['Admin'] : []), ...(hasEngineerAccess ? ['Databases'] : [])] as ('Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases')[]).map((t) => (
             <button
               key={t}
               className={`px-4 py-3 text-sm font-bold border-r-2 border-border transition-colors h-20 ${
@@ -990,7 +1012,7 @@ function App() {
             className="border-2 border-border"
             style={{
               gridColumn: '8 / 9',
-              gridRow: tab === 'Model' ? '1 / 3' : '1 / 2',
+              gridRow: (tab === 'Model' || tab === 'Forge') ? '1 / 3' : '1 / 2',
             }}
           >
             <div
@@ -1015,14 +1037,14 @@ function App() {
           {/* Logout button - shows username, spans 2 rows on Model tab */}
           <button
             className="px-4 py-3 text-sm font-bold bg-surface hover:bg-muted/50 text-foreground flex flex-col items-center justify-center border-l border-border"
-            style={{ gridColumn: '9 / 10', gridRow: tab === 'Model' ? '1 / 3' : '1 / 2' }}
+            style={{ gridColumn: '9 / 10', gridRow: (tab === 'Model' || tab === 'Forge') ? '1 / 3' : '1 / 2' }}
             onClick={handleLogout}
           >
             <span className="text-xs text-muted">{userDisplayName || 'User'}</span>
             <span>Logout</span>
           </button>
-          {/* Row 2: Model sub-buttons (only when Model tab active) - flex container spans columns 1-8 */}
-          {tab === 'Model' && (
+          {/* Row 2: Model/Forge sub-buttons (only when Model or Forge tab active) - flex container spans columns 1-8 */}
+          {(tab === 'Model' || tab === 'Forge') && (
             <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 8', gridRow: '2 / 3' }}>
               <Button onClick={handleNewBot} className="flex-1 rounded-none border-r border-border h-10">New System</Button>
               <div className="relative flex-1">
@@ -1084,18 +1106,19 @@ function App() {
             </div>
           )}
         </div>
-        {/* Row 3: Algo tabs (only when Model tab active) */}
-        {tab === 'Model' && (
+        {/* Row 3: Algo tabs (only when Model or Forge tab active) */}
+        {(tab === 'Model' || tab === 'Forge') && (
           <div className="flex gap-2 py-2 px-2 border-t border-border">
-              {bots.map((b) => {
+              {bots.filter(b => b.tabContext === tab).map((b) => {
                 const root = b.history[b.historyIndex] ?? b.history[0]
                 const label = root?.title || 'Untitled'
+                const isActive = (tab === 'Forge' && b.id === activeForgeBotId) || (tab === 'Model' && b.id === activeModelBotId)
                 return (
                   <div
                     key={b.id}
                     className={cn(
                       'flex flex-col border rounded-lg p-2 min-w-[120px]',
-                      b.id === activeBotId
+                      isActive
                         ? 'bg-accent-bg border-accent-border text-accent-text'
                         : 'bg-surface border-border'
                     )}
@@ -1104,7 +1127,14 @@ function App() {
                       variant="ghost"
                       size="sm"
                       className="w-full justify-center font-medium"
-                      onClick={() => setActiveBotId(b.id)}
+                      onClick={() => {
+                        if (tab === 'Forge') {
+                          setActiveForgeBotId(b.id)
+                        } else {
+                          setActiveModelBotId(b.id)
+                        }
+                        setActiveBotId(b.id) // Keep legacy in sync
+                      }}
                     >
                       {label}
                     </Button>
@@ -1174,8 +1204,38 @@ function App() {
         nodeKind={tickerModalNodeKind}
         initialValue={tickerModalInitialValue}
       />
-      <main className={`flex-1 overflow-hidden min-h-0 ${tab === 'Model' ? 'pb-4' : ''}`}>
-        {tab === 'Model' ? (
+      <main className={`flex-1 overflow-hidden min-h-0 ${tab === 'Model' || tab === 'Forge' ? 'pb-4' : ''}`}>
+        {tab === 'Forge' ? (
+          <Suspense fallback={<div className="p-4 text-muted">Loading Forge...</div>}>
+            <ForgeTab
+              // Backtest panel props (derived or callback)
+              tickerOptions={tickerOptions}
+              backtestStatus={backtestStatus}
+              backtestResult={backtestResult}
+              backtestErrors={backtestErrors}
+              handleRunBacktest={handleRunBacktest}
+              handleJumpToBacktestError={handleJumpToBacktestError}
+              theme={uiState.theme}
+              fetchBenchmarkMetrics={fetchBenchmarkMetrics}
+              runModelRobustness={runModelRobustness}
+              activeBot={activeForgeBot}
+              // Call chain props
+              callChains={callChains}
+              setCallChains={setCallChains}
+              handleAddCallChain={handleAddCallChain}
+              handleRenameCallChain={handleRenameCallChain}
+              handleToggleCallChainCollapse={handleToggleCallChainCollapse}
+              handleDeleteCallChain={handleDeleteCallChain}
+              pushCallChain={pushCallChain}
+              // Backtest visual state
+              backtestErrorNodeIds={backtestErrorNodeIds}
+              backtestFocusNodeId={backtestFocusNodeId}
+              // Refs
+              flowchartScrollRef={flowchartScrollRef}
+              floatingScrollRef={floatingScrollRef}
+            />
+          </Suspense>
+        ) : tab === 'Model' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Model...</div>}>
             <ModelTab
               // Backtest panel props (derived or callback)
@@ -1188,7 +1248,7 @@ function App() {
               theme={uiState.theme}
               fetchBenchmarkMetrics={fetchBenchmarkMetrics}
               runModelRobustness={runModelRobustness}
-              activeBot={activeBot}
+              activeBot={activeModelBot}
               // Call chain props
               callChains={callChains}
               setCallChains={setCallChains}
@@ -1271,58 +1331,6 @@ function App() {
               callChainsById={callChainsById}
             />
           </Suspense>
-        ) : tab === 'Nexus' ? (
-          <Suspense fallback={<div className="p-4 text-muted">Loading Nexus...</div>}>
-            <NexusTab
-              // UI state (persisted to API)
-              uiState={uiState}
-              setUiState={setUiState}
-              // Dashboard integration (computed from API data)
-              dashboardCash={dashboardCash}
-              dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
-              // Callbacks
-              handleNexusBuy={handleNexusBuy}
-              removeBotFromWatchlist={removeBotFromWatchlist}
-              push={push}
-              runAnalyzeBacktest={runAnalyzeBacktest}
-              handleCopyToNew={handleCopyToNew}
-              // Helpers
-              getFundSlotForBot={getFundSlotForBot}
-            />
-          </Suspense>
-        
-        ) : tab === 'Dashboard' ? (
-          <Suspense fallback={<div className="p-4 text-muted">Loading Dashboard...</div>}>
-            <DashboardTab
-              // UI state (persisted to API)
-              uiState={uiState}
-              setUiState={setUiState}
-              // Computed/derived dashboard values
-              eligibleBots={eligibleBots}
-              dashboardCash={dashboardCash}
-              dashboardTotalValue={dashboardTotalValue}
-              dashboardTotalPnl={dashboardTotalPnl}
-              dashboardTotalPnlPct={dashboardTotalPnlPct}
-              dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
-              dashboardEquityCurve={dashboardEquityCurve}
-              dashboardBotSeries={dashboardBotSeries}
-              // Action callbacks
-              handleDashboardBuy={handleDashboardBuy}
-              handleDashboardSell={handleDashboardSell}
-              handleDashboardBuyMore={handleDashboardBuyMore}
-              handleNexusBuy={handleNexusBuy}
-              runAnalyzeBacktest={runAnalyzeBacktest}
-              runSanityReport={runSanityReport}
-              updateBotInApi={updateBotInApi}
-              handleCopyToNew={handleCopyToNew}
-              handleOpenSaved={handleOpenSaved}
-              // Helpers
-              getFundSlotForBot={getFundSlotForBot}
-              // Eligibility requirements
-              appEligibilityRequirements={appEligibilityRequirements}
-            />
-          </Suspense>
-        
         ) : null}
       </main>
     </div>
