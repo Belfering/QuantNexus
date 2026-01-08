@@ -7,6 +7,7 @@ import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
 import type { FlowNode, ConditionLine, WeightMode, PositionChoice, BlockKind } from '../../../../types'
 import type { TickerModalMode } from '@/shared/components'
+import type { ParameterRange } from '@/features/parameters/types'
 
 export interface AltExitBodyProps {
   node: FlowNode
@@ -24,6 +25,8 @@ export interface AltExitBodyProps {
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
+  parameterRanges?: ParameterRange[]
+  onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
 }
 
 export const AltExitBody = ({
@@ -42,6 +45,8 @@ export const AltExitBody = ({
   openTickerModal,
   tickerDatalistId,
   renderSlot,
+  parameterRanges,
+  onUpdateRange,
 }: AltExitBodyProps) => {
   const weightingThen = node.weightingThen ?? node.weighting
   const weightingElse = node.weightingElse ?? node.weighting
@@ -80,6 +85,9 @@ export const AltExitBody = ({
                 onDelete={() => onDeleteEntryCondition(node.id, cond.id)}
                 openTickerModal={openTickerModal}
                 nodeKind={node.kind}
+                parameterRanges={parameterRanges}
+                nodeId={node.id}
+                onUpdateRange={onUpdateRange}
               />
             </div>
           )
@@ -169,6 +177,9 @@ export const AltExitBody = ({
                 onDelete={() => onDeleteExitCondition(node.id, cond.id)}
                 openTickerModal={openTickerModal}
                 nodeKind={node.kind}
+                parameterRanges={parameterRanges}
+                nodeId={node.id}
+                onUpdateRange={onUpdateRange}
               />
             </div>
           )

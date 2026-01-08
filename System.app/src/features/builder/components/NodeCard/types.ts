@@ -15,6 +15,7 @@ import type {
   TickerInstance,
 } from '../../../../types'
 import type { TickerModalMode } from '@/shared/components'
+import type { ParameterRange } from '@/features/parameters/types'
 
 /**
  * Line types used by buildLines for rendering node body
@@ -149,6 +150,10 @@ export interface CardProps {
 
   // Ticker search modal
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+
+  // Parameter ranges for optimization
+  parameterRanges?: ParameterRange[]
+  onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
 }
 
 /**

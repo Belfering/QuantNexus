@@ -1,13 +1,17 @@
 // src/features/builder/components/NodeCard/DefaultBody.tsx
 // Default body content for basic, function, and other node types
 
+import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { RangeConfigPopover } from '@/features/parameters/components/RangeConfigPopover'
 import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
 import { IndicatorDropdown } from '../IndicatorDropdown'
 import type { FlowNode, WeightMode, MetricChoice, RankChoice, SlotId, PositionChoice } from '../../../../types'
+import type { ParameterRange, VisualParameter } from '@/features/parameters/types'
 import { isWindowlessIndicator } from '../../../../constants'
 
 // Line types from buildLines
@@ -40,6 +44,8 @@ export interface DefaultBodyProps {
   onFunctionBottom: (nodeId: string, value: number) => void
   tickerDatalistId?: string
   renderSlot: (slot: SlotId, depthPx: number) => React.ReactNode
+  parameterRanges?: ParameterRange[]
+  onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
 }
 
 export const DefaultBody = ({
@@ -54,7 +60,12 @@ export const DefaultBody = ({
   onFunctionBottom,
   tickerDatalistId,
   renderSlot,
+  parameterRanges = [],
+  onUpdateRange,
 }: DefaultBodyProps) => {
+  const [showWindowConfig, setShowWindowConfig] = useState(false)
+  const [showBottomConfig, setShowBottomConfig] = useState(false)
+
   const cappedFallback = node.cappedFallback ?? 'Empty'
   const volWindow = node.volWindow ?? 20
 
@@ -88,12 +99,62 @@ export const DefaultBody = ({
                   Of the{' '}
                   {isWindowlessIndicator(node.metric ?? 'Relative Strength Index') ? null : (
                     <>
-                      <Input
-                        type="number"
-                        className="w-14 h-7 px-1.5 inline-flex"
-                        value={node.window ?? 10}
-                        onChange={(e) => onFunctionWindow(node.id, Number(e.target.value))}
-                      />
+                      {onUpdateRange ? (
+                        (() => {
+                          const paramId = `${node.id}-function-window`
+                          const range = parameterRanges?.find(r => r.id === paramId)
+                          const isOptimized = range?.enabled
+
+                          return (
+                            <Popover open={showWindowConfig} onOpenChange={setShowWindowConfig}>
+                              <PopoverTrigger asChild>
+                                <div
+                                  className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                                  onClick={() => setShowWindowConfig(true)}
+                                >
+                                  {isOptimized ? (
+                                    <span className="h-7 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                                      {range.min}-{range.max}
+                                    </span>
+                                  ) : (
+                                    <div className="w-14 h-7 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                                      {node.window ?? 10}
+                                    </div>
+                                  )}
+                                </div>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <RangeConfigPopover
+                                  parameter={{
+                                    id: paramId,
+                                    field: 'window',
+                                    currentValue: node.window ?? 10,
+                                    optimizationEnabled: isOptimized,
+                                    min: range?.min,
+                                    max: range?.max,
+                                    step: range?.step,
+                                  } as VisualParameter}
+                                  onSave={(range) => {
+                                    onUpdateRange(paramId, true, range)
+                                    setShowWindowConfig(false)
+                                  }}
+                                  onDisable={() => {
+                                    onUpdateRange(paramId, false)
+                                    setShowWindowConfig(false)
+                                  }}
+                                />
+                              </PopoverContent>
+                            </Popover>
+                          )
+                        })()
+                      ) : (
+                        <Input
+                          type="number"
+                          className="w-14 h-7 px-1.5 inline-flex mx-1"
+                          value={node.window ?? 10}
+                          onChange={(e) => onFunctionWindow(node.id, Number(e.target.value))}
+                        />
+                      )}
                       d{' '}
                     </>
                   )}
@@ -113,12 +174,62 @@ export const DefaultBody = ({
                     <option value="Bottom">Bottom</option>
                     <option value="Top">Top</option>
                   </Select>{' '}
-                  <Input
-                    type="number"
-                    className="w-14 h-7 px-1.5 inline-flex"
-                    value={node.bottom ?? 1}
-                    onChange={(e) => onFunctionBottom(node.id, Number(e.target.value))}
-                  />
+                  {onUpdateRange ? (
+                    (() => {
+                      const paramId = `${node.id}-function-bottom`
+                      const range = parameterRanges?.find(r => r.id === paramId)
+                      const isOptimized = range?.enabled
+
+                      return (
+                        <Popover open={showBottomConfig} onOpenChange={setShowBottomConfig}>
+                          <PopoverTrigger asChild>
+                            <div
+                              className="inline-flex items-center gap-1 cursor-pointer"
+                              onClick={() => setShowBottomConfig(true)}
+                            >
+                              {isOptimized ? (
+                                <span className="h-7 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                                  {range.min}-{range.max}
+                                </span>
+                              ) : (
+                                <div className="w-14 h-7 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                                  {node.bottom ?? 1}
+                                </div>
+                              )}
+                            </div>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <RangeConfigPopover
+                              parameter={{
+                                id: paramId,
+                                field: 'bottom',
+                                currentValue: node.bottom ?? 1,
+                                optimizationEnabled: isOptimized,
+                                min: range?.min,
+                                max: range?.max,
+                                step: range?.step,
+                              } as VisualParameter}
+                              onSave={(range) => {
+                                onUpdateRange(paramId, true, range)
+                                setShowBottomConfig(false)
+                              }}
+                              onDisable={() => {
+                                onUpdateRange(paramId, false)
+                                setShowBottomConfig(false)
+                              }}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      )
+                    })()
+                  ) : (
+                    <Input
+                      type="number"
+                      className="w-14 h-7 px-1.5 inline-flex"
+                      value={node.bottom ?? 1}
+                      onChange={(e) => onFunctionBottom(node.id, Number(e.target.value))}
+                    />
+                  )}
                 </Badge>
               ) : (
                 <div className={`chip ${line.tone ?? ''}`}>{line.text}</div>

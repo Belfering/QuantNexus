@@ -7,6 +7,7 @@ import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
 import type { FlowNode, ConditionLine, WeightMode, PositionChoice, BlockKind } from '../../../../types'
 import type { TickerModalMode } from '@/shared/components'
+import type { ParameterRange } from '@/features/parameters/types'
 
 export interface IndicatorBodyProps {
   node: FlowNode
@@ -21,6 +22,8 @@ export interface IndicatorBodyProps {
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
+  parameterRanges?: ParameterRange[]
+  onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
 }
 
 export const IndicatorBody = ({
@@ -36,6 +39,8 @@ export const IndicatorBody = ({
   openTickerModal,
   tickerDatalistId,
   renderSlot,
+  parameterRanges,
+  onUpdateRange,
 }: IndicatorBodyProps) => {
   const weightingThen = node.weightingThen ?? node.weighting
   const weightingElse = node.weightingElse ?? node.weighting
@@ -78,6 +83,9 @@ export const IndicatorBody = ({
                 onDelete={() => onDeleteCondition(node.id, cond.id)}
                 openTickerModal={openTickerModal}
                 nodeKind={node.kind}
+                parameterRanges={parameterRanges}
+                nodeId={node.id}
+                onUpdateRange={onUpdateRange}
               />
             </div>
           )

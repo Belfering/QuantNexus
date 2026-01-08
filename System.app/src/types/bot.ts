@@ -4,6 +4,7 @@
 import type { FlowNode, CallChain, CustomIndicator } from './flowNode'
 import type { UserId } from './theme'
 import type { BacktestMode, BotBacktestState } from './backtest'
+import type { ParameterRange } from '@/features/parameters/types'
 
 export type SystemVisibility = 'private' | 'community'
 export type BotVisibility = SystemVisibility // Backwards compat alias
@@ -53,6 +54,7 @@ export type BotSession = {
   backtest: BotBacktestState
   callChains: CallChain[] // Per-bot call chains (stored with bot payload)
   customIndicators: CustomIndicator[] // Per-bot custom indicators (FRD-035)
+  parameterRanges: ParameterRange[] // Optimization ranges for parameters
   tabContext: 'Forge' | 'Model' // Which tab this bot belongs to
 }
 

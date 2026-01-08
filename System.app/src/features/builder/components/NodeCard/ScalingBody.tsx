@@ -1,14 +1,18 @@
 // src/features/builder/components/NodeCard/ScalingBody.tsx
 // Body content for scaling nodes with indicator-based allocation
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { RangeConfigPopover } from '@/features/parameters/components/RangeConfigPopover'
 import { IndicatorDropdown } from '../IndicatorDropdown'
 import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
 import type { FlowNode, MetricChoice, WeightMode, PositionChoice, BlockKind } from '../../../../types'
 import type { TickerModalMode } from '@/shared/components'
+import type { ParameterRange, VisualParameter } from '@/features/parameters/types'
 import { isWindowlessIndicator } from '../../../../constants'
 
 export interface ScalingBodyProps {
@@ -31,6 +35,8 @@ export interface ScalingBodyProps {
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
+  parameterRanges?: ParameterRange[]
+  onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
 }
 
 export const ScalingBody = ({
@@ -44,7 +50,13 @@ export const ScalingBody = ({
   openTickerModal,
   tickerDatalistId,
   renderSlot,
+  parameterRanges = [],
+  onUpdateRange,
 }: ScalingBodyProps) => {
+  const [showWindowConfig, setShowWindowConfig] = useState(false)
+  const [showFromConfig, setShowFromConfig] = useState(false)
+  const [showToConfig, setShowToConfig] = useState(false)
+
   const scaleMetric = node.scaleMetric ?? 'Relative Strength Index'
   const overlayKey = `${node.id}:scale`
   const isOverlayActive = enabledOverlays?.has(overlayKey)
@@ -79,12 +91,62 @@ export const ScalingBody = ({
             Scale by{' '}
             {isWindowlessIndicator(scaleMetric) ? null : (
               <>
-                <Input
-                  type="number"
-                  className="w-14 h-7 px-1.5 mx-1 inline-flex"
-                  value={node.scaleWindow ?? 14}
-                  onChange={(e) => onUpdateScaling(node.id, { scaleWindow: Number(e.target.value) })}
-                />
+                {onUpdateRange ? (
+                  (() => {
+                    const paramId = `${node.id}-scaling-window`
+                    const range = parameterRanges?.find(r => r.id === paramId)
+                    const isOptimized = range?.enabled
+
+                    return (
+                      <Popover open={showWindowConfig} onOpenChange={setShowWindowConfig}>
+                        <PopoverTrigger asChild>
+                          <div
+                            className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                            onClick={() => setShowWindowConfig(true)}
+                          >
+                            {isOptimized ? (
+                              <span className="h-7 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                                {range.min}-{range.max}
+                              </span>
+                            ) : (
+                              <div className="w-14 h-7 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                                {node.scaleWindow ?? 14}
+                              </div>
+                            )}
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <RangeConfigPopover
+                            parameter={{
+                              id: paramId,
+                              field: 'scaleWindow',
+                              currentValue: node.scaleWindow ?? 14,
+                              optimizationEnabled: isOptimized,
+                              min: range?.min,
+                              max: range?.max,
+                              step: range?.step,
+                            } as VisualParameter}
+                            onSave={(range) => {
+                              onUpdateRange(paramId, true, range)
+                              setShowWindowConfig(false)
+                            }}
+                            onDisable={() => {
+                              onUpdateRange(paramId, false)
+                              setShowWindowConfig(false)
+                            }}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    )
+                  })()
+                ) : (
+                  <Input
+                    type="number"
+                    className="w-14 h-7 px-1.5 mx-1 inline-flex"
+                    value={node.scaleWindow ?? 14}
+                    onChange={(e) => onUpdateScaling(node.id, { scaleWindow: Number(e.target.value) })}
+                  />
+                )}
                 d{' '}
               </>
             )}
@@ -104,19 +166,119 @@ export const ScalingBody = ({
             </button>
           </Badge>
           {' '}From below{' '}
-          <Input
-            type="number"
-            className="w-16 h-8 px-1.5 mx-1 inline-flex"
-            value={node.scaleFrom ?? 30}
-            onChange={(e) => onUpdateScaling(node.id, { scaleFrom: Number(e.target.value) })}
-          />
+          {onUpdateRange ? (
+            (() => {
+              const paramId = `${node.id}-scaling-from`
+              const range = parameterRanges?.find(r => r.id === paramId)
+              const isOptimized = range?.enabled
+
+              return (
+                <Popover open={showFromConfig} onOpenChange={setShowFromConfig}>
+                  <PopoverTrigger asChild>
+                    <div
+                      className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                      onClick={() => setShowFromConfig(true)}
+                    >
+                      {isOptimized ? (
+                        <span className="h-8 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                          {range.min}-{range.max}
+                        </span>
+                      ) : (
+                        <div className="w-16 h-8 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                          {node.scaleFrom ?? 30}
+                        </div>
+                      )}
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <RangeConfigPopover
+                      parameter={{
+                        id: paramId,
+                        field: 'scaleFrom',
+                        currentValue: node.scaleFrom ?? 30,
+                        optimizationEnabled: isOptimized,
+                        min: range?.min,
+                        max: range?.max,
+                        step: range?.step,
+                      } as VisualParameter}
+                      onSave={(range) => {
+                        onUpdateRange(paramId, true, range)
+                        setShowFromConfig(false)
+                      }}
+                      onDisable={() => {
+                        onUpdateRange(paramId, false)
+                        setShowFromConfig(false)
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              )
+            })()
+          ) : (
+            <Input
+              type="number"
+              className="w-16 h-8 px-1.5 mx-1 inline-flex"
+              value={node.scaleFrom ?? 30}
+              onChange={(e) => onUpdateScaling(node.id, { scaleFrom: Number(e.target.value) })}
+            />
+          )}
           {' (100% Then) to above '}
-          <Input
-            type="number"
-            className="w-16 h-8 px-1.5 mx-1 inline-flex"
-            value={node.scaleTo ?? 70}
-            onChange={(e) => onUpdateScaling(node.id, { scaleTo: Number(e.target.value) })}
-          />
+          {onUpdateRange ? (
+            (() => {
+              const paramId = `${node.id}-scaling-to`
+              const range = parameterRanges?.find(r => r.id === paramId)
+              const isOptimized = range?.enabled
+
+              return (
+                <Popover open={showToConfig} onOpenChange={setShowToConfig}>
+                  <PopoverTrigger asChild>
+                    <div
+                      className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                      onClick={() => setShowToConfig(true)}
+                    >
+                      {isOptimized ? (
+                        <span className="h-8 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                          {range.min}-{range.max}
+                        </span>
+                      ) : (
+                        <div className="w-16 h-8 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                          {node.scaleTo ?? 70}
+                        </div>
+                      )}
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <RangeConfigPopover
+                      parameter={{
+                        id: paramId,
+                        field: 'scaleTo',
+                        currentValue: node.scaleTo ?? 70,
+                        optimizationEnabled: isOptimized,
+                        min: range?.min,
+                        max: range?.max,
+                        step: range?.step,
+                      } as VisualParameter}
+                      onSave={(range) => {
+                        onUpdateRange(paramId, true, range)
+                        setShowToConfig(false)
+                      }}
+                      onDisable={() => {
+                        onUpdateRange(paramId, false)
+                        setShowToConfig(false)
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              )
+            })()
+          ) : (
+            <Input
+              type="number"
+              className="w-16 h-8 px-1.5 mx-1 inline-flex"
+              value={node.scaleTo ?? 70}
+              onChange={(e) => onUpdateScaling(node.id, { scaleTo: Number(e.target.value) })}
+            />
+          )}
           {' (100% Else)'}
         </Badge>
       </div>

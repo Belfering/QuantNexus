@@ -1,12 +1,16 @@
 // src/features/builder/components/ConditionEditor.tsx
 // Single condition row editor with all inputs
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { RangeConfigPopover } from '@/features/parameters/components/RangeConfigPopover'
 import type { ConditionLine, MetricChoice, ComparatorChoice, PositionChoice, BlockKind } from '../../../types'
 import type { TickerModalMode } from '@/shared/components'
+import type { ParameterRange, VisualParameter } from '@/features/parameters/types'
 import { isWindowlessIndicator } from '../../../constants'
 import { IndicatorDropdown } from './IndicatorDropdown'
 
@@ -66,6 +70,12 @@ export interface ConditionEditorProps {
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   /** Node kind for the ticker modal context */
   nodeKind?: BlockKind
+  /** Parameter ranges for optimization */
+  parameterRanges?: ParameterRange[]
+  /** Node ID for building parameter IDs */
+  nodeId?: string
+  /** Callback for updating parameter ranges */
+  onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
 }
 
 export const ConditionEditor = ({
@@ -77,7 +87,15 @@ export const ConditionEditor = ({
   onDelete,
   openTickerModal,
   nodeKind,
+  parameterRanges = [],
+  nodeId,
+  onUpdateRange,
 }: ConditionEditorProps) => {
+  // State for range config popovers
+  const [showWindowConfig, setShowWindowConfig] = useState(false)
+  const [showThresholdConfig, setShowThresholdConfig] = useState(false)
+  const [showRightWindowConfig, setShowRightWindowConfig] = useState(false)
+  const [showForDaysConfig, setShowForDaysConfig] = useState(false)
   const prefix = cond.type === 'and' ? 'And if the ' : cond.type === 'or' ? 'Or if the ' : 'If the '
   const isSingleLineItem = total === 1
   const canDelete = (total > 1 && (index > 0 || allowDeleteFirst)) || (allowDeleteFirst && isSingleLineItem)
@@ -123,12 +141,62 @@ export const ConditionEditor = ({
             {/* Window input (hidden for windowless indicators) */}
             {isWindowlessIndicator(cond.metric) ? null : (
               <>
-                <Input
-                  className="w-14 h-8 px-1.5 mx-1 inline-flex"
-                  type="number"
-                  value={cond.window}
-                  onChange={(e) => onUpdate({ window: Number(e.target.value) })}
-                />
+                {onUpdateRange && nodeId ? (
+                  (() => {
+                    const paramId = `${nodeId}-${cond.id}-window`
+                    const range = parameterRanges?.find(r => r.id === paramId)
+                    const isOptimized = range?.enabled
+
+                    return (
+                      <Popover open={showWindowConfig} onOpenChange={setShowWindowConfig}>
+                        <PopoverTrigger asChild>
+                          <div
+                            className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                            onClick={() => setShowWindowConfig(true)}
+                          >
+                            {isOptimized ? (
+                              <span className="h-8 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                                {range.min}-{range.max}
+                              </span>
+                            ) : (
+                              <div className="w-14 h-8 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                                {cond.window}
+                              </div>
+                            )}
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <RangeConfigPopover
+                            parameter={{
+                              id: paramId,
+                              field: 'window',
+                              currentValue: cond.window,
+                              optimizationEnabled: isOptimized,
+                              min: range?.min,
+                              max: range?.max,
+                              step: range?.step,
+                            } as VisualParameter}
+                            onSave={(range) => {
+                              onUpdateRange(paramId, true, range)
+                              setShowWindowConfig(false)
+                            }}
+                            onDisable={() => {
+                              onUpdateRange(paramId, false)
+                              setShowWindowConfig(false)
+                            }}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    )
+                  })()
+                ) : (
+                  <Input
+                    className="w-14 h-8 px-1.5 mx-1 inline-flex"
+                    type="number"
+                    value={cond.window}
+                    onChange={(e) => onUpdate({ window: Number(e.target.value) })}
+                  />
+                )}
                 d{' '}
               </>
             )}
@@ -157,12 +225,62 @@ export const ConditionEditor = ({
 
             {/* Threshold (hidden when expanded) */}
             {cond.expanded ? null : (
-              <Input
-                className="w-14 h-8 px-1.5 mx-1 inline-flex"
-                type="number"
-                value={cond.threshold}
-                onChange={(e) => onUpdate({ threshold: Number(e.target.value) })}
-              />
+              onUpdateRange && nodeId ? (
+                (() => {
+                  const paramId = `${nodeId}-${cond.id}-threshold`
+                  const range = parameterRanges?.find(r => r.id === paramId)
+                  const isOptimized = range?.enabled
+
+                  return (
+                    <Popover open={showThresholdConfig} onOpenChange={setShowThresholdConfig}>
+                      <PopoverTrigger asChild>
+                        <div
+                          className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                          onClick={() => setShowThresholdConfig(true)}
+                        >
+                          {isOptimized ? (
+                            <span className="h-8 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                              {range.min}-{range.max}
+                            </span>
+                          ) : (
+                            <div className="w-14 h-8 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                              {cond.threshold}
+                            </div>
+                          )}
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <RangeConfigPopover
+                          parameter={{
+                            id: paramId,
+                            field: 'threshold',
+                            currentValue: cond.threshold,
+                            optimizationEnabled: isOptimized,
+                            min: range?.min,
+                            max: range?.max,
+                            step: range?.step,
+                          } as VisualParameter}
+                          onSave={(range) => {
+                            onUpdateRange(paramId, true, range)
+                            setShowThresholdConfig(false)
+                          }}
+                          onDisable={() => {
+                            onUpdateRange(paramId, false)
+                            setShowThresholdConfig(false)
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  )
+                })()
+              ) : (
+                <Input
+                  className="w-14 h-8 px-1.5 mx-1 inline-flex"
+                  type="number"
+                  value={cond.threshold}
+                  onChange={(e) => onUpdate({ threshold: Number(e.target.value) })}
+                />
+              )
             )}
 
             {/* Expanded: compare to another indicator */}
@@ -172,12 +290,62 @@ export const ConditionEditor = ({
                 the{' '}
                 {isWindowlessIndicator(cond.rightMetric ?? 'Relative Strength Index') ? null : (
                   <>
-                    <Input
-                      className="w-14 h-8 px-1.5 mx-1 inline-flex"
-                      type="number"
-                      value={cond.rightWindow ?? 14}
-                      onChange={(e) => onUpdate({ rightWindow: Number(e.target.value) })}
-                    />
+                    {onUpdateRange && nodeId ? (
+                      (() => {
+                        const paramId = `${nodeId}-${cond.id}-rightWindow`
+                        const range = parameterRanges?.find(r => r.id === paramId)
+                        const isOptimized = range?.enabled
+
+                        return (
+                          <Popover open={showRightWindowConfig} onOpenChange={setShowRightWindowConfig}>
+                            <PopoverTrigger asChild>
+                              <div
+                                className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                                onClick={() => setShowRightWindowConfig(true)}
+                              >
+                                {isOptimized ? (
+                                  <span className="h-8 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                                    {range.min}-{range.max}
+                                  </span>
+                                ) : (
+                                  <div className="w-14 h-8 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                                    {cond.rightWindow ?? 14}
+                                  </div>
+                                )}
+                              </div>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <RangeConfigPopover
+                                parameter={{
+                                  id: paramId,
+                                  field: 'rightWindow',
+                                  currentValue: cond.rightWindow ?? 14,
+                                  optimizationEnabled: isOptimized,
+                                  min: range?.min,
+                                  max: range?.max,
+                                  step: range?.step,
+                                } as VisualParameter}
+                                onSave={(range) => {
+                                  onUpdateRange(paramId, true, range)
+                                  setShowRightWindowConfig(false)
+                                }}
+                                onDisable={() => {
+                                  onUpdateRange(paramId, false)
+                                  setShowRightWindowConfig(false)
+                                }}
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        )
+                      })()
+                    ) : (
+                      <Input
+                        className="w-14 h-8 px-1.5 mx-1 inline-flex"
+                        type="number"
+                        value={cond.rightWindow ?? 14}
+                        onChange={(e) => onUpdate({ rightWindow: Number(e.target.value) })}
+                      />
+                    )}
                     d{' '}
                   </>
                 )}
@@ -198,16 +366,66 @@ export const ConditionEditor = ({
 
             {/* For X consecutive days */}
             {' '}for{' '}
-            <Input
-              className="w-12 h-7 px-1.5 mx-1 inline-flex text-center"
-              type="number"
-              min={1}
-              value={cond.forDays ?? 1}
-              onChange={(e) => {
-                const val = Math.max(1, Number(e.target.value) || 1)
-                onUpdate({ forDays: val > 1 ? val : undefined })
-              }}
-            />
+            {onUpdateRange && nodeId ? (
+              (() => {
+                const paramId = `${nodeId}-${cond.id}-forDays`
+                const range = parameterRanges?.find(r => r.id === paramId)
+                const isOptimized = range?.enabled
+
+                return (
+                  <Popover open={showForDaysConfig} onOpenChange={setShowForDaysConfig}>
+                    <PopoverTrigger asChild>
+                      <div
+                        className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                        onClick={() => setShowForDaysConfig(true)}
+                      >
+                        {isOptimized ? (
+                          <span className="h-7 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                            {range.min}-{range.max}
+                          </span>
+                        ) : (
+                          <div className="w-12 h-7 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
+                            {cond.forDays ?? 1}
+                          </div>
+                        )}
+                      </div>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <RangeConfigPopover
+                        parameter={{
+                          id: paramId,
+                          field: 'forDays',
+                          currentValue: cond.forDays ?? 1,
+                          optimizationEnabled: isOptimized,
+                          min: range?.min,
+                          max: range?.max,
+                          step: range?.step,
+                        } as VisualParameter}
+                        onSave={(range) => {
+                          onUpdateRange(paramId, true, range)
+                          setShowForDaysConfig(false)
+                        }}
+                        onDisable={() => {
+                          onUpdateRange(paramId, false)
+                          setShowForDaysConfig(false)
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                )
+              })()
+            ) : (
+              <Input
+                className="w-12 h-7 px-1.5 mx-1 inline-flex text-center"
+                type="number"
+                min={1}
+                value={cond.forDays ?? 1}
+                onChange={(e) => {
+                  const val = Math.max(1, Number(e.target.value) || 1)
+                  onUpdate({ forDays: val > 1 ? val : undefined })
+                }}
+              />
+            )}
             {' '}day{(cond.forDays ?? 1) !== 1 ? 's' : ''}
           </>
         )}
@@ -220,13 +438,29 @@ export const ConditionEditor = ({
           onClick={(e) => {
             e.stopPropagation()
             const newExpanded = !cond.expanded
-            // For Date conditions, initialize dateTo when expanding
-            if (isDateCondition && newExpanded && !cond.dateTo) {
-              onUpdate({
-                expanded: newExpanded,
-                dateTo: { month: cond.dateMonth ?? 1, day: 31 }
-              })
+
+            if (newExpanded) {
+              // When expanding, initialize expanded fields with default values
+              if (isDateCondition && !cond.dateTo) {
+                // Date condition: initialize dateTo
+                onUpdate({
+                  expanded: newExpanded,
+                  dateTo: { month: cond.dateMonth ?? 1, day: 31 }
+                })
+              } else if (!isDateCondition) {
+                // Regular indicator condition: initialize right side fields
+                onUpdate({
+                  expanded: newExpanded,
+                  rightWindow: cond.rightWindow ?? cond.window,
+                  rightMetric: cond.rightMetric ?? cond.metric,
+                  rightTicker: cond.rightTicker ?? cond.ticker,
+                  forDays: cond.forDays ?? 1
+                })
+              } else {
+                onUpdate({ expanded: newExpanded })
+              }
             } else {
+              // Collapsing - just update expanded flag
               onUpdate({ expanded: newExpanded })
             }
           }}

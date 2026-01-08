@@ -83,6 +83,8 @@ export const NodeCard = ({
   enabledOverlays,
   onToggleOverlay,
   openTickerModal,
+  parameterRanges,
+  onUpdateRange,
 }: CardProps) => {
   // Local state
   const [addRowOpen, setAddRowOpen] = useState<string | null>(null)
@@ -270,6 +272,8 @@ export const NodeCard = ({
                     enabledOverlays={enabledOverlays}
                     onToggleOverlay={onToggleOverlay}
                     openTickerModal={openTickerModal}
+                    parameterRanges={parameterRanges}
+                    onUpdateRange={onUpdateRange}
                   />
                   {node.kind === 'function' && slot === 'next' && index > 0 && (
                     <Button
@@ -348,6 +352,8 @@ export const NodeCard = ({
             onUpdateVolWindow={onUpdateVolWindow}
             openTickerModal={openTickerModal}
             renderSlot={renderSlot}
+            parameterRanges={parameterRanges}
+            onUpdateRange={onUpdateRange}
           />
         )
 
@@ -367,6 +373,8 @@ export const NodeCard = ({
             onUpdateVolWindow={onUpdateVolWindow}
             openTickerModal={openTickerModal}
             renderSlot={renderSlot}
+            parameterRanges={parameterRanges}
+            onUpdateRange={onUpdateRange}
           />
         )
 
@@ -387,6 +395,8 @@ export const NodeCard = ({
             onUpdateVolWindow={onUpdateVolWindow}
             openTickerModal={openTickerModal}
             renderSlot={renderSlot}
+            parameterRanges={parameterRanges}
+            onUpdateRange={onUpdateRange}
           />
         )
 
@@ -402,6 +412,8 @@ export const NodeCard = ({
             onUpdateVolWindow={onUpdateVolWindow}
             openTickerModal={openTickerModal}
             renderSlot={renderSlot}
+            parameterRanges={parameterRanges}
+            onUpdateRange={onUpdateRange}
           />
         )
 
@@ -419,6 +431,8 @@ export const NodeCard = ({
             onFunctionRank={onFunctionRank}
             onFunctionBottom={onFunctionBottom}
             renderSlot={renderSlot}
+            parameterRanges={parameterRanges}
+            onUpdateRange={onUpdateRange}
           />
         )
     }

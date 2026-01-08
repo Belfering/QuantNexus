@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ConditionEditor } from '../ConditionEditor'
 import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
+import { RangeConfigPopover } from '@/features/parameters/components/RangeConfigPopover'
 import type {
   FlowNode,
   ConditionLine,
@@ -19,6 +21,7 @@ import type {
   BlockKind,
 } from '../../../../types'
 import type { TickerModalMode } from '@/shared/components'
+import type { ParameterRange, VisualParameter } from '@/features/parameters/types'
 
 // Generate ladder slot labels for N conditions: "All (N)", "N-1 of N", ..., "None"
 const getLadderSlotLabel = (matchCount: number, totalConditions: number): string => {
@@ -47,6 +50,8 @@ export interface NumberedBodyProps {
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: SlotId, depthPx: number) => React.ReactNode
+  parameterRanges?: ParameterRange[]
+  onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
 }
 
 export const NumberedBody = ({
@@ -64,8 +69,11 @@ export const NumberedBody = ({
   openTickerModal,
   tickerDatalistId,
   renderSlot,
+  parameterRanges,
+  onUpdateRange,
 }: NumberedBodyProps) => {
   const [expandedLadderRows, setExpandedLadderRows] = useState<Set<string>>(() => new Set())
+  const [showNConfig, setShowNConfig] = useState(false)
 
   const quantifier = node.numbered?.quantifier ?? 'all'
   const isLadderMode = quantifier === 'ladder'
@@ -104,6 +112,9 @@ export const NumberedBody = ({
       }}
       openTickerModal={openTickerModal}
       nodeKind={node.kind}
+      parameterRanges={parameterRanges}
+      nodeId={node.id}
+      onUpdateRange={onUpdateRange}
     />
   )
 
@@ -181,12 +192,66 @@ export const NumberedBody = ({
           </Select>{' '}
           {showNInput && (
             <>
-              <Input
-                type="number"
-                className="w-14 h-7 px-1.5 inline-flex"
-                value={node.numbered?.n ?? 1}
-                onChange={(e) => onNumberedN(node.id, Number(e.target.value))}
-              />{' '}
+              {onUpdateRange ? (
+                (() => {
+                  const paramId = `${node.id}-numbered-n`
+                  const range = parameterRanges?.find(r => r.id === paramId)
+                  const isOptimized = range?.enabled
+
+                  return (
+                    <Popover open={showNConfig} onOpenChange={setShowNConfig}>
+                      <PopoverTrigger asChild>
+                        <div
+                          className="inline-flex items-center gap-1 cursor-pointer mx-1"
+                          onClick={() => setShowNConfig(true)}
+                        >
+                          {isOptimized ? (
+                            <span className="h-7 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
+                              {range.min}-{range.max}
+                            </span>
+                          ) : (
+                            <Input
+                              type="number"
+                              className="w-14 h-7 px-1.5 inline-flex"
+                              value={node.numbered?.n ?? 1}
+                              onChange={(e) => onNumberedN(node.id, Number(e.target.value))}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          )}
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <RangeConfigPopover
+                          parameter={{
+                            id: paramId,
+                            field: 'threshold',
+                            currentValue: node.numbered?.n ?? 1,
+                            optimizationEnabled: isOptimized,
+                            min: range?.min,
+                            max: range?.max,
+                            step: range?.step,
+                          } as VisualParameter}
+                          onSave={(range) => {
+                            onUpdateRange(paramId, true, range)
+                            setShowNConfig(false)
+                          }}
+                          onDisable={() => {
+                            onUpdateRange(paramId, false)
+                            setShowNConfig(false)
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  )
+                })()
+              ) : (
+                <Input
+                  type="number"
+                  className="w-14 h-7 px-1.5 inline-flex"
+                  value={node.numbered?.n ?? 1}
+                  onChange={(e) => onNumberedN(node.id, Number(e.target.value))}
+                />
+              )}{' '}
             </>
           )}
           of the following conditions are true

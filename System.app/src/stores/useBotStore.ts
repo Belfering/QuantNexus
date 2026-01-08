@@ -72,6 +72,7 @@ interface BotState {
   addBot: (bot: BotSession) => void
   closeBot: (botId: string) => void
   updateBot: (botId: string, updates: Partial<BotSession>) => void
+  setParameterRanges: (botId: string, ranges: import('@/features/parameters/types').ParameterRange[]) => void
 
   // Reset for logout
   reset: () => void
@@ -88,6 +89,7 @@ function createInitialBotSession(title: string, tabContext: 'Forge' | 'Model'): 
     backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
     callChains: [],
     customIndicators: [],
+    parameterRanges: [],
     tabContext,
   }
 }
@@ -258,6 +260,14 @@ export const useBotStore = create<BotState>()((set, get) => ({
     set((state) => ({
       bots: state.bots.map((b) =>
         b.id === botId ? { ...b, ...updates } : b
+      ),
+    }))
+  },
+
+  setParameterRanges: (botId, ranges) => {
+    set((state) => ({
+      bots: state.bots.map((b) =>
+        b.id === botId ? { ...b, parameterRanges: ranges } : b
       ),
     }))
   },

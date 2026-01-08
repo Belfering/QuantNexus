@@ -1,11 +1,10 @@
 // src/tabs/ForgeTab.tsx
 // Forge tab component - lazy loadable wrapper for flowchart builder
 
-import { type RefObject, useState, useMemo, useEffect } from 'react'
+import { type RefObject, useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
-import { USED_TICKERS_DATALIST_ID, KNOWN_VARIABLES, VARIABLE_CATEGORIES } from '@/constants'
+import { USED_TICKERS_DATALIST_ID } from '@/constants'
 import type {
   FlowNode,
   CallChain,
@@ -20,7 +19,6 @@ import type {
   NumberedQuantifier,
   ConditionLine,
   BotSession,
-  CustomIndicator,
 } from '@/types'
 import {
   createNode,
@@ -66,9 +64,10 @@ import {
   replaceTickerInTree,
   NodeCard,
 } from '@/features/builder'
-import { BacktesterPanel, parseFormula, ROLLING_FUNCTIONS } from '@/features/backtest'
+import { SettingsPanel } from '@/components/SettingsPanel'
+import { ParameterBoxPanel } from '@/features/parameters/components/ParameterBoxPanel'
+import type { ParameterField, ParameterRange } from '@/features/parameters/types'
 import { loadCallChainsFromApi } from '@/features/auth'
-import { newId } from '@/features/builder'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
 import { useTreeSync, useTreeUndo } from '@/hooks'
 
@@ -263,6 +262,307 @@ export function ForgeTab({
   const push = (node: FlowNode) => {
     treeStore.setRoot(node)
   }
+
+  // Handle parameter updates from ParameterBoxPanel (legacy flat version)
+  const handleParameterUpdate = (paramId: string, field: ParameterField, value: any) => {
+    // Parse paramId to extract nodeId, condId, and potentially itemId
+    const parts = paramId.split('-')
+    const nodeId = parts[0]
+
+    // Check if this is a function node (paramId format: nodeId-function-field)
+    if (parts[1] === 'function') {
+      if (field === 'window') {
+        treeStore.updateFunctionWindow(nodeId, value)
+      } else if (field === 'metric') {
+        treeStore.updateFunctionMetric(nodeId, value)
+      }
+      return
+    }
+
+    // For indicator and numbered nodes, use updateConditionFields
+    // Format: nodeId-condId-field or nodeId-itemId-condId-field
+    let condId: string
+    let itemId: string | undefined
+
+    if (parts.length === 4) {
+      // Numbered node: nodeId-itemId-condId-field
+      itemId = parts[1]
+      condId = parts[2]
+    } else {
+      // Indicator node: nodeId-condId-field
+      condId = parts[1]
+    }
+
+    const updates = { [field]: value }
+    const next = updateConditionFields(current, nodeId, condId, updates, itemId)
+    push(next)
+  }
+
+  // Handle hierarchical parameter updates with StrategyParameter type
+  const handleHierarchicalParameterUpdate = (
+    nodeId: string,
+    parameter: import('@/features/parameters/types').StrategyParameter,
+    value: any
+  ) => {
+    switch (parameter.type) {
+      case 'weight':
+        // Update weight (with optional branch)
+        treeStore.updateWeight(nodeId, value as WeightMode, parameter.branch)
+        break
+
+      case 'condition':
+        // Update condition field
+        const updates = { [parameter.field]: value }
+        const next = updateConditionFields(
+          current,
+          nodeId,
+          parameter.conditionId,
+          updates,
+          parameter.itemId
+        )
+        push(next)
+        break
+
+      case 'position':
+        // Update positions array
+        const found = findNode(current, nodeId)
+        if (found && found.kind === 'position') {
+          const updated = { ...found, positions: value as string[] }
+          const nextTree = replaceNodeById(current, nodeId, updated)
+          push(nextTree)
+        }
+        break
+
+      case 'function':
+        // Update function node parameters
+        if (parameter.field === 'window') {
+          treeStore.updateFunctionWindow(nodeId, value)
+        } else if (parameter.field === 'metric') {
+          treeStore.updateFunctionMetric(nodeId, value)
+        } else if (parameter.field === 'bottom') {
+          treeStore.updateFunctionBottom(nodeId, value)
+        } else if (parameter.field === 'rank') {
+          treeStore.updateFunctionRank(nodeId, value as 'Top' | 'Bottom')
+        }
+        break
+
+      case 'numbered':
+        // Update numbered node config
+        if (parameter.field === 'quantifier') {
+          treeStore.updateNumberedQuantifier(nodeId, value)
+        } else if (parameter.field === 'n') {
+          treeStore.updateNumberedN(nodeId, value)
+        }
+        break
+    }
+  }
+
+  // Handle parameter range updates from flowchart
+  const handleFlowchartRangeUpdate = (
+    paramId: string,
+    enabled: boolean,
+    range?: { min: number; max: number; step: number }
+  ) => {
+    if (!activeBot) return
+
+    const updatedRanges = [...parameterRanges]
+
+    if (enabled && range) {
+      // Find or create parameter range
+      const existingIndex = updatedRanges.findIndex((r) => r.id === paramId)
+
+      // Parse paramId to get metadata
+      const parts = paramId.split('-')
+      const nodeId = parts[0]
+
+      // Check if this is a function node (format: nodeId-function-window or nodeId-function-bottom)
+      if (parts[1] === 'function' && parts[2] === 'window') {
+        // Update function window
+        treeStore.updateFunctionWindow(nodeId, range.min)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'period',
+          nodeId,
+          conditionId: '',
+          path: `${nodeId}.window`,
+          currentValue: range.min,
+          enabled: true,
+          min: range.min,
+          max: range.max,
+          step: range.step,
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+      } else if (parts[1] === 'function' && parts[2] === 'bottom') {
+        // Update function bottom
+        treeStore.updateFunctionBottom(nodeId, range.min)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'threshold',
+          nodeId,
+          conditionId: '',
+          path: `${nodeId}.bottom`,
+          currentValue: range.min,
+          enabled: true,
+          min: range.min,
+          max: range.max,
+          step: range.step,
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+      } else if (parts[1] === 'scaling' && parts[2] === 'window') {
+        // Update scaling window
+        const next = replaceNode(current, nodeId, (node) => ({
+          ...node,
+          scaleWindow: range.min,
+        }))
+        push(next)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'period',
+          nodeId,
+          conditionId: '',
+          path: `${nodeId}.scaleWindow`,
+          currentValue: range.min,
+          enabled: true,
+          min: range.min,
+          max: range.max,
+          step: range.step,
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+      } else if (parts[1] === 'scaling' && parts[2] === 'from') {
+        // Update scaling from
+        const next = replaceNode(current, nodeId, (node) => ({
+          ...node,
+          scaleFrom: range.min,
+        }))
+        push(next)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'threshold',
+          nodeId,
+          conditionId: '',
+          path: `${nodeId}.scaleFrom`,
+          currentValue: range.min,
+          enabled: true,
+          min: range.min,
+          max: range.max,
+          step: range.step,
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+      } else if (parts[1] === 'scaling' && parts[2] === 'to') {
+        // Update scaling to
+        const next = replaceNode(current, nodeId, (node) => ({
+          ...node,
+          scaleTo: range.min,
+        }))
+        push(next)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'threshold',
+          nodeId,
+          conditionId: '',
+          path: `${nodeId}.scaleTo`,
+          currentValue: range.min,
+          enabled: true,
+          min: range.min,
+          max: range.max,
+          step: range.step,
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+      } else if (parts[1] === 'numbered' && parts[2] === 'n') {
+        // Handle numbered n parameter (format: nodeId-numbered-n)
+        treeStore.updateNumberedN(nodeId, range.min)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'threshold',
+          nodeId,
+          conditionId: '',
+          path: `${nodeId}.numbered.n`,
+          currentValue: range.min,
+          enabled: true,
+          min: range.min,
+          max: range.max,
+          step: range.step,
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+      } else {
+        // Handle condition parameters (format: nodeId-condId-field)
+        const condId = parts[1]
+        const field = parts[parts.length - 1] as 'window' | 'threshold' | 'rightWindow' | 'forDays'
+
+        // Update the actual value in the tree to the min value
+        const updates = { [field]: range.min }
+        const next = updateConditionFields(current, nodeId, condId, updates)
+        push(next)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: field === 'window' || field === 'rightWindow' ? 'period' : 'threshold',
+          nodeId,
+          conditionId: condId,
+          path: `${nodeId}.conditions.${condId}.${field}`,
+          currentValue: range.min,
+          enabled: true,
+          min: range.min,
+          max: range.max,
+          step: range.step,
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+      }
+    } else {
+      // Disable optimization
+      const existingIndex = updatedRanges.findIndex((r) => r.id === paramId)
+      if (existingIndex !== -1) {
+        updatedRanges[existingIndex] = {
+          ...updatedRanges[existingIndex],
+          enabled: false,
+        }
+      }
+    }
+
+    botStore.setParameterRanges(activeBot.id, updatedRanges)
+  }
+
   // --- Zustand stores ---
   // Auth store
   const userId = useAuthStore((s) => s.userId)
@@ -275,18 +575,6 @@ export function ForgeTab({
     setCustomIndicatorsCollapsed,
     openTickerModal,
   } = useUIStore()
-
-  // Recalculate scroll dimensions when sidebar collapse states change
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (flowchartScrollRef.current) {
-        const { setFlowchartScrollWidth, setFlowchartClientWidth } = useUIStore.getState()
-        setFlowchartScrollWidth(flowchartScrollRef.current.scrollWidth)
-        setFlowchartClientWidth(flowchartScrollRef.current.clientWidth)
-      }
-    }, 100) // Small delay to let CSS transitions complete
-    return () => clearTimeout(timer)
-  }, [callbackNodesCollapsed, customIndicatorsCollapsed, flowchartScrollRef])
 
   // Bot store
   const {
@@ -332,57 +620,12 @@ export function ForgeTab({
     toggleOverlay: handleToggleOverlay,
   } = useBacktestStore()
 
-  // Custom Indicators state (FRD-035)
-  const [newIndicatorName, setNewIndicatorName] = useState('')
-  const [newIndicatorFormula, setNewIndicatorFormula] = useState('')
-  const [showVariableRef, setShowVariableRef] = useState(false)
-
   // Floating scrollbar position tracking
   const [flowchartRect, setFlowchartRect] = useState({ left: 0, width: 0 })
 
-  // Get customIndicators from activeBot
-  const customIndicators = activeBot?.customIndicators || []
-
-  // Validate formula in real-time
-  const formulaValidation = useMemo(() => {
-    if (!newIndicatorFormula.trim()) {
-      return { valid: true, errors: [], variables: [], functions: [] }
-    }
-    return parseFormula(newIndicatorFormula, KNOWN_VARIABLES)
-  }, [newIndicatorFormula])
-
-  // Add new custom indicator
-  const handleAddCustomIndicator = () => {
-    if (!newIndicatorName.trim() || !newIndicatorFormula.trim()) return
-    if (!formulaValidation.valid) return
-    if (!activeBot) return
-
-    const newIndicator: CustomIndicator = {
-      id: `ci_${newId()}`,
-      name: newIndicatorName.trim(),
-      formula: newIndicatorFormula.trim(),
-      createdAt: Date.now(),
-    }
-
-    // Update the bot's custom indicators
-    const { updateBot } = useBotStore.getState()
-    updateBot(activeBot.id, {
-      customIndicators: [...customIndicators, newIndicator],
-    })
-
-    // Clear form
-    setNewIndicatorName('')
-    setNewIndicatorFormula('')
-  }
-
-  // Delete custom indicator
-  const handleDeleteCustomIndicator = (id: string) => {
-    if (!activeBot) return
-    const { updateBot } = useBotStore.getState()
-    updateBot(activeBot.id, {
-      customIndicators: customIndicators.filter(ci => ci.id !== id),
-    })
-  }
+  // Parameter ranges for optimization (stored in bot session)
+  const botStore = useBotStore()
+  const parameterRanges = activeBot?.parameterRanges ?? []
 
   // Track flowchart container position for floating scrollbar
   useEffect(() => {
@@ -432,35 +675,9 @@ export function ForgeTab({
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
       <CardContent className="flex-1 flex flex-col gap-4 p-4 pb-8 overflow-auto min-h-0">
-        {/* Top Zone - Backtester */}
+        {/* Top Zone - Settings Panel */}
         <div className="shrink-0 border-b border-border pb-4">
-          <BacktesterPanel
-            mode={backtestMode}
-            setMode={setBacktestMode}
-            costBps={backtestCostBps}
-            setCostBps={setBacktestCostBps}
-            benchmark={backtestBenchmark}
-            setBenchmark={setBacktestBenchmark}
-            showBenchmark={backtestShowBenchmark}
-            setShowBenchmark={setBacktestShowBenchmark}
-            tickerOptions={tickerOptions}
-            status={backtestStatus}
-            result={backtestResult}
-            errors={backtestErrors}
-            onRun={handleRunBacktest}
-            onJumpToError={handleJumpToBacktestError}
-            indicatorOverlays={indicatorOverlayData}
-            theme={theme}
-            benchmarkMetrics={benchmarkMetrics}
-            onFetchBenchmarks={fetchBenchmarkMetrics}
-            modelSanityReport={modelSanityReport}
-            onFetchRobustness={runModelRobustness}
-            onUndo={undo}
-            onRedo={redo}
-            canUndo={activeBot ? activeBot.historyIndex > 0 : false}
-            canRedo={activeBot ? activeBot.historyIndex < activeBot.history.length - 1 : false}
-            openTickerModal={openTickerModal}
-          />
+          <SettingsPanel />
         </div>
 
         {/* Flowchart Toolbar - ETFs Only + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
@@ -680,382 +897,28 @@ export function ForgeTab({
 
         {/* Bottom Row - 2 Zones Side by Side */}
         <div className="flex gap-4 flex-1">
-          {/* Bottom Left Zone - Sticky Labels + Content */}
-          <div className={`flex items-start transition-all ${callbackNodesCollapsed && customIndicatorsCollapsed ? '' : 'w-1/2'}`}>
-            {/* Left Side - Labels and Buttons (sticky below ETF toolbar, stops above scrollbar) */}
-            <div className="flex flex-col w-auto border border-border rounded-l-lg sticky top-[52px] z-10" style={{ height: 'calc(100vh - 300px)', backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))' }}>
-              {/* Callback Nodes Label/Button Zone - takes 50% */}
-              <div className="flex-1 flex flex-col items-center justify-center border-b border-border">
-                <button
-                  onClick={() => setCallbackNodesCollapsed(!callbackNodesCollapsed)}
-                  className={`px-2 py-2 transition-colors rounded active:bg-accent/30 ${!callbackNodesCollapsed ? 'bg-accent/20' : 'hover:bg-accent/10'}`}
-                  title={callbackNodesCollapsed ? 'Expand' : 'Collapse'}
-                >
-                  <div className="text-xs font-bold" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
-                    {callbackNodesCollapsed ? 'Expand' : 'Collapse'}
-                  </div>
-                </button>
-                <div className="px-2 py-2">
-                  <div className="font-black text-lg tracking-wide" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
-                    Callback Nodes
-                  </div>
-                </div>
+          {/* Bottom Left Zone - Parameters Panel */}
+          <div className="w-1/3">
+            <Card className="h-full overflow-hidden" style={{ height: 'calc(100vh - 300px)' }}>
+              <div className="p-4 h-full overflow-y-auto">
+                <ParameterBoxPanel
+                  root={current}
+                  onUpdate={handleParameterUpdate}
+                  onHierarchicalUpdate={handleHierarchicalParameterUpdate}
+                  parameterRanges={parameterRanges}
+                  onUpdateRanges={(ranges) => {
+                    if (activeBot) {
+                      botStore.setParameterRanges(activeBot.id, ranges)
+                    }
+                  }}
+                  openTickerModal={openTickerModal}
+                />
               </div>
-
-              {/* Custom Indicators Label/Button Zone - takes 50% */}
-              <div className="flex-1 flex flex-col items-center justify-center">
-                <button
-                  onClick={() => setCustomIndicatorsCollapsed(!customIndicatorsCollapsed)}
-                  className={`px-2 py-2 transition-colors rounded active:bg-accent/30 ${!customIndicatorsCollapsed ? 'bg-accent/20' : 'hover:bg-accent/10'}`}
-                  title={customIndicatorsCollapsed ? 'Expand' : 'Collapse'}
-                >
-                  <div className="text-xs font-bold" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
-                    {customIndicatorsCollapsed ? 'Expand' : 'Collapse'}
-                  </div>
-                </button>
-                <div className="px-2 py-2">
-                  <div className="font-black text-lg tracking-wide" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
-                    Custom Indicators
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Side - Content Area (dynamic based on expanded state) */}
-            <div
-              className={`grid overflow-hidden border border-l-0 border-border rounded-r-lg sticky top-[52px] z-10 ${callbackNodesCollapsed && customIndicatorsCollapsed ? '' : 'flex-1'}`}
-              style={{
-                backgroundColor: 'color-mix(in srgb, var(--color-muted) 40%, var(--color-card))',
-                gridTemplateRows:
-                  callbackNodesCollapsed && customIndicatorsCollapsed ? '0fr 0fr' :
-                  callbackNodesCollapsed && !customIndicatorsCollapsed ? '0fr 1fr' :
-                  !callbackNodesCollapsed && customIndicatorsCollapsed ? '1fr 0fr' :
-                  '1fr 1fr',
-                height: 'calc(100vh - 300px)',
-                width: callbackNodesCollapsed && customIndicatorsCollapsed ? '0' : undefined
-              }}
-            >
-              {/* Callback Nodes Content */}
-              <div className={`overflow-auto min-h-0 ${!callbackNodesCollapsed ? 'p-4 border-b border-border' : ''}`}>
-                <div className="flex gap-2 mb-4">
-                  <Button onClick={handleAddCallChain}>Make new Call</Button>
-                </div>
-                <div className="grid gap-2.5">
-              {callChains.length === 0 ? (
-                <div className="text-muted">No call chains yet.</div>
-              ) : (
-                callChains.map((c) => (
-                  <Card key={c.id}>
-                    <div className="flex gap-2 items-center">
-                      <Input value={c.name} onChange={(e) => handleRenameCallChain(c.id, e.target.value)} className="flex-1" />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={`active:bg-accent/30 ${!c.collapsed ? 'bg-accent/20' : ''}`}
-                        onClick={() => handleToggleCallChainCollapse(c.id)}
-                      >
-                        {c.collapsed ? 'Expand' : 'Collapse'}
-                      </Button>
-                      <Button
-                        variant={copiedCallChainId === c.id ? 'accent' : 'ghost'}
-                        size="sm"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(c.id)
-                            setCopiedCallChainId(c.id)
-                          } catch {
-                            // ignore
-                          }
-                        }}
-                        title={copiedCallChainId === c.id ? 'Call ID copied!' : 'Copy call ID'}
-                      >
-                        {copiedCallChainId === c.id ? 'Copied!' : 'Copy ID'}
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                          if (!confirm(`Delete call chain "${c.name}"?`)) return
-                          handleDeleteCallChain(c.id)
-                        }}
-                        title="Delete call chain"
-                      >
-                        X
-                      </Button>
-                    </div>
-                    <div className="text-xs text-muted mt-1.5">ID: {c.id}</div>
-                    {!c.collapsed ? (
-                      <div className="mt-2.5">
-                        <NodeCard
-                          node={c.root}
-                          depth={0}
-                          parentId={null}
-                          parentSlot={null}
-                          myIndex={0}
-                          tickerOptions={tickerOptions}
-                          onAdd={(parentId, slot, index, kind) => {
-                            const next = insertAtSlot(c.root, parentId, slot, index, ensureSlots(createNode(kind)))
-                            pushCallChain(c.id, next)
-                          }}
-                          onAppend={(parentId, slot) => {
-                            const next = appendPlaceholder(c.root, parentId, slot)
-                            pushCallChain(c.id, next)
-                          }}
-                          onRemoveSlotEntry={(parentId, slot, index) => {
-                            const next = removeSlotEntry(c.root, parentId, slot, index)
-                            pushCallChain(c.id, next)
-                          }}
-                          onDelete={(id) => {
-                            const next = deleteNode(c.root, id)
-                            pushCallChain(c.id, next)
-                          }}
-                          onCopy={(id) => {
-                            const found = findNode(c.root, id)
-                            if (!found) return
-                            setClipboard(cloneNode(found))
-                          }}
-                          onPaste={(parentId, slot, index, child) => {
-                            // Use single-pass clone + normalize for better performance
-                            const next = insertAtSlot(c.root, parentId, slot, index, cloneAndNormalize(child))
-                            pushCallChain(c.id, next)
-                          }}
-                          onPasteCallRef={(parentId, slot, index, callChainId) => {
-                            const callNode = createNode('call')
-                            callNode.callRefId = callChainId
-                            const next = insertAtSlot(c.root, parentId, slot, index, ensureSlots(callNode))
-                            pushCallChain(c.id, next)
-                          }}
-                          onRename={(id, title) => {
-                            const next = updateTitle(c.root, id, title)
-                            pushCallChain(c.id, next)
-                          }}
-                          onWeightChange={(id, weight, branch) => {
-                            const next = updateWeight(c.root, id, weight, branch)
-                            pushCallChain(c.id, next)
-                          }}
-                          onUpdateCappedFallback={(id, choice, branch) => {
-                            const next = updateCappedFallback(c.root, id, choice, branch)
-                            pushCallChain(c.id, next)
-                          }}
-                          onUpdateVolWindow={(id, days, branch) => {
-                            const next = updateVolWindow(c.root, id, days, branch)
-                            pushCallChain(c.id, next)
-                          }}
-                          onColorChange={(id, color) => {
-                            const next = updateColor(c.root, id, color)
-                            pushCallChain(c.id, next)
-                          }}
-                          onToggleCollapse={(id, collapsed) => {
-                            const next = updateCollapse(c.root, id, collapsed)
-                            pushCallChain(c.id, next)
-                          }}
-                          onNumberedQuantifier={(id, quantifier) => {
-                            const next = updateNumberedQuantifier(c.root, id, quantifier)
-                            pushCallChain(c.id, next)
-                          }}
-                          onNumberedN={(id, n) => {
-                            const next = updateNumberedN(c.root, id, n)
-                            pushCallChain(c.id, next)
-                          }}
-                          onAddNumberedItem={(id) => {
-                            const next = addNumberedItem(c.root, id)
-                            pushCallChain(c.id, next)
-                          }}
-                          onDeleteNumberedItem={(id, itemId) => {
-                            const next = deleteNumberedItem(c.root, id, itemId)
-                            pushCallChain(c.id, next)
-                          }}
-                          onAddCondition={(id, type, itemId) => {
-                            const next = addConditionLine(c.root, id, type, itemId)
-                            pushCallChain(c.id, next)
-                          }}
-                          onDeleteCondition={(id, condId, itemId) => {
-                            const next = deleteConditionLine(c.root, id, condId, itemId)
-                            pushCallChain(c.id, next)
-                          }}
-                          onFunctionWindow={(id, value) => {
-                            const next = updateFunctionWindow(c.root, id, value)
-                            pushCallChain(c.id, next)
-                          }}
-                          onFunctionBottom={(id, value) => {
-                            const next = updateFunctionBottom(c.root, id, value)
-                            pushCallChain(c.id, next)
-                          }}
-                          onFunctionMetric={(id, metric) => {
-                            const next = updateFunctionMetric(c.root, id, metric)
-                            pushCallChain(c.id, next)
-                          }}
-                          onFunctionRank={(id, rank) => {
-                            const next = updateFunctionRank(c.root, id, rank)
-                            pushCallChain(c.id, next)
-                          }}
-                          onUpdateCondition={(id, condId, updates, itemId) => {
-                            const next = updateConditionFields(c.root, id, condId, updates, itemId)
-                            pushCallChain(c.id, next)
-                          }}
-                          onAddPosition={(id) => {
-                            const next = addPositionRow(c.root, id)
-                            pushCallChain(c.id, next)
-                          }}
-                          onRemovePosition={(id, index) => {
-                            const next = removePositionRow(c.root, id, index)
-                            pushCallChain(c.id, next)
-                          }}
-                          onChoosePosition={(id, index, choice) => {
-                            const next = choosePosition(c.root, id, index, choice)
-                            pushCallChain(c.id, next)
-                          }}
-                          clipboard={clipboard}
-                          copiedNodeId={copiedNodeId}
-                          copiedCallChainId={copiedCallChainId}
-                          callChains={callChains}
-                          onUpdateCallRef={(id, callId) => {
-                            const next = updateCallReference(c.root, id, callId)
-                            pushCallChain(c.id, next)
-                          }}
-                          onAddEntryCondition={(id, type) => {
-                            const next = addEntryCondition(c.root, id, type)
-                            pushCallChain(c.id, next)
-                          }}
-                          onAddExitCondition={(id, type) => {
-                            const next = addExitCondition(c.root, id, type)
-                            pushCallChain(c.id, next)
-                          }}
-                          onDeleteEntryCondition={(id, condId) => {
-                            const next = deleteEntryCondition(c.root, id, condId)
-                            pushCallChain(c.id, next)
-                          }}
-                          onDeleteExitCondition={(id, condId) => {
-                            const next = deleteExitCondition(c.root, id, condId)
-                            pushCallChain(c.id, next)
-                          }}
-                          onUpdateEntryCondition={(id, condId, updates) => {
-                            const next = updateEntryConditionFields(c.root, id, condId, updates)
-                            pushCallChain(c.id, next)
-                          }}
-                          onUpdateExitCondition={(id, condId, updates) => {
-                            const next = updateExitConditionFields(c.root, id, condId, updates)
-                            pushCallChain(c.id, next)
-                          }}
-                          onUpdateScaling={(id, updates) => {
-                            const next = updateScalingFields(c.root, id, updates)
-                            pushCallChain(c.id, next)
-                          }}
-                          onExpandAllBelow={(id, currentlyCollapsed) => {
-                            const next = setCollapsedBelow(c.root, id, !currentlyCollapsed)
-                            pushCallChain(c.id, next)
-                          }}
-                          highlightedInstance={highlightedInstance}
-                          enabledOverlays={enabledOverlays}
-                          onToggleOverlay={handleToggleOverlay}
-                        />
-                      </div>
-                    ) : null}
-                  </Card>
-                ))
-              )}
-                </div>
-              </div>
-
-              {/* Custom Indicators Content */}
-              <div className={`overflow-auto min-h-0 ${!customIndicatorsCollapsed ? 'p-4' : ''}`}>
-                  {/* Create New Indicator Form */}
-                  <div className="space-y-3 mb-4 p-3 border border-border rounded-lg bg-card">
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Indicator Name"
-                        value={newIndicatorName}
-                        onChange={(e) => setNewIndicatorName(e.target.value)}
-                        className="flex-1"
-                      />
-                      <Button
-                        onClick={handleAddCustomIndicator}
-                        disabled={!newIndicatorName.trim() || !newIndicatorFormula.trim() || !formulaValidation.valid}
-                      >
-                        Create
-                      </Button>
-                    </div>
-                    <div className="relative">
-                      <Input
-                        placeholder="Formula: e.g., rsi / 100 or sma(close, 20) / close"
-                        value={newIndicatorFormula}
-                        onChange={(e) => setNewIndicatorFormula(e.target.value)}
-                        className={`font-mono text-sm ${newIndicatorFormula && !formulaValidation.valid ? 'border-red-500' : ''}`}
-                      />
-                      {newIndicatorFormula && !formulaValidation.valid && (
-                        <div className="text-xs text-red-500 mt-1">
-                          {formulaValidation.errors.join(', ')}
-                        </div>
-                      )}
-                      {newIndicatorFormula && formulaValidation.valid && formulaValidation.variables.length > 0 && (
-                        <div className="text-xs text-green-600 mt-1">
-                          Variables: {formulaValidation.variables.join(', ')}
-                          {formulaValidation.functions.length > 0 && ` | Functions: ${formulaValidation.functions.join(', ')}`}
-                        </div>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowVariableRef(!showVariableRef)}
-                      className="text-xs"
-                    >
-                      {showVariableRef ? '▲ Hide' : '▼ Show'} Variable Reference
-                    </Button>
-                    {showVariableRef && (
-                      <div className="text-xs bg-muted/50 p-2 rounded max-h-48 overflow-y-auto">
-                        <div className="font-semibold mb-1">Functions:</div>
-                        <div className="text-muted mb-2">
-                          Math: {['abs', 'sqrt', 'log', 'exp', 'sign', 'floor', 'ceil', 'round'].join(', ')}<br />
-                          Rolling: {ROLLING_FUNCTIONS.map(f => `${f}(var, N)`).join(', ')}<br />
-                          Binary: min(a, b), max(a, b), pow(a, b)
-                        </div>
-                        <div className="font-semibold mb-1">Variables by Category:</div>
-                        {Object.entries(VARIABLE_CATEGORIES).map(([cat, vars]) => (
-                          <div key={cat} className="mb-1">
-                            <span className="font-medium">{cat}:</span>{' '}
-                            <span className="text-muted">{vars.join(', ')}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* List of Custom Indicators */}
-                  <div className="space-y-2">
-                    {customIndicators.length === 0 ? (
-                      <div className="text-muted text-sm text-center py-4">
-                        No custom indicators yet. Create one above!
-                      </div>
-                    ) : (
-                      customIndicators.map((ci) => (
-                        <div key={ci.id} className="flex items-center justify-between p-2 border border-border rounded-lg bg-card">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate">{ci.name}</div>
-                            <div className="text-xs text-muted font-mono truncate">{ci.formula}</div>
-                            <div className="text-xs text-muted">ID: {ci.id}</div>
-                          </div>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => {
-                              if (confirm(`Delete custom indicator "${ci.name}"?`)) {
-                                handleDeleteCustomIndicator(ci.id)
-                              }
-                            }}
-                          >
-                            X
-                          </Button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-              </div>
-            </div>
+            </Card>
           </div>
 
           {/* Bottom Right Zone - Flow Tree Builder */}
-          <div className={`flex flex-col transition-all relative min-h-0 min-w-0 overflow-hidden ${callbackNodesCollapsed && customIndicatorsCollapsed ? 'flex-1' : 'w-1/2'}`}>
+          <div className="w-2/3 flex flex-col relative min-h-0 min-w-0 overflow-hidden">
             {/* Flowchart Card */}
             <div className="flex-1 border border-border rounded-lg bg-card min-h-0 relative" style={{ height: 'calc(100vh - 400px)', overflow: 'hidden' }}>
               <div
@@ -1136,6 +999,8 @@ export function ForgeTab({
                   highlightedInstance={highlightedInstance}
                   enabledOverlays={enabledOverlays}
                   onToggleOverlay={handleToggleOverlay}
+                  parameterRanges={parameterRanges}
+                  onUpdateRange={handleFlowchartRangeUpdate}
                 />
               </div>
             </div>
