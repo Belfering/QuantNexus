@@ -1,23 +1,21 @@
 # Dependencies
 node_modules/
-package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Build outputs
 dist/
 build/
-*.tsbuildinfo
+*.local
 
-# Environment
+# Allow PRD folder named "Build" (Windows/macOS can be case-insensitive)
+!prd/Build/
+!prd/Build/**
+
+# Environment variables
 .env
 .env.local
-
-# Data
-data/parquet/*.parquet
-data/sqlite/*.db
-data/sqlite/*.db-shm
-data/sqlite/*.db-wal
-data/json/db.json
-data/tiingo_registry.json
+.env.*.local
 
 # Python
 __pycache__/
@@ -25,36 +23,65 @@ __pycache__/
 *$py.class
 *.so
 .Python
-venv/
 env/
+venv/
+ENV/
+*.egg-info/
 
-# Python test/temp files
-python/test_*.py
-python/*_old.py
-python/*.bak
-python/analyze_db.py
-python/read_parquet.py
-
-# Backup files
-*.bak
-*-sqlite.mjs.bak
+# Data files (TEMPORARY: Keep parquet files locally for testing, don't commit)
+System.app/ticker-data/data/ticker_data_parquet/*.parquet
 
 # Logs
 logs/
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Editor
+# Editor directories and files
 .vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 *.swp
-*.swo
-*~
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Keep directory structure
-!data/parquet/.gitkeep
-!data/sqlite/.gitkeep
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+nul
+
+# SQLite WAL files (auto-generated)
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Claude Code plans (local only)
+.claude/plans/
+
+# Playwright MCP cache
+.playwright-mcp/
+
+# Backup files
+*.backup
+
+# Screenshots (binary)
+System.app/screenshots-before/
+
+# Agent handoff docs (temporary)
+System.app/AGENT-HANDOFF-*.md
+
+# Tiingo master data (API cache)
+System.app/ticker-data/_tiingo_master.json

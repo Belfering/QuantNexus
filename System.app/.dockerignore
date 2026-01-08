@@ -1,0 +1,44 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs (will be built in Docker)
+dist
+
+# Development files
+.git
+.gitignore
+.env.local
+.env.*.local
+*.log
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+coverage
+
+# Documentation
+*.md
+LICENSE
+
+# Data files (too large, mount as volume instead)
+ticker-data/data
+server/data/*.db
+
+# Debug scripts
+debug-*.mjs
+check-*.mjs
+test-*.mjs

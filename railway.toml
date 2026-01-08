@@ -1,0 +1,13 @@
+# Railway deployment configuration
+# See: https://docs.railway.app/reference/config-as-code
+
+[build]
+# Use Dockerfile builder with System.app as the build context
+builder = "DOCKERFILE"
+dockerfilePath = "System.app/Dockerfile"
+
+[deploy]
+# Health check endpoint
+healthcheckPath = "/api/status"
+healthcheckTimeout = 120
+restartPolicyType = "ALWAYS"

@@ -1,0 +1,296 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Colors - Light mode defaults (Slate theme) */
+  --color-bg: #f6f8fb;
+  --color-background: #f6f8fb;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8fafc;
+  --color-card: #ffffff;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-border: #cbd5e1;
+  --color-border-soft: #e5e7eb;
+  --color-accent: #3b82f6;
+  --color-accent-bg: #eff6ff;
+  --color-accent-border: #bfdbfe;
+  --color-accent-text: #1d4ed8;
+  --color-danger: #b91c1c;
+  --color-danger-text: #b91c1c;
+  --color-destructive: #b91c1c;
+  --color-success: #15803d;
+  --color-success-text: #15803d;
+  --color-warning: #f59e0b;
+  --color-warning-text: #b45309;
+
+  /* Border radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-3xl: 16px;
+
+  /* Font family */
+  --font-sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ============================================
+   DARK MODE BASE
+   ============================================ */
+.dark {
+  --color-bg: #0b1220;
+  --color-background: #0b1220;
+  --color-surface: #0f172a;
+  --color-surface-2: #111c33;
+  --color-card: #0f172a;
+  --color-text: #e5e7eb;
+  --color-muted: #9ca3af;
+  --color-border: #24324a;
+  --color-border-soft: #24324a;
+  --color-accent: #60a5fa;
+  --color-accent-bg: rgba(59, 130, 246, 0.15);
+  --color-accent-border: rgba(59, 130, 246, 0.35);
+  --color-accent-text: #93c5fd;
+  --color-danger: #f87171;
+  --color-danger-text: #f87171;
+  --color-destructive: #f87171;
+  --color-success: #34d399;
+  --color-success-text: #34d399;
+  --color-warning: #fbbf24;
+  --color-warning-text: #fcd34d;
+}
+
+/* ============================================
+   COLOR THEMES - LIGHT MODE
+   ============================================ */
+
+/* Slate (Default) */
+.theme-slate {
+  --color-accent: #3b82f6;
+  --color-accent-bg: #eff6ff;
+  --color-accent-border: #bfdbfe;
+  --color-accent-text: #1d4ed8;
+}
+
+/* Ocean */
+.theme-ocean {
+  --color-accent: #0ea5e9;
+  --color-accent-bg: #e0f2fe;
+  --color-accent-border: #bae6fd;
+  --color-accent-text: #0369a1;
+}
+
+/* Emerald */
+.theme-emerald {
+  --color-accent: #10b981;
+  --color-accent-bg: #ecfdf5;
+  --color-accent-border: #a7f3d0;
+  --color-accent-text: #047857;
+}
+
+/* Violet */
+.theme-violet {
+  --color-accent: #8b5cf6;
+  --color-accent-bg: #f5f3ff;
+  --color-accent-border: #ddd6fe;
+  --color-accent-text: #6d28d9;
+}
+
+/* Rose */
+.theme-rose {
+  --color-accent: #f43f5e;
+  --color-accent-bg: #fff1f2;
+  --color-accent-border: #fecdd3;
+  --color-accent-text: #be123c;
+}
+
+/* Amber */
+.theme-amber {
+  --color-accent: #f59e0b;
+  --color-accent-bg: #fffbeb;
+  --color-accent-border: #fde68a;
+  --color-accent-text: #b45309;
+}
+
+/* Cyan */
+.theme-cyan {
+  --color-accent: #06b6d4;
+  --color-accent-bg: #ecfeff;
+  --color-accent-border: #a5f3fc;
+  --color-accent-text: #0e7490;
+}
+
+/* Indigo */
+.theme-indigo {
+  --color-accent: #6366f1;
+  --color-accent-bg: #eef2ff;
+  --color-accent-border: #c7d2fe;
+  --color-accent-text: #4338ca;
+}
+
+/* Lime */
+.theme-lime {
+  --color-accent: #84cc16;
+  --color-accent-bg: #f7fee7;
+  --color-accent-border: #d9f99d;
+  --color-accent-text: #4d7c0f;
+}
+
+/* Fuchsia */
+.theme-fuchsia {
+  --color-accent: #d946ef;
+  --color-accent-bg: #fdf4ff;
+  --color-accent-border: #f5d0fe;
+  --color-accent-text: #a21caf;
+}
+
+/* ============================================
+   COLOR THEMES - DARK MODE
+   ============================================ */
+
+.dark.theme-slate {
+  --color-accent: #60a5fa;
+  --color-accent-bg: rgba(59, 130, 246, 0.15);
+  --color-accent-border: rgba(59, 130, 246, 0.35);
+  --color-accent-text: #93c5fd;
+}
+
+.dark.theme-ocean {
+  --color-accent: #38bdf8;
+  --color-accent-bg: rgba(14, 165, 233, 0.15);
+  --color-accent-border: rgba(14, 165, 233, 0.35);
+  --color-accent-text: #7dd3fc;
+}
+
+.dark.theme-emerald {
+  --color-accent: #34d399;
+  --color-accent-bg: rgba(16, 185, 129, 0.15);
+  --color-accent-border: rgba(16, 185, 129, 0.35);
+  --color-accent-text: #6ee7b7;
+}
+
+.dark.theme-violet {
+  --color-accent: #a78bfa;
+  --color-accent-bg: rgba(139, 92, 246, 0.15);
+  --color-accent-border: rgba(139, 92, 246, 0.35);
+  --color-accent-text: #c4b5fd;
+}
+
+.dark.theme-rose {
+  --color-accent: #fb7185;
+  --color-accent-bg: rgba(244, 63, 94, 0.15);
+  --color-accent-border: rgba(244, 63, 94, 0.35);
+  --color-accent-text: #fda4af;
+}
+
+.dark.theme-amber {
+  --color-accent: #fbbf24;
+  --color-accent-bg: rgba(245, 158, 11, 0.15);
+  --color-accent-border: rgba(245, 158, 11, 0.35);
+  --color-accent-text: #fcd34d;
+}
+
+.dark.theme-cyan {
+  --color-accent: #22d3ee;
+  --color-accent-bg: rgba(6, 182, 212, 0.15);
+  --color-accent-border: rgba(6, 182, 212, 0.35);
+  --color-accent-text: #67e8f9;
+}
+
+.dark.theme-indigo {
+  --color-accent: #818cf8;
+  --color-accent-bg: rgba(99, 102, 241, 0.15);
+  --color-accent-border: rgba(99, 102, 241, 0.35);
+  --color-accent-text: #a5b4fc;
+}
+
+.dark.theme-lime {
+  --color-accent: #a3e635;
+  --color-accent-bg: rgba(132, 204, 22, 0.15);
+  --color-accent-border: rgba(132, 204, 22, 0.35);
+  --color-accent-text: #bef264;
+}
+
+.dark.theme-fuchsia {
+  --color-accent: #e879f9;
+  --color-accent-bg: rgba(217, 70, 239, 0.15);
+  --color-accent-border: rgba(217, 70, 239, 0.35);
+  --color-accent-text: #f0abfc;
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Hide horizontal scrollbar for elements using floating scrollbar */
+.hide-horizontal-scrollbar {
+  scrollbar-gutter: stable;
+}
+
+.hide-horizontal-scrollbar::-webkit-scrollbar:vertical {
+  width: 8px;
+}
+
+.hide-horizontal-scrollbar::-webkit-scrollbar:horizontal {
+  height: 0 !important;
+  display: none !important;
+}
+
+.hide-horizontal-scrollbar::-webkit-scrollbar-track:vertical {
+  background: transparent;
+}
+
+.hide-horizontal-scrollbar::-webkit-scrollbar-thumb:vertical {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+.hide-horizontal-scrollbar::-webkit-scrollbar-thumb:vertical:hover {
+  background: var(--color-muted);
+}
+
+/* Hide all scrollbars - for use with floating scrollbar replacement */
+.hide-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Hide number input spinner arrows */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+

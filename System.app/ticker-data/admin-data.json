@@ -1,0 +1,121 @@
+{
+  "config": {
+    "atlasFeePercent": 2.5,
+    "partnerProgramSharePercent": 2.5,
+    "eligibilityRequirements": [
+      {
+        "id": "live_months",
+        "type": "live_months",
+        "value": 0
+      },
+      {
+        "id": "metric-1767012815339",
+        "type": "metric",
+        "metric": "cagr",
+        "comparison": "at_least",
+        "value": 10
+      },
+      {
+        "id": "etfs-only-1767012823802",
+        "type": "etfs_only",
+        "value": 1
+      }
+    ],
+    "atlasFundSlots": [
+      "saved-node-1766691143089-18425-sj6m40u0",
+      "saved-node-1766691129184-15389-obh67dop",
+      "saved-node-1766691119504-14693-kron1ol1",
+      "saved-node-1766691108945-12648-hfiakynn",
+      "saved-node-1766691092170-11822-x90j66sy",
+      "saved-node-1766691092170-11051-x90j66sy",
+      "saved-node-1766690317257-775-r11epnme",
+      "saved-node-1767272632674-1057-15l3q9hb"
+    ]
+  },
+  "treasury": {
+    "balance": 100000,
+    "entries": []
+  },
+  "userSummaries": {
+    "1": {
+      "userId": "1",
+      "totalValue": 1668018.445565664,
+      "totalInvested": 1668018.445565664,
+      "investmentCount": 5,
+      "investedAtlas": 0,
+      "investedNexus": 433857.2118480698,
+      "investedPrivate": 1234161.2337175943,
+      "lastUpdated": 1767026856507
+    },
+    "3": {
+      "userId": "3",
+      "totalValue": 100000,
+      "totalInvested": 0,
+      "investmentCount": 0,
+      "investedAtlas": 0,
+      "investedNexus": 0,
+      "investedPrivate": 0,
+      "lastUpdated": 1766713495985
+    },
+    "5": {
+      "userId": "5",
+      "totalValue": 100000,
+      "totalInvested": 0,
+      "investmentCount": 0,
+      "investedAtlas": 0,
+      "investedNexus": 0,
+      "investedPrivate": 0,
+      "lastUpdated": 1766713506612
+    },
+    "7": {
+      "userId": "7",
+      "totalValue": 100000,
+      "totalInvested": 0,
+      "investmentCount": 0,
+      "investedAtlas": 0,
+      "investedNexus": 0,
+      "investedPrivate": 0,
+      "lastUpdated": 1766713514039
+    },
+    "9": {
+      "userId": "9",
+      "totalValue": 39987580.15836765,
+      "totalInvested": 39937580.15836765,
+      "investmentCount": 2,
+      "investedAtlas": 39937580.15836765,
+      "investedNexus": 0,
+      "investedPrivate": 0,
+      "lastUpdated": 1766713468698
+    },
+    "4a14b18a-3e13-48e0-b1ef-9083f4c5eceb": {
+      "userId": "4a14b18a-3e13-48e0-b1ef-9083f4c5eceb",
+      "totalValue": 100000,
+      "totalInvested": 0,
+      "investmentCount": 0,
+      "investedAtlas": 0,
+      "investedNexus": 0,
+      "investedPrivate": 0,
+      "lastUpdated": 1767272865109
+    },
+    "testid": {
+      "userId": "testid",
+      "totalValue": 0,
+      "totalInvested": 0,
+      "investmentCount": 0,
+      "investedAtlas": 0,
+      "investedNexus": 0,
+      "investedPrivate": 0,
+      "lastUpdated": 1767200863439
+    },
+    "4388874e-b4d3-48a6-8a3b-d41a2ad6e0dc": {
+      "userId": "4388874e-b4d3-48a6-8a3b-d41a2ad6e0dc",
+      "totalValue": 100000,
+      "totalInvested": 0,
+      "investmentCount": 0,
+      "investedAtlas": 0,
+      "investedNexus": 0,
+      "investedPrivate": 0,
+      "lastUpdated": 1767273936292
+    }
+  }
+}

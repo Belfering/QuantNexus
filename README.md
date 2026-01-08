@@ -1,400 +1,370 @@
-# Atlas Forge
+# Atlas Engine
 
-**High-Performance Multi-Indicator Branch Generation & Backtesting System**
+A visual flowchart-based trading algorithm builder that allows users to construct trading strategies using a hierarchical tree structure with different node types. Features a scalable database architecture for cross-user bot sharing via the Nexus marketplace.
 
-Atlas Forge is a systematic trading strategy discovery tool that extends RSI branch generation to support multiple technical indicators. It tests thousands of indicator/period/threshold combinations to find profitable trading strategies.
+## Overview
 
-## 🚀 Performance
+Atlas Engine enables users to visually design trading strategies by connecting different types of nodes in a flowchart. Each node represents a step in the trading logic, from filtering and ranking stocks to making position allocation decisions. Users can share their strategies on the Nexus marketplace while maintaining IP protection.
 
-- **22,990 branches/second** on 24-core system
-- **115x faster** than conservative estimates
-- Tested 99,990 branches in 4.35 seconds
-- Numba JIT compilation for 10-100x metric calculation speedup
-- Vectorized indicator pre-computation and threshold testing
+## Features
 
-## ✨ Key Features
+- **Visual Flowchart Builder**: Drag-and-drop interface for building trading algorithms
+- **Multiple Node Types**:
+  - **Basic**: Simple weighted allocation nodes
+  - **Function**: Filter/ranking functions (e.g., "Pick bottom 2 by 10d RSI")
+  - **Indicator**: Conditional branching with then/else paths for decision logic
+  - **Numbered**: Signal ladder with quantifiers (Any, All, None, Exactly, At Least, At Most, Ladder)
+  - **Alt Exit**: Entry/exit condition pairs with scaling options
+  - **Position**: Leaf nodes holding actual ticker positions (BIL, SPY, or Empty)
+- **Strategy Import**: Import strategies from QuantMage and Composer JSON files
+- **Market Data Integration**: Download and query historical ticker data from Yahoo Finance
+- **Backtesting**: Run backtests with comprehensive metrics (CAGR, Sharpe, Sortino, Treynor, Calmar, Max Drawdown, Beta, etc.)
+- **Advanced Analytics** (Analyze Tab):
+  - **Monte Carlo Simulation**: 200 block-resampled paths (5 years × 7-day blocks) to estimate CAGR/MaxDD distributions
+  - **K-Fold Cross-Validation**: 200 drop-1 shuffled folds for robustness testing
+  - **Comparison Table**: Side-by-side metrics vs 10 benchmark tickers (VTI, SPY, QQQ, DIA, DBC, DBO, GLD, BND, TLT, GBTC)
+  - **Alpha Indicators**: Color-coded performance difference vs benchmarks
+  - **Fragility Analysis**: Sub-period stability, top concentration, thinning sensitivity
+  - **Cache Pre-warming**: Admin can pre-compute all analytics for instant loading
+- **Adjusted Close Pricing**: Uses Adj Close for all indicator calculations (accurate historical signals accounting for dividends/splits), with mode-appropriate execution prices:
+  - CC mode: Adj Close for both signals and execution (dividend-adjusted returns)
+  - OO/CO/OC modes: Adj Close for signals, actual Open/Close for execution
+- **Rich Indicator Library**: RSI, SMA, EMA, ROC, Volatility, Drawdown, Cumulative Return, 13612W Momentum, and more
+- **Ticker Search Modal**: Search tickers by symbol or company name with ETF/Stock filtering
+- **Theme Customization**: Dark/light mode with 10 color schemes, persistent preferences
+- **Undo/Redo**: Full history-based state management
+- **Copy/Paste**: Clone node subtrees with a single click
+- **Live Data Visualization**: View candlestick charts for tickers using DuckDB-powered queries
+- **Dashboard**: Investment portfolio with live P&L tracking, equity charts, and pie chart allocation
+- **Community Nexus**: Cross-user bot marketplace with IP protection
+  - Browse top-performing bots by CAGR, Calmar, Sharpe
+  - Invest in other users' strategies without accessing their code
+  - Automatic eligibility tagging for partner program
+- **Partner Program**: Add eligible bots to Fund Zones for Nexus visibility
+- **Admin Panel** (admin-only):
+  - **Atlas Overview**: Cross-account aggregation (Total Dollars in Accounts, Total Invested), configurable fee percentages, treasury bill holdings tracking
+  - **Nexus Maintenance**: Eligibility requirements configuration, top 500 systems tracking
+  - **Ticker Data**: Manage ticker lists and download market data
 
-### 1. Data Management
-- **Tiingo Integration**: Downloads ~27,500 US stocks and ETFs
-- **Smart Filtering**: US exchanges only, USD currency, stocks/ETFs (no mutual funds)
-- **Efficient Storage**: Parquet format with pyarrow for fast I/O
-- **Missing Ticker Detection**: Identifies gaps in downloaded data
+## Tech Stack
 
-### 2. Forge Dashboard (Master Control Panel)
-- **Indicator Selection**: RSI, SMA, EMA (extensible to 57 indicators)
-- **Period Ranges**: Configure min/max periods (e.g., 5-200 days)
-- **Ticker Configuration**: Filter by asset type, custom lists
-- **Comparators**: GT (Greater Than), LT (Less Than), or Both
-- **Threshold Ranges**: Full control over signal thresholds
-- **Pass/Fail Criteria**: Configurable filters for strategy quality
-  - Minimum TIM (Time In Market %)
-  - Minimum TIMAR (CAGR/TIM ratio)
-  - Maximum MaxDD (Max Drawdown %)
-  - Minimum number of trades
-- **Real-time Progress**: Live updates with branches/second metrics
-- **Job Management**: Start, cancel, restore active jobs
+### Frontend
+- **React 19** with TypeScript
+- **Vite 7** for fast development and building
+- **Tailwind CSS v4** for styling
+- **shadcn/ui** components
+- **Lightweight Charts** for financial charting
 
-### 3. Results Viewer
-- **Sortable Table**: Sort by any metric (TIMAR, MaxDD, Sharpe, etc.)
-- **CSV Export**: Export results for further analysis
-- **Metric Display**: 12+ performance metrics per strategy
-- **Job History**: View results from previous forge runs
+### Backend
+- **Express.js** API server
+- **SQLite** with **Drizzle ORM** for user and bot data persistence
+- **DuckDB** for efficient Parquet file querying
+- **Python** for data download (Yahoo Finance)
 
-## 🏗️ Architecture
+### Database Architecture
+- **Database-first design**: SQLite database is the sole source of truth for all bot data
+- Scalable schema for users, bots, portfolios, watchlists, metrics
+- Cross-user Nexus bot visibility via database queries
+- IP protection: bot payloads never sent to non-owners
+- Automatic localStorage-to-database migration on first login
+- Ready for PostgreSQL migration for production scaling
 
-### Tech Stack
-- **Frontend**: React 19 + TypeScript + Vite 7 + Tailwind CSS v4 + shadcn/ui
-- **Backend API**: Node.js + Express.js + TypeScript
-- **Database**: JSON-based (simple, fast, no SQL dependencies)
-- **Backtesting Engine**: Python with optimizations:
-  - **Numba JIT**: 0.005ms per backtest (200,000 backtests/second)
-  - **Vectorized Operations**: NumPy boolean indexing for signal generation
-  - **Indicator Caching**: Pre-compute all periods once
-  - **Multiprocessing**: Parallel execution across all CPU cores
-- **Indicators**: `ta` library (130+ technical indicators)
-
-### Optimization Strategy
-
-**Indicator Pre-Computation** (Key Innovation):
-```python
-# Instead of calculating RSI(14) for each threshold...
-for threshold in range(1, 100):
-    rsi = calculate_rsi(prices, period=14)  # ❌ Slow (99 calculations)
-    signals = rsi < threshold
-
-# We calculate ALL periods once, test ALL thresholds instantly:
-rsi_cache = {p: calculate_rsi(prices, p) for p in range(5, 201)}  # ✅ Fast (1 calculation per period)
-for threshold in range(1, 100):
-    signals = rsi_cache[14] < threshold  # Instant vectorized comparison
-```
-
-### React Hooks Architecture (FRD-030 Pattern)
-
-Following the Flowchart app's refactoring pattern, all components use custom hooks:
-
-**Data Management Hooks** (6):
-- `useDataDownloadManager` - Orchestrates downloads and polling
-- `useSyncProgress` - Calculates progress metrics with timer
-- `useTiingoKeyManagement` - API key state management
-- `useSyncSettings` - Batch download configuration
-- `useTickerSearch` - Debounced search with autocomplete
-- `useTickerRegistry` - Tiingo ticker registry management
-
-**Forge Hooks** (6):
-- `useForgeConfig` - Configuration with localStorage persistence
-- `useForgeEstimate` - Debounced branch count estimation
-- `useForgeJob` - Job lifecycle (start/cancel/complete/restore)
-- `useForgeStream` - SSE connection with polling fallback
-- `useProgressMetrics` - Memoized calculations with elapsed timer
-- `useForgeJobPersistence` - localStorage abstraction
-
-**Results Hooks** (3):
-- `useJobsManagement` - Job list and selection
-- `useResultsData` - Fetch and sort results
-- `useResultsExport` - CSV export with feedback
-
-## 📁 Project Structure
+## Project Structure
 
 ```
-atlas-forge/
-├── client/                          # React frontend (Vite)
+Flowchart/
+├── System.app/              # Main application directory
 │   ├── src/
-│   │   ├── components/
-│   │   │   ├── ui/                  # shadcn/ui components
-│   │   │   ├── DataManagement/      # Data download tab
-│   │   │   ├── Forge/               # Forge dashboard
-│   │   │   └── Results/             # Results viewer
-│   │   ├── hooks/                   # 15 custom React hooks
-│   │   │   ├── useForgeJob.ts
-│   │   │   ├── useForgeStream.ts
-│   │   │   └── ... (13 more)
-│   │   ├── types/                   # TypeScript definitions
-│   │   └── lib/
-│   │       ├── api.ts               # API client
-│   │       └── indicators.ts        # Indicator metadata
+│   │   ├── App.tsx          # Primary application logic
+│   │   ├── main.tsx         # React entry point
+│   │   ├── components/ui/   # shadcn/ui components
+│   │   └── lib/             # Utility functions
+│   ├── server/
+│   │   ├── index.mjs        # Express API server
+│   │   ├── db/
+│   │   │   ├── schema.mjs   # Drizzle ORM schema
+│   │   │   └── index.mjs    # Database operations
+│   │   └── data/            # SQLite database (atlas.db)
+│   ├── ticker-data/
+│   │   ├── download.py      # Python script to download ticker data
+│   │   ├── tickers.txt      # List of stock tickers
+│   │   └── data/ticker_data_parquet/  # Parquet files for each ticker
 │   └── package.json
-│
-├── server/                          # Express backend
-│   ├── index.mjs                    # Main server entry
-│   ├── routes/
-│   │   ├── data.mjs                 # Data download endpoints
-│   │   ├── forge.mjs                # Forge job endpoints
-│   │   └── results.mjs              # Results endpoints
-│   ├── db/
-│   │   ├── index.mjs
-│   │   └── json-db.mjs              # JSON database layer
-│   └── package.json
-│
-├── python/                          # Python optimization modules
-│   ├── optimized_forge_engine.py    # Main entry (multiprocessing)
-│   ├── vectorized_backtester.py     # Indicator caching + vectorized tests
-│   ├── optimized_metrics.py         # Numba JIT metrics (12 calculations)
-│   ├── optimized_dataloader.py      # LRU cache + hot cache for price data
-│   ├── database_writer.py           # Batch database operations
-│   ├── sync_tiingo_registry.py      # Tiingo ticker sync
-│   ├── benchmark_forge.py           # Performance testing
-│   └── requirements.txt
-│
-└── data/
-    ├── parquet/                     # Ticker price data (SPY.parquet, ...)
-    └── json/
-        └── db.json                  # Jobs, results, registry
-
+├── frd/                     # Feature Requirements Documents
+├── CLAUDE.md                # Development guidelines
+└── README.md
 ```
 
-## 🚦 Getting Started
+## Getting Started
 
 ### Prerequisites
 
-- **Node.js** 20+ (for React + Express)
-- **Python** 3.10+ (for backtesting engine)
-- **Git** (for version control)
+- Node.js (v18 or higher)
+- Python 3.x
+- Git
 
 ### Installation
 
+1. Clone the repository:
 ```bash
-# Install root dependencies
+git clone https://github.com/Belfering/Flowchart.git
+cd Flowchart/System.app
+```
+
+2. Install dependencies:
+```bash
 npm install
-
-# Install client dependencies
-cd client && npm install && cd ..
-
-# Install server dependencies
-cd server && npm install && cd ..
-
-# Install Python dependencies
-pip install -r python/requirements.txt
 ```
 
-**Python Dependencies:**
-```
-yfinance>=0.2.40
-pandas>=2.2.0
-numpy>=1.26.0
-ta>=0.11.0              # Technical indicators
-pyarrow>=16.0.0         # Parquet I/O
-fastparquet>=2024.2.0   # Alternative parquet engine
-scipy>=1.13.0           # Scientific computing
-numba>=0.59.0           # JIT compilation for 10-100x speedup
-```
+### Running the Application
 
-### Development
+You need to run both the frontend and backend servers concurrently:
 
+**Option 1 - Single command (recommended):**
 ```bash
-# Run both client and server in development mode
+npm run dev:full
+```
+This starts both the Vite dev server and Express API server concurrently.
+
+**Option 2 - Separate terminals:**
+
+Terminal 1 - Frontend Development Server:
+```bash
 npm run dev
+```
+This starts the Vite dev server at `http://localhost:5173`
 
-# Or run separately:
-npm run dev:client      # Frontend on http://localhost:5173
-npm run dev:server      # Backend on http://localhost:3000
+Terminal 2 - Backend API Server:
+```bash
+npm run api
+```
+This starts the Express API server on port 8787
+
+The Vite dev server automatically proxies `/api/*` requests to the backend server.
+
+### Downloading Ticker Data
+
+**Option 1: Via Python script directly**
+```bash
+cd ticker-data
+python download.py --tickers-file tickers.txt --out-dir data/ticker_data_parquet
 ```
 
-### Building for Production
+**Option 2: Via Admin Panel**
+Navigate to Admin > Ticker Data tab and click "Download".
+
+## API Endpoints
+
+The backend provides the following REST API endpoints:
+
+### Authentication
+- `POST /api/auth/register` - Register new user (requires invite code)
+- `POST /api/auth/login` - Login and receive JWT tokens
+- `POST /api/auth/logout` - Invalidate refresh token
+- `POST /api/auth/refresh` - Refresh access token
+- `POST /api/auth/verify-email` - Verify email with token
+- `POST /api/auth/forgot-password` - Request password reset email
+- `POST /api/auth/reset-password` - Reset password with token
+- `GET /api/auth/me` - Get current user info (requires auth)
+
+### Bots (User's Own)
+- `GET /api/bots?userId=X` - Get user's bots
+- `GET /api/bots/:id` - Get single bot (payload only for owner)
+- `POST /api/bots` - Create new bot
+- `PUT /api/bots/:id` - Update bot
+- `DELETE /api/bots/:id` - Soft delete bot
+- `PUT /api/bots/:id/metrics` - Update backtest metrics
+
+### Nexus (Cross-User Marketplace)
+- `GET /api/nexus/bots` - Get all Nexus bots (no payload - IP protection)
+- `GET /api/nexus/top/cagr?limit=10` - Top bots by CAGR
+- `GET /api/nexus/top/calmar?limit=10` - Top bots by Calmar ratio
+- `GET /api/nexus/top/sharpe?limit=10` - Top bots by Sharpe ratio
+
+### Watchlists
+- `GET /api/watchlists?userId=X` - Get user's watchlists
+- `POST /api/watchlists` - Create new watchlist
+- `PUT /api/watchlists/:id` - Update watchlist
+- `DELETE /api/watchlists/:id` - Delete watchlist
+- `POST /api/watchlists/:id/bots` - Add bot to watchlist
+- `DELETE /api/watchlists/:id/bots/:botId` - Remove bot from watchlist
+
+### Call Chains
+- `GET /api/call-chains?userId=X` - Get user's call chains
+- `POST /api/call-chains` - Create new call chain
+- `PUT /api/call-chains/:id` - Update call chain
+- `DELETE /api/call-chains/:id` - Delete call chain
+
+### Portfolio
+- `GET /api/portfolio?userId=X` - Get user's portfolio with positions
+- `POST /api/portfolio/buy` - Buy shares of a bot
+- `POST /api/portfolio/sell` - Sell shares of a bot
+
+### User Preferences
+- `GET /api/preferences?userId=X` - Get user preferences
+- `PUT /api/preferences` - Update preferences (theme, color scheme)
+
+### Ticker Data
+- `GET /api/status` - Check ticker data paths and existence
+- `GET /api/tickers` - Get parsed list of tickers
+- `GET /api/candles/:ticker?limit=N` - Fetch OHLC candlestick data
+- `POST /api/candles/batch` - Fetch multiple tickers in one request (3-5x faster)
+- `POST /api/download` - Start Python download job for ticker data
+
+### Sanity Reports & Benchmarks
+- `POST /api/bots/:id/sanity-report` - Run Monte Carlo & K-Fold analysis (cached)
+- `GET /api/benchmarks/metrics` - Get metrics for benchmark tickers (cached)
+
+### Admin
+- `GET /api/admin/config` - Get fee configuration
+- `PUT /api/admin/config` - Update fee configuration
+- `GET /api/admin/aggregated-stats` - Get totals across all accounts
+- `GET /api/admin/eligibility` - Get partner eligibility requirements
+- `PUT /api/admin/eligibility` - Update eligibility requirements
+- `GET /api/db/admin/stats` - Get database-backed aggregated stats
+
+### Cache Management (Admin)
+- `GET /api/admin/cache/stats` - Get cache statistics
+- `POST /api/admin/cache/invalidate` - Invalidate all cache entries
+- `POST /api/admin/cache/refresh` - Force daily cache refresh
+- `POST /api/admin/cache/prewarm` - Pre-compute backtests & sanity reports for all systems
+
+## Building for Production
 
 ```bash
-# Build client (outputs to client/dist)
-cd client && npm run build && cd ..
-
-# Start production server (serves built client)
-cd server && npm start
+npm run build
 ```
 
-## 📊 Usage Example
+This runs TypeScript checks and builds the production bundle to `dist/`
 
-### 1. Download Market Data
-
-1. Navigate to **Data Management** tab
-2. (Optional) Configure Tiingo API key for full ticker registry
-3. Click **Sync Tiingo Registry** to download ~27,500 US tickers
-4. Click **Start yFinance Download** to download price data
-5. Monitor progress (batch downloads with configurable pause)
-
-### 2. Run Forge Job
-
-1. Navigate to **Forge Dashboard** tab
-2. Configure search parameters:
-   - **Indicator**: RSI
-   - **Periods**: 5-20
-   - **Tickers**: SPY, QQQ, IWM
-   - **Comparator**: BOTH (GT + LT)
-   - **Thresholds**: 1-99 (step 1)
-3. Set pass/fail criteria:
-   - **Min TIM**: 5%
-   - **Min TIMAR**: 30
-   - **Max MaxDD**: 20%
-   - **Min Trades**: 50
-4. Click **Start Forge**
-5. Watch real-time progress (branches/sec, ETA, passing count)
-
-**Example Output:**
-```
-Total Branches: 99,990
-Passing Branches: 1,872 (1.87%)
-Elapsed Time: 4.35 seconds
-Performance: 22,990 branches/second
-Workers: 24
+Preview the production build:
+```bash
+npm run preview
 ```
 
-### 3. View Results
+### Authentication
+- On launch, a login screen is shown with options to sign in, register, or reset password
+- **Registration**: Requires a valid invite code during beta period
+- **Admin User**: Created via environment variables (`ADMIN_EMAIL`, `ADMIN_PASSWORD`)
+- JWT-based authentication with access tokens (15min) and refresh tokens (7 days)
+- "Remember me" option persists sessions across browser restarts
+- Admin tab is only visible when logged in as admin
 
-1. Navigate to **Results** tab
-2. Select completed job from dropdown
-3. Sort by TIMAR (descending) to see best strategies
-4. Export to CSV for further analysis
+### User Roles
+- **Regular Users**: Can create bots, manage portfolios and watchlists
+- **Partner Users**: Can participate in Partner Program, add bots to Nexus
+- **Admin**: Full access to Atlas Overview, Nexus Maintenance, fee configuration
 
-**Top Strategies Found:**
-| Rank | Strategy | TIMAR | MaxDD | CAGR | TIM | Trades |
-|------|----------|-------|-------|------|-----|--------|
-| 1 | RSI(2) > 69 | 233.59 | 0.54% | 106.14% | 45.44% | 1,247 |
-| 2 | RSI(2) > 68 | 232.94 | 0.54% | 107.98% | 46.36% | 1,289 |
-| 3 | RSI(2) > 67 | 231.80 | 0.54% | 109.39% | 47.19% | 1,331 |
+## Data Flow
 
-## 🐛 Critical Fixes Applied
+1. Tickers are managed in `ticker-data/tickers.txt`
+2. Python script downloads historical data from Yahoo Finance
+3. Data is stored as Parquet files in `ticker-data/data/ticker_data_parquet/`
+4. DuckDB queries Parquet files on-demand for candle data
+5. Frontend displays data and allows users to build trading logic
+6. **All user data is stored in the SQLite database** (database is the sole source of truth)
+7. Portfolio investments, watchlists, preferences, and call chains are all in SQLite
+8. localStorage is only used for legacy migration (data migrates to database on login)
 
-During development, several critical bugs were identified and fixed:
+### Storage Architecture
 
-1. **TIMAR Scaling Bug**: Fixed calculation to `timar = (cagr * 100.0 / tim)` - now displays 73.31 instead of 0.73
-2. **Database Race Condition**: Python returns results via stdout; Node.js handles all DB writes (atomic batch insert)
-3. **UI Never Stops**: Added `completeJob()` method and auto-detection when job finishes
-4. **SSE Connection Drops**: Added polling fallback when EventSource fails
-5. **Path Resolution**: Absolute paths prevent "file not found" errors
-6. **pandas_ta Unavailable**: Replaced with `ta` library (compatible with Python 3.10)
+| Data Type | Storage Location | Notes |
+|-----------|------------------|-------|
+| **Bots** | SQLite database | Full payload, metrics, visibility |
+| **Portfolios** | SQLite database | Cash balance, positions |
+| **Bot Metrics** | SQLite database | CAGR, Sharpe, drawdown, etc. |
+| **Watchlists** | SQLite database | Per-user watchlists with bot associations |
+| **User Preferences** | SQLite database | Theme, color scheme, UI state |
+| **Call Chains** | SQLite database | User-defined reusable function chains |
 
-## 📈 Performance Benchmarks
+All user data is now stored in the SQLite database, enabling multi-device access and cross-user features. On first login, any legacy localStorage data is automatically migrated to the database.
 
-### Optimization Stages
+## Development
 
-| Stage | Branches/Sec | Notes |
-|-------|--------------|-------|
-| **Naive Approach** | ~10-50 | Row-by-row processing, repeated indicator calculations |
-| **Vectorized (NumPy)** | ~200-500 | Vectorized comparisons, but still recalculating indicators |
-| **Pre-computation + Vectorization** | ~2,000-5,000 | Cache indicators, instant threshold tests |
-| **Numba JIT + Multiprocessing** | **~23,000** | JIT-compiled metrics, 24 parallel workers |
+### Code Style
 
-### Benchmark: 100K Branches
-
-**Configuration:**
-- Ticker: SPY
-- Indicator: RSI
-- Periods: 1-100
-- Thresholds: 1-99
-- Comparators: GT + LT
-- Total Branches: 99,990
-
-**Results:**
-- **Time**: 4.35 seconds
-- **Speed**: 22,990 branches/second
-- **Passing**: 1,872 strategies (1.87%)
-- **Workers**: 24 (all CPU cores utilized)
-
-**Comparison to Java Benchmark:**
-- External Java system: ~725 branches/sec
-- Atlas Forge: ~23,000 branches/sec
-- **Speedup**: 32x faster 🚀
-
-## 🔮 Future Enhancements
-
-### Phase 2 (Planned)
-- [ ] All 57 indicators from Flowchart app
-- [ ] L2 multi-conditional branches (e.g., "RSI(14) < 30 AND 200-day SMA > price")
-- [ ] Monte Carlo & K-Fold validation
-- [ ] Job pause/resume functionality
-- [ ] Chronological data split (specify OOS cutoff date)
-- [ ] Advanced ticker filtering (sector, market cap, volume)
-- [ ] Configuration presets (save/load favorite setups)
-
-### Phase 3 (Research)
-- [ ] Equity curve visualization
-- [ ] Trade log viewer with entry/exit details
-- [ ] Multi-metric sorting (Pareto frontier)
-- [ ] Result comparison tool (compare jobs side-by-side)
-- [ ] GPU acceleration (RAPIDS cuDF for indicators)
-- [ ] Genetic algorithm for threshold optimization
-- [ ] Walk-forward analysis
-- [ ] Strategy combination (ensemble methods)
-
-## 🤝 Contributing
-
-This is a personal project for systematic trading strategy research. Not currently accepting external contributions.
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
----
-
-## 📚 Technical Deep Dive
-
-### How Indicator Caching Works
-
-The key optimization is recognizing that for a given ticker/indicator/period combination, we only need to calculate the indicator **once** regardless of how many thresholds we test:
-
-```python
-# Traditional approach (SLOW):
-for period in [5, 10, 14, 20]:
-    for threshold in [20, 25, 30, ..., 80]:  # 13 thresholds
-        rsi = calculate_rsi(prices, period)   # ❌ Calculated 13 times!
-        signals = rsi < threshold
-        metrics = backtest(signals, prices)
-
-# Optimized approach (FAST):
-rsi_cache = {}
-for period in [5, 10, 14, 20]:
-    rsi_cache[period] = calculate_rsi(prices, period)  # ✅ Calculated once!
-
-for period in [5, 10, 14, 20]:
-    rsi = rsi_cache[period]  # Instant lookup
-    for threshold in [20, 25, 30, ..., 80]:
-        signals = (rsi < threshold).astype(np.int32)  # Vectorized (instant)
-        metrics = calculate_metrics_fast(signals, prices, returns)  # Numba JIT (0.005ms)
+```bash
+npm run lint
 ```
 
-**Speedup Math:**
-- 4 periods × 13 thresholds = 52 tests
-- Traditional: 52 RSI calculations + 52 backtests
-- Optimized: 4 RSI calculations + 52 vectorized comparisons + 52 JIT backtests
-- **Result**: ~10-20x faster for indicator calculation alone
+### Environment Variables
 
-### Numba JIT Compilation
+The backend supports these environment variables:
 
-The metrics calculation (TIM, TIMAR, MaxDD, Sharpe, etc.) is compiled to machine code for near-C performance:
+**Required for Production:**
+- `JWT_SECRET` - Secret key for signing JWT access tokens
+- `REFRESH_SECRET` - Secret key for refresh tokens
+- `ADMIN_EMAIL` - Email for the initial admin user
+- `ADMIN_PASSWORD` - Password for the initial admin user (min 8 characters)
 
-```python
-@jit(nopython=True, cache=True, fastmath=True)
-def calculate_all_metrics(signals, prices, returns):
-    """Calculate 12 metrics in one pass (JIT compiled)."""
-    tim = np.sum(signals) / len(signals) * 100.0
-    equity = calculate_equity_curve(signals, returns)
-    cagr = calculate_cagr(equity[0], equity[-1], len(returns))
-    timar = (cagr * 100.0 / tim) if tim > 0 else 0.0
-    # ... 8 more metrics
-    return (tim, timar, max_dd, cagr, trades, avg_hold, sharpe, dd3, dd50, dd95, timar3, timardd)
-```
+**Optional:**
+- `DATABASE_PATH` - Override default database location (default: `server/data/atlas.db`)
+- `SYSTEM_TICKER_DATA_ROOT` or `TICKER_DATA_MINI_ROOT` - Override default ticker-data path
+- `TICKERS_PATH` - Override tickers.txt location
+- `PARQUET_DIR` - Override parquet data directory
+- `PYTHON` - Python executable (default: `python`)
+- `PORT` - API server port (default: 8787)
+- `NODE_ENV` - Set to `production` for production mode
 
-**Performance:**
-- **Pure Python**: ~1-2ms per backtest
-- **Numba JIT**: ~0.005ms per backtest
-- **Speedup**: 200-400x faster
+## FRDs
 
-### Multiprocessing Strategy
+Feature Requirements Documents live in `frd/`.
 
-Each ticker is assigned to a worker process for complete parallelization:
+- Name FRDs with a sortable prefix when order matters (example: `frd/001-some-feature.md`).
+- Include `Status` + `Depends on` in the FRD header so ordering isn't only implied by filenames.
 
-```python
-# Distribute tickers across workers
-worker_args = [(ticker, config, worker_id) for ticker, worker_id in enumerate(tickers)]
+### Completed FRDs (22 total)
+- FRD-001: Analyze Tab with collapsible bot cards
+- FRD-002: Community Nexus tab with top bots tables
+- FRD-003: Conditional logic testing (34 Vitest tests for AND/OR/IF)
+- FRD-004: Theming toggle with per-profile persistence
+- FRD-005: Atlas Engine branding
+- FRD-006: Tailwind CSS + shadcn/ui refactor
+- FRD-007: Full database migration (portfolios, bots, watchlists, preferences, call chains)
+- FRD-008: Password hashing with bcrypt + auto-migration
+- FRD-012: Fund Lock (no edit for published systems)
+- FRD-013: Rename "Bots" to "Systems" in UI
+- FRD-014: Backtest caching with daily refresh
+- FRD-016: Beta metric (vs SPY)
+- FRD-017: Payload compression (gzip for >1MB payloads)
+- FRD-018: Alt Exit & Scaling node types
+- FRD-019: Auto-detect import (Atlas/Composer/QuantMage)
+- FRD-021: Model Tab UI improvements (60px insert button, accent-tinted nodes)
+- FRD-022: Extended indicators (40+ indicators - Hull MA, Bollinger, Stochastic, ADX, ATR, etc.)
+- FRD-023: Atlas UI improvements (sort dropdowns, Export JSON, Open Model, collapsed stats)
+- FRD-024: Nexus label rename (Community Nexus -> Nexus)
+- FRD-025: Atlas zone improvements (expandable cards, watchlist buttons, IP protection)
+- FRD-026: Advanced Analytics Suite (Monte Carlo 200 sims, K-Fold 200 folds, comparison table, benchmark metrics, cache pre-warming)
 
-with Pool(processes=num_workers) as pool:
-    for ticker_results in pool.imap_unordered(worker_process_ticker, worker_args):
-        all_results.extend(ticker_results)
-```
+### Pending (0 total)
+All pending FRDs have been completed!
 
-**Benefits:**
-- No shared memory (each process has independent price data)
-- GIL bypassed (true parallel execution)
-- Automatic load balancing (`imap_unordered`)
-- Fault tolerance (one ticker failure doesn't crash entire job)
+### Deferred/Future (2 total)
+- FRD-011: Atlas Sponsored Systems (blocked - needs investigation)
+- FRD-027: Tiingo API Integration (replace Yahoo Finance)
 
----
+## Performance Optimizations
 
-**Built with performance and precision for systematic trading strategy discovery.**
+Atlas Engine includes several performance optimizations for faster backtesting and data loading:
+
+- **API Response Compression**: Gzip compression reduces payload sizes by ~80%
+- **Batch Candles Endpoint**: Fetch multiple tickers in one request (3-5x faster chart loading)
+- **Pre-cached Common Tickers**: SPY, QQQ, IWM, and other popular tickers are cached at startup
+- **Optimized Date Intersection**: O(n log n) algorithm for multi-ticker strategies
+- **1993 Start Date Filter**: Backtests load data from 1993 onwards (20-40% faster)
+- **Parallel Benchmark Metrics**: 4-5x faster Analyze tab benchmark computation
+
+## Coming Soon
+
+- Position Node (adding Tickers) rework to be less click intensive
+- Correlation matrix/portfolio builder tool
+- Variable Library (allowing the creation of custom indicators)
+
+
+## Contributing
+
+For detailed development guidelines and architecture information, see [CLAUDE.md](./CLAUDE.md).
+
+## License
+
+This project is open source and available under the MIT License.
