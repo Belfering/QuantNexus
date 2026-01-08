@@ -39,8 +39,8 @@ export function NumberedConfigControl({ parameter, nodeId, onUpdate, onEnableOpt
   const paramId = `${nodeId}-numbered-n`
 
   return (
-    <div className="inline-flex flex-col gap-1 px-3 py-2 rounded-lg min-w-[100px] bg-muted/20">
-      <label className="text-[10px] font-semibold uppercase opacity-80">
+    <div className="inline-flex flex-col gap-1 px-3 py-2 rounded-lg min-w-[120px] bg-muted/20">
+      <label className="text-[10px] font-semibold uppercase opacity-80 whitespace-nowrap">
         {getLabel()}
       </label>
 
@@ -49,7 +49,7 @@ export function NumberedConfigControl({ parameter, nodeId, onUpdate, onEnableOpt
         <Select
           value={parameter.currentValue as NumberedQuantifier}
           onChange={(e) => onUpdate(nodeId, parameter, e.target.value)}
-          className="bg-white/90 border-black/10 h-7 text-xs"
+          className="bg-white/90 border-black/10 h-7 text-xs w-full"
         >
           {QUANTIFIER_OPTIONS.map(opt => (
             <option key={opt.value} value={opt.value}>

@@ -73,7 +73,7 @@ export function ParameterBox({ parameter, onUpdate, onEnableOptimization }: Para
       <PopoverTrigger asChild>
         <div
           className={`
-            inline-flex flex-col gap-1 px-3 py-2 rounded-lg min-w-[80px]
+            inline-flex flex-col gap-1 px-3 py-2 rounded-lg min-w-[120px]
             shadow-sm hover:shadow-md transition-shadow
             ${isOptimizable ? 'cursor-pointer' : 'cursor-default'}
             ${parameter.optimizationEnabled ? 'ring-2 ring-primary ring-offset-1' : ''}
@@ -81,7 +81,7 @@ export function ParameterBox({ parameter, onUpdate, onEnableOptimization }: Para
           style={{ backgroundColor: parameter.nodeColor }}
           onClick={handleClick}
         >
-          <label className="text-[10px] font-semibold uppercase opacity-80">
+          <label className="text-[10px] font-semibold uppercase opacity-80 whitespace-nowrap">
             {label}
           </label>
 
@@ -102,7 +102,7 @@ export function ParameterBox({ parameter, onUpdate, onEnableOptimization }: Para
               <Select
                 value={parameter.currentValue as string}
                 onChange={(e) => onUpdate('comparator', e.target.value)}
-                className="bg-white/90 border-black/10 h-7 text-xs"
+                className="bg-white/90 border-black/10 h-7 text-xs w-full"
               >
                 {COMPARATOR_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>

@@ -19,11 +19,22 @@ import type { FlowNode } from '@/types'
  * - Saves the tree back to the active bot's current history entry
  *
  * Returns the current tree root for convenience.
+ *
+ * @param tabContext - Optional: 'Forge' or 'Model' to sync with tab-specific bot
  */
-export function useTreeSync(): FlowNode {
-  const activeBotId = useBotStore((s) => s.activeBotId)
+export function useTreeSync(tabContext?: 'Forge' | 'Model'): FlowNode {
+  const globalActiveBotId = useBotStore((s) => s.activeBotId)
+  const activeForgeBotId = useBotStore((s) => s.activeForgeBotId)
+  const activeModelBotId = useBotStore((s) => s.activeModelBotId)
   const bots = useBotStore((s) => s.bots)
   const setBots = useBotStore((s) => s.setBots)
+
+  // Determine which bot ID to use based on tab context
+  const activeBotId = tabContext === 'Forge'
+    ? activeForgeBotId
+    : tabContext === 'Model'
+    ? activeModelBotId
+    : globalActiveBotId
 
   const root = useTreeStore((s) => s.root)
   const setRoot = useTreeStore((s) => s.setRoot)

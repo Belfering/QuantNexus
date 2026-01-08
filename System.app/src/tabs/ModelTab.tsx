@@ -131,7 +131,8 @@ export function ModelTab({
   floatingScrollRef,
 }: ModelTabProps) {
   // --- Tree state from useTreeStore (Phase 2N-15c) ---
-  const current = useTreeSync()
+  // Use Model-specific tree sync to keep independent from Forge tab
+  const current = useTreeSync('Model')
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 

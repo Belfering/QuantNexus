@@ -25,14 +25,14 @@ export function WeightDropdown({ parameter, nodeId, onUpdate }: WeightDropdownPr
     : 'Weight'
 
   return (
-    <div className="inline-flex flex-col gap-1 px-3 py-2 rounded-lg min-w-[100px] bg-muted/20">
-      <label className="text-[10px] font-semibold uppercase opacity-80">
+    <div className="inline-flex flex-col gap-1 px-3 py-2 rounded-lg min-w-[120px] bg-muted/20">
+      <label className="text-[10px] font-semibold uppercase opacity-80 whitespace-nowrap">
         {label}
       </label>
       <Select
         value={parameter.currentValue}
         onChange={(e) => onUpdate(nodeId, parameter, e.target.value)}
-        className="bg-white/90 border-black/10 h-7 text-xs"
+        className="bg-white/90 border-black/10 h-7 text-xs w-full"
       >
         {WEIGHT_OPTIONS.map(opt => (
           <option key={opt.value} value={opt.value}>

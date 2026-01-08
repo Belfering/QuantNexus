@@ -130,7 +130,8 @@ export function ForgeTab({
   floatingScrollRef,
 }: ForgeTabProps) {
   // --- Tree state from useTreeStore (Phase 2N-15c) ---
-  const current = useTreeSync()
+  // Use Forge-specific tree sync to keep independent from Model tab
+  const current = useTreeSync('Forge')
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 
@@ -898,7 +899,7 @@ export function ForgeTab({
         {/* Bottom Row - 2 Zones Side by Side */}
         <div className="flex gap-4 flex-1">
           {/* Bottom Left Zone - Parameters Panel */}
-          <div className="w-1/3">
+          <div className="w-1/2">
             <Card className="h-full overflow-hidden" style={{ height: 'calc(100vh - 300px)' }}>
               <div className="p-4 h-full overflow-y-auto">
                 <ParameterBoxPanel
@@ -918,7 +919,7 @@ export function ForgeTab({
           </div>
 
           {/* Bottom Right Zone - Flow Tree Builder */}
-          <div className="w-2/3 flex flex-col relative min-h-0 min-w-0 overflow-hidden">
+          <div className="w-1/2 flex flex-col relative min-h-0 min-w-0 overflow-hidden">
             {/* Flowchart Card */}
             <div className="flex-1 border border-border rounded-lg bg-card min-h-0 relative" style={{ height: 'calc(100vh - 400px)', overflow: 'hidden' }}>
               <div

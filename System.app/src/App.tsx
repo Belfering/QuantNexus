@@ -45,7 +45,8 @@ import {
 } from './constants'
 import {
   // Helpers (newId moved to useCallChainHandlers, Phase 2N-24)
-  // Node factory (createNode moved to useCallChainHandlers, Phase 2N-24)
+  // Node factory
+  createNode,
   ensureSlots,
   normalizeForImport,
   // Tree operations (most moved to ModelTab - Phase 2N-15c)
@@ -542,7 +543,15 @@ function App() {
   }, [bots, activeModelBotId])
 
   // Tree state synced with useTreeStore (Phase 2N-15b)
-  const current = useTreeSync()
+  // Note: We derive current directly from activeBot instead of using global useTreeSync()
+  // because ForgeTab and ModelTab handle their own independent tree syncing
+  const current = useMemo(() => {
+    if (!activeBot) {
+      // Fallback: create a basic start node
+      return createNode('basic', 'Start')
+    }
+    return activeBot.history[activeBot.historyIndex] ?? createNode('basic', 'Start')
+  }, [activeBot])
 
   // Per-bot call chains (derived from activeBot)
   const callChains = activeBot.callChains
@@ -563,6 +572,42 @@ function App() {
   const backtestErrors = activeBot.backtest.errors
   const backtestResult = activeBot.backtest.result
   const backtestFocusNodeId = activeBot.backtest.focusNodeId
+
+  // Forge-specific state (independent from Model)
+  const forgeCallChains = activeForgeBot?.callChains ?? []
+  const setForgeCallChains = useCallback((updater: CallChain[] | ((prev: CallChain[]) => CallChain[])) => {
+    if (!activeForgeBot) return
+    setBots((prev) =>
+      prev.map((b) => {
+        if (b.id !== activeForgeBotId) return b
+        const newCallChains = typeof updater === 'function' ? updater(b.callChains) : updater
+        return { ...b, callChains: newCallChains }
+      }),
+    )
+  }, [activeForgeBotId, activeForgeBot])
+
+  const forgeBacktestStatus = activeForgeBot?.backtest.status ?? 'idle'
+  const forgeBacktestErrors = activeForgeBot?.backtest.errors ?? []
+  const forgeBacktestResult = activeForgeBot?.backtest.result ?? null
+  const forgeBacktestFocusNodeId = activeForgeBot?.backtest.focusNodeId ?? null
+
+  // Model-specific state (independent from Forge)
+  const modelCallChains = activeModelBot?.callChains ?? []
+  const setModelCallChains = useCallback((updater: CallChain[] | ((prev: CallChain[]) => CallChain[])) => {
+    if (!activeModelBot) return
+    setBots((prev) =>
+      prev.map((b) => {
+        if (b.id !== activeModelBotId) return b
+        const newCallChains = typeof updater === 'function' ? updater(b.callChains) : updater
+        return { ...b, callChains: newCallChains }
+      }),
+    )
+  }, [activeModelBotId, activeModelBot])
+
+  const modelBacktestStatus = activeModelBot?.backtest.status ?? 'idle'
+  const modelBacktestErrors = activeModelBot?.backtest.errors ?? []
+  const modelBacktestResult = activeModelBot?.backtest.result ?? null
+  const modelBacktestFocusNodeId = activeModelBot?.backtest.focusNodeId ?? null
 
   // Fetch indicator overlay data when enabled overlays change
   useEffect(() => {
@@ -1133,7 +1178,7 @@ function App() {
                         } else {
                           setActiveModelBotId(b.id)
                         }
-                        setActiveBotId(b.id) // Keep legacy in sync
+                        // Note: DO NOT set activeBotId here - Forge and Model tabs are independent
                       }}
                     >
                       {label}
@@ -1210,9 +1255,9 @@ function App() {
             <ForgeTab
               // Backtest panel props (derived or callback)
               tickerOptions={tickerOptions}
-              backtestStatus={backtestStatus}
-              backtestResult={backtestResult}
-              backtestErrors={backtestErrors}
+              backtestStatus={forgeBacktestStatus}
+              backtestResult={forgeBacktestResult}
+              backtestErrors={forgeBacktestErrors}
               handleRunBacktest={handleRunBacktest}
               handleJumpToBacktestError={handleJumpToBacktestError}
               theme={uiState.theme}
@@ -1220,8 +1265,8 @@ function App() {
               runModelRobustness={runModelRobustness}
               activeBot={activeForgeBot}
               // Call chain props
-              callChains={callChains}
-              setCallChains={setCallChains}
+              callChains={forgeCallChains}
+              setCallChains={setForgeCallChains}
               handleAddCallChain={handleAddCallChain}
               handleRenameCallChain={handleRenameCallChain}
               handleToggleCallChainCollapse={handleToggleCallChainCollapse}
@@ -1229,7 +1274,7 @@ function App() {
               pushCallChain={pushCallChain}
               // Backtest visual state
               backtestErrorNodeIds={backtestErrorNodeIds}
-              backtestFocusNodeId={backtestFocusNodeId}
+              backtestFocusNodeId={forgeBacktestFocusNodeId}
               // Refs
               flowchartScrollRef={flowchartScrollRef}
               floatingScrollRef={floatingScrollRef}
@@ -1240,9 +1285,9 @@ function App() {
             <ModelTab
               // Backtest panel props (derived or callback)
               tickerOptions={tickerOptions}
-              backtestStatus={backtestStatus}
-              backtestResult={backtestResult}
-              backtestErrors={backtestErrors}
+              backtestStatus={modelBacktestStatus}
+              backtestResult={modelBacktestResult}
+              backtestErrors={modelBacktestErrors}
               handleRunBacktest={handleRunBacktest}
               handleJumpToBacktestError={handleJumpToBacktestError}
               theme={uiState.theme}
@@ -1250,8 +1295,8 @@ function App() {
               runModelRobustness={runModelRobustness}
               activeBot={activeModelBot}
               // Call chain props
-              callChains={callChains}
-              setCallChains={setCallChains}
+              callChains={modelCallChains}
+              setCallChains={setModelCallChains}
               handleAddCallChain={handleAddCallChain}
               handleRenameCallChain={handleRenameCallChain}
               handleToggleCallChainCollapse={handleToggleCallChainCollapse}
@@ -1259,7 +1304,7 @@ function App() {
               pushCallChain={pushCallChain}
               // Backtest visual state
               backtestErrorNodeIds={backtestErrorNodeIds}
-              backtestFocusNodeId={backtestFocusNodeId}
+              backtestFocusNodeId={modelBacktestFocusNodeId}
               // Refs
               flowchartScrollRef={flowchartScrollRef}
               floatingScrollRef={floatingScrollRef}

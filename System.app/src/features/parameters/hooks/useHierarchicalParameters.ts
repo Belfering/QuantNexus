@@ -86,13 +86,7 @@ function extractNodeParameters(node: FlowNode): StrategyParameter[] {
 
     case 'indicator':
     case 'numbered':
-      // Smart branch weights (only for indicator/numbered nodes)
-      params.push(
-        { type: 'weight', field: 'weightingThen', currentValue: node.weightingThen ?? 'equal', branch: 'then' },
-        { type: 'weight', field: 'weightingElse', currentValue: node.weightingElse ?? 'equal', branch: 'else' }
-      )
-
-      // Extract conditions from indicator nodes
+      // Extract conditions from indicator nodes FIRST (to match flowchart visual order)
       if (node.kind === 'indicator' && node.conditions) {
         node.conditions.forEach(cond => {
           params.push(...extractConditionParameters(cond, node.id))
@@ -113,6 +107,12 @@ function extractNodeParameters(node: FlowNode): StrategyParameter[] {
           })
         })
       }
+
+      // Smart branch weights AFTER conditions (to match flowchart visual order)
+      params.push(
+        { type: 'weight', field: 'weightingThen', currentValue: node.weightingThen ?? 'equal', branch: 'then' },
+        { type: 'weight', field: 'weightingElse', currentValue: node.weightingElse ?? 'equal', branch: 'else' }
+      )
       break
 
     case 'position':
@@ -134,18 +134,18 @@ function extractNodeParameters(node: FlowNode): StrategyParameter[] {
       break
 
     case 'scaling':
-      // Scaling nodes have branch weights
-      params.push(
-        { type: 'weight', field: 'weightingThen', currentValue: node.weightingThen ?? 'equal', branch: 'then' },
-        { type: 'weight', field: 'weightingElse', currentValue: node.weightingElse ?? 'equal', branch: 'else' }
-      )
-      // Extract scaling parameters
+      // Extract scaling parameters FIRST (to match flowchart visual order)
       params.push(
         { type: 'scaling', field: 'scaleWindow', currentValue: node.scaleWindow ?? 14 },
         { type: 'scaling', field: 'scaleMetric', currentValue: node.scaleMetric ?? 'Relative Strength Index' },
         { type: 'scaling', field: 'scaleTicker', currentValue: node.scaleTicker ?? 'SPY' },
         { type: 'scaling', field: 'scaleFrom', currentValue: node.scaleFrom ?? 30 },
         { type: 'scaling', field: 'scaleTo', currentValue: node.scaleTo ?? 70 }
+      )
+      // Branch weights AFTER scaling parameters (to match flowchart visual order)
+      params.push(
+        { type: 'weight', field: 'weightingThen', currentValue: node.weightingThen ?? 'equal', branch: 'then' },
+        { type: 'weight', field: 'weightingElse', currentValue: node.weightingElse ?? 'equal', branch: 'else' }
       )
       break
 
