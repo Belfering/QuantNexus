@@ -1,0 +1,59 @@
+[package]
+name = "flowchart-indicators"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance technical indicators library"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["wasm-bindgen"]
+
+[dependencies]
+# Optional WASM support
+wasm-bindgen = { version = "0.2", optional = true }
+# For CLI binary
+serde_json = "1.0"
+axum = { version = "0.8.8", features = ["json"] }
+tokio = { version = "1.49.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+parquet = "54"
+arrow = "54"
+chrono = "0.4"
+polars = { version = "0.52.0", features = ["lazy", "parquet", "dtype-struct", "dtype-datetime"] }
+
+[[bin]]
+name = "indicators"
+path = "src/bin/indicators.rs"
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "backtest"
+path = "src/bin/backtest.rs"
+
+[[bin]]
+name = "backtest_server"
+path = "src/bin/backtest_server.rs"
+
+[dev-dependencies]
+approx = "0.5"
+proptest = "1.4"
+criterion = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Benchmarks can be added later
+# [[bench]]
+# name = "benchmarks"
+# harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
