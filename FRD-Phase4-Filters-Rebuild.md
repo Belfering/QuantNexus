@@ -1,0 +1,3 @@
+# Phase 4: Filters and Rebuild
+
+We will add a "filter" at the top of the database so that we can say further filter the results. Those should have an IS and OOS tag section. So like [IS/OOS] [metric] so I can say [IS] [CAGR] [> 0] and add it to the "current requirements" or [OOS] [CAGR] [> 0] to add that to the "current requirements" (or both) and then click sort to leave only the branches that pass those metrics. We should also have the option of "Best [X] branches by [Metric]" So I can for example take the best branch with the highest CAGR. Plus a rebuild section where you can directly create OOS algos from the shards.

@@ -2109,6 +2109,7 @@ import passwordResetRoutes from './routes/password-reset.mjs'
 import adminInviteRoutes from './routes/admin-invites.mjs'
 import oauthRoutes from './routes/oauth.mjs'
 import liveRoutes from './routes/live.mjs'
+import optimizationResultsRoutes from './routes/optimizationResults.mjs'
 
 // Register auth routes
 app.use('/api/auth', authRoutes)
@@ -2116,6 +2117,7 @@ app.use('/api/auth', passwordResetRoutes)
 app.use('/api/oauth', oauthRoutes)
 app.use('/api/admin/invites', adminInviteRoutes)
 app.use('/api/admin', liveRoutes)
+app.use('/api/optimization', optimizationResultsRoutes)
 
 // Initialize database on startup
 let dbInitialized = false

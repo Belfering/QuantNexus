@@ -17,6 +17,8 @@ interface UseBatchBacktestResult {
     parameterRanges: ParameterRange[],
     splitConfig: ISOOSSplitConfig | undefined,
     requirements: EligibilityRequirement[],
+    botId: string,
+    botName: string,
     mode?: string,
     costBps?: number
   ) => Promise<void>
@@ -32,6 +34,8 @@ export function useBatchBacktest(): UseBatchBacktestResult {
     parameterRanges: ParameterRange[],
     splitConfig: ISOOSSplitConfig | undefined,
     requirements: EligibilityRequirement[],
+    botId: string,
+    botName: string,
     mode: string = 'CC',
     costBps: number = 5
   ) => {
@@ -170,11 +174,46 @@ export function useBatchBacktest(): UseBatchBacktestResult {
       }
 
       // Mark job as complete
+      const endTime = Date.now()
       setJob(prev => prev ? {
         ...prev,
         status: 'complete',
-        endTime: Date.now()
+        endTime
       } : null)
+
+      // Persist job to database
+      try {
+        const passingResults = newJob.results.filter(r => r.passed)
+
+        await fetch('/api/optimization/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            botId,
+            botName,
+            status: 'completed',
+            totalBranches: combinations.length,
+            completedBranches: combinations.length,
+            passingBranches: passingResults.length,
+            startTime: newJob.startTime,
+            endTime,
+            results: passingResults.map(r => ({
+              branchId: r.branchId,
+              parameterLabel: r.combination.label,
+              parameterValues: r.combination.parameterValues,
+              isMetrics: r.isMetrics,
+              oosMetrics: r.oosMetrics,
+              passed: r.passed,
+              failedRequirements: r.failedRequirements
+            }))
+          })
+        })
+
+        console.log('[BatchBacktest] Job saved to database')
+      } catch (saveError: any) {
+        console.error('[BatchBacktest] Failed to save job to database:', saveError)
+        // Don't fail the job if persistence fails
+      }
 
     } catch (error: any) {
       // Overall job error

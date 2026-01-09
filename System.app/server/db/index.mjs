@@ -295,6 +295,54 @@ export function initializeDatabase() {
       created_at INTEGER
     );
 
+    -- Optimization Jobs and Results (Branch Generation Persistence)
+    CREATE TABLE IF NOT EXISTS optimization_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id TEXT NOT NULL,
+      bot_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      total_branches INTEGER NOT NULL,
+      completed_branches INTEGER NOT NULL,
+      passing_branches INTEGER NOT NULL,
+      start_time INTEGER NOT NULL,
+      end_time INTEGER,
+      error_message TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS optimization_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES optimization_jobs(id) ON DELETE CASCADE,
+      branch_id TEXT NOT NULL,
+      parameter_label TEXT NOT NULL,
+      parameter_values TEXT NOT NULL,
+      is_cagr REAL,
+      is_sharpe REAL,
+      is_calmar REAL,
+      is_max_drawdown REAL,
+      is_sortino REAL,
+      is_treynor REAL,
+      is_beta REAL,
+      is_volatility REAL,
+      is_win_rate REAL,
+      is_avg_turnover REAL,
+      is_avg_holdings REAL,
+      oos_cagr REAL,
+      oos_sharpe REAL,
+      oos_calmar REAL,
+      oos_max_drawdown REAL,
+      oos_sortino REAL,
+      oos_treynor REAL,
+      oos_beta REAL,
+      oos_volatility REAL,
+      oos_win_rate REAL,
+      oos_avg_turnover REAL,
+      oos_avg_holdings REAL,
+      passed INTEGER NOT NULL,
+      failed_requirements TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_id);
     CREATE INDEX IF NOT EXISTS idx_bots_visibility ON bots(visibility);
@@ -313,6 +361,12 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_session_token ON user_sessions(refresh_token_hash);
     CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_accounts(user_id);
     CREATE INDEX IF NOT EXISTS idx_oauth_provider ON oauth_accounts(provider, provider_account_id);
+    CREATE INDEX IF NOT EXISTS idx_opt_jobs_bot ON optimization_jobs(bot_id);
+    CREATE INDEX IF NOT EXISTS idx_opt_jobs_status ON optimization_jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_opt_jobs_created ON optimization_jobs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_opt_results_job ON optimization_results(job_id);
+    CREATE INDEX IF NOT EXISTS idx_opt_results_is_cagr ON optimization_results(is_cagr DESC);
+    CREATE INDEX IF NOT EXISTS idx_opt_results_oos_cagr ON optimization_results(oos_cagr DESC);
   `)
 
   // Migration: Add backtest_mode and backtest_cost_bps columns to bots table

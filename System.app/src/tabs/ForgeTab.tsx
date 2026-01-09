@@ -5,6 +5,7 @@ import { type RefObject, useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { USED_TICKERS_DATALIST_ID } from '@/constants'
+import { OptimizationResultsPanel } from '@/features/optimization/components/OptimizationResultsPanel'
 import type {
   FlowNode,
   CallChain,
@@ -141,6 +142,7 @@ export function ForgeTab({
 
   // Flowchart scroll width for the horizontal scrollbar (updated by App.tsx)
   const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
+  const { forgeSubtab, setForgeSubtab } = useUIStore()
 
   // Tree operation handlers from store
   const handleAdd = (parentId: string, slot: SlotId, index: number, kind: BlockKind) => {
@@ -712,7 +714,7 @@ export function ForgeTab({
       return
     }
 
-    await runBatchBacktest(current, parameterRanges, splitConfig, requirements, mode, costBps)
+    await runBatchBacktest(current, parameterRanges, splitConfig, requirements, activeBot.id, activeBot.name, mode, costBps)
   }
 
   // Handler to load a selected branch
@@ -736,19 +738,38 @@ export function ForgeTab({
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
       <CardContent className="flex-1 flex flex-col gap-4 p-4 pb-8 overflow-auto min-h-0">
-        {/* Top Zone - Settings Panel */}
-        <div className="shrink-0 border-b border-border pb-4">
-          <SettingsPanel
-            splitConfig={activeBot?.splitConfig}
-            onSplitConfigChange={(config) => {
-              if (activeBot) {
-                useBotStore.getState().setSplitConfig(activeBot.id, config)
-              }
-            }}
-          />
+        {/* Subtab Navigation */}
+        <div className="flex gap-2 shrink-0">
+          <Button
+            variant={forgeSubtab === 'Builder' ? 'accent' : 'secondary'}
+            onClick={() => setForgeSubtab('Builder')}
+          >
+            Builder
+          </Button>
+          <Button
+            variant={forgeSubtab === 'Results' ? 'accent' : 'secondary'}
+            onClick={() => setForgeSubtab('Results')}
+          >
+            Results
+          </Button>
         </div>
 
-        {/* Flowchart Toolbar - Run Forge + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
+        {/* Conditional Content */}
+        {forgeSubtab === 'Builder' ? (
+          <>
+            {/* Top Zone - Settings Panel */}
+            <div className="shrink-0 border-b border-border pb-4">
+              <SettingsPanel
+                splitConfig={activeBot?.splitConfig}
+                onSplitConfigChange={(config) => {
+                  if (activeBot) {
+                    useBotStore.getState().setSplitConfig(activeBot.id, config)
+                  }
+                }}
+              />
+            </div>
+
+            {/* Flowchart Toolbar - Run Forge + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
         <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg shrink-0 z-20 sticky top-0" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
           {/* Left section: Run Forge button + branch count/ETA */}
           <div className="flex items-center gap-3">
@@ -1123,6 +1144,10 @@ export function ForgeTab({
             onSelectBranch={handleSelectBranch}
             onCancel={cancelJob}
           />
+        )}
+          </>
+        ) : (
+          <OptimizationResultsPanel />
         )}
       </CardContent>
     </Card>

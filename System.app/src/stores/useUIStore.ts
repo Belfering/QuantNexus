@@ -6,6 +6,7 @@ import type { TickerModalMode, BlockKind } from '@/shared/components'
 type MainTab = 'Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'
 type DashboardSubtab = 'Portfolio' | 'Partner Program' // Legacy - no longer used
 type AnalyzeSubtab = 'Systems' | 'Correlation Tool'
+type ForgeSubtab = 'Builder' | 'Results'
 type HelpSubtab = 'Changelog' | 'Settings'
 
 interface UIState {
@@ -13,6 +14,7 @@ interface UIState {
   tab: MainTab
   dashboardSubtab: DashboardSubtab
   analyzeSubtab: AnalyzeSubtab
+  forgeSubtab: ForgeSubtab
   adminTab: AdminSubtab
   databasesTab: DatabasesSubtab
   helpTab: HelpSubtab
@@ -53,6 +55,7 @@ interface UIState {
   setTab: (tab: MainTab) => void
   setDashboardSubtab: (subtab: DashboardSubtab) => void
   setAnalyzeSubtab: (subtab: AnalyzeSubtab) => void
+  setForgeSubtab: (subtab: ForgeSubtab) => void
   setAdminTab: (subtab: AdminSubtab) => void
   setDatabasesTab: (subtab: DatabasesSubtab) => void
   setHelpTab: (subtab: HelpSubtab) => void
@@ -100,6 +103,7 @@ export const useUIStore = create<UIState>()((set) => ({
   tab: 'Model',
   dashboardSubtab: 'Portfolio',
   analyzeSubtab: 'Systems',
+  forgeSubtab: 'Builder',
   adminTab: 'Atlas Overview',
   databasesTab: 'Systems',
   helpTab: 'Changelog',
@@ -140,6 +144,7 @@ export const useUIStore = create<UIState>()((set) => ({
   setTab: (tab) => set({ tab }),
   setDashboardSubtab: (dashboardSubtab) => set({ dashboardSubtab }),
   setAnalyzeSubtab: (analyzeSubtab) => set({ analyzeSubtab }),
+  setForgeSubtab: (forgeSubtab) => set({ forgeSubtab }),
   setAdminTab: (adminTab) => set({ adminTab }),
   setDatabasesTab: (databasesTab) => set({ databasesTab }),
   setHelpTab: (helpTab) => set({ helpTab }),

@@ -1,0 +1,3 @@
+# Phase 2: Database and Shards
+
+Database and Shards set up. We need to add many more metrics to the IS/OOS calculations as well as the Pass/Fail criteria. All pass fail criteria should be calculated only on IS stats. In fact they should all have "IS" in front of the associated metric. For example if I select CAGR, the "Current Requirements = CAGR ≥ 0" should automatically read "Current Requirements = IS CAGR ≥ 0". The results of the runs with the stats need to be exportable. The runs need to be renamable and while retaining their unique run IDs. They need timestamps for when they were started.

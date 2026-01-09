@@ -258,6 +258,59 @@ export const tickerRegistry = sqliteTable('ticker_registry', {
 })
 
 // ============================================
+// OPTIMIZATION JOBS (Branch Generation Results)
+// ============================================
+export const optimizationJobs = sqliteTable('optimization_jobs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  botId: text('bot_id').notNull(),
+  botName: text('bot_name').notNull(),
+  status: text('status').notNull(), // 'running' | 'completed' | 'error' | 'cancelled'
+  totalBranches: integer('total_branches').notNull(),
+  completedBranches: integer('completed_branches').notNull(),
+  passingBranches: integer('passing_branches').notNull(),
+  startTime: integer('start_time').notNull(), // Unix timestamp in ms
+  endTime: integer('end_time'),
+  errorMessage: text('error_message'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+export const optimizationResults = sqliteTable('optimization_results', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  jobId: integer('job_id').notNull().references(() => optimizationJobs.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull(),
+  parameterLabel: text('parameter_label').notNull(), // e.g., "window=14, threshold=70"
+  parameterValues: text('parameter_values').notNull(), // JSON stringified Record<string, number>
+  // IS Metrics (In-Sample)
+  isCagr: real('is_cagr'),
+  isSharpe: real('is_sharpe'),
+  isCalmar: real('is_calmar'),
+  isMaxDrawdown: real('is_max_drawdown'),
+  isSortino: real('is_sortino'),
+  isTreynor: real('is_treynor'),
+  isBeta: real('is_beta'),
+  isVolatility: real('is_volatility'),
+  isWinRate: real('is_win_rate'),
+  isAvgTurnover: real('is_avg_turnover'),
+  isAvgHoldings: real('is_avg_holdings'),
+  // OOS Metrics (Out-of-Sample)
+  oosCagr: real('oos_cagr'),
+  oosSharpe: real('oos_sharpe'),
+  oosCalmar: real('oos_calmar'),
+  oosMaxDrawdown: real('oos_max_drawdown'),
+  oosSortino: real('oos_sortino'),
+  oosTreynor: real('oos_treynor'),
+  oosBeta: real('oos_beta'),
+  oosVolatility: real('oos_volatility'),
+  oosWinRate: real('oos_win_rate'),
+  oosAvgTurnover: real('oos_avg_turnover'),
+  oosAvgHoldings: real('oos_avg_holdings'),
+  // Status
+  passed: integer('passed', { mode: 'boolean' }).notNull(),
+  failedRequirements: text('failed_requirements'), // JSON array
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+// ============================================
 // RELATIONS
 // ============================================
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -302,4 +355,12 @@ export const portfolioPositionsRelations = relations(portfolioPositions, ({ one 
 
 export const callChainsRelations = relations(callChains, ({ one }) => ({
   owner: one(users, { fields: [callChains.ownerId], references: [users.id] }),
+}))
+
+export const optimizationJobsRelations = relations(optimizationJobs, ({ many }) => ({
+  results: many(optimizationResults),
+}))
+
+export const optimizationResultsRelations = relations(optimizationResults, ({ one }) => ({
+  job: one(optimizationJobs, { fields: [optimizationResults.jobId], references: [optimizationJobs.id] }),
 }))
