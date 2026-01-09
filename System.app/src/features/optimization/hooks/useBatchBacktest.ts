@@ -68,7 +68,8 @@ export function useBatchBacktest(): UseBatchBacktestResult {
 
     try {
       // Try to use parallel batch API for better performance
-      const useParallelApi = true // Can be controlled by environment/config
+      // TODO: Complete Python backtester implementation - currently using cached Node.js
+      const useParallelApi = false // Can be controlled by environment/config
 
       if (useParallelApi) {
         // Prepare branches for parallel processing
