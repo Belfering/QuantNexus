@@ -151,6 +151,59 @@ const parseRatioTicker = (ticker) => {
 }
 
 // ============================================
+// IS/OOS SPLIT LOGIC
+// ============================================
+
+/**
+ * Split timestamps into in-sample (IS) and out-of-sample (OOS) sets based on strategy
+ * @param {number[]} dates - Array of timestamps (seconds since epoch)
+ * @param {string} strategy - Split strategy: 'even_odd_month' | 'even_odd_year' | 'chronological'
+ * @param {string} [chronologicalDate] - Threshold date for chronological strategy (YYYY-MM-DD)
+ * @returns {{ isDates: Set<number>, oosDates: Set<number> }}
+ */
+function splitDates(dates, strategy, chronologicalDate) {
+  const isDates = new Set()
+  const oosDates = new Set()
+
+  for (const timestamp of dates) {
+    const date = new Date(timestamp * 1000)
+
+    if (strategy === 'even_odd_month') {
+      // Odd months = IS (Jan, Mar, May, Jul, Sep, Nov)
+      // Even months = OOS (Feb, Apr, Jun, Aug, Oct, Dec)
+      const month = date.getMonth() + 1
+      if ([1, 3, 5, 7, 9, 11].includes(month)) {
+        isDates.add(timestamp)
+      } else {
+        oosDates.add(timestamp)
+      }
+    } else if (strategy === 'even_odd_year') {
+      // Odd years = IS (2019, 2021, 2023, etc.)
+      // Even years = OOS (2020, 2022, 2024, etc.)
+      const year = date.getFullYear()
+      if (year % 2 === 1) {
+        isDates.add(timestamp)
+      } else {
+        oosDates.add(timestamp)
+      }
+    } else if (strategy === 'chronological' && chronologicalDate) {
+      // Before threshold = IS, after threshold = OOS
+      const threshold = new Date(chronologicalDate).getTime() / 1000
+      if (timestamp < threshold) {
+        isDates.add(timestamp)
+      } else {
+        oosDates.add(timestamp)
+      }
+    } else {
+      // Fallback: if strategy is unknown or chronologicalDate missing, put everything in IS
+      isDates.add(timestamp)
+    }
+  }
+
+  return { isDates, oosDates }
+}
+
+// ============================================
 // INDICATOR CALCULATIONS
 // ============================================
 
@@ -3992,6 +4045,7 @@ export async function runBacktest(payload, options = {}) {
   const costBps = options.costBps ?? 0
   const indicatorOverlays = options.indicatorOverlays || [] // Conditions to show as chart overlays
   const customIndicators = options.customIndicators || [] // FRD-035: Custom indicators
+  const splitConfig = options.splitConfig // IS/OOS split configuration
 
   // Parse payload if string
   const rawNode = typeof payload === 'string' ? JSON.parse(payload) : payload
@@ -4362,6 +4416,163 @@ export async function runBacktest(payload, options = {}) {
   const avgHoldings = holdingsCount > 0 ? totalHoldings / holdingsCount : 0
   const winRate = (winDays + lossDays) > 0 ? winDays / (winDays + lossDays) : 0
 
+  // Compute IS/OOS metrics if split is enabled
+  let isMetrics = null
+  let oosMetrics = null
+  if (splitConfig?.enabled) {
+    // Extract all timestamps from the equity curve
+    const allTimestamps = points.map(p => p.time)
+
+    // Split dates using the configured strategy
+    const { isDates, oosDates } = splitDates(
+      allTimestamps,
+      splitConfig.strategy,
+      splitConfig.chronologicalDate
+    )
+
+    // Filter equity points and returns for IS
+    const isIndices = []
+    const isEquityValues = []
+    const isReturns = []
+    const isSpyReturns = []
+    for (let i = 0; i < points.length; i++) {
+      if (isDates.has(points[i].time)) {
+        isIndices.push(i)
+        isEquityValues.push(points[i].value)
+        isReturns.push(returns[i])
+        isSpyReturns.push(spyReturns[i])
+      }
+    }
+
+    // Filter equity points and returns for OOS
+    const oosIndices = []
+    const oosEquityValues = []
+    const oosReturns = []
+    const oosSpyReturns = []
+    for (let i = 0; i < points.length; i++) {
+      if (oosDates.has(points[i].time)) {
+        oosIndices.push(i)
+        oosEquityValues.push(points[i].value)
+        oosReturns.push(returns[i])
+        oosSpyReturns.push(spyReturns[i])
+      }
+    }
+
+    // Compute IS metrics
+    if (isEquityValues.length > 0 && isReturns.length > 0) {
+      const isBaseMetrics = computeMetrics(isEquityValues, isReturns)
+
+      // Compute IS Treynor and Beta
+      let isTreynor = 0
+      let isBeta = 0
+      if (isSpyReturns.length > 1 && isReturns.length > 1) {
+        const meanRet = isReturns.reduce((a, b) => a + b, 0) / isReturns.length
+        const meanSpy = isSpyReturns.reduce((a, b) => a + b, 0) / isSpyReturns.length
+        let cov = 0
+        let varSpy = 0
+        for (let i = 0; i < isReturns.length; i++) {
+          cov += (isReturns[i] - meanRet) * (isSpyReturns[i] - meanSpy)
+          varSpy += (isSpyReturns[i] - meanSpy) ** 2
+        }
+        isBeta = varSpy > 0 ? cov / varSpy : 0
+        if (isBeta > 0) {
+          isTreynor = (isBaseMetrics.cagr) / isBeta
+        }
+      }
+
+      // Compute IS win rate, best/worst day
+      let isWinDays = 0
+      let isLossDays = 0
+      let isBestDay = -Infinity
+      let isWorstDay = Infinity
+      for (const r of isReturns) {
+        if (r > 0) isWinDays++
+        else if (r < 0) isLossDays++
+        if (r > isBestDay) isBestDay = r
+        if (r < isWorstDay) isWorstDay = r
+      }
+      const isWinRate = (isWinDays + isLossDays) > 0 ? isWinDays / (isWinDays + isLossDays) : 0
+
+      isMetrics = {
+        startDate: isEquityValues.length > 0 ? safeIsoDate(points[isIndices[0]].time) : '',
+        endDate: isEquityValues.length > 0 ? safeIsoDate(points[isIndices[isIndices.length - 1]].time) : '',
+        days: isBaseMetrics.days,
+        years: isBaseMetrics.days / 252,
+        totalReturn: isEquityValues.length > 0 ? isEquityValues[isEquityValues.length - 1] - 1 : 0,
+        cagr: isBaseMetrics.cagr,
+        vol: isBaseMetrics.volatility,
+        maxDrawdown: isBaseMetrics.maxDrawdown,
+        calmar: isBaseMetrics.calmar,
+        sharpe: isBaseMetrics.sharpe,
+        sortino: isBaseMetrics.sortino,
+        treynor: isTreynor,
+        beta: isBeta,
+        winRate: isWinRate,
+        bestDay: isBestDay === -Infinity ? 0 : isBestDay,
+        worstDay: isWorstDay === Infinity ? 0 : isWorstDay,
+        avgTurnover: 0, // Not computed per-split (requires day-level allocation tracking)
+        avgHoldings: 0, // Not computed per-split
+      }
+    }
+
+    // Compute OOS metrics
+    if (oosEquityValues.length > 0 && oosReturns.length > 0) {
+      const oosBaseMetrics = computeMetrics(oosEquityValues, oosReturns)
+
+      // Compute OOS Treynor and Beta
+      let oosTreynor = 0
+      let oosBeta = 0
+      if (oosSpyReturns.length > 1 && oosReturns.length > 1) {
+        const meanRet = oosReturns.reduce((a, b) => a + b, 0) / oosReturns.length
+        const meanSpy = oosSpyReturns.reduce((a, b) => a + b, 0) / oosSpyReturns.length
+        let cov = 0
+        let varSpy = 0
+        for (let i = 0; i < oosReturns.length; i++) {
+          cov += (oosReturns[i] - meanRet) * (oosSpyReturns[i] - meanSpy)
+          varSpy += (oosSpyReturns[i] - meanSpy) ** 2
+        }
+        oosBeta = varSpy > 0 ? cov / varSpy : 0
+        if (oosBeta > 0) {
+          oosTreynor = (oosBaseMetrics.cagr) / oosBeta
+        }
+      }
+
+      // Compute OOS win rate, best/worst day
+      let oosWinDays = 0
+      let oosLossDays = 0
+      let oosBestDay = -Infinity
+      let oosWorstDay = Infinity
+      for (const r of oosReturns) {
+        if (r > 0) oosWinDays++
+        else if (r < 0) oosLossDays++
+        if (r > oosBestDay) oosBestDay = r
+        if (r < oosWorstDay) oosWorstDay = r
+      }
+      const oosWinRate = (oosWinDays + oosLossDays) > 0 ? oosWinDays / (oosWinDays + oosLossDays) : 0
+
+      oosMetrics = {
+        startDate: oosEquityValues.length > 0 ? safeIsoDate(points[oosIndices[0]].time) : '',
+        endDate: oosEquityValues.length > 0 ? safeIsoDate(points[oosIndices[oosIndices.length - 1]].time) : '',
+        days: oosBaseMetrics.days,
+        years: oosBaseMetrics.days / 252,
+        totalReturn: oosEquityValues.length > 0 ? oosEquityValues[oosEquityValues.length - 1] - 1 : 0,
+        cagr: oosBaseMetrics.cagr,
+        vol: oosBaseMetrics.volatility,
+        maxDrawdown: oosBaseMetrics.maxDrawdown,
+        calmar: oosBaseMetrics.calmar,
+        sharpe: oosBaseMetrics.sharpe,
+        sortino: oosBaseMetrics.sortino,
+        treynor: oosTreynor,
+        beta: oosBeta,
+        winRate: oosWinRate,
+        bestDay: oosBestDay === -Infinity ? 0 : oosBestDay,
+        worstDay: oosWorstDay === Infinity ? 0 : oosWorstDay,
+        avgTurnover: 0, // Not computed per-split
+        avgHoldings: 0, // Not computed per-split
+      }
+    }
+  }
+
   // Create a context object for indicator lookups outside the main eval loop
   const overlayCtx = {
     db,
@@ -4499,6 +4710,8 @@ export async function runBacktest(payload, options = {}) {
       worstDay: worstDay === Infinity ? 0 : worstDay,
       tradingDays: metrics.days,
     },
+    isMetrics, // In-sample metrics (only if split enabled)
+    oosMetrics, // Out-of-sample metrics (only if split enabled)
     equityCurve: points.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
     benchmarkCurve: benchmarkPoints.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
     // Include daily allocations for the Allocations tab

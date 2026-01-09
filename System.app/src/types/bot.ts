@@ -5,6 +5,8 @@ import type { FlowNode, CallChain, CustomIndicator } from './flowNode'
 import type { UserId } from './theme'
 import type { BacktestMode, BotBacktestState } from './backtest'
 import type { ParameterRange } from '@/features/parameters/types'
+import type { ISOOSSplitConfig } from './split'
+import type { BranchGenerationJob } from './branch'
 
 export type SystemVisibility = 'private' | 'community'
 export type BotVisibility = SystemVisibility // Backwards compat alias
@@ -55,6 +57,8 @@ export type BotSession = {
   callChains: CallChain[] // Per-bot call chains (stored with bot payload)
   customIndicators: CustomIndicator[] // Per-bot custom indicators (FRD-035)
   parameterRanges: ParameterRange[] // Optimization ranges for parameters
+  splitConfig?: ISOOSSplitConfig // IS/OOS split configuration for optimization
+  branchGenerationJob?: BranchGenerationJob // Current branch generation job state
   tabContext: 'Forge' | 'Model' // Which tab this bot belongs to
 }
 

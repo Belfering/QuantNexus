@@ -70,6 +70,10 @@ import type { ParameterField, ParameterRange } from '@/features/parameters/types
 import { loadCallChainsFromApi } from '@/features/auth'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
 import { useTreeSync, useTreeUndo } from '@/hooks'
+import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest'
+import { BranchGenerationPanel } from '@/features/optimization/components/BranchGenerationPanel'
+import { applyBranchToTree } from '@/features/optimization/services/branchGenerator'
+import type { EligibilityRequirement } from '@/types/admin'
 
 export interface ForgeTabProps {
   // Backtest panel props (from App.tsx - derived or callback)
@@ -673,32 +677,109 @@ export function ForgeTab({
     }
   }, [flowchartScrollRef])
 
+  // --- Optimization state and handlers ---
+  const [requirements, setRequirements] = useState<EligibilityRequirement[]>([])
+  const { job: batchJob, runBatchBacktest, cancelJob } = useBatchBacktest()
+
+  // Load requirements from API on mount
+  useEffect(() => {
+    async function loadRequirements() {
+      try {
+        const response = await fetch('/api/admin/eligibility')
+        if (response.ok) {
+          const data = await response.json()
+          setRequirements(data.eligibilityRequirements || [])
+        }
+      } catch (error) {
+        console.error('Failed to load eligibility requirements:', error)
+      }
+    }
+    loadRequirements()
+  }, [])
+
+  // Handler to start branch generation
+  const handleGenerateBranches = async () => {
+    if (!activeBot) return
+
+    const parameterRanges = activeBot.parameterRanges || []
+    const splitConfig = activeBot.splitConfig
+    const mode = 'CC' // Default mode
+    const costBps = 5 // Default cost
+
+    // Ensure split is enabled
+    if (!splitConfig?.enabled) {
+      alert('Please enable IS/OOS Split in the Settings Panel to run optimization')
+      return
+    }
+
+    await runBatchBacktest(current, parameterRanges, splitConfig, requirements, mode, costBps)
+  }
+
+  // Handler to load a selected branch
+  const handleSelectBranch = (branchId: string) => {
+    if (!activeBot || !batchJob) return
+
+    // Find the branch result
+    const branchResult = batchJob.results.find(r => r.branchId === branchId)
+    if (!branchResult) {
+      console.error('Branch result not found:', branchId)
+      return
+    }
+
+    // Apply the branch combination to the current tree
+    const modifiedTree = applyBranchToTree(current, branchResult.combination, activeBot.parameterRanges || [])
+
+    // Push to history
+    treeStore.pushTree(modifiedTree)
+  }
+
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
       <CardContent className="flex-1 flex flex-col gap-4 p-4 pb-8 overflow-auto min-h-0">
         {/* Top Zone - Settings Panel */}
         <div className="shrink-0 border-b border-border pb-4">
-          <SettingsPanel />
+          <SettingsPanel
+            splitConfig={activeBot?.splitConfig}
+            onSplitConfigChange={(config) => {
+              if (activeBot) {
+                useBotStore.getState().setSplitConfig(activeBot.id, config)
+              }
+            }}
+          />
         </div>
 
-        {/* Flowchart Toolbar - ETFs Only + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
+        {/* Flowchart Toolbar - Run Forge + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
         <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg shrink-0 z-20 sticky top-0" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
-          {/* Left section: ETFs Only checkbox + ticker count */}
+          {/* Left section: Run Forge button + branch count/ETA */}
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={etfsOnlyMode}
-                onChange={(e) => setEtfsOnlyMode(e.target.checked)}
-                className="w-4 h-4 rounded border-border cursor-pointer"
-              />
-              <span className="text-sm font-semibold">ETFs Only</span>
-            </label>
-            <span className="text-xs text-muted-foreground">
-              {etfsOnlyMode
-                ? `Showing ${tickerOptions.length} ETFs`
-                : `Showing all ${tickerOptions.length} tickers`}
-            </span>
+            {(() => {
+              // Calculate branch count from enabled parameter ranges
+              const enabledRanges = (activeBot?.parameterRanges || []).filter(r => r.enabled)
+              let branchCount = 1
+              for (const range of enabledRanges) {
+                const steps = Math.floor((range.max - range.min) / range.step) + 1
+                branchCount *= steps
+              }
+              const hasRanges = enabledRanges.length > 0
+              const etaMinutes = Math.ceil(branchCount * 0.5 / 60) // Rough estimate: 0.5s per branch
+
+              return (
+                <>
+                  <Button
+                    size="sm"
+                    disabled={!hasRanges}
+                    onClick={handleGenerateBranches}
+                  >
+                    Run Forge
+                  </Button>
+                  {hasRanges && (
+                    <span className="text-xs text-muted-foreground">
+                      {branchCount} branches (~{etaMinutes} min)
+                    </span>
+                  )}
+                </>
+              )
+            })()}
           </div>
           {/* Center section: Find/Replace Controls */}
           <div className="flex items-center gap-2">
@@ -1033,6 +1114,15 @@ export function ForgeTab({
           >
             <div style={{ width: flowchartScrollWidth > 0 ? flowchartScrollWidth : 1, height: '1px' }} />
           </div>
+        )}
+
+        {/* Branch Generation Panel */}
+        {batchJob && (
+          <BranchGenerationPanel
+            job={batchJob}
+            onSelectBranch={handleSelectBranch}
+            onCancel={cancelJob}
+          />
         )}
       </CardContent>
     </Card>

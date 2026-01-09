@@ -1,31 +1,75 @@
 // src/components/SettingsPanel.tsx
 // Settings and Pass/Fail Criteria panel for Forge tab
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { METRIC_LABELS, type EligibilityMetric, type EligibilityRequirement } from '@/types/admin'
+import { ISOOSSplitCard } from '@/components/Forge/ISOOSSplitCard'
+import type { ISOOSSplitConfig } from '@/types/split'
 
-export function SettingsPanel() {
-  // Local state (no API calls)
+interface SettingsPanelProps {
+  splitConfig?: ISOOSSplitConfig
+  onSplitConfigChange: (config: ISOOSSplitConfig) => void
+}
+
+export function SettingsPanel({ splitConfig, onSplitConfigChange }: SettingsPanelProps) {
+  // State with API integration
   const [requirements, setRequirements] = useState<EligibilityRequirement[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [liveMonthsValue, setLiveMonthsValue] = useState(0)
   const [newMetric, setNewMetric] = useState<EligibilityMetric>('cagr')
   const [newComparison, setNewComparison] = useState<'at_least' | 'at_most'>('at_least')
   const [newMetricValue, setNewMetricValue] = useState(0)
 
-  // Handler functions (local state only, no API)
-  const handleSaveLiveMonths = () => {
+  // Load requirements from API on mount
+  useEffect(() => {
+    async function loadRequirements() {
+      try {
+        const response = await fetch('/api/admin/eligibility')
+        if (response.ok) {
+          const data = await response.json()
+          setRequirements(data.eligibilityRequirements || [])
+        }
+      } catch (error) {
+        console.error('Failed to load eligibility requirements:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadRequirements()
+  }, [])
+
+  // Save requirements to API
+  const saveRequirements = async (newRequirements: EligibilityRequirement[]) => {
+    try {
+      const response = await fetch('/api/admin/eligibility', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eligibilityRequirements: newRequirements })
+      })
+      if (response.ok) {
+        setRequirements(newRequirements)
+      } else {
+        console.error('Failed to save eligibility requirements')
+      }
+    } catch (error) {
+      console.error('Failed to save eligibility requirements:', error)
+    }
+  }
+
+  // Handler functions with API integration
+  const handleSaveLiveMonths = async () => {
     const filtered = requirements.filter(r => r.type !== 'live_months')
     const newReq: EligibilityRequirement = {
       id: 'live_months',
       type: 'live_months',
       value: liveMonthsValue
     }
-    setRequirements([...filtered, newReq])
+    await saveRequirements([...filtered, newReq])
   }
 
-  const handleAddMetricRequirement = () => {
+  const handleAddMetricRequirement = async () => {
     const newReq: EligibilityRequirement = {
       id: `metric-${Date.now()}`,
       type: 'metric',
@@ -33,24 +77,32 @@ export function SettingsPanel() {
       comparison: newComparison,
       value: newMetricValue
     }
-    setRequirements([...requirements, newReq])
+    await saveRequirements([...requirements, newReq])
   }
 
-  const handleRemoveRequirement = (id: string) => {
-    setRequirements(requirements.filter(r => r.id !== id))
+  const handleRemoveRequirement = async (id: string) => {
+    await saveRequirements(requirements.filter(r => r.id !== id))
   }
 
-  const handleToggleETFsOnly = (checked: boolean) => {
+  const handleToggleETFsOnly = async (checked: boolean) => {
     if (checked) {
       const newReq: EligibilityRequirement = {
         id: `etfs-only-${Date.now()}`,
         type: 'etfs_only',
         value: 1
       }
-      setRequirements([...requirements, newReq])
+      await saveRequirements([...requirements, newReq])
     } else {
-      setRequirements(requirements.filter(r => r.type !== 'etfs_only'))
+      await saveRequirements(requirements.filter(r => r.type !== 'etfs_only'))
     }
+  }
+
+  if (isLoading) {
+    return (
+      <Card className="p-6">
+        <div className="text-sm text-muted">Loading requirements...</div>
+      </Card>
+    )
   }
 
   return (
@@ -134,14 +186,13 @@ export function SettingsPanel() {
           )}
         </div>
 
-        {/* Right Section - Time Period Analysis */}
+        {/* Right Section - IS/OOS Split Configuration */}
         <div className="p-4 bg-muted/30 rounded-lg">
-          <div className="text-sm font-medium mb-3">Time Period Analysis</div>
-          <div className="space-y-2">
-            <div className="text-xs text-muted">
-              Coming soon: Historical period breakdown and performance analysis across different market conditions.
-            </div>
-          </div>
+          <div className="text-sm font-medium mb-3">IS/OOS Split</div>
+          <ISOOSSplitCard
+            splitConfig={splitConfig}
+            onSplitConfigChange={onSplitConfigChange}
+          />
         </div>
       </div>
     </Card>

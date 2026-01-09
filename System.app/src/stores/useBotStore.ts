@@ -73,6 +73,8 @@ interface BotState {
   closeBot: (botId: string) => void
   updateBot: (botId: string, updates: Partial<BotSession>) => void
   setParameterRanges: (botId: string, ranges: import('@/features/parameters/types').ParameterRange[]) => void
+  setSplitConfig: (botId: string, config: import('@/types/split').ISOOSSplitConfig | undefined) => void
+  setBranchGenerationJob: (botId: string, job: import('@/types/branch').BranchGenerationJob | undefined) => void
 
   // Reset for logout
   reset: () => void
@@ -268,6 +270,22 @@ export const useBotStore = create<BotState>()((set, get) => ({
     set((state) => ({
       bots: state.bots.map((b) =>
         b.id === botId ? { ...b, parameterRanges: ranges } : b
+      ),
+    }))
+  },
+
+  setSplitConfig: (botId, config) => {
+    set((state) => ({
+      bots: state.bots.map((b) =>
+        b.id === botId ? { ...b, splitConfig: config } : b
+      ),
+    }))
+  },
+
+  setBranchGenerationJob: (botId, job) => {
+    set((state) => ({
+      bots: state.bots.map((b) =>
+        b.id === botId ? { ...b, branchGenerationJob: job } : b
       ),
     }))
   },

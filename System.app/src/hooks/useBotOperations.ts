@@ -239,6 +239,7 @@ export function useBotOperations({
       backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
       callChains: sourceBotSession.callChains.map(cc => ({ ...cc, id: `call-${newId()}` })),
       customIndicators: sourceBotSession.customIndicators?.map(ci => ({ ...ci, id: `ci-${newId()}` })) || [],
+      parameterRanges: sourceBotSession.parameterRanges || [],
       tabContext: sourceBotSession.tabContext, // Preserve tab context
     }
     setBots((prev) => [...prev, newBot])
@@ -388,6 +389,8 @@ export function useBotOperations({
         backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
         callChains: (bot.callChains || []).map(cc => ({ ...cc, id: `call-${newId()}` })),
         customIndicators: (bot.customIndicators || []).map(ci => ({ ...ci, id: `ci-${newId()}` })),
+        parameterRanges: [],
+        tabContext: 'Model',
       }
       setBots((prev) => [...prev, session])
       setActiveBotId(session.id)
@@ -434,6 +437,8 @@ export function useBotOperations({
         backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
         callChains: bot.callChains || [],
         customIndicators: bot.customIndicators || [],
+        parameterRanges: [],
+        tabContext: 'Model',
       }
       setBots((prev) => [...prev, session])
       setActiveBotId(session.id)

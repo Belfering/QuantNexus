@@ -77,31 +77,36 @@ export type BacktestTraceCollector = {
 export type EquityPoint = LineData<UTCTimestamp>
 export type EquityMarker = { time: UTCTimestamp; text: string }
 
+// Extracted backtest metrics type for reuse in IS/OOS splits
+export type BacktestMetrics = {
+  startDate: string
+  endDate: string
+  days: number
+  years: number
+  totalReturn: number
+  cagr: number
+  vol: number
+  maxDrawdown: number
+  calmar: number
+  sharpe: number
+  sortino: number
+  treynor: number
+  beta: number
+  winRate: number
+  bestDay: number
+  worstDay: number
+  avgTurnover: number
+  avgHoldings: number
+}
+
 export type BacktestResult = {
   points: EquityPoint[]
   benchmarkPoints?: EquityPoint[]
   drawdownPoints: EquityPoint[]
   markers: EquityMarker[]
-  metrics: {
-    startDate: string
-    endDate: string
-    days: number
-    years: number
-    totalReturn: number
-    cagr: number
-    vol: number
-    maxDrawdown: number
-    calmar: number
-    sharpe: number
-    sortino: number
-    treynor: number
-    beta: number
-    winRate: number
-    bestDay: number
-    worstDay: number
-    avgTurnover: number
-    avgHoldings: number
-  }
+  metrics: BacktestMetrics
+  isMetrics?: BacktestMetrics // In-sample metrics (only if IS/OOS split enabled)
+  oosMetrics?: BacktestMetrics // Out-of-sample metrics (only if IS/OOS split enabled)
   days: BacktestDayRow[]
   allocations: BacktestAllocationRow[]
   warnings: BacktestWarning[]
