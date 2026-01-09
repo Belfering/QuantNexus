@@ -92,24 +92,50 @@ export function applyBranchToTree(
       continue
     }
 
-    // Parse the path to navigate the tree (e.g., "node-1.conditions.cond-2.window")
+    // Parse the path to navigate the tree (e.g., "node.conditions.1767985538054.window")
     const pathParts = range.path.split('.')
+
+    // Skip "node" prefix if present (we're already at the node level)
+    let startIndex = 0
+    if (pathParts[0] === 'node') {
+      startIndex = 1
+    }
+
     let current: any = clonedTree
 
     // Navigate to the parent of the target field
-    for (let i = 0; i < pathParts.length - 1; i++) {
+    for (let i = startIndex; i < pathParts.length - 1; i++) {
       const part = pathParts[i]
-      if (current[part] === undefined) {
+
+      // Handle array navigation (e.g., conditions array with ID lookup)
+      if (Array.isArray(current)) {
+        // Find object in array with matching id property
+        const found = current.find((item: any) => item.id === part)
+        if (!found) {
+          console.warn(`[BranchGenerator] Could not find item with id ${part} in array`)
+          break
+        }
+        current = found
+      } else if (current[part] !== undefined) {
+        current = current[part]
+      } else {
         console.warn(`[BranchGenerator] Invalid path ${range.path} at ${part}`)
         break
       }
-      current = current[part]
     }
 
     // Update the target field
     const field = pathParts[pathParts.length - 1]
-    if (current && field in current) {
-      current[field] = value
+    if (current && (field in current || Array.isArray(current))) {
+      if (Array.isArray(current)) {
+        // If current is an array, find item by id
+        const found = current.find((item: any) => item.id === field)
+        if (found && 'value' in found) {
+          found.value = value
+        }
+      } else {
+        current[field] = value
+      }
     } else {
       console.warn(`[BranchGenerator] Could not find field ${field} in path ${range.path}`)
     }
