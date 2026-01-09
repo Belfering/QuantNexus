@@ -80,6 +80,10 @@ export function applyBranchToTree(
   combination: BranchCombination,
   ranges: ParameterRange[]
 ): FlowNode {
+  // Debug: Log the parameters being applied
+  console.log(`[BranchGenerator] ===== Applying Branch: ${combination.label} =====`)
+  console.log(`[BranchGenerator] Parameters:`, combination.parameterValues)
+
   // Deep clone the tree to avoid mutations
   const clonedTree = cloneNode(tree)
 
@@ -92,6 +96,8 @@ export function applyBranchToTree(
       continue
     }
 
+    console.log(`[BranchGenerator] Setting ${range.path} = ${value}`)
+
     // Parse the path to navigate the tree (e.g., "node.conditions.1767985538054.window")
     const pathParts = range.path.split('.')
 
@@ -101,31 +107,90 @@ export function applyBranchToTree(
       startIndex = 1
     }
 
+    // Special handling for condition paths: find the condition anywhere in the tree
+    if (pathParts[startIndex] === 'conditions' && pathParts.length >= startIndex + 3) {
+      const conditionId = pathParts[startIndex + 1]
+      const field = pathParts[startIndex + 2]
+
+      console.log(`[BranchGenerator] Searching tree for condition with ID: ${conditionId}`)
+
+      // Recursively search for the condition
+      const findAndUpdateCondition = (node: any): boolean => {
+        if (node.conditions && Array.isArray(node.conditions)) {
+          const condition = node.conditions.find((c: any) => c.id === conditionId)
+          if (condition) {
+            console.log(`[BranchGenerator] Found condition in node ${node.id}, updating ${field} = ${value}`)
+            condition[field] = value
+            return true
+          }
+        }
+
+        // Recursively search children
+        if (node.children) {
+          for (const slot in node.children) {
+            const children = node.children[slot]
+            if (Array.isArray(children)) {
+              for (const child of children) {
+                if (child && findAndUpdateCondition(child)) {
+                  return true
+                }
+              }
+            } else if (children && findAndUpdateCondition(children)) {
+              return true
+            }
+          }
+        }
+
+        return false
+      }
+
+      if (findAndUpdateCondition(clonedTree)) {
+        continue // Successfully updated, move to next parameter
+      } else {
+        console.warn(`[BranchGenerator] Could not find condition with ID ${conditionId} in tree`)
+        continue
+      }
+    }
+
     let current: any = clonedTree
 
     // Navigate to the parent of the target field
     for (let i = startIndex; i < pathParts.length - 1; i++) {
       const part = pathParts[i]
 
+      console.log(`[BranchGenerator] Step ${i}: part="${part}", current type:`, typeof current, Array.isArray(current) ? '(array)' : '')
+
       // Handle array navigation (e.g., conditions array with ID lookup)
       if (Array.isArray(current)) {
+        // Debug: Log array contents
+        console.log(`[BranchGenerator] Looking for id ${part} in array:`, current.map((item: any) => ({ id: item.id, type: typeof item })))
+
         // Find object in array with matching id property
         const found = current.find((item: any) => item.id === part)
         if (!found) {
           console.warn(`[BranchGenerator] Could not find item with id ${part} in array`)
+          console.warn(`[BranchGenerator] Array has ${current.length} items with IDs:`, current.map((item: any) => item.id))
           break
         }
         current = found
       } else if (current[part] !== undefined) {
+        console.log(`[BranchGenerator] Accessing property "${part}", value type:`, typeof current[part], Array.isArray(current[part]) ? '(array)' : '')
         current = current[part]
       } else {
         console.warn(`[BranchGenerator] Invalid path ${range.path} at ${part}`)
+        console.warn(`[BranchGenerator] current[${part}] = ${current[part]} (type: ${typeof current[part]})`)
+        console.warn(`[BranchGenerator] Current node ID:`, current.id, 'Current node kind:', current.kind)
         break
       }
     }
 
     // Update the target field
     const field = pathParts[pathParts.length - 1]
+
+    // Debug: Log the object we're trying to update
+    console.log(`[BranchGenerator] Updating field "${field}" in object:`, current)
+    console.log(`[BranchGenerator] Available fields:`, current ? Object.keys(current) : 'null')
+
     if (current && (field in current || Array.isArray(current))) {
       if (Array.isArray(current)) {
         // If current is an array, find item by id
@@ -134,10 +199,12 @@ export function applyBranchToTree(
           found.value = value
         }
       } else {
+        console.log(`[BranchGenerator] Setting ${field} = ${value}`)
         current[field] = value
       }
     } else {
       console.warn(`[BranchGenerator] Could not find field ${field} in path ${range.path}`)
+      console.warn(`[BranchGenerator] Current object type:`, typeof current, Array.isArray(current) ? '(array)' : '')
     }
   }
 
