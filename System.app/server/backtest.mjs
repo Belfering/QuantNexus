@@ -4039,6 +4039,25 @@ function clearTickerDataCache() {
 
 export { initTickerCache, clearTickerDataCache }
 
+// ============================================
+// PRICE DATABASE CACHE - Cache built price databases to avoid rebuilding for each backtest
+// ============================================
+const priceDbCache = new Map()
+const MAX_PRICE_DB_CACHE_SIZE = 50
+
+function getPriceDbCacheKey(tickers, indicatorTickers, limit) {
+  const sortedTickers = [...tickers].sort().join(',')
+  const sortedIndicators = [...indicatorTickers].sort().join(',')
+  return `${sortedTickers}|${sortedIndicators}|${limit}`
+}
+
+function clearPriceDbCache() {
+  const count = priceDbCache.size
+  priceDbCache.clear()
+  console.log(`[Backtest] Cleared price DB cache (${count} entries)`)
+  return count
+}
+
 export async function runBacktest(payload, options = {}) {
   console.log(`[Backtest] >>> runBacktest called`)
   const backtestMode = options.mode || 'OC' // OO, CC, CO, OC
@@ -4149,23 +4168,46 @@ export async function runBacktest(payload, options = {}) {
     }
   }
 
-  // Load price data
+  // Load price data and build database (with caching for performance)
   const limit = 20000
-  const loaded = await Promise.all(
-    tickers.map(async (t) => {
-      try {
-        const bars = await fetchOhlcSeries(t, limit)
-        return { ticker: t, bars }
-      } catch (err) {
-        console.warn(`[Backtest] Failed to load ${t}:`, err.message)
-        return { ticker: t, bars: [] }
-      }
-    })
-  )
+  const cacheKey = getPriceDbCacheKey(tickers, indicatorTickers, limit)
 
-  // Use indicator tickers for date intersection to get longer history for lookback calculations
-  // Position tickers may have shorter history but get null values before their data starts
-  const db = buildPriceDb(loaded.filter(l => l.bars.length > 0), indicatorTickers)
+  let db = priceDbCache.get(cacheKey)
+  if (db) {
+    console.log(`[Backtest] Using cached price database (${tickers.length} tickers, ${db.dates.length} dates)`)
+  } else {
+    console.log(`[Backtest] Building price database (${tickers.length} tickers)...`)
+    const loadStart = Date.now()
+
+    const loaded = await Promise.all(
+      tickers.map(async (t) => {
+        try {
+          const bars = await fetchOhlcSeries(t, limit)
+          return { ticker: t, bars }
+        } catch (err) {
+          console.warn(`[Backtest] Failed to load ${t}:`, err.message)
+          return { ticker: t, bars: [] }
+        }
+      })
+    )
+
+    // Use indicator tickers for date intersection to get longer history for lookback calculations
+    // Position tickers may have shorter history but get null values before their data starts
+    db = buildPriceDb(loaded.filter(l => l.bars.length > 0), indicatorTickers)
+
+    const loadTime = Date.now() - loadStart
+    console.log(`[Backtest] Price database built in ${loadTime}ms (${db.dates.length} dates)`)
+
+    // Cache the database for reuse
+    priceDbCache.set(cacheKey, db)
+
+    // Limit cache size
+    if (priceDbCache.size > MAX_PRICE_DB_CACHE_SIZE) {
+      const firstKey = priceDbCache.keys().next().value
+      priceDbCache.delete(firstKey)
+    }
+  }
+
   if (db.dates.length < 3) {
     throw new Error('Not enough overlapping price data to run a backtest')
   }
