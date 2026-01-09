@@ -28,6 +28,7 @@ interface UseBatchBacktestResult {
 export function useBatchBacktest(): UseBatchBacktestResult {
   const [job, setJob] = useState<BranchGenerationJob | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const resultsRef = useRef<BranchResult[]>([]) // Track results for database persistence
 
   const runBatchBacktest = async (
     tree: FlowNode,
@@ -49,6 +50,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
 
     // Initialize job
     const jobId = `job-${Date.now()}`
+    resultsRef.current = [] // Reset results ref
     const newJob: BranchGenerationJob = {
       id: jobId,
       status: 'running',
@@ -308,6 +310,9 @@ export function useBatchBacktest(): UseBatchBacktestResult {
             branchResult.errorMessage = error.message || 'Network error'
           }
 
+          // Add to results ref for database persistence
+          resultsRef.current.push(branchResult)
+
           setJob(prev => prev ? {
             ...prev,
             progress: {
@@ -327,10 +332,14 @@ export function useBatchBacktest(): UseBatchBacktestResult {
         endTime
       } : null)
 
-      // Persist job to database
+      // Persist job to database using results from ref
       try {
-        const passingResults = newJob.results.filter(r => r.passed)
+        const finalResults = resultsRef.current
+        const passingResults = finalResults.filter(r => r.passed)
 
+        console.log(`[BatchBacktest] Total results: ${finalResults.length}, Passing: ${passingResults.length}`)
+
+        // Save ALL results, not just passing ones - user can filter by passed column
         await fetch('/api/optimization/jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -343,7 +352,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
             passingBranches: passingResults.length,
             startTime: newJob.startTime,
             endTime,
-            results: passingResults.map(r => ({
+            results: finalResults.map(r => ({
               branchId: r.branchId,
               parameterLabel: r.combination.label,
               parameterValues: r.combination.parameterValues,
@@ -355,7 +364,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
           })
         })
 
-        console.log('[BatchBacktest] Job saved to database')
+        console.log('[BatchBacktest] Job saved to database successfully')
       } catch (saveError: any) {
         console.error('[BatchBacktest] Failed to save job to database:', saveError)
         // Don't fail the job if persistence fails

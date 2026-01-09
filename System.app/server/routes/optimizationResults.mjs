@@ -64,6 +64,8 @@ router.get('/:jobId/results', (req, res) => {
     const { jobId } = req.params
     const { sortBy = 'is_cagr', order = 'desc', limit = 1000 } = req.query
 
+    console.log(`[Optimization] GET /:jobId/results - jobId=${jobId}, sortBy=${sortBy}, order=${order}`)
+
     // Validate sortBy to prevent SQL injection
     const validSortFields = [
       'branch_id', 'is_cagr', 'is_sharpe', 'is_calmar', 'is_max_drawdown',
@@ -148,6 +150,7 @@ router.get('/:jobId/results', (req, res) => {
       createdAt: result.created_at * 1000, // Convert to ms
     }))
 
+    console.log(`[Optimization] Returning ${formatted.length} results for job ${jobId}`)
     res.json(formatted)
   } catch (error) {
     console.error('[Optimization] Get results error:', error)
@@ -161,6 +164,8 @@ router.get('/:jobId/results', (req, res) => {
  */
 router.post('/jobs', (req, res) => {
   try {
+    console.log('[Optimization] POST /jobs received body:', JSON.stringify(req.body, null, 2))
+
     const {
       botId,
       botName,
@@ -173,6 +178,8 @@ router.post('/jobs', (req, res) => {
       errorMessage,
       results,
     } = req.body
+
+    console.log('[Optimization] Extracted values - botId:', botId, 'botName:', botName, 'status:', status)
 
     // Insert job
     const insertJob = sqlite.prepare(`
@@ -214,8 +221,8 @@ router.post('/jobs', (req, res) => {
           insertResult.run(
             jobId,
             result.branchId,
-            result.combination.label,
-            JSON.stringify(result.combination.parameterValues),
+            result.parameterLabel,
+            JSON.stringify(result.parameterValues),
             result.isMetrics?.cagr ?? null,
             result.isMetrics?.sharpe ?? null,
             result.isMetrics?.calmar ?? null,

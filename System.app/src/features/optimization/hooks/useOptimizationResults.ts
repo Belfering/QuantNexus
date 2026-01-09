@@ -23,13 +23,14 @@ export function useOptimizationResults(jobId: number | null) {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch(
-          `/api/optimization/${jobId}/results?sortBy=${sortBy}&order=${sortOrder}&limit=1000`
-        )
+        const url = `/api/optimization/${jobId}/results?sortBy=${sortBy}&order=${sortOrder}&limit=1000`
+        console.log('[useOptimizationResults] Fetching from:', url)
+        const response = await fetch(url)
         if (!response.ok) {
           throw new Error('Failed to fetch results')
         }
         const data = await response.json()
+        console.log('[useOptimizationResults] Received data:', data.length, 'results')
         setResults(data)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')

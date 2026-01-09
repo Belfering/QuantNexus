@@ -714,7 +714,21 @@ export function ForgeTab({
       return
     }
 
-    await runBatchBacktest(current, parameterRanges, splitConfig, requirements, activeBot.id, activeBot.name, mode, costBps)
+    // Get bot name from database if saved, otherwise use fallback
+    let botName = 'Unsaved Strategy'
+    if (activeBot.savedBotId) {
+      try {
+        const response = await fetch(`/api/bots/${activeBot.savedBotId}`)
+        if (response.ok) {
+          const bot = await response.json()
+          botName = bot.name || botName
+        }
+      } catch (error) {
+        console.error('Failed to fetch bot name:', error)
+      }
+    }
+
+    await runBatchBacktest(current, parameterRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
   }
 
   // Handler to load a selected branch
@@ -998,30 +1012,10 @@ export function ForgeTab({
           </div>
         </div>
 
-        {/* Bottom Row - 2 Zones Side by Side */}
+        {/* Bottom Row - Flow Tree Builder */}
         <div className="flex gap-4 flex-1">
-          {/* Bottom Left Zone - Parameters Panel */}
-          <div className="w-1/2">
-            <Card className="h-full overflow-hidden" style={{ height: 'calc(100vh - 300px)' }}>
-              <div className="p-4 h-full overflow-y-auto">
-                <ParameterBoxPanel
-                  root={current}
-                  onUpdate={handleParameterUpdate}
-                  onHierarchicalUpdate={handleHierarchicalParameterUpdate}
-                  parameterRanges={parameterRanges}
-                  onUpdateRanges={(ranges) => {
-                    if (activeBot) {
-                      botStore.setParameterRanges(activeBot.id, ranges)
-                    }
-                  }}
-                  openTickerModal={openTickerModal}
-                />
-              </div>
-            </Card>
-          </div>
-
-          {/* Bottom Right Zone - Flow Tree Builder */}
-          <div className="w-1/2 flex flex-col relative min-h-0 min-w-0 overflow-hidden">
+          {/* Flow Tree Builder */}
+          <div className="w-full flex flex-col relative min-h-0 min-w-0 overflow-hidden">
             {/* Flowchart Card */}
             <div className="flex-1 border border-border rounded-lg bg-card min-h-0 relative" style={{ height: 'calc(100vh - 400px)', overflow: 'hidden' }}>
               <div

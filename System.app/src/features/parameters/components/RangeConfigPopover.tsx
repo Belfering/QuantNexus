@@ -19,7 +19,7 @@ export function RangeConfigPopover({ parameter, onSave, onDisable }: RangeConfig
 
   const step = 1 // Fixed step value
   const branchCount = Math.floor((max - min) / step) + 1
-  const isValid = min < max
+  const isValid = min <= max
 
   return (
     <div className="space-y-3 p-3 w-48">

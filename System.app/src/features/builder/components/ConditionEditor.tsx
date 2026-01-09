@@ -108,16 +108,14 @@ export const ConditionEditor = ({
       <Badge variant="default" className="gap-1 py-1 px-2.5">
         {prefix}
 
-        {/* Indicator dropdown */}
-        <IndicatorDropdown
-          value={cond.metric}
-          onChange={(m) => onUpdate({ metric: m })}
-          className="h-8 px-1.5 mx-1"
-        />
-
         {/* Date-specific UI */}
         {isDateCondition ? (
           <>
+            <IndicatorDropdown
+              value={cond.metric}
+              onChange={(m) => onUpdate({ metric: m })}
+              className="h-8 px-1.5 mx-1"
+            />
             {' is '}
             <DatePicker
               month={cond.dateMonth ?? 1}
@@ -200,6 +198,13 @@ export const ConditionEditor = ({
                 d{' '}
               </>
             )}
+
+            {/* Indicator dropdown */}
+            <IndicatorDropdown
+              value={cond.metric}
+              onChange={(m) => onUpdate({ metric: m })}
+              className="h-8 px-1.5 mx-1"
+            />
 
             {/* Ticker selector */}
             {' of '}

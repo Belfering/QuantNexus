@@ -69,18 +69,8 @@ export function BranchGenerationPanel({ job, onSelectBranch, onCancel }: BranchG
           <div className="space-y-4">
             {/* Summary */}
             <div className="text-sm">
-              <span className="font-medium">Results:</span>{' '}
-              <span className="text-green-500">{passedCount} passed</span>,{' '}
-              <span className="text-red-500">{failedCount} failed</span>
-              {errorCount > 0 && (
-                <>
-                  , <span className="text-orange-500">{errorCount} errors</span>
-                </>
-              )}
+              <span className="font-medium">Branch Generation</span> - {job.progress.completed} / {job.progress.total} branches completed. View results in the Results tab.
             </div>
-
-            {/* Results Table */}
-            <BranchResultsTable results={job.results} onSelectBranch={onSelectBranch} />
           </div>
         )}
 
