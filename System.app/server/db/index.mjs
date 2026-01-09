@@ -416,6 +416,19 @@ export function initializeDatabase() {
     // Columns might already exist
   }
 
+  // Migration: Add name column to optimization_jobs table
+  try {
+    const optJobsCols = sqlite.prepare("PRAGMA table_info(optimization_jobs)").all()
+    const hasName = optJobsCols.some(c => c.name === 'name')
+    if (!hasName) {
+      console.log('[DB] Migrating optimization_jobs table: adding name column...')
+      sqlite.exec("ALTER TABLE optimization_jobs ADD COLUMN name TEXT")
+      console.log('[DB] Migration complete: name column added to optimization_jobs table')
+    }
+  } catch (e) {
+    // Column might already exist
+  }
+
   // Clean up duplicate watchlist_bots entries (keep only the first entry)
   const duplicates = sqlite.prepare(`
     SELECT watchlist_id, bot_id, COUNT(*) as cnt, MIN(id) as keep_id

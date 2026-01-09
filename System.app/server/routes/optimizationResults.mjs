@@ -20,6 +20,7 @@ router.get('/jobs', (req, res) => {
         id,
         bot_id,
         bot_name,
+        name,
         status,
         total_branches,
         completed_branches,
@@ -37,6 +38,7 @@ router.get('/jobs', (req, res) => {
       id: job.id,
       botId: job.bot_id,
       botName: job.bot_name,
+      name: job.name,
       status: job.status,
       totalBranches: job.total_branches,
       completedBranches: job.completed_branches,
@@ -68,8 +70,9 @@ router.get('/:jobId/results', (req, res) => {
 
     // Validate sortBy to prevent SQL injection
     const validSortFields = [
-      'branch_id', 'is_cagr', 'is_sharpe', 'is_calmar', 'is_max_drawdown',
-      'oos_cagr', 'oos_sharpe', 'oos_calmar', 'oos_max_drawdown'
+      'branch_id',
+      'is_cagr', 'is_sharpe', 'is_calmar', 'is_max_drawdown', 'is_sortino', 'is_treynor', 'is_beta', 'is_volatility', 'is_win_rate', 'is_avg_turnover', 'is_avg_holdings',
+      'oos_cagr', 'oos_sharpe', 'oos_calmar', 'oos_max_drawdown', 'oos_sortino', 'oos_treynor', 'oos_beta', 'oos_volatility', 'oos_win_rate', 'oos_avg_turnover', 'oos_avg_holdings'
     ]
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'is_cagr'
     const sortOrder = order === 'asc' ? 'ASC' : 'DESC'
@@ -259,6 +262,34 @@ router.post('/jobs', (req, res) => {
   } catch (error) {
     console.error('[Optimization] Save job error:', error)
     res.status(500).json({ error: 'Failed to save job' })
+  }
+})
+
+/**
+ * PATCH /api/optimization/jobs/:jobId
+ * Update job name
+ */
+router.patch('/jobs/:jobId', (req, res) => {
+  try {
+    const { jobId } = req.params
+    const { name } = req.body
+
+    if (name === undefined) {
+      return res.status(400).json({ error: 'Name is required' })
+    }
+
+    // Update job name
+    const result = sqlite.prepare('UPDATE optimization_jobs SET name = ? WHERE id = ?').run(name || null, jobId)
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Job not found' })
+    }
+
+    console.log(`[Optimization] Updated job ${jobId} name to: ${name || '(cleared)'}`)
+    res.json({ success: true })
+  } catch (error) {
+    console.error('[Optimization] Update job name error:', error)
+    res.status(500).json({ error: 'Failed to update job name' })
   }
 })
 

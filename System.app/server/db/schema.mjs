@@ -264,6 +264,7 @@ export const optimizationJobs = sqliteTable('optimization_jobs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   botId: text('bot_id').notNull(),
   botName: text('bot_name').notNull(),
+  name: text('name'), // Optional custom name for the job
   status: text('status').notNull(), // 'running' | 'completed' | 'error' | 'cancelled'
   totalBranches: integer('total_branches').notNull(),
   completedBranches: integer('completed_branches').notNull(),

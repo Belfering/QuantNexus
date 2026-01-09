@@ -8,22 +8,18 @@ interface ISOOSSplitCardProps {
   onSplitConfigChange: (config: ISOOSSplitConfig) => void
 }
 
-const STRATEGY_DESCRIPTIONS: Record<SplitStrategy, string> = {
-  even_odd_month: 'Odd months (Jan, Mar, May, Jul, Sep, Nov) are In-Sample. Even months (Feb, Apr, Jun, Aug, Oct, Dec) are Out-of-Sample.',
-  even_odd_year: 'Odd years (2019, 2021, 2023, etc.) are In-Sample. Even years (2020, 2022, 2024, etc.) are Out-of-Sample.',
-  chronological: 'Data before the threshold date is In-Sample. Data after the threshold date is Out-of-Sample.'
-}
-
 export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitCardProps) {
   const enabled = splitConfig?.enabled ?? false
-  const strategy = splitConfig?.strategy ?? 'even_odd_month'
-  const chronologicalDate = splitConfig?.chronologicalDate ?? ''
+  const strategy = splitConfig?.strategy ?? 'chronological'
+  const chronologicalPercent = splitConfig?.chronologicalPercent ?? 50
+  const rollingWindowMonths = splitConfig?.rollingWindowMonths ?? 12
 
   const handleEnabledChange = (checked: boolean) => {
     onSplitConfigChange({
       enabled: checked,
       strategy,
-      chronologicalDate: strategy === 'chronological' ? chronologicalDate : undefined
+      chronologicalPercent: strategy === 'chronological' ? chronologicalPercent : undefined,
+      rollingWindowMonths: strategy === 'rolling' ? rollingWindowMonths : undefined
     })
   }
 
@@ -31,16 +27,36 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
     onSplitConfigChange({
       enabled,
       strategy: newStrategy,
-      chronologicalDate: newStrategy === 'chronological' ? chronologicalDate || '2020-01-01' : undefined
+      chronologicalPercent: newStrategy === 'chronological' ? 50 : undefined,
+      rollingWindowMonths: newStrategy === 'rolling' ? 12 : undefined
     })
   }
 
-  const handleDateChange = (date: string) => {
+  const handlePercentChange = (percent: number) => {
     onSplitConfigChange({
       enabled,
       strategy,
-      chronologicalDate: date
+      chronologicalPercent: percent,
+      rollingWindowMonths
     })
+  }
+
+  const handleRollingWindowChange = (months: number) => {
+    onSplitConfigChange({
+      enabled,
+      strategy,
+      chronologicalPercent,
+      rollingWindowMonths: months
+    })
+  }
+
+  const getStrategyDescription = () => {
+    if (strategy === 'chronological') {
+      return `First ${chronologicalPercent}% of data is In-Sample, last ${100 - chronologicalPercent}% is Out-of-Sample`
+    } else if (strategy === 'rolling') {
+      return `Uses a rolling ${rollingWindowMonths}-month window for IS/OOS validation`
+    }
+    return ''
   }
 
   return (
@@ -75,32 +91,52 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
               onChange={(e) => handleStrategyChange(e.target.value as SplitStrategy)}
               className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
             >
-              <option value="even_odd_month">Even/Odd Month</option>
-              <option value="even_odd_year">Even/Odd Year</option>
               <option value="chronological">Chronological</option>
+              <option value="rolling">Rolling</option>
             </select>
           </div>
 
-          {/* Strategy Description */}
-          <div className="text-xs text-muted">
-            {STRATEGY_DESCRIPTIONS[strategy]}
-          </div>
-
-          {/* Date Picker (only for chronological strategy) */}
+          {/* Chronological Percentage (50/50, 60/40, 70/30) */}
           {strategy === 'chronological' && (
             <div>
-              <label htmlFor="chronological-date" className="text-xs text-muted block mb-1">
-                Threshold Date
+              <label htmlFor="chronological-percent" className="text-xs text-muted block mb-1">
+                IS/OOS Split
+              </label>
+              <select
+                id="chronological-percent"
+                value={chronologicalPercent}
+                onChange={(e) => handlePercentChange(Number(e.target.value))}
+                className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
+              >
+                <option value={50}>50/50 (Half IS, Half OOS)</option>
+                <option value={60}>60/40</option>
+                <option value={70}>70/30</option>
+              </select>
+            </div>
+          )}
+
+          {/* Rolling Window Size */}
+          {strategy === 'rolling' && (
+            <div>
+              <label htmlFor="rolling-window" className="text-xs text-muted block mb-1">
+                Rolling Window (months)
               </label>
               <input
-                type="date"
-                id="chronological-date"
-                value={chronologicalDate}
-                onChange={(e) => handleDateChange(e.target.value)}
+                type="number"
+                id="rolling-window"
+                min="1"
+                max="60"
+                value={rollingWindowMonths}
+                onChange={(e) => handleRollingWindowChange(Number(e.target.value))}
                 className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
               />
             </div>
           )}
+
+          {/* Strategy Description */}
+          <div className="text-xs text-muted">
+            {getStrategyDescription()}
+          </div>
         </>
       )}
     </div>

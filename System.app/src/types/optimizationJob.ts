@@ -4,6 +4,7 @@ export interface OptimizationJob {
   id: number
   botId: string
   botName: string
+  name?: string // Optional custom name for the job
   status: 'running' | 'completed' | 'error' | 'cancelled'
   totalBranches: number
   completedBranches: number

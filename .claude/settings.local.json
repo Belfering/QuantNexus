@@ -92,7 +92,30 @@
       "Bash(cmd //c \"taskkill /PID 149380 /F\")",
       "Bash(cmd //c \"taskkill /PID 157504 /F\")",
       "Bash(cmd //c \"taskkill /PID 174180 /F\")",
-      "Bash(cmd //c \"taskkill /PID 169260 /F\")"
+      "Bash(cmd //c \"taskkill /PID 169260 /F\")",
+      "Bash(git remote set-url:*)",
+      "Bash([ -d \"node_modules\" ])",
+      "Bash(timeout 10 tail:*)",
+      "Bash(timeout 5 bash -c \"while netstat -ano | grep -q '':8787''; do sleep 1; done\")",
+      "Bash(xargs:*)",
+      "Bash(git remote:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree:*)",
+      "Bash(PORT=8788 npm run dev:*)",
+      "Bash(git fetch:*)",
+      "Bash(PORT=8788 node:*)",
+      "Bash(npm config set:*)",
+      "Bash(set \"GYP_MSVS_VERSION=2022\")",
+      "Bash(PORT=8788 npm run api:*)",
+      "Bash(if [ ! -d \"node_modules\" ])",
+      "Bash(then npm install)",
+      "Bash(else echo \"Client dependencies installed\")",
+      "Bash(else echo \"Server dependencies installed\")",
+      "Bash(PORT=8081 npm run dev:*)",
+      "Bash(exit 0)",
+      "Bash(pip install:*)",
+      "Bash(cmd /c \"taskkill /F /PID 39612\")",
+      "Bash(npm run db:push:*)"
     ]
   }
 }

@@ -169,7 +169,7 @@ export function SettingsPanel({ splitConfig, onSplitConfigChange }: SettingsPane
                     ) : req.type === 'etfs_only' ? (
                       <>ETFs only</>
                     ) : (
-                      <>{METRIC_LABELS[req.metric!]} {req.comparison === 'at_least' ? '≥' : '≤'} {req.value}</>
+                      <>IS {METRIC_LABELS[req.metric!]} {req.comparison === 'at_least' ? '≥' : '≤'} {req.value}</>
                     )}
                   </span>
                   <Button

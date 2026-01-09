@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react'
 import type { OptimizationResult } from '@/types/optimizationJob'
 
-type SortField = 'is_cagr' | 'is_sharpe' | 'is_calmar' | 'oos_cagr' | 'oos_sharpe' | 'oos_calmar'
+type SortField =
+  | 'is_cagr' | 'is_sharpe' | 'is_calmar' | 'is_sortino' | 'is_treynor' | 'is_beta' | 'is_volatility' | 'is_win_rate'
+  | 'oos_cagr' | 'oos_sharpe' | 'oos_calmar' | 'oos_sortino' | 'oos_treynor' | 'oos_beta' | 'oos_volatility' | 'oos_win_rate'
 
 export function useOptimizationResults(jobId: number | null) {
   const [results, setResults] = useState<OptimizationResult[]>([])

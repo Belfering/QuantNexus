@@ -39,13 +39,13 @@
   "userSummaries": {
     "1": {
       "userId": "1",
-      "totalValue": 1668018.445565664,
-      "totalInvested": 1668018.445565664,
-      "investmentCount": 5,
+      "totalValue": 100000,
+      "totalInvested": 0,
+      "investmentCount": 0,
       "investedAtlas": 0,
-      "investedNexus": 433857.2118480698,
-      "investedPrivate": 1234161.2337175943,
-      "lastUpdated": 1767026856507
+      "investedNexus": 0,
+      "investedPrivate": 0,
+      "lastUpdated": 1767887325096
     },
     "3": {
       "userId": "3",

@@ -1,10 +1,13 @@
 // src/types/split.ts
 // In-Sample/Out-of-Sample split configuration types
 
-export type SplitStrategy = 'even_odd_month' | 'even_odd_year' | 'chronological'
+export type SplitStrategy =
+  | 'chronological'        // Split by date with configurable percentage
+  | 'rolling'              // Rolling window split
 
 export interface ISOOSSplitConfig {
   enabled: boolean
   strategy: SplitStrategy
-  chronologicalDate?: string // Only required for chronological strategy (YYYY-MM-DD format)
+  chronologicalPercent?: number // Percentage for IS (50, 60, or 70), rest is OOS
+  rollingWindowMonths?: number  // Only for rolling strategy
 }

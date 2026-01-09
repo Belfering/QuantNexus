@@ -1,6 +1,6 @@
 // Optimization results panel - displays saved optimization jobs and their results
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useOptimizationJobs } from '../hooks/useOptimizationJobs'
@@ -16,6 +16,9 @@ export function OptimizationResultsPanel() {
   const { exportCSV, exporting } = useOptimizationExport()
   const { activeBot } = useBotStore()
   const { current, pushTree } = useTreeSync('Forge')
+
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [newName, setNewName] = useState('')
 
   const selectedJob = useMemo(() => {
     return jobs.find(j => j.id === selectedJobId)
@@ -39,6 +42,39 @@ export function OptimizationResultsPanel() {
     pushTree(modifiedTree)
 
     alert(`Parameters loaded: ${result.parameterLabel}`)
+  }
+
+  const handleStartRename = () => {
+    setNewName(selectedJob?.name || '')
+    setIsRenaming(true)
+  }
+
+  const handleCancelRename = () => {
+    setIsRenaming(false)
+    setNewName('')
+  }
+
+  const handleSaveRename = async () => {
+    if (!selectedJobId) return
+
+    try {
+      const response = await fetch(`/api/optimization/jobs/${selectedJobId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() || null })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update job name')
+      }
+
+      setIsRenaming(false)
+      setNewName('')
+      refresh() // Refresh jobs list to show updated name
+    } catch (error) {
+      console.error('Failed to rename job:', error)
+      alert('Failed to rename job')
+    }
   }
 
   const formatTimestamp = (timestamp: number) => {
@@ -96,18 +132,47 @@ export function OptimizationResultsPanel() {
         {/* Job Selector */}
         <div className="space-y-2">
           <label className="text-sm font-medium">Select Job:</label>
-          <select
-            value={selectedJobId || ''}
-            onChange={(e) => setSelectedJobId(Number(e.target.value))}
-            className="w-full px-3 py-2 rounded border border-border bg-background"
-          >
-            <option value="">-- Select a job --</option>
-            {jobs.map((job) => (
-              <option key={job.id} value={job.id}>
-                Job #{job.id} - {job.botName} - {formatTimestamp(job.createdAt)} - {job.passingBranches}/{job.totalBranches} passed
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <select
+              value={selectedJobId || ''}
+              onChange={(e) => setSelectedJobId(Number(e.target.value))}
+              className="flex-1 px-3 py-2 rounded border border-border bg-background"
+            >
+              <option value="">-- Select a job --</option>
+              {jobs.map((job) => (
+                <option key={job.id} value={job.id}>
+                  {job.name || `Job #${job.id} - ${job.botName}`} - {formatTimestamp(job.createdAt)} - {job.passingBranches}/{job.totalBranches} passed
+                </option>
+              ))}
+            </select>
+            {selectedJobId && !isRenaming && (
+              <Button size="sm" variant="outline" onClick={handleStartRename}>
+                Rename
+              </Button>
+            )}
+          </div>
+          {isRenaming && (
+            <div className="flex gap-2 items-center p-3 bg-muted/20 rounded">
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Enter job name (optional)"
+                className="flex-1 px-2 py-1 rounded border border-border bg-background text-sm"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveRename()
+                  if (e.key === 'Escape') handleCancelRename()
+                }}
+              />
+              <Button size="sm" onClick={handleSaveRename}>
+                Save
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleCancelRename}>
+                Cancel
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Job Details */}
@@ -160,9 +225,19 @@ export function OptimizationResultsPanel() {
                   <option value="is_cagr">IS CAGR</option>
                   <option value="is_sharpe">IS Sharpe</option>
                   <option value="is_calmar">IS Calmar</option>
+                  <option value="is_sortino">IS Sortino</option>
+                  <option value="is_treynor">IS Treynor</option>
+                  <option value="is_beta">IS Beta</option>
+                  <option value="is_volatility">IS Volatility</option>
+                  <option value="is_win_rate">IS Win Rate</option>
                   <option value="oos_cagr">OOS CAGR</option>
                   <option value="oos_sharpe">OOS Sharpe</option>
                   <option value="oos_calmar">OOS Calmar</option>
+                  <option value="oos_sortino">OOS Sortino</option>
+                  <option value="oos_treynor">OOS Treynor</option>
+                  <option value="oos_beta">OOS Beta</option>
+                  <option value="oos_volatility">OOS Volatility</option>
+                  <option value="oos_win_rate">OOS Win Rate</option>
                 </select>
                 <select
                   value={sortOrder}
@@ -193,9 +268,19 @@ export function OptimizationResultsPanel() {
                       <th className="px-3 py-2 text-right">IS CAGR</th>
                       <th className="px-3 py-2 text-right">IS Sharpe</th>
                       <th className="px-3 py-2 text-right">IS Calmar</th>
+                      <th className="px-3 py-2 text-right">IS Sortino</th>
+                      <th className="px-3 py-2 text-right">IS Treynor</th>
+                      <th className="px-3 py-2 text-right">IS Beta</th>
+                      <th className="px-3 py-2 text-right">IS Vol</th>
+                      <th className="px-3 py-2 text-right">IS Win%</th>
                       <th className="px-3 py-2 text-right">OOS CAGR</th>
                       <th className="px-3 py-2 text-right">OOS Sharpe</th>
                       <th className="px-3 py-2 text-right">OOS Calmar</th>
+                      <th className="px-3 py-2 text-right">OOS Sortino</th>
+                      <th className="px-3 py-2 text-right">OOS Treynor</th>
+                      <th className="px-3 py-2 text-right">OOS Beta</th>
+                      <th className="px-3 py-2 text-right">OOS Vol</th>
+                      <th className="px-3 py-2 text-right">OOS Win%</th>
                       <th className="px-3 py-2 text-center">Pass</th>
                       <th className="px-3 py-2 text-center">Actions</th>
                     </tr>
@@ -211,9 +296,19 @@ export function OptimizationResultsPanel() {
                         <td className="px-3 py-2 text-right">{(result.isMetrics.cagr * 100).toFixed(2)}%</td>
                         <td className="px-3 py-2 text-right">{result.isMetrics.sharpe.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">{result.isMetrics.calmar.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics.sortino.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics.treynor.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics.beta.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{(result.isMetrics.volatility * 100).toFixed(2)}%</td>
+                        <td className="px-3 py-2 text-right">{(result.isMetrics.winRate * 100).toFixed(1)}%</td>
                         <td className="px-3 py-2 text-right">{(result.oosMetrics.cagr * 100).toFixed(2)}%</td>
                         <td className="px-3 py-2 text-right">{result.oosMetrics.sharpe.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">{result.oosMetrics.calmar.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics.sortino.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics.treynor.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics.beta.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{(result.oosMetrics.volatility * 100).toFixed(2)}%</td>
+                        <td className="px-3 py-2 text-right">{(result.oosMetrics.winRate * 100).toFixed(1)}%</td>
                         <td className="px-3 py-2 text-center">
                           {result.passed ? (
                             <span className="text-green-500 font-bold">✓</span>
