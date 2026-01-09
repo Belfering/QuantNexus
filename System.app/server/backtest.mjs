@@ -11,6 +11,207 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // ============================================
+// RUST INDICATOR SERVER INTEGRATION
+// ============================================
+
+const RUST_SERVER = process.env.RUST_SERVER || 'http://localhost:3030'
+let rustServerAvailable = false
+
+// Check Rust server availability on module load
+async function checkRustServer() {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 2000)
+    const res = await fetch(`${RUST_SERVER}/tickers`, { signal: controller.signal })
+    clearTimeout(timeout)
+    rustServerAvailable = res.ok
+    if (rustServerAvailable) {
+      console.log(`[Rust] Server available at ${RUST_SERVER} - using accelerated indicators`)
+    }
+  } catch (e) {
+    rustServerAvailable = false
+    console.log(`[Rust] Server not available - using JS indicators (${e.message})`)
+  }
+}
+checkRustServer()
+
+// Map JS metric names to Rust indicator names
+const METRIC_TO_RUST = {
+  'Simple Moving Average': { rust: 'sma', cache: 'sma' },
+  'Exponential Moving Average': { rust: 'ema', cache: 'ema' },
+  'Relative Strength Index': { rust: 'rsi', cache: 'rsi' },
+  'Standard Deviation': { rust: 'std_dev', cache: 'std', needsReturns: true },
+  'Max Drawdown': { rust: 'max_drawdown', cache: 'maxdd' },
+  'Standard Deviation of Price': { rust: 'std_dev', cache: 'stdPrice' },
+  'Cumulative Return': { rust: 'cumulative_return', cache: 'cumRet' },
+  'SMA of Returns': { rust: 'sma_of_returns', cache: 'smaRet' },
+  'Momentum (Weighted)': { rust: '13612w', cache: 'mom13612w', noWindow: true },
+  '13612W Momentum': { rust: '13612w', cache: 'mom13612w', noWindow: true },
+  'Momentum (Unweighted)': { rust: '13612u', cache: 'mom13612u', noWindow: true },
+  '13612U Momentum': { rust: '13612u', cache: 'mom13612u', noWindow: true },
+  'Momentum (12-Month SMA)': { rust: 'sma12_momentum', cache: 'momsma12', noWindow: true },
+  'SMA12 Momentum': { rust: 'sma12_momentum', cache: 'momsma12', noWindow: true },
+  'Drawdown': { rust: 'drawdown', cache: 'drawdown', noWindow: true },
+  'Aroon Up': { rust: 'aroon_up', cache: 'aroonUp', needsHigh: true },
+  'Aroon Down': { rust: 'aroon_down', cache: 'aroonDown', needsLow: true },
+  'Aroon Oscillator': { rust: 'aroon_osc', cache: 'aroonOsc', needsHighLow: true },
+  'MACD Histogram': { rust: 'macd_histogram', cache: 'macd', noWindow: true },
+  'PPO Histogram': { rust: 'ppo_histogram', cache: 'ppo', noWindow: true },
+  'Trend Clarity': { rust: 'trend_clarity', cache: 'trendClarity' },
+  'Ultimate Smoother': { rust: 'ultimate_smoother', cache: 'ultSmooth' },
+  'Hull Moving Average': { rust: 'hma', cache: 'hma' },
+  'Weighted Moving Average': { rust: 'wma', cache: 'wma' },
+  'Wilder Moving Average': { rust: 'wilders_ma', cache: 'wildersMa' },
+  'DEMA': { rust: 'dema', cache: 'dema' },
+  'TEMA': { rust: 'tema', cache: 'tema' },
+  'KAMA': { rust: 'kama', cache: 'kama' },
+  'RSI (SMA)': { rust: 'rsi_sma', cache: 'rsiSma' },
+  'RSI (EMA)': { rust: 'rsi_ema', cache: 'rsiEma' },
+  'Stochastic RSI': { rust: 'stoch_rsi', cache: 'stochRsi' },
+  'Laguerre RSI': { rust: 'laguerre_rsi', cache: 'laguerreRsi', noWindow: true },
+  'Bollinger %B': { rust: 'bollinger_b', cache: 'bollingerB' },
+  'Bollinger Bandwidth': { rust: 'bollinger_bandwidth', cache: 'bollingerBandwidth' },
+  'ATR': { rust: 'atr', cache: 'atr', needsHighLow: true },
+  'ATR %': { rust: 'atr_percent', cache: 'atrPercent', needsHighLow: true },
+  'Historical Volatility': { rust: 'historical_volatility', cache: 'histVol' },
+  'Ulcer Index': { rust: 'ulcer_index', cache: 'ulcerIndex' },
+  'Rate of Change': { rust: 'roc', cache: 'roc' },
+  'Williams %R': { rust: 'williams_r', cache: 'williamsR', needsHighLow: true },
+  'CCI': { rust: 'cci', cache: 'cci', needsHighLow: true },
+  'Stochastic %K': { rust: 'stoch_k', cache: 'stochK', needsHighLow: true },
+  'Stochastic %D': { rust: 'stoch_d', cache: 'stochD', needsHighLow: true },
+  'ADX': { rust: 'adx', cache: 'adx', needsHighLow: true },
+  'Linear Reg Slope': { rust: 'linreg_slope', cache: 'linRegSlope' },
+  'Linear Reg Value': { rust: 'linreg_value', cache: 'linRegValue' },
+  'Price vs SMA': { rust: 'price_vs_sma', cache: 'priceVsSma' },
+  'Money Flow Index': { rust: 'mfi', cache: 'mfi', needsVolume: true },
+  'OBV Rate of Change': { rust: 'obv_roc', cache: 'obv', needsVolume: true },
+  'VWAP Ratio': { rust: 'vwap_ratio', cache: 'vwapRatio', needsVolume: true },
+  'Rolling Return': { rust: 'rolling_return', cache: 'rollingReturn' },
+}
+
+// Collect all indicator requirements from a tree
+function collectIndicatorRequirements(node) {
+  const requirements = [] // Array of {ticker, metric, window, rustName, cacheKey}
+
+  const addRequirement = (ticker, metric, window) => {
+    if (!ticker || ticker === 'Empty' || ticker.toUpperCase().startsWith('BRANCH:')) return
+    const mapping = METRIC_TO_RUST[metric]
+    if (!mapping) return // No Rust equivalent
+    const period = mapping.noWindow ? 0 : Math.max(1, Math.floor(Number(window || 14)))
+    // Check for duplicates
+    if (!requirements.some(r => r.ticker === ticker && r.rustName === mapping.rust && r.period === period)) {
+      requirements.push({
+        ticker,
+        metric,
+        period,
+        rustName: mapping.rust,
+        cacheKey: mapping.cache,
+      })
+    }
+  }
+
+  const processConditions = (conditions) => {
+    for (const cond of conditions || []) {
+      if (cond.ticker) addRequirement(cond.ticker, cond.metric, cond.window)
+      if (cond.rightTicker) addRequirement(cond.rightTicker, cond.rightMetric || cond.metric, cond.rightWindow || cond.window)
+    }
+  }
+
+  const walk = (n) => {
+    if (!n) return
+    if (n.kind === 'indicator' && n.conditions) processConditions(n.conditions)
+    if (n.kind === 'numbered' && n.numbered?.items) {
+      for (const item of n.numbered.items) processConditions(item.conditions)
+    }
+    if (n.kind === 'scaling') {
+      addRequirement(n.scaleTicker, n.scaleMetric, n.scaleWindow)
+    }
+    if (n.kind === 'function' && n.func) {
+      addRequirement(n.func.ticker, n.func.metric, n.func.window)
+    }
+    // Recurse children
+    if (n.children) {
+      for (const slot of Object.values(n.children)) {
+        if (Array.isArray(slot)) slot.forEach(walk)
+        else if (slot) walk(slot)
+      }
+    }
+    if (n.incantations) n.incantations.forEach(walk)
+  }
+
+  walk(node)
+  return requirements
+}
+
+// Fetch indicators from Rust server and populate cache
+async function fetchIndicatorsFromRust(requirements, cache) {
+  if (!rustServerAvailable || requirements.length === 0) return false
+
+  // Group by ticker
+  const tickers = [...new Set(requirements.map(r => r.ticker))]
+  const indicators = requirements.map(r => ({
+    name: r.rustName,
+    period: r.period || undefined,
+  }))
+
+  try {
+    const start = Date.now()
+    const res = await fetch(`${RUST_SERVER}/compute-indicators`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickers, indicators }),
+    })
+
+    if (!res.ok) {
+      console.warn(`[Rust] compute-indicators failed: ${res.status}`)
+      return false
+    }
+
+    const data = await res.json()
+    const elapsed = Date.now() - start
+
+    // Populate cache with returned data
+    let populated = 0
+    for (const req of requirements) {
+      const tickerData = data.data?.[req.ticker]
+      if (!tickerData) continue
+
+      const key = req.period ? `${req.rustName}_${req.period}` : req.rustName
+      const values = tickerData[key]
+      if (!values) continue
+
+      // Get or create the cache map for this indicator type
+      let map = cache[req.cacheKey]
+      if (!map) {
+        map = new Map()
+        cache[req.cacheKey] = map
+      }
+
+      // Get or create the ticker map
+      let byTicker = map.get(req.ticker)
+      if (!byTicker) {
+        byTicker = new Map()
+        map.set(req.ticker, byTicker)
+      }
+
+      // Store the values
+      byTicker.set(req.period, values)
+      populated++
+    }
+
+    console.log(`[Rust] Computed ${populated} indicators for ${tickers.length} tickers in ${elapsed}ms (${data.compute_ms?.toFixed(2)}ms Rust time)`)
+    return true
+  } catch (e) {
+    console.warn(`[Rust] Failed to fetch indicators: ${e.message}`)
+    return false
+  }
+}
+
+// Export for testing
+export { collectIndicatorRequirements, fetchIndicatorsFromRust, METRIC_TO_RUST }
+
+// ============================================
 // PRICE DATA LOADING
 // ============================================
 
@@ -73,11 +274,15 @@ let cacheInitialized = false
 const LRU_EVICTION_DAYS = 30
 const LRU_EVICTION_MS = LRU_EVICTION_DAYS * 24 * 60 * 60 * 1000
 
+// Memory limit - cap at 100 tickers (~200 MB max, safe for Railway Hobby)
+const MAX_CACHED_TICKERS = 100
+
 // Track cache stats for monitoring
 const cacheStats = {
   hits: 0,
   misses: 0,
   totalLoadTime: 0,
+  evictions: 0,
 }
 
 async function initTickerCache() {
@@ -107,6 +312,7 @@ async function initTickerCache() {
 // Get cache statistics for monitoring
 function getCacheStats() {
   const memoryUsage = tickerDataCache.size * 20000 * 100 // approximate bytes
+  const maxMemory = MAX_CACHED_TICKERS * 20000 * 100
   const now = Date.now()
 
   // Calculate oldest and newest ticker usage
@@ -119,18 +325,33 @@ function getCacheStats() {
   }
 
   return {
+    // Counts & limits
     cachedTickers: tickerDataCache.size,
+    maxTickers: MAX_CACHED_TICKERS,
+    utilizationPercent: ((tickerDataCache.size / MAX_CACHED_TICKERS) * 100).toFixed(1),
     tickerList: Array.from(tickerDataCache.keys()),
+
+    // Memory
+    estimatedMemoryMB: (memoryUsage / 1024 / 1024).toFixed(1),
+    maxMemoryMB: (maxMemory / 1024 / 1024).toFixed(0),
+
+    // Hit rate
     hits: cacheStats.hits,
     misses: cacheStats.misses,
     hitRate: cacheStats.hits + cacheStats.misses > 0
       ? ((cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100).toFixed(1) + '%'
       : 'N/A',
-    estimatedMemoryMB: (memoryUsage / 1024 / 1024).toFixed(1),
+
+    // Performance
     avgLoadTimeMs: cacheStats.misses > 0
       ? (cacheStats.totalLoadTime / cacheStats.misses).toFixed(1)
       : 'N/A',
+
+    // Evictions
+    evictions: cacheStats.evictions,
     lruEvictionDays: LRU_EVICTION_DAYS,
+
+    // Age
     oldestTickerAgeDays: tickerLastUsed.size > 0 ? (oldestAge / (24 * 60 * 60 * 1000)).toFixed(1) : 'N/A',
     newestTickerAgeDays: tickerLastUsed.size > 0 && newestAge !== Infinity ? (newestAge / (24 * 60 * 60 * 1000)).toFixed(1) : 'N/A',
   }
@@ -144,8 +365,31 @@ function clearTickerCache() {
   cacheStats.hits = 0
   cacheStats.misses = 0
   cacheStats.totalLoadTime = 0
+  cacheStats.evictions = 0
   console.log(`[Cache] Cleared ${count} cached tickers`)
   return count
+}
+
+// Evict least recently used ticker (when cache is at limit)
+function evictLeastRecentlyUsed() {
+  let oldestTicker = null
+  let oldestTime = Infinity
+
+  for (const [ticker, lastUsed] of tickerLastUsed) {
+    if (lastUsed < oldestTime) {
+      oldestTime = lastUsed
+      oldestTicker = ticker
+    }
+  }
+
+  if (oldestTicker) {
+    tickerDataCache.delete(oldestTicker)
+    tickerLastUsed.delete(oldestTicker)
+    cacheStats.evictions++
+    console.log(`[Cache] Evicted ${oldestTicker} (LRU, cache at ${MAX_CACHED_TICKERS} limit)`)
+    return oldestTicker
+  }
+  return null
 }
 
 // Evict tickers that haven't been used in LRU_EVICTION_DAYS
@@ -218,9 +462,14 @@ async function fetchOhlcSeries(ticker, limit = 20000) {
 
   // Cache the ticker for future requests (all tickers, not just common ones)
   if (bars && bars.length > 0) {
+    // EVICT if at limit before adding new ticker
+    if (tickerDataCache.size >= MAX_CACHED_TICKERS) {
+      evictLeastRecentlyUsed()
+    }
+
     tickerDataCache.set(ticker, bars)
     tickerLastUsed.set(ticker, Date.now())  // Set initial LRU timestamp
-    console.log(`[Cache] Added ${ticker} to cache (${bars.length} bars, ${loadTime}ms) - Total cached: ${tickerDataCache.size}`)
+    console.log(`[Cache] Added ${ticker} to cache (${bars.length} bars, ${loadTime}ms) - Total cached: ${tickerDataCache.size}/${MAX_CACHED_TICKERS}`)
   }
 
   return bars
@@ -4238,6 +4487,18 @@ export async function runBacktest(payload, options = {}) {
   // Run backtest
   const cache = emptyCache()
   const decisionPrice = backtestMode === 'CC' || backtestMode === 'CO' ? 'close' : 'open'
+
+  // === RUST INDICATOR ACCELERATION ===
+  // Collect all indicator requirements from the tree and pre-compute via Rust
+  const indicatorRequirements = collectIndicatorRequirements(node)
+  if (indicatorRequirements.length > 0) {
+    const rustStart = Date.now()
+    const rustSuccess = await fetchIndicatorsFromRust(indicatorRequirements, cache)
+    if (rustSuccess) {
+      console.log(`[Backtest] Rust indicators pre-computed in ${Date.now() - rustStart}ms`)
+    }
+  }
+  // === END RUST ACCELERATION ===
 
   const allocationsAt = Array.from({ length: db.dates.length }, () => ({}))
 
