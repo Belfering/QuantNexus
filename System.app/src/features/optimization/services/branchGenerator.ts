@@ -117,9 +117,13 @@ export function applyBranchToTree(
       // Recursively search for the condition
       const findAndUpdateCondition = (node: any): boolean => {
         if (node.conditions && Array.isArray(node.conditions)) {
-          const condition = node.conditions.find((c: any) => c.id === conditionId)
+          console.log(`[BranchGenerator] Node ${node.id} has ${node.conditions.length} conditions:`, node.conditions.map((c: any) => c.id))
+          // Match by ID containing the conditionId (handles cloned nodes with new suffixes)
+          const condition = node.conditions.find((c: any) =>
+            c.id === conditionId || c.id.includes(conditionId) || c.id.startsWith('node-' + conditionId)
+          )
           if (condition) {
-            console.log(`[BranchGenerator] Found condition in node ${node.id}, updating ${field} = ${value}`)
+            console.log(`[BranchGenerator] Found condition ${condition.id} (matched ${conditionId}), updating ${field} = ${value}`)
             condition[field] = value
             return true
           }
