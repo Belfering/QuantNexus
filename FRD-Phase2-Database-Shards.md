@@ -1,3 +1,47 @@
 # Phase 2: Database and Shards
 
-Database and Shards set up. We need to add many more metrics to the IS/OOS calculations as well as the Pass/Fail criteria. All pass fail criteria should be calculated only on IS stats. In fact they should all have "IS" in front of the associated metric. For example if I select CAGR, the "Current Requirements = CAGR ≥ 0" should automatically read "Current Requirements = IS CAGR ≥ 0". The results of the runs with the stats need to be exportable. The runs need to be renamable and while retaining their unique run IDs. They need timestamps for when they were started.
+**Status**: COMPLETE (2026-01-09)
+
+## Requirements
+1. Add many more metrics to IS/OOS calculations
+2. Add metrics to Pass/Fail criteria (IS stats only)
+3. Prefix all requirements with "IS" in display
+4. Exportable results
+5. Renamable runs with unique IDs
+6. Timestamps for when runs started
+
+## What Was Completed
+1. **Enhanced IS/OOS Metrics**
+   - Added TIM (Time in Market) for both IS and OOS
+   - Added TIMAR (TIM Adjusted Returns) for both IS and OOS
+   - Added MaxDD (Maximum Drawdown) for both IS and OOS
+   - Fixed OOS Volatility and Sortino calculations
+   - All metrics now properly calculated and displayed
+
+2. **Pass/Fail Criteria (IS Stats Only)**
+   - All eligibility requirements calculated on IS metrics only
+   - Metrics dropdown includes: CAGR, MaxDrawdown, Calmar, Sharpe, Sortino, Treynor, Beta, Vol, WinRate, AvgTurnover, AvgHoldings, TIM, TIMAR
+   - Requirements display with "IS" prefix: "IS CAGR ≥ 0 %"
+   - Percentage metrics formatted with % suffix
+
+3. **Database and Results Persistence**
+   - Optimization jobs stored in SQLite database
+   - Each job has unique ID with timestamp
+   - All branch results saved with IS/OOS metrics
+   - Job metadata includes: botId, botName, status, totalBranches, passingBranches, startTime, endTime
+   - Results queryable by job ID via API endpoint
+
+4. **UI Improvements**
+   - Settings panel with horizontal layout for adding requirements
+   - Current requirements displayed in bold with proper formatting
+   - Optimization results panel with sortable columns
+   - Branch generation progress persists across tab changes
+
+## Files Modified
+- System.app/server/db/index.mjs - Database schema and queries
+- System.app/server/routes/optimizationResults.mjs - API endpoints
+- System.app/server/backtest.mjs - Enhanced metrics calculation
+- System.app/src/components/SettingsPanel.tsx - Requirements UI
+- System.app/src/features/optimization/components/OptimizationResultsPanel.tsx - Results display
+- System.app/src/types/admin.ts - Added TIM/TIMAR to eligibility metrics
+- System.app/src/stores/useBotStore.ts - Job state management
