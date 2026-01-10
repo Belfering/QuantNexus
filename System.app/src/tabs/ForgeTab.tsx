@@ -235,6 +235,7 @@ export function ForgeTab({
           return {
             ...node,
             positions: newPositions,
+            positionMode: 'ticker_list', // Set mode to ticker_list
             positionTickerListId: listId,
             positionTickerListName: tickerList?.name
           }
@@ -291,6 +292,31 @@ export function ForgeTab({
         botStore.setParameterRanges(activeBot.id, updatedRanges)
       }
     }
+  }
+  const handleUpdatePositionMode = (id: string, mode: 'manual' | 'ticker_list' | 'match_indicator') => {
+    // Helper to recursively update node
+    const updateNode = (node: FlowNode): FlowNode => {
+      if (node.id === id && node.kind === 'position') {
+        return {
+          ...node,
+          positionMode: mode
+        }
+      }
+      // Recurse through children
+      if (node.children) {
+        const newChildren: Partial<Record<SlotId, FlowNode[]>> = {}
+        for (const [slotKey, slotNodes] of Object.entries(node.children)) {
+          if (Array.isArray(slotNodes)) {
+            newChildren[slotKey as SlotId] = slotNodes.map(child => child ? updateNode(child) : child)
+          }
+        }
+        return { ...node, children: newChildren }
+      }
+      return node
+    }
+
+    const next = updateNode(current)
+    push(next)
   }
   const handleUpdateCallRef = (id: string, callId: string | null) => {
     treeStore.updateCallReference(id, callId)
@@ -1043,8 +1069,14 @@ export function ForgeTab({
               const enabledRanges = (activeBot?.parameterRanges || []).filter(r => r.enabled)
               let branchCount = 1
               for (const range of enabledRanges) {
-                const steps = Math.floor((range.max - range.min) / range.step) + 1
-                branchCount *= steps
+                if (range.type === 'ticker_list') {
+                  // Ticker list: multiply by number of tickers
+                  branchCount *= (range.tickers?.length || 1)
+                } else {
+                  // Numeric range: multiply by number of steps
+                  const steps = Math.floor((range.max - range.min) / range.step) + 1
+                  branchCount *= steps
+                }
               }
               const hasRanges = enabledRanges.length > 0
               const etaMinutes = Math.ceil(branchCount * 0.5 / 60) // Rough estimate: 0.5s per branch
@@ -1397,6 +1429,7 @@ export function ForgeTab({
                   onAddPosition={handleAddPos}
                   onRemovePosition={handleRemovePos}
                   onChoosePosition={handleChoosePos}
+                  onUpdatePositionMode={handleUpdatePositionMode}
                   openTickerModal={openTickerModal}
                   clipboard={clipboard}
                   copiedNodeId={copiedNodeId}

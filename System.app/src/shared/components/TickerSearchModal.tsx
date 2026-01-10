@@ -457,6 +457,29 @@ export function TickerSearchModal({
           {/* Lists mode */}
           {mode === 'lists' && (
             <>
+              {/* Special option: Match Indicator (only for position nodes) */}
+              {nodeKind === 'position' && (
+                <div
+                  className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border"
+                  onClick={() => {
+                    onSelect('mode:match_indicator')
+                    if (position === 'center') onClose()
+                  }}
+                >
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="font-bold">Match Indicator Ticker</span>
+                    <span className="text-xs text-muted-foreground">
+                      Auto-match tickers from conditions above
+                    </span>
+                  </div>
+                  <div className="shrink-0 ml-2">
+                    <span className="px-1.5 py-0.5 rounded text-xs bg-purple-500/20 text-purple-400">
+                      Auto
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {tickerLists.map(list => (
                 <div
                   key={list.id}
@@ -737,6 +760,28 @@ export function TickerSearchModal({
 
           {mode === 'lists' && (
             <>
+              {/* Special option: Match Indicator (only for position nodes) */}
+              {nodeKind === 'position' && (
+                <div
+                  onClick={() => onSelect('mode:match_indicator')}
+                  className="px-4 py-3 hover:bg-muted cursor-pointer border-b border-border"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="font-bold">Match Indicator Ticker</span>
+                      <span className="text-sm text-muted-foreground">
+                        Auto-match tickers from conditions above
+                      </span>
+                    </div>
+                    <div className="shrink-0">
+                      <span className="px-1.5 py-0.5 rounded text-xs bg-purple-500/20 text-purple-400">
+                        Auto
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {tickerLists.map(list => (
                 <div
                   key={list.id}

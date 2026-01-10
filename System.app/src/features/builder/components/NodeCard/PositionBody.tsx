@@ -10,11 +10,15 @@ export const PositionBody = ({
   onAddPosition,
   onRemovePosition,
   onChoosePosition,
+  onUpdatePositionMode,
   openTickerModal,
   tickerLists,
   isForgeMode,
 }: PositionBodyProps) => {
   if (node.kind !== 'position' || !node.positions) return null
+
+  const positionMode = node.positionMode || 'manual'
+  const isMatchIndicator = positionMode === 'match_indicator'
 
   return (
     <div className="positions">
@@ -26,6 +30,23 @@ export const PositionBody = ({
         const shown = draftValue ?? p
 
         const commit = (raw: string) => {
+          // Check for special mode selections
+          if (raw === 'mode:match_indicator') {
+            onUpdatePositionMode?.(node.id, 'match_indicator')
+            return
+          }
+
+          // Handle ticker list selections (already sets mode via handleChoosePos)
+          if (raw.startsWith('list:')) {
+            onChoosePosition(node.id, idx, raw)
+            return
+          }
+
+          // Regular ticker selection - ensure we're in manual mode
+          if (positionMode !== 'manual') {
+            onUpdatePositionMode?.(node.id, 'manual')
+          }
+
           const normalized = String(raw || '').trim().toUpperCase()
           const next = !normalized ? 'Empty' : normalized === 'EMPTY' ? 'Empty' : normalized
           onChoosePosition(node.id, idx, next)
@@ -43,7 +64,7 @@ export const PositionBody = ({
                   openTickerModal?.((ticker) => commit(ticker), undefined, allowedModes, 'position', shown !== 'Empty' ? shown : undefined)
                 }}
               >
-                {shown || 'Ticker'}
+                {isMatchIndicator ? '(Auto)' : (shown || 'Ticker')}
               </button>
             </div>
             {idx > 0 && (

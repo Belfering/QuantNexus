@@ -110,31 +110,43 @@ export function generateBranchCombinations(ranges: ParameterRange[]): BranchComb
  * Apply ticker substitutions to a tree
  * @param node - The node to apply substitutions to (will be modified recursively)
  * @param substitutions - Map of ticker list ID to selected ticker
+ * @param appliedTickers - Set of tickers that have been applied to conditions (for match_indicator mode)
  */
-function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, string>): void {
+function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, string>, appliedTickers: Set<string> = new Set()): void {
   // Apply to condition tickers
   if (node.conditions && Array.isArray(node.conditions)) {
     for (const condition of node.conditions) {
       // Replace ticker if it references a ticker list
       if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
+        appliedTickers.add(condition.ticker)
         console.log(`[BranchGenerator] Substituted ticker ${condition.ticker} for list ${condition.tickerListId}`)
       }
       // Replace right ticker if it references a ticker list
       if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
+        appliedTickers.add(condition.rightTicker)
         console.log(`[BranchGenerator] Substituted right ticker ${condition.rightTicker} for list ${condition.rightTickerListId}`)
       }
     }
   }
 
-  // Apply to position node if it references a ticker list
-  if (node.kind === 'position' && node.positionTickerListId && substitutions[node.positionTickerListId]) {
-    const ticker = substitutions[node.positionTickerListId]
-    // Replace all positions with the selected ticker
-    if (node.positions && node.positions.length > 0) {
-      node.positions = node.positions.map(() => ticker)
-      console.log(`[BranchGenerator] Substituted position ticker ${ticker} for list ${node.positionTickerListId}`)
+  // Apply to position node based on mode
+  if (node.kind === 'position') {
+    if (node.positionMode === 'match_indicator' && appliedTickers.size > 0) {
+      // Match Indicator mode: use tickers from conditions above
+      const ticker = Array.from(appliedTickers)[0] // Use first applied ticker
+      if (node.positions && node.positions.length > 0) {
+        node.positions = node.positions.map(() => ticker)
+        console.log(`[BranchGenerator] Match Indicator: Applied ticker ${ticker} to position`)
+      }
+    } else if (node.positionTickerListId && substitutions[node.positionTickerListId]) {
+      // Ticker List mode: use ticker from list
+      const ticker = substitutions[node.positionTickerListId]
+      if (node.positions && node.positions.length > 0) {
+        node.positions = node.positions.map(() => ticker)
+        console.log(`[BranchGenerator] Substituted position ticker ${ticker} for list ${node.positionTickerListId}`)
+      }
     }
   }
 
@@ -143,9 +155,11 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
     for (const condition of node.entryConditions) {
       if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
+        appliedTickers.add(condition.ticker)
       }
       if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
+        appliedTickers.add(condition.rightTicker)
       }
     }
   }
@@ -153,9 +167,11 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
     for (const condition of node.exitConditions) {
       if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
+        appliedTickers.add(condition.ticker)
       }
       if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
+        appliedTickers.add(condition.rightTicker)
       }
     }
   }
@@ -167,23 +183,25 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
         for (const condition of item.conditions) {
           if (condition.tickerListId && substitutions[condition.tickerListId]) {
             condition.ticker = substitutions[condition.tickerListId]
+            appliedTickers.add(condition.ticker)
           }
           if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
             condition.rightTicker = substitutions[condition.rightTickerListId]
+            appliedTickers.add(condition.rightTicker)
           }
         }
       }
     }
   }
 
-  // Recursively apply to children
+  // Recursively apply to children (passing appliedTickers so descendants can use them)
   if (node.children) {
     for (const slotKey in node.children) {
       const slot = node.children[slotKey as keyof typeof node.children]
       if (Array.isArray(slot)) {
         for (const child of slot) {
           if (child) {
-            applyTickerSubstitutions(child, substitutions)
+            applyTickerSubstitutions(child, substitutions, appliedTickers)
           }
         }
       }

@@ -123,6 +123,7 @@ export interface CardProps {
   onAddPosition: (id: string) => void
   onRemovePosition: (id: string, index: number) => void
   onChoosePosition: (id: string, index: number, choice: PositionChoice) => void
+  onUpdatePositionMode?: (id: string, mode: 'manual' | 'ticker_list' | 'match_indicator') => void
 
   // Clipboard
   clipboard: FlowNode | null
@@ -196,6 +197,7 @@ export interface PositionBodyProps {
   onAddPosition: (id: string) => void
   onRemovePosition: (id: string, index: number) => void
   onChoosePosition: (id: string, index: number, choice: PositionChoice) => void
+  onUpdatePositionMode?: (id: string, mode: 'manual' | 'ticker_list' | 'match_indicator') => void
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
   tickerLists?: TickerList[] // Forge-only: ticker lists for optimization
   isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)

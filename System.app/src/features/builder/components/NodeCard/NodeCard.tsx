@@ -69,6 +69,7 @@ export const NodeCard = ({
   onAddPosition,
   onRemovePosition,
   onChoosePosition,
+  onUpdatePositionMode,
   clipboard,
   copiedNodeId,
   copiedCallChainId,
@@ -260,6 +261,7 @@ export const NodeCard = ({
                     onAddPosition={onAddPosition}
                     onRemovePosition={onRemovePosition}
                     onChoosePosition={onChoosePosition}
+                    onUpdatePositionMode={onUpdatePositionMode}
                     clipboard={clipboard}
                     copiedNodeId={copiedNodeId}
                     copiedCallChainId={copiedCallChainId}
@@ -490,6 +492,7 @@ export const NodeCard = ({
             onAddPosition={onAddPosition}
             onRemovePosition={onRemovePosition}
             onChoosePosition={onChoosePosition}
+            onUpdatePositionMode={onUpdatePositionMode}
             openTickerModal={openTickerModal}
             tickerLists={tickerLists}
             isForgeMode={isForgeMode}
