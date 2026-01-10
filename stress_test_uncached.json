@@ -1,0 +1,167 @@
+{
+  "id": "stress-uncached",
+  "title": "Stress Test - Uncached Tickers",
+  "root": {
+    "id": "node-1",
+    "kind": "basic",
+    "title": "Uncached Ticker Strategy",
+    "weighting": "equal",
+    "children": {
+      "next": [
+        {
+          "id": "node-2",
+          "kind": "indicator",
+          "title": "FERA RSI Check",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c1", "ticker": "FERA", "metric": "Relative Strength Index", "window": 14, "operator": "<", "value": 30 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-3", "kind": "position", "title": "Buy FERA", "positions": [{ "ticker": "FERA", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-4", "kind": "position", "title": "Hold AURE", "positions": [{ "ticker": "AURE", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        },
+        {
+          "id": "node-5",
+          "kind": "indicator",
+          "title": "TELA Momentum",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c2", "ticker": "TELA", "metric": "Simple Moving Average", "window": 50, "operator": ">", "rhsTicker": "TELA", "rhsMetric": "Simple Moving Average", "rhsWindow": 200 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-6", "kind": "position", "title": "Buy TELA", "positions": [{ "ticker": "TELA", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-7", "kind": "position", "title": "Hold STEX", "positions": [{ "ticker": "STEX", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        },
+        {
+          "id": "node-8",
+          "kind": "indicator",
+          "title": "FBIO Volatility",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c3", "ticker": "FBIO", "metric": "Standard Deviation", "window": 20, "operator": "<", "value": 0.03 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-9", "kind": "position", "title": "Buy FBIO", "positions": [{ "ticker": "FBIO", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-10", "kind": "position", "title": "Hold HTEC", "positions": [{ "ticker": "HTEC", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        },
+        {
+          "id": "node-11",
+          "kind": "indicator",
+          "title": "HOTH Trend",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c4", "ticker": "HOTH", "metric": "Exponential Moving Average", "window": 20, "operator": ">", "rhsTicker": "HOTH", "rhsMetric": "Exponential Moving Average", "rhsWindow": 50 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-12", "kind": "position", "title": "Buy HOTH", "positions": [{ "ticker": "HOTH", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-13", "kind": "position", "title": "Hold RIGL", "positions": [{ "ticker": "RIGL", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        },
+        {
+          "id": "node-14",
+          "kind": "indicator",
+          "title": "VGIT Safe Haven",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c5", "ticker": "VGIT", "metric": "Relative Strength Index", "window": 14, "operator": ">", "value": 50 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-15", "kind": "position", "title": "Buy VGIT", "positions": [{ "ticker": "VGIT", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-16", "kind": "position", "title": "Hold ATLX", "positions": [{ "ticker": "ATLX", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        },
+        {
+          "id": "node-17",
+          "kind": "indicator",
+          "title": "XMHQ Quality",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c6", "ticker": "XMHQ", "metric": "Simple Moving Average", "window": 10, "operator": ">", "rhsTicker": "XMHQ", "rhsMetric": "Simple Moving Average", "rhsWindow": 30 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-18", "kind": "position", "title": "Buy XMHQ", "positions": [{ "ticker": "XMHQ", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-19", "kind": "position", "title": "Hold FTBD", "positions": [{ "ticker": "FTBD", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        },
+        {
+          "id": "node-20",
+          "kind": "indicator",
+          "title": "TSPA Growth",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c7", "ticker": "TSPA", "metric": "Cumulative Return", "window": 60, "operator": ">", "value": 0.1 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-21", "kind": "position", "title": "Buy TSPA", "positions": [{ "ticker": "TSPA", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-22", "kind": "position", "title": "Hold VMAX", "positions": [{ "ticker": "VMAX", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        },
+        {
+          "id": "node-23",
+          "kind": "indicator",
+          "title": "YYY Yield",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c8", "ticker": "YYY", "metric": "Relative Strength Index", "window": 7, "operator": "<", "value": 40 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-24", "kind": "position", "title": "Buy YYY", "positions": [{ "ticker": "YYY", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-25", "kind": "position", "title": "Hold AAXJ", "positions": [{ "ticker": "AAXJ", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        },
+        {
+          "id": "node-26",
+          "kind": "indicator",
+          "title": "CHAU China",
+          "weighting": "equal",
+          "conditions": [
+            { "id": "c9", "ticker": "CHAU", "metric": "Exponential Moving Average", "window": 10, "operator": ">", "rhsTicker": "CHAU", "rhsMetric": "Simple Moving Average", "rhsWindow": 20 }
+          ],
+          "children": {
+            "then": [
+              { "id": "node-27", "kind": "position", "title": "Buy CHAU", "positions": [{ "ticker": "CHAU", "weight": 100 }], "weighting": "equal", "children": {} }
+            ],
+            "else": [
+              { "id": "node-28", "kind": "position", "title": "Cash", "positions": [{ "ticker": "BIL", "weight": 100 }], "weighting": "equal", "children": {} }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

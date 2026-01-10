@@ -13,7 +13,7 @@ This is a flowchart-based trading algorithm builder called "System Block Chain".
 ## Project Structure
 
 - **Root `/App.tsx`**: Initial draft/prototype (outdated - DO NOT modify)
-- **`/System.app/`**: Main application directory
+- **`/app/`**: Main application directory (frontend + backend)
   - **`src/App.tsx`**: Primary application logic (832 lines) - the actual implementation
   - **`src/main.tsx`**: React entry point
   - **`server/index.mjs`**: Express API server for ticker data management
@@ -83,7 +83,7 @@ API server on port 8787 (configurable via `PORT` env var):
 
 ### Frontend Development
 ```bash
-cd System.app
+cd app
 npm install          # Install dependencies
 npm run dev          # Start Vite dev server (default: http://localhost:5173)
 npm run build        # TypeScript check + production build to dist/
@@ -93,7 +93,7 @@ npm run lint         # ESLint check
 
 ### Backend Development
 ```bash
-cd System.app
+cd app
 npm run api          # Start Express API server on port 8787
 ```
 
@@ -101,7 +101,7 @@ npm run api          # Start Express API server on port 8787
 
 ### Python Data Download
 ```bash
-cd System.app/ticker-data
+cd app/ticker-data
 python download.py --tickers-file tickers.txt --out-dir data/ticker_data_parquet
 ```
 

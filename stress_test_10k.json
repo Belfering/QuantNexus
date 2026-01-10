@@ -1,0 +1,1914 @@
+{
+  "id": "root",
+  "kind": "indicator",
+  "title": "10K Indicator Stress Test",
+  "children": {
+    "then": [
+      {
+        "id": "node-1",
+        "kind": "indicator", 
+        "title": "Check 1",
+        "children": {
+          "then": [
+      {
+        "id": "node-2",
+        "kind": "indicator", 
+        "title": "Check 2",
+        "children": {
+          "then": [
+      {
+        "id": "node-3",
+        "kind": "indicator", 
+        "title": "Check 3",
+        "children": {
+          "then": [
+      {
+        "id": "node-4",
+        "kind": "indicator", 
+        "title": "Check 4",
+        "children": {
+          "then": [
+      {
+        "id": "node-5",
+        "kind": "indicator", 
+        "title": "Check 5",
+        "children": {
+          "then": [
+      {
+        "id": "node-6",
+        "kind": "indicator", 
+        "title": "Check 6",
+        "children": {
+          "then": [
+      {
+        "id": "node-7",
+        "kind": "indicator", 
+        "title": "Check 7",
+        "children": {
+          "then": [
+      {
+        "id": "node-8",
+        "kind": "indicator", 
+        "title": "Check 8",
+        "children": {
+          "then": [
+      {
+        "id": "node-9",
+        "kind": "indicator", 
+        "title": "Check 9",
+        "children": {
+          "then": [
+      {
+        "id": "node-10",
+        "kind": "indicator", 
+        "title": "Check 10",
+        "children": {
+          "then": [
+      {
+        "id": "node-11",
+        "kind": "indicator", 
+        "title": "Check 11",
+        "children": {
+          "then": [
+      {
+        "id": "node-12",
+        "kind": "indicator", 
+        "title": "Check 12",
+        "children": {
+          "then": [
+      {
+        "id": "node-13",
+        "kind": "indicator", 
+        "title": "Check 13",
+        "children": {
+          "then": [
+      {
+        "id": "node-14",
+        "kind": "indicator", 
+        "title": "Check 14",
+        "children": {
+          "then": [
+      {
+        "id": "node-15",
+        "kind": "indicator", 
+        "title": "Check 15",
+        "children": {
+          "then": [
+      {
+        "id": "node-16",
+        "kind": "indicator", 
+        "title": "Check 16",
+        "children": {
+          "then": [
+      {
+        "id": "node-17",
+        "kind": "indicator", 
+        "title": "Check 17",
+        "children": {
+          "then": [
+      {
+        "id": "node-18",
+        "kind": "indicator", 
+        "title": "Check 18",
+        "children": {
+          "then": [
+      {
+        "id": "node-19",
+        "kind": "indicator", 
+        "title": "Check 19",
+        "children": {
+          "then": [
+      {
+        "id": "node-20",
+        "kind": "indicator", 
+        "title": "Check 20",
+        "children": {
+          "then": [
+      {
+        "id": "node-21",
+        "kind": "indicator", 
+        "title": "Check 21",
+        "children": {
+          "then": [
+      {
+        "id": "node-22",
+        "kind": "indicator", 
+        "title": "Check 22",
+        "children": {
+          "then": [
+      {
+        "id": "node-23",
+        "kind": "indicator", 
+        "title": "Check 23",
+        "children": {
+          "then": [
+      {
+        "id": "node-24",
+        "kind": "indicator", 
+        "title": "Check 24",
+        "children": {
+          "then": [
+      {
+        "id": "node-25",
+        "kind": "indicator", 
+        "title": "Check 25",
+        "children": {
+          "then": [
+      {
+        "id": "node-26",
+        "kind": "indicator", 
+        "title": "Check 26",
+        "children": {
+          "then": [
+      {
+        "id": "node-27",
+        "kind": "indicator", 
+        "title": "Check 27",
+        "children": {
+          "then": [
+      {
+        "id": "node-28",
+        "kind": "indicator", 
+        "title": "Check 28",
+        "children": {
+          "then": [
+      {
+        "id": "node-29",
+        "kind": "indicator", 
+        "title": "Check 29",
+        "children": {
+          "then": [
+      {
+        "id": "node-30",
+        "kind": "indicator", 
+        "title": "Check 30",
+        "children": {
+          "then": [
+      {
+        "id": "node-31",
+        "kind": "indicator", 
+        "title": "Check 31",
+        "children": {
+          "then": [
+      {
+        "id": "node-32",
+        "kind": "indicator", 
+        "title": "Check 32",
+        "children": {
+          "then": [
+      {
+        "id": "node-33",
+        "kind": "indicator", 
+        "title": "Check 33",
+        "children": {
+          "then": [
+      {
+        "id": "node-34",
+        "kind": "indicator", 
+        "title": "Check 34",
+        "children": {
+          "then": [
+      {
+        "id": "node-35",
+        "kind": "indicator", 
+        "title": "Check 35",
+        "children": {
+          "then": [
+      {
+        "id": "node-36",
+        "kind": "indicator", 
+        "title": "Check 36",
+        "children": {
+          "then": [
+      {
+        "id": "node-37",
+        "kind": "indicator", 
+        "title": "Check 37",
+        "children": {
+          "then": [
+      {
+        "id": "node-38",
+        "kind": "indicator", 
+        "title": "Check 38",
+        "children": {
+          "then": [
+      {
+        "id": "node-39",
+        "kind": "indicator", 
+        "title": "Check 39",
+        "children": {
+          "then": [
+      {
+        "id": "node-40",
+        "kind": "indicator", 
+        "title": "Check 40",
+        "children": {
+          "then": [
+      {
+        "id": "node-41",
+        "kind": "indicator", 
+        "title": "Check 41",
+        "children": {
+          "then": [
+      {
+        "id": "node-42",
+        "kind": "indicator", 
+        "title": "Check 42",
+        "children": {
+          "then": [
+      {
+        "id": "node-43",
+        "kind": "indicator", 
+        "title": "Check 43",
+        "children": {
+          "then": [
+      {
+        "id": "node-44",
+        "kind": "indicator", 
+        "title": "Check 44",
+        "children": {
+          "then": [
+      {
+        "id": "node-45",
+        "kind": "indicator", 
+        "title": "Check 45",
+        "children": {
+          "then": [
+      {
+        "id": "node-46",
+        "kind": "indicator", 
+        "title": "Check 46",
+        "children": {
+          "then": [
+      {
+        "id": "node-47",
+        "kind": "indicator", 
+        "title": "Check 47",
+        "children": {
+          "then": [
+      {
+        "id": "node-48",
+        "kind": "indicator", 
+        "title": "Check 48",
+        "children": {
+          "then": [
+      {
+        "id": "node-49",
+        "kind": "indicator", 
+        "title": "Check 49",
+        "children": {
+          "then": [
+      {
+        "id": "node-50",
+        "kind": "indicator", 
+        "title": "Check 50",
+        "children": {
+          "then": [
+      {
+        "id": "node-51",
+        "kind": "indicator", 
+        "title": "Check 51",
+        "children": {
+          "then": [
+      {
+        "id": "node-52",
+        "kind": "indicator", 
+        "title": "Check 52",
+        "children": {
+          "then": [
+      {
+        "id": "node-53",
+        "kind": "indicator", 
+        "title": "Check 53",
+        "children": {
+          "then": [
+      {
+        "id": "node-54",
+        "kind": "indicator", 
+        "title": "Check 54",
+        "children": {
+          "then": [
+      {
+        "id": "node-55",
+        "kind": "indicator", 
+        "title": "Check 55",
+        "children": {
+          "then": [
+      {
+        "id": "node-56",
+        "kind": "indicator", 
+        "title": "Check 56",
+        "children": {
+          "then": [
+      {
+        "id": "node-57",
+        "kind": "indicator", 
+        "title": "Check 57",
+        "children": {
+          "then": [
+      {
+        "id": "node-58",
+        "kind": "indicator", 
+        "title": "Check 58",
+        "children": {
+          "then": [
+      {
+        "id": "node-59",
+        "kind": "indicator", 
+        "title": "Check 59",
+        "children": {
+          "then": [
+      {
+        "id": "node-60",
+        "kind": "indicator", 
+        "title": "Check 60",
+        "children": {
+          "then": [
+      {
+        "id": "node-61",
+        "kind": "indicator", 
+        "title": "Check 61",
+        "children": {
+          "then": [
+      {
+        "id": "node-62",
+        "kind": "indicator", 
+        "title": "Check 62",
+        "children": {
+          "then": [
+      {
+        "id": "node-63",
+        "kind": "indicator", 
+        "title": "Check 63",
+        "children": {
+          "then": [
+      {
+        "id": "node-64",
+        "kind": "indicator", 
+        "title": "Check 64",
+        "children": {
+          "then": [
+      {
+        "id": "node-65",
+        "kind": "indicator", 
+        "title": "Check 65",
+        "children": {
+          "then": [
+      {
+        "id": "node-66",
+        "kind": "indicator", 
+        "title": "Check 66",
+        "children": {
+          "then": [
+      {
+        "id": "node-67",
+        "kind": "indicator", 
+        "title": "Check 67",
+        "children": {
+          "then": [
+      {
+        "id": "node-68",
+        "kind": "indicator", 
+        "title": "Check 68",
+        "children": {
+          "then": [
+      {
+        "id": "node-69",
+        "kind": "indicator", 
+        "title": "Check 69",
+        "children": {
+          "then": [
+      {
+        "id": "node-70",
+        "kind": "indicator", 
+        "title": "Check 70",
+        "children": {
+          "then": [
+      {
+        "id": "node-71",
+        "kind": "indicator", 
+        "title": "Check 71",
+        "children": {
+          "then": [
+      {
+        "id": "node-72",
+        "kind": "indicator", 
+        "title": "Check 72",
+        "children": {
+          "then": [
+      {
+        "id": "node-73",
+        "kind": "indicator", 
+        "title": "Check 73",
+        "children": {
+          "then": [
+      {
+        "id": "node-74",
+        "kind": "indicator", 
+        "title": "Check 74",
+        "children": {
+          "then": [
+      {
+        "id": "node-75",
+        "kind": "indicator", 
+        "title": "Check 75",
+        "children": {
+          "then": [
+      {
+        "id": "node-76",
+        "kind": "indicator", 
+        "title": "Check 76",
+        "children": {
+          "then": [
+      {
+        "id": "node-77",
+        "kind": "indicator", 
+        "title": "Check 77",
+        "children": {
+          "then": [
+      {
+        "id": "node-78",
+        "kind": "indicator", 
+        "title": "Check 78",
+        "children": {
+          "then": [
+      {
+        "id": "node-79",
+        "kind": "indicator", 
+        "title": "Check 79",
+        "children": {
+          "then": [
+      {
+        "id": "node-80",
+        "kind": "indicator", 
+        "title": "Check 80",
+        "children": {
+          "then": [
+      {
+        "id": "node-81",
+        "kind": "indicator", 
+        "title": "Check 81",
+        "children": {
+          "then": [
+      {
+        "id": "node-82",
+        "kind": "indicator", 
+        "title": "Check 82",
+        "children": {
+          "then": [
+      {
+        "id": "node-83",
+        "kind": "indicator", 
+        "title": "Check 83",
+        "children": {
+          "then": [
+      {
+        "id": "node-84",
+        "kind": "indicator", 
+        "title": "Check 84",
+        "children": {
+          "then": [
+      {
+        "id": "node-85",
+        "kind": "indicator", 
+        "title": "Check 85",
+        "children": {
+          "then": [
+      {
+        "id": "node-86",
+        "kind": "indicator", 
+        "title": "Check 86",
+        "children": {
+          "then": [
+      {
+        "id": "node-87",
+        "kind": "indicator", 
+        "title": "Check 87",
+        "children": {
+          "then": [
+      {
+        "id": "node-88",
+        "kind": "indicator", 
+        "title": "Check 88",
+        "children": {
+          "then": [
+      {
+        "id": "node-89",
+        "kind": "indicator", 
+        "title": "Check 89",
+        "children": {
+          "then": [
+      {
+        "id": "node-90",
+        "kind": "indicator", 
+        "title": "Check 90",
+        "children": {
+          "then": [
+      {
+        "id": "node-91",
+        "kind": "indicator", 
+        "title": "Check 91",
+        "children": {
+          "then": [
+      {
+        "id": "node-92",
+        "kind": "indicator", 
+        "title": "Check 92",
+        "children": {
+          "then": [
+      {
+        "id": "node-93",
+        "kind": "indicator", 
+        "title": "Check 93",
+        "children": {
+          "then": [
+      {
+        "id": "node-94",
+        "kind": "indicator", 
+        "title": "Check 94",
+        "children": {
+          "then": [
+      {
+        "id": "node-95",
+        "kind": "indicator", 
+        "title": "Check 95",
+        "children": {
+          "then": [
+      {
+        "id": "node-96",
+        "kind": "indicator", 
+        "title": "Check 96",
+        "children": {
+          "then": [
+      {
+        "id": "node-97",
+        "kind": "indicator", 
+        "title": "Check 97",
+        "children": {
+          "then": [
+      {
+        "id": "node-98",
+        "kind": "indicator", 
+        "title": "Check 98",
+        "children": {
+          "then": [
+      {
+        "id": "node-99",
+        "kind": "indicator", 
+        "title": "Check 99",
+        "children": {
+          "then": [
+      {
+        "id": "node-100",
+        "kind": "indicator", 
+        "title": "Check 100",
+        "children": {
+          "then": [
+            {"id": "pos-win", "kind": "position", "children": {}, "positions": ["SPY"], "weighting": "equal"}
+          ],
+          "else": [{"id": "else-100", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c100a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 200},
+          {"id": "c100b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 105},
+          {"id": "c100c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 50, "window": 14},
+          {"id": "c100d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 300},
+          {"id": "c100e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 110}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-99", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c99a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 198},
+          {"id": "c99b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 104},
+          {"id": "c99c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 49, "window": 14},
+          {"id": "c99d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 297},
+          {"id": "c99e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 109}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-98", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c98a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 196},
+          {"id": "c98b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 103},
+          {"id": "c98c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 48, "window": 14},
+          {"id": "c98d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 294},
+          {"id": "c98e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 108}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-97", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c97a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 194},
+          {"id": "c97b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 102},
+          {"id": "c97c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 47, "window": 14},
+          {"id": "c97d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 291},
+          {"id": "c97e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 107}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-96", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c96a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 192},
+          {"id": "c96b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 101},
+          {"id": "c96c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 46, "window": 14},
+          {"id": "c96d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 288},
+          {"id": "c96e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 106}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-95", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c95a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 190},
+          {"id": "c95b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 100},
+          {"id": "c95c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 45, "window": 14},
+          {"id": "c95d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 285},
+          {"id": "c95e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 105}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-94", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c94a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 188},
+          {"id": "c94b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 99},
+          {"id": "c94c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 44, "window": 14},
+          {"id": "c94d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 282},
+          {"id": "c94e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 104}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-93", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c93a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 186},
+          {"id": "c93b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 98},
+          {"id": "c93c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 43, "window": 14},
+          {"id": "c93d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 279},
+          {"id": "c93e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 103}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-92", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c92a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 184},
+          {"id": "c92b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 97},
+          {"id": "c92c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 42, "window": 14},
+          {"id": "c92d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 276},
+          {"id": "c92e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 102}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-91", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c91a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 182},
+          {"id": "c91b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 96},
+          {"id": "c91c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 41, "window": 14},
+          {"id": "c91d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 273},
+          {"id": "c91e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 101}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-90", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c90a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 180},
+          {"id": "c90b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 95},
+          {"id": "c90c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 40, "window": 14},
+          {"id": "c90d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 270},
+          {"id": "c90e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 100}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-89", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c89a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 178},
+          {"id": "c89b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 94},
+          {"id": "c89c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 39, "window": 14},
+          {"id": "c89d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 267},
+          {"id": "c89e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 99}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-88", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c88a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 176},
+          {"id": "c88b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 93},
+          {"id": "c88c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 38, "window": 14},
+          {"id": "c88d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 264},
+          {"id": "c88e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 98}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-87", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c87a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 174},
+          {"id": "c87b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 92},
+          {"id": "c87c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 37, "window": 14},
+          {"id": "c87d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 261},
+          {"id": "c87e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 97}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-86", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c86a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 172},
+          {"id": "c86b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 91},
+          {"id": "c86c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 36, "window": 14},
+          {"id": "c86d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 258},
+          {"id": "c86e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 96}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-85", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c85a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 170},
+          {"id": "c85b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 90},
+          {"id": "c85c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 35, "window": 14},
+          {"id": "c85d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 255},
+          {"id": "c85e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 95}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-84", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c84a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 168},
+          {"id": "c84b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 89},
+          {"id": "c84c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 34, "window": 14},
+          {"id": "c84d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 252},
+          {"id": "c84e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 94}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-83", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c83a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 166},
+          {"id": "c83b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 88},
+          {"id": "c83c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 33, "window": 14},
+          {"id": "c83d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 249},
+          {"id": "c83e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 93}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-82", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c82a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 164},
+          {"id": "c82b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 87},
+          {"id": "c82c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 32, "window": 14},
+          {"id": "c82d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 246},
+          {"id": "c82e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 92}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-81", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c81a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 162},
+          {"id": "c81b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 86},
+          {"id": "c81c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 31, "window": 14},
+          {"id": "c81d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 243},
+          {"id": "c81e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 91}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-80", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c80a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 160},
+          {"id": "c80b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 85},
+          {"id": "c80c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 30, "window": 14},
+          {"id": "c80d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 240},
+          {"id": "c80e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 90}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-79", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c79a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 158},
+          {"id": "c79b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 84},
+          {"id": "c79c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 69, "window": 14},
+          {"id": "c79d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 237},
+          {"id": "c79e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 89}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-78", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c78a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 156},
+          {"id": "c78b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 83},
+          {"id": "c78c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 68, "window": 14},
+          {"id": "c78d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 234},
+          {"id": "c78e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 88}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-77", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c77a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 154},
+          {"id": "c77b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 82},
+          {"id": "c77c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 67, "window": 14},
+          {"id": "c77d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 231},
+          {"id": "c77e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 87}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-76", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c76a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 152},
+          {"id": "c76b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 81},
+          {"id": "c76c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 66, "window": 14},
+          {"id": "c76d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 228},
+          {"id": "c76e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 86}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-75", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c75a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 150},
+          {"id": "c75b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 80},
+          {"id": "c75c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 65, "window": 14},
+          {"id": "c75d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 225},
+          {"id": "c75e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 85}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-74", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c74a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 148},
+          {"id": "c74b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 79},
+          {"id": "c74c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 64, "window": 14},
+          {"id": "c74d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 222},
+          {"id": "c74e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 84}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-73", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c73a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 146},
+          {"id": "c73b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 78},
+          {"id": "c73c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 63, "window": 14},
+          {"id": "c73d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 219},
+          {"id": "c73e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 83}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-72", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c72a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 144},
+          {"id": "c72b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 77},
+          {"id": "c72c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 62, "window": 14},
+          {"id": "c72d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 216},
+          {"id": "c72e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 82}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-71", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c71a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 142},
+          {"id": "c71b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 76},
+          {"id": "c71c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 61, "window": 14},
+          {"id": "c71d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 213},
+          {"id": "c71e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 81}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-70", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c70a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 140},
+          {"id": "c70b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 75},
+          {"id": "c70c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 60, "window": 14},
+          {"id": "c70d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 210},
+          {"id": "c70e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 80}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-69", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c69a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 138},
+          {"id": "c69b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 74},
+          {"id": "c69c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 59, "window": 14},
+          {"id": "c69d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 207},
+          {"id": "c69e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 79}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-68", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c68a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 136},
+          {"id": "c68b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 73},
+          {"id": "c68c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 58, "window": 14},
+          {"id": "c68d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 204},
+          {"id": "c68e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 78}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-67", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c67a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 134},
+          {"id": "c67b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 72},
+          {"id": "c67c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 57, "window": 14},
+          {"id": "c67d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 201},
+          {"id": "c67e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 77}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-66", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c66a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 132},
+          {"id": "c66b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 71},
+          {"id": "c66c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 56, "window": 14},
+          {"id": "c66d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 198},
+          {"id": "c66e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 76}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-65", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c65a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 130},
+          {"id": "c65b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 70},
+          {"id": "c65c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 55, "window": 14},
+          {"id": "c65d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 195},
+          {"id": "c65e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 75}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-64", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c64a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 128},
+          {"id": "c64b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 69},
+          {"id": "c64c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 54, "window": 14},
+          {"id": "c64d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 192},
+          {"id": "c64e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 74}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-63", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c63a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 126},
+          {"id": "c63b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 68},
+          {"id": "c63c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 53, "window": 14},
+          {"id": "c63d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 189},
+          {"id": "c63e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 73}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-62", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c62a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 124},
+          {"id": "c62b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 67},
+          {"id": "c62c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 52, "window": 14},
+          {"id": "c62d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 186},
+          {"id": "c62e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 72}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-61", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c61a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 122},
+          {"id": "c61b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 66},
+          {"id": "c61c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 51, "window": 14},
+          {"id": "c61d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 183},
+          {"id": "c61e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 71}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-60", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c60a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 120},
+          {"id": "c60b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 65},
+          {"id": "c60c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 50, "window": 14},
+          {"id": "c60d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 180},
+          {"id": "c60e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 70}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-59", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c59a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 118},
+          {"id": "c59b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 64},
+          {"id": "c59c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 49, "window": 14},
+          {"id": "c59d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 177},
+          {"id": "c59e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 69}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-58", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c58a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 116},
+          {"id": "c58b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 63},
+          {"id": "c58c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 48, "window": 14},
+          {"id": "c58d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 174},
+          {"id": "c58e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 68}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-57", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c57a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 114},
+          {"id": "c57b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 62},
+          {"id": "c57c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 47, "window": 14},
+          {"id": "c57d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 171},
+          {"id": "c57e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 67}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-56", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c56a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 112},
+          {"id": "c56b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 61},
+          {"id": "c56c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 46, "window": 14},
+          {"id": "c56d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 168},
+          {"id": "c56e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 66}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-55", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c55a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 110},
+          {"id": "c55b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 60},
+          {"id": "c55c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 45, "window": 14},
+          {"id": "c55d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 165},
+          {"id": "c55e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 65}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-54", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c54a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 108},
+          {"id": "c54b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 59},
+          {"id": "c54c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 44, "window": 14},
+          {"id": "c54d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 162},
+          {"id": "c54e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 64}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-53", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c53a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 106},
+          {"id": "c53b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 58},
+          {"id": "c53c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 43, "window": 14},
+          {"id": "c53d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 159},
+          {"id": "c53e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 63}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-52", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c52a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 104},
+          {"id": "c52b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 57},
+          {"id": "c52c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 42, "window": 14},
+          {"id": "c52d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 156},
+          {"id": "c52e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 62}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-51", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c51a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 102},
+          {"id": "c51b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 56},
+          {"id": "c51c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 41, "window": 14},
+          {"id": "c51d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 153},
+          {"id": "c51e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 61}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-50", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c50a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 100},
+          {"id": "c50b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 55},
+          {"id": "c50c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 40, "window": 14},
+          {"id": "c50d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 150},
+          {"id": "c50e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 60}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-49", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c49a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 98},
+          {"id": "c49b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 54},
+          {"id": "c49c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 39, "window": 14},
+          {"id": "c49d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 147},
+          {"id": "c49e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 59}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-48", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c48a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 96},
+          {"id": "c48b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 53},
+          {"id": "c48c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 38, "window": 14},
+          {"id": "c48d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 144},
+          {"id": "c48e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 58}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-47", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c47a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 94},
+          {"id": "c47b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 52},
+          {"id": "c47c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 37, "window": 14},
+          {"id": "c47d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 141},
+          {"id": "c47e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 57}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-46", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c46a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 92},
+          {"id": "c46b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 51},
+          {"id": "c46c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 36, "window": 14},
+          {"id": "c46d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 138},
+          {"id": "c46e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 56}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-45", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c45a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 90},
+          {"id": "c45b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 50},
+          {"id": "c45c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 35, "window": 14},
+          {"id": "c45d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 135},
+          {"id": "c45e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 55}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-44", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c44a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 88},
+          {"id": "c44b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 49},
+          {"id": "c44c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 34, "window": 14},
+          {"id": "c44d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 132},
+          {"id": "c44e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 54}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-43", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c43a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 86},
+          {"id": "c43b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 48},
+          {"id": "c43c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 33, "window": 14},
+          {"id": "c43d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 129},
+          {"id": "c43e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 53}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-42", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c42a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 84},
+          {"id": "c42b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 47},
+          {"id": "c42c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 32, "window": 14},
+          {"id": "c42d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 126},
+          {"id": "c42e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 52}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-41", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c41a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 82},
+          {"id": "c41b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 46},
+          {"id": "c41c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 31, "window": 14},
+          {"id": "c41d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 123},
+          {"id": "c41e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 51}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-40", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c40a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 80},
+          {"id": "c40b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 45},
+          {"id": "c40c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 30, "window": 14},
+          {"id": "c40d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 120},
+          {"id": "c40e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 50}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-39", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c39a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 78},
+          {"id": "c39b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 44},
+          {"id": "c39c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 69, "window": 14},
+          {"id": "c39d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 117},
+          {"id": "c39e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 49}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-38", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c38a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 76},
+          {"id": "c38b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 43},
+          {"id": "c38c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 68, "window": 14},
+          {"id": "c38d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 114},
+          {"id": "c38e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 48}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-37", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c37a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 74},
+          {"id": "c37b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 42},
+          {"id": "c37c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 67, "window": 14},
+          {"id": "c37d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 111},
+          {"id": "c37e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 47}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-36", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c36a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 72},
+          {"id": "c36b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 41},
+          {"id": "c36c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 66, "window": 14},
+          {"id": "c36d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 108},
+          {"id": "c36e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 46}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-35", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c35a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 70},
+          {"id": "c35b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 40},
+          {"id": "c35c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 65, "window": 14},
+          {"id": "c35d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 105},
+          {"id": "c35e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 45}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-34", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c34a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 68},
+          {"id": "c34b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 39},
+          {"id": "c34c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 64, "window": 14},
+          {"id": "c34d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 102},
+          {"id": "c34e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 44}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-33", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c33a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 66},
+          {"id": "c33b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 38},
+          {"id": "c33c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 63, "window": 14},
+          {"id": "c33d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 99},
+          {"id": "c33e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 43}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-32", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c32a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 64},
+          {"id": "c32b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 37},
+          {"id": "c32c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 62, "window": 14},
+          {"id": "c32d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 96},
+          {"id": "c32e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 42}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-31", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c31a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 62},
+          {"id": "c31b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 36},
+          {"id": "c31c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 61, "window": 14},
+          {"id": "c31d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 93},
+          {"id": "c31e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 41}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-30", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c30a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 60},
+          {"id": "c30b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 35},
+          {"id": "c30c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 60, "window": 14},
+          {"id": "c30d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 90},
+          {"id": "c30e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 40}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-29", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c29a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 58},
+          {"id": "c29b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 34},
+          {"id": "c29c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 59, "window": 14},
+          {"id": "c29d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 87},
+          {"id": "c29e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 39}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-28", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c28a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 56},
+          {"id": "c28b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 33},
+          {"id": "c28c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 58, "window": 14},
+          {"id": "c28d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 84},
+          {"id": "c28e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 38}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-27", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c27a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 54},
+          {"id": "c27b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 32},
+          {"id": "c27c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 57, "window": 14},
+          {"id": "c27d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 81},
+          {"id": "c27e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 37}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-26", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c26a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 52},
+          {"id": "c26b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 31},
+          {"id": "c26c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 56, "window": 14},
+          {"id": "c26d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 78},
+          {"id": "c26e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 36}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-25", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c25a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 50},
+          {"id": "c25b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 30},
+          {"id": "c25c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 55, "window": 14},
+          {"id": "c25d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 75},
+          {"id": "c25e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 35}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-24", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c24a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 48},
+          {"id": "c24b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 29},
+          {"id": "c24c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 54, "window": 14},
+          {"id": "c24d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 72},
+          {"id": "c24e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 34}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-23", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c23a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 46},
+          {"id": "c23b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 28},
+          {"id": "c23c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 53, "window": 14},
+          {"id": "c23d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 69},
+          {"id": "c23e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 33}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-22", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c22a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 44},
+          {"id": "c22b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 27},
+          {"id": "c22c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 52, "window": 14},
+          {"id": "c22d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 66},
+          {"id": "c22e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 32}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-21", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c21a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 42},
+          {"id": "c21b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 26},
+          {"id": "c21c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 51, "window": 14},
+          {"id": "c21d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 63},
+          {"id": "c21e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 31}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-20", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c20a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 40},
+          {"id": "c20b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 25},
+          {"id": "c20c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 50, "window": 14},
+          {"id": "c20d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 60},
+          {"id": "c20e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 30}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-19", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c19a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 38},
+          {"id": "c19b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 24},
+          {"id": "c19c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 49, "window": 14},
+          {"id": "c19d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 57},
+          {"id": "c19e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 29}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-18", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c18a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 36},
+          {"id": "c18b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 23},
+          {"id": "c18c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 48, "window": 14},
+          {"id": "c18d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 54},
+          {"id": "c18e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 28}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-17", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c17a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 34},
+          {"id": "c17b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 22},
+          {"id": "c17c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 47, "window": 14},
+          {"id": "c17d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 51},
+          {"id": "c17e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 27}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-16", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c16a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 32},
+          {"id": "c16b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 21},
+          {"id": "c16c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 46, "window": 14},
+          {"id": "c16d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 48},
+          {"id": "c16e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 26}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-15", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c15a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 30},
+          {"id": "c15b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 20},
+          {"id": "c15c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 45, "window": 14},
+          {"id": "c15d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 45},
+          {"id": "c15e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 25}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-14", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c14a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 28},
+          {"id": "c14b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 19},
+          {"id": "c14c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 44, "window": 14},
+          {"id": "c14d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 42},
+          {"id": "c14e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 24}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-13", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c13a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 26},
+          {"id": "c13b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 18},
+          {"id": "c13c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 43, "window": 14},
+          {"id": "c13d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 39},
+          {"id": "c13e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 23}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-12", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c12a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 24},
+          {"id": "c12b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 17},
+          {"id": "c12c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 42, "window": 14},
+          {"id": "c12d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 36},
+          {"id": "c12e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 22}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-11", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c11a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 22},
+          {"id": "c11b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 16},
+          {"id": "c11c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 41, "window": 14},
+          {"id": "c11d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 33},
+          {"id": "c11e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 21}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-10", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c10a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 20},
+          {"id": "c10b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 15},
+          {"id": "c10c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 40, "window": 14},
+          {"id": "c10d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 30},
+          {"id": "c10e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 20}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-9", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c9a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 18},
+          {"id": "c9b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 14},
+          {"id": "c9c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 39, "window": 14},
+          {"id": "c9d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 27},
+          {"id": "c9e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 19}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-8", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c8a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 16},
+          {"id": "c8b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 13},
+          {"id": "c8c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 38, "window": 14},
+          {"id": "c8d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 24},
+          {"id": "c8e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 18}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-7", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c7a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 14},
+          {"id": "c7b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 12},
+          {"id": "c7c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 37, "window": 14},
+          {"id": "c7d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 21},
+          {"id": "c7e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 17}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-6", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c6a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 12},
+          {"id": "c6b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 11},
+          {"id": "c6c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 36, "window": 14},
+          {"id": "c6d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 18},
+          {"id": "c6e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 16}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-5", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c5a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 10},
+          {"id": "c5b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 10},
+          {"id": "c5c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 35, "window": 14},
+          {"id": "c5d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 15},
+          {"id": "c5e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 15}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-4", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c4a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 8},
+          {"id": "c4b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 9},
+          {"id": "c4c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 34, "window": 14},
+          {"id": "c4d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 12},
+          {"id": "c4e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 14}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-3", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c3a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 6},
+          {"id": "c3b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 8},
+          {"id": "c3c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 33, "window": 14},
+          {"id": "c3d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 9},
+          {"id": "c3e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 13}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-2", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c2a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 4},
+          {"id": "c2b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 7},
+          {"id": "c2c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 32, "window": 14},
+          {"id": "c2d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 6},
+          {"id": "c2e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 12}
+        ],
+        "weighting": "equal"
+      }
+,
+          ],
+          "else": [{"id": "else-1", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}]
+        },
+        "conditions": [
+          {"id": "c1a", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 2},
+          {"id": "c1b", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 6},
+          {"id": "c1c", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 31, "window": 14},
+          {"id": "c1d", "type": "and", "ticker": "QQQ", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 3},
+          {"id": "c1e", "type": "and", "ticker": "QQQ", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 11}
+        ],
+        "weighting": "equal"
+      }
+    ],
+    "else": [{"id": "root-else", "kind": "position", "children": {}, "positions": ["GLD"], "weighting": "equal"}]
+  },
+  "conditions": [
+    {"id": "root-c1", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 200}
+  ],
+  "weighting": "equal"
+}

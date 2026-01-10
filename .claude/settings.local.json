@@ -102,7 +102,30 @@
       "mcp__railway-mcp-server__list-services",
       "mcp__railway-mcp-server__list-variables",
       "mcp__railway-mcp-server__get-logs",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:ta-lib.org)",
+      "WebSearch",
+      "Bash(mkdir:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(brew install:*)",
+      "Bash(pip3 install:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(pip install:*)",
+      "Bash(pyenv install:*)",
+      "Bash(pyenv local:*)",
+      "Bash(~/.pyenv/versions/3.12.12/bin/python generate_js_reference.py)",
+      "Bash(cargo install:*)",
+      "Bash(cargo add:*)",
+      "Bash(pkill:*)",
+      "Bash(./target/release/backtest:*)",
+      "Bash(for i in 1 2 3)",
+      "Bash(__NEW_LINE__ echo \"\")",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "Bash(lsof:*)",
+      "Bash(cargo search:*)"
     ]
   }
 }

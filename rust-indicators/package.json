@@ -1,0 +1,13 @@
+{
+  "name": "flowchart-indicators",
+  "version": "0.1.0",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "flowchart-indicators",
+    "triples": {}
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0"
+  }
+}

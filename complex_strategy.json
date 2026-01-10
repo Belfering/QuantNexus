@@ -1,0 +1,85 @@
+{
+  "id": "root",
+  "kind": "indicator",
+  "title": "Dual Momentum with Volatility Filter",
+  "children": {
+    "then": [
+      {
+        "id": "momentum-branch",
+        "kind": "indicator",
+        "title": "Short-Term Momentum Check",
+        "children": {
+          "then": [
+            {
+              "id": "ranking-node",
+              "kind": "function",
+              "title": "Pick Top 2 by ROC",
+              "children": {
+                "next": [
+                  {"id": "p1", "kind": "position", "children": {}, "positions": ["SPY"], "weighting": "equal"},
+                  {"id": "p2", "kind": "position", "children": {}, "positions": ["QQQ"], "weighting": "equal"},
+                  {"id": "p3", "kind": "position", "children": {}, "positions": ["IWM"], "weighting": "equal"},
+                  {"id": "p4", "kind": "position", "children": {}, "positions": ["EFA"], "weighting": "equal"},
+                  {"id": "p5", "kind": "position", "children": {}, "positions": ["EEM"], "weighting": "equal"}
+                ]
+              },
+              "weighting": "equal",
+              "metric": "Rate of Change",
+              "window": 20,
+              "bottom": 2,
+              "rank": "Top"
+            }
+          ],
+          "else": [
+            {
+              "id": "defensive",
+              "kind": "indicator",
+              "title": "Bond vs Gold Check",
+              "children": {
+                "then": [
+                  {"id": "bond-pos", "kind": "position", "children": {}, "positions": ["TLT"], "weighting": "equal"}
+                ],
+                "else": [
+                  {"id": "gold-pos", "kind": "position", "children": {}, "positions": ["GLD"], "weighting": "equal"}
+                ]
+              },
+              "conditions": [
+                {"id": "c-bond", "type": "if", "ticker": "TLT", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 20}
+              ],
+              "weighting": "equal"
+            }
+          ]
+        },
+        "conditions": [
+          {"id": "c-short-mom", "type": "if", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 20},
+          {"id": "c-short-rsi", "type": "and", "ticker": "SPY", "metric": "Relative Strength Index", "comparator": "gt", "threshold": 40, "window": 14}
+        ],
+        "weighting": "equal"
+      }
+    ],
+    "else": [
+      {
+        "id": "risk-off",
+        "kind": "indicator",
+        "title": "Volatility Check",
+        "children": {
+          "then": [
+            {"id": "cash-pos", "kind": "position", "children": {}, "positions": ["BIL"], "weighting": "equal"}
+          ],
+          "else": [
+            {"id": "safe-bond", "kind": "position", "children": {}, "positions": ["SHY"], "weighting": "equal"}
+          ]
+        },
+        "conditions": [
+          {"id": "c-vol", "type": "if", "ticker": "SPY", "metric": "Average True Range", "comparator": "gt", "threshold": 5, "window": 14}
+        ],
+        "weighting": "equal"
+      }
+    ]
+  },
+  "conditions": [
+    {"id": "c-trend", "type": "if", "ticker": "SPY", "metric": "Simple Moving Average", "comparator": "gt", "threshold": 0, "window": 200},
+    {"id": "c-mom", "type": "and", "ticker": "SPY", "metric": "Rate of Change", "comparator": "gt", "threshold": 0, "window": 60}
+  ],
+  "weighting": "equal"
+}

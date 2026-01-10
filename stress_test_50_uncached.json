@@ -1,0 +1,2410 @@
+{
+  "id": "n1",
+  "kind": "basic",
+  "title": "50 Uncached Indicators",
+  "weighting": "equal",
+  "children": {
+    "next": [
+      {
+        "id": "n2",
+        "kind": "indicator",
+        "title": "AAPL RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c0",
+            "ticker": "AAPL",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n3",
+              "kind": "position",
+              "title": "Buy AAPL",
+              "positions": [
+                {
+                  "ticker": "AAPL",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n4",
+              "kind": "position",
+              "title": "Hold MSFT",
+              "positions": [
+                {
+                  "ticker": "MSFT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n5",
+        "kind": "indicator",
+        "title": "MSFT RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c1",
+            "ticker": "MSFT",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n6",
+              "kind": "position",
+              "title": "Buy MSFT",
+              "positions": [
+                {
+                  "ticker": "MSFT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n7",
+              "kind": "position",
+              "title": "Hold GOOG",
+              "positions": [
+                {
+                  "ticker": "GOOG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n8",
+        "kind": "indicator",
+        "title": "GOOG RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c2",
+            "ticker": "GOOG",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n9",
+              "kind": "position",
+              "title": "Buy GOOG",
+              "positions": [
+                {
+                  "ticker": "GOOG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n10",
+              "kind": "position",
+              "title": "Hold AMZN",
+              "positions": [
+                {
+                  "ticker": "AMZN",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n11",
+        "kind": "indicator",
+        "title": "AMZN RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c3",
+            "ticker": "AMZN",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n12",
+              "kind": "position",
+              "title": "Buy AMZN",
+              "positions": [
+                {
+                  "ticker": "AMZN",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n13",
+              "kind": "position",
+              "title": "Hold META",
+              "positions": [
+                {
+                  "ticker": "META",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n14",
+        "kind": "indicator",
+        "title": "META RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c4",
+            "ticker": "META",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n15",
+              "kind": "position",
+              "title": "Buy META",
+              "positions": [
+                {
+                  "ticker": "META",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n16",
+              "kind": "position",
+              "title": "Hold NVDA",
+              "positions": [
+                {
+                  "ticker": "NVDA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n17",
+        "kind": "indicator",
+        "title": "NVDA RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c5",
+            "ticker": "NVDA",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n18",
+              "kind": "position",
+              "title": "Buy NVDA",
+              "positions": [
+                {
+                  "ticker": "NVDA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n19",
+              "kind": "position",
+              "title": "Hold TSLA",
+              "positions": [
+                {
+                  "ticker": "TSLA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n20",
+        "kind": "indicator",
+        "title": "TSLA RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c6",
+            "ticker": "TSLA",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n21",
+              "kind": "position",
+              "title": "Buy TSLA",
+              "positions": [
+                {
+                  "ticker": "TSLA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n22",
+              "kind": "position",
+              "title": "Hold JPM",
+              "positions": [
+                {
+                  "ticker": "JPM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n23",
+        "kind": "indicator",
+        "title": "JPM RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c7",
+            "ticker": "JPM",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n24",
+              "kind": "position",
+              "title": "Buy JPM",
+              "positions": [
+                {
+                  "ticker": "JPM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n25",
+              "kind": "position",
+              "title": "Hold V",
+              "positions": [
+                {
+                  "ticker": "V",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n26",
+        "kind": "indicator",
+        "title": "V RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c8",
+            "ticker": "V",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n27",
+              "kind": "position",
+              "title": "Buy V",
+              "positions": [
+                {
+                  "ticker": "V",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n28",
+              "kind": "position",
+              "title": "Hold JNJ",
+              "positions": [
+                {
+                  "ticker": "JNJ",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n29",
+        "kind": "indicator",
+        "title": "JNJ RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c9",
+            "ticker": "JNJ",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n30",
+              "kind": "position",
+              "title": "Buy JNJ",
+              "positions": [
+                {
+                  "ticker": "JNJ",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n31",
+              "kind": "position",
+              "title": "Hold WMT",
+              "positions": [
+                {
+                  "ticker": "WMT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n32",
+        "kind": "indicator",
+        "title": "WMT RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c10",
+            "ticker": "WMT",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n33",
+              "kind": "position",
+              "title": "Buy WMT",
+              "positions": [
+                {
+                  "ticker": "WMT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n34",
+              "kind": "position",
+              "title": "Hold PG",
+              "positions": [
+                {
+                  "ticker": "PG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n35",
+        "kind": "indicator",
+        "title": "PG RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c11",
+            "ticker": "PG",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n36",
+              "kind": "position",
+              "title": "Buy PG",
+              "positions": [
+                {
+                  "ticker": "PG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n37",
+              "kind": "position",
+              "title": "Hold MA",
+              "positions": [
+                {
+                  "ticker": "MA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n38",
+        "kind": "indicator",
+        "title": "MA RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c12",
+            "ticker": "MA",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n39",
+              "kind": "position",
+              "title": "Buy MA",
+              "positions": [
+                {
+                  "ticker": "MA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n40",
+              "kind": "position",
+              "title": "Hold HD",
+              "positions": [
+                {
+                  "ticker": "HD",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n41",
+        "kind": "indicator",
+        "title": "HD RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c13",
+            "ticker": "HD",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n42",
+              "kind": "position",
+              "title": "Buy HD",
+              "positions": [
+                {
+                  "ticker": "HD",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n43",
+              "kind": "position",
+              "title": "Hold DIS",
+              "positions": [
+                {
+                  "ticker": "DIS",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n44",
+        "kind": "indicator",
+        "title": "DIS RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c14",
+            "ticker": "DIS",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n45",
+              "kind": "position",
+              "title": "Buy DIS",
+              "positions": [
+                {
+                  "ticker": "DIS",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n46",
+              "kind": "position",
+              "title": "Hold NFLX",
+              "positions": [
+                {
+                  "ticker": "NFLX",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n47",
+        "kind": "indicator",
+        "title": "NFLX RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c15",
+            "ticker": "NFLX",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n48",
+              "kind": "position",
+              "title": "Buy NFLX",
+              "positions": [
+                {
+                  "ticker": "NFLX",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n49",
+              "kind": "position",
+              "title": "Hold ADBE",
+              "positions": [
+                {
+                  "ticker": "ADBE",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n50",
+        "kind": "indicator",
+        "title": "ADBE RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c16",
+            "ticker": "ADBE",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n51",
+              "kind": "position",
+              "title": "Buy ADBE",
+              "positions": [
+                {
+                  "ticker": "ADBE",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n52",
+              "kind": "position",
+              "title": "Hold CRM",
+              "positions": [
+                {
+                  "ticker": "CRM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n53",
+        "kind": "indicator",
+        "title": "CRM RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c17",
+            "ticker": "CRM",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n54",
+              "kind": "position",
+              "title": "Buy CRM",
+              "positions": [
+                {
+                  "ticker": "CRM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n55",
+              "kind": "position",
+              "title": "Hold INTC",
+              "positions": [
+                {
+                  "ticker": "INTC",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n56",
+        "kind": "indicator",
+        "title": "INTC RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c18",
+            "ticker": "INTC",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n57",
+              "kind": "position",
+              "title": "Buy INTC",
+              "positions": [
+                {
+                  "ticker": "INTC",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n58",
+              "kind": "position",
+              "title": "Hold CSCO",
+              "positions": [
+                {
+                  "ticker": "CSCO",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n59",
+        "kind": "indicator",
+        "title": "CSCO RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c19",
+            "ticker": "CSCO",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n60",
+              "kind": "position",
+              "title": "Buy CSCO",
+              "positions": [
+                {
+                  "ticker": "CSCO",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n61",
+              "kind": "position",
+              "title": "Hold AAPL",
+              "positions": [
+                {
+                  "ticker": "AAPL",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n62",
+        "kind": "indicator",
+        "title": "AAPL RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c20",
+            "ticker": "AAPL",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n63",
+              "kind": "position",
+              "title": "Buy AAPL",
+              "positions": [
+                {
+                  "ticker": "AAPL",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n64",
+              "kind": "position",
+              "title": "Hold MSFT",
+              "positions": [
+                {
+                  "ticker": "MSFT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n65",
+        "kind": "indicator",
+        "title": "MSFT RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c21",
+            "ticker": "MSFT",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n66",
+              "kind": "position",
+              "title": "Buy MSFT",
+              "positions": [
+                {
+                  "ticker": "MSFT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n67",
+              "kind": "position",
+              "title": "Hold GOOG",
+              "positions": [
+                {
+                  "ticker": "GOOG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n68",
+        "kind": "indicator",
+        "title": "GOOG RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c22",
+            "ticker": "GOOG",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n69",
+              "kind": "position",
+              "title": "Buy GOOG",
+              "positions": [
+                {
+                  "ticker": "GOOG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n70",
+              "kind": "position",
+              "title": "Hold AMZN",
+              "positions": [
+                {
+                  "ticker": "AMZN",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n71",
+        "kind": "indicator",
+        "title": "AMZN RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c23",
+            "ticker": "AMZN",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n72",
+              "kind": "position",
+              "title": "Buy AMZN",
+              "positions": [
+                {
+                  "ticker": "AMZN",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n73",
+              "kind": "position",
+              "title": "Hold META",
+              "positions": [
+                {
+                  "ticker": "META",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n74",
+        "kind": "indicator",
+        "title": "META RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c24",
+            "ticker": "META",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n75",
+              "kind": "position",
+              "title": "Buy META",
+              "positions": [
+                {
+                  "ticker": "META",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n76",
+              "kind": "position",
+              "title": "Hold NVDA",
+              "positions": [
+                {
+                  "ticker": "NVDA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n77",
+        "kind": "indicator",
+        "title": "NVDA RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c25",
+            "ticker": "NVDA",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n78",
+              "kind": "position",
+              "title": "Buy NVDA",
+              "positions": [
+                {
+                  "ticker": "NVDA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n79",
+              "kind": "position",
+              "title": "Hold TSLA",
+              "positions": [
+                {
+                  "ticker": "TSLA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n80",
+        "kind": "indicator",
+        "title": "TSLA RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c26",
+            "ticker": "TSLA",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n81",
+              "kind": "position",
+              "title": "Buy TSLA",
+              "positions": [
+                {
+                  "ticker": "TSLA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n82",
+              "kind": "position",
+              "title": "Hold JPM",
+              "positions": [
+                {
+                  "ticker": "JPM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n83",
+        "kind": "indicator",
+        "title": "JPM RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c27",
+            "ticker": "JPM",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n84",
+              "kind": "position",
+              "title": "Buy JPM",
+              "positions": [
+                {
+                  "ticker": "JPM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n85",
+              "kind": "position",
+              "title": "Hold V",
+              "positions": [
+                {
+                  "ticker": "V",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n86",
+        "kind": "indicator",
+        "title": "V RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c28",
+            "ticker": "V",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n87",
+              "kind": "position",
+              "title": "Buy V",
+              "positions": [
+                {
+                  "ticker": "V",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n88",
+              "kind": "position",
+              "title": "Hold JNJ",
+              "positions": [
+                {
+                  "ticker": "JNJ",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n89",
+        "kind": "indicator",
+        "title": "JNJ RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c29",
+            "ticker": "JNJ",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n90",
+              "kind": "position",
+              "title": "Buy JNJ",
+              "positions": [
+                {
+                  "ticker": "JNJ",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n91",
+              "kind": "position",
+              "title": "Hold WMT",
+              "positions": [
+                {
+                  "ticker": "WMT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n92",
+        "kind": "indicator",
+        "title": "WMT RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c30",
+            "ticker": "WMT",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n93",
+              "kind": "position",
+              "title": "Buy WMT",
+              "positions": [
+                {
+                  "ticker": "WMT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n94",
+              "kind": "position",
+              "title": "Hold PG",
+              "positions": [
+                {
+                  "ticker": "PG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n95",
+        "kind": "indicator",
+        "title": "PG RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c31",
+            "ticker": "PG",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n96",
+              "kind": "position",
+              "title": "Buy PG",
+              "positions": [
+                {
+                  "ticker": "PG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n97",
+              "kind": "position",
+              "title": "Hold MA",
+              "positions": [
+                {
+                  "ticker": "MA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n98",
+        "kind": "indicator",
+        "title": "MA RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c32",
+            "ticker": "MA",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n99",
+              "kind": "position",
+              "title": "Buy MA",
+              "positions": [
+                {
+                  "ticker": "MA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n100",
+              "kind": "position",
+              "title": "Hold HD",
+              "positions": [
+                {
+                  "ticker": "HD",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n101",
+        "kind": "indicator",
+        "title": "HD RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c33",
+            "ticker": "HD",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n102",
+              "kind": "position",
+              "title": "Buy HD",
+              "positions": [
+                {
+                  "ticker": "HD",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n103",
+              "kind": "position",
+              "title": "Hold DIS",
+              "positions": [
+                {
+                  "ticker": "DIS",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n104",
+        "kind": "indicator",
+        "title": "DIS RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c34",
+            "ticker": "DIS",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n105",
+              "kind": "position",
+              "title": "Buy DIS",
+              "positions": [
+                {
+                  "ticker": "DIS",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n106",
+              "kind": "position",
+              "title": "Hold NFLX",
+              "positions": [
+                {
+                  "ticker": "NFLX",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n107",
+        "kind": "indicator",
+        "title": "NFLX RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c35",
+            "ticker": "NFLX",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n108",
+              "kind": "position",
+              "title": "Buy NFLX",
+              "positions": [
+                {
+                  "ticker": "NFLX",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n109",
+              "kind": "position",
+              "title": "Hold ADBE",
+              "positions": [
+                {
+                  "ticker": "ADBE",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n110",
+        "kind": "indicator",
+        "title": "ADBE RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c36",
+            "ticker": "ADBE",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n111",
+              "kind": "position",
+              "title": "Buy ADBE",
+              "positions": [
+                {
+                  "ticker": "ADBE",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n112",
+              "kind": "position",
+              "title": "Hold CRM",
+              "positions": [
+                {
+                  "ticker": "CRM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n113",
+        "kind": "indicator",
+        "title": "CRM RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c37",
+            "ticker": "CRM",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n114",
+              "kind": "position",
+              "title": "Buy CRM",
+              "positions": [
+                {
+                  "ticker": "CRM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n115",
+              "kind": "position",
+              "title": "Hold INTC",
+              "positions": [
+                {
+                  "ticker": "INTC",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n116",
+        "kind": "indicator",
+        "title": "INTC RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c38",
+            "ticker": "INTC",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n117",
+              "kind": "position",
+              "title": "Buy INTC",
+              "positions": [
+                {
+                  "ticker": "INTC",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n118",
+              "kind": "position",
+              "title": "Hold CSCO",
+              "positions": [
+                {
+                  "ticker": "CSCO",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n119",
+        "kind": "indicator",
+        "title": "CSCO RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c39",
+            "ticker": "CSCO",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n120",
+              "kind": "position",
+              "title": "Buy CSCO",
+              "positions": [
+                {
+                  "ticker": "CSCO",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n121",
+              "kind": "position",
+              "title": "Hold AAPL",
+              "positions": [
+                {
+                  "ticker": "AAPL",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n122",
+        "kind": "indicator",
+        "title": "AAPL RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c40",
+            "ticker": "AAPL",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n123",
+              "kind": "position",
+              "title": "Buy AAPL",
+              "positions": [
+                {
+                  "ticker": "AAPL",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n124",
+              "kind": "position",
+              "title": "Hold MSFT",
+              "positions": [
+                {
+                  "ticker": "MSFT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n125",
+        "kind": "indicator",
+        "title": "MSFT RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c41",
+            "ticker": "MSFT",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n126",
+              "kind": "position",
+              "title": "Buy MSFT",
+              "positions": [
+                {
+                  "ticker": "MSFT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n127",
+              "kind": "position",
+              "title": "Hold GOOG",
+              "positions": [
+                {
+                  "ticker": "GOOG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n128",
+        "kind": "indicator",
+        "title": "GOOG RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c42",
+            "ticker": "GOOG",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n129",
+              "kind": "position",
+              "title": "Buy GOOG",
+              "positions": [
+                {
+                  "ticker": "GOOG",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n130",
+              "kind": "position",
+              "title": "Hold AMZN",
+              "positions": [
+                {
+                  "ticker": "AMZN",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n131",
+        "kind": "indicator",
+        "title": "AMZN RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c43",
+            "ticker": "AMZN",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n132",
+              "kind": "position",
+              "title": "Buy AMZN",
+              "positions": [
+                {
+                  "ticker": "AMZN",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n133",
+              "kind": "position",
+              "title": "Hold META",
+              "positions": [
+                {
+                  "ticker": "META",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n134",
+        "kind": "indicator",
+        "title": "META RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c44",
+            "ticker": "META",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n135",
+              "kind": "position",
+              "title": "Buy META",
+              "positions": [
+                {
+                  "ticker": "META",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n136",
+              "kind": "position",
+              "title": "Hold NVDA",
+              "positions": [
+                {
+                  "ticker": "NVDA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n137",
+        "kind": "indicator",
+        "title": "NVDA RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c45",
+            "ticker": "NVDA",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n138",
+              "kind": "position",
+              "title": "Buy NVDA",
+              "positions": [
+                {
+                  "ticker": "NVDA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n139",
+              "kind": "position",
+              "title": "Hold TSLA",
+              "positions": [
+                {
+                  "ticker": "TSLA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n140",
+        "kind": "indicator",
+        "title": "TSLA RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c46",
+            "ticker": "TSLA",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n141",
+              "kind": "position",
+              "title": "Buy TSLA",
+              "positions": [
+                {
+                  "ticker": "TSLA",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n142",
+              "kind": "position",
+              "title": "Hold JPM",
+              "positions": [
+                {
+                  "ticker": "JPM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n143",
+        "kind": "indicator",
+        "title": "JPM RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c47",
+            "ticker": "JPM",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n144",
+              "kind": "position",
+              "title": "Buy JPM",
+              "positions": [
+                {
+                  "ticker": "JPM",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n145",
+              "kind": "position",
+              "title": "Hold V",
+              "positions": [
+                {
+                  "ticker": "V",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n146",
+        "kind": "indicator",
+        "title": "V RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c48",
+            "ticker": "V",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n147",
+              "kind": "position",
+              "title": "Buy V",
+              "positions": [
+                {
+                  "ticker": "V",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n148",
+              "kind": "position",
+              "title": "Hold JNJ",
+              "positions": [
+                {
+                  "ticker": "JNJ",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "n149",
+        "kind": "indicator",
+        "title": "JNJ RSI",
+        "weighting": "equal",
+        "conditions": [
+          {
+            "id": "c49",
+            "ticker": "JNJ",
+            "metric": "Relative Strength Index",
+            "window": 14,
+            "operator": ">",
+            "value": 50
+          }
+        ],
+        "children": {
+          "then": [
+            {
+              "id": "n150",
+              "kind": "position",
+              "title": "Buy JNJ",
+              "positions": [
+                {
+                  "ticker": "JNJ",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ],
+          "else": [
+            {
+              "id": "n151",
+              "kind": "position",
+              "title": "Hold WMT",
+              "positions": [
+                {
+                  "ticker": "WMT",
+                  "weight": 100
+                }
+              ],
+              "weighting": "equal",
+              "children": {}
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
