@@ -106,6 +106,14 @@ export const ConditionEditor = ({
   // Check if this is a Date-based condition
   const isDateCondition = cond.metric === 'Date'
 
+  // Helper to format ticker display (show "List: Name" for ticker lists)
+  const formatTickerDisplay = (ticker: string, listName?: string): string => {
+    if (ticker.startsWith('list:')) {
+      return listName ? `List: ${listName}` : 'List'
+    }
+    return ticker
+  }
+
   return (
     <div className="flex items-center gap-2">
       <Badge variant="default" className="gap-1 py-1 px-2.5">
@@ -231,7 +239,7 @@ export const ConditionEditor = ({
                 }, undefined, allowedModes, nodeKind, cond.ticker)
               }}
             >
-              {cond.ticker}
+              {formatTickerDisplay(cond.ticker, cond.tickerListName)}
             </button>
 
             {/* Comparator */}
@@ -399,7 +407,7 @@ export const ConditionEditor = ({
                     }, undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY')
                   }}
                 >
-                  {cond.rightTicker ?? 'SPY'}
+                  {formatTickerDisplay(cond.rightTicker ?? 'SPY', cond.rightTickerListName)}
                 </button>
               </>
             )}

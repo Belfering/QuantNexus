@@ -20,6 +20,15 @@ export const PositionBody = ({
   const positionMode = node.positionMode || 'manual'
   const isMatchIndicator = positionMode === 'match_indicator'
 
+  // Helper to format ticker display (show "List: Name" for ticker lists)
+  const formatTickerDisplay = (ticker: string): string => {
+    if (ticker.startsWith('list:')) {
+      // Use positionTickerListName if available
+      return node.positionTickerListName ? `List: ${node.positionTickerListName}` : 'List'
+    }
+    return ticker
+  }
+
   return (
     <div className="positions">
       {node.positions.map((p, idx) => {
@@ -64,7 +73,7 @@ export const PositionBody = ({
                   openTickerModal?.((ticker) => commit(ticker), undefined, allowedModes, 'position', shown !== 'Empty' ? shown : undefined)
                 }}
               >
-                {isMatchIndicator ? '(Auto)' : (shown || 'Ticker')}
+                {isMatchIndicator ? '(Auto)' : (shown ? formatTickerDisplay(shown) : 'Ticker')}
               </button>
             </div>
             {idx > 0 && (
