@@ -15,7 +15,7 @@ use crate::backtest::types::{
 };
 use crate::backtest::context::{PriceDb, IndicatorCache};
 use crate::backtest::indicators::compute_indicator;
-use crate::backtest::runner::build_price_db;
+use crate::backtest::runner::{build_price_db_with_date_filter, collect_position_tickers, collect_indicator_tickers, find_first_valid_pos_index};
 
 // ============================================================================
 // STRATEGY ANALYSIS
@@ -499,26 +499,33 @@ pub fn run_backtest_vectorized(
         return Err("Strategy contains AltExit or branch references - use standard engine".into());
     }
 
-    // Collect all tickers from strategy
-    let mut tickers = Vec::new();
-    collect_tickers_recursive(&node, &mut tickers);
-    tickers.sort();
-    tickers.dedup();
+    // Collect indicator tickers (for date intersection) and all tickers
+    let indicator_tickers = collect_indicator_tickers(&node);
+    let position_tickers = collect_position_tickers(&node);
+
+    // Build combined list of all tickers
+    let mut all_tickers = Vec::new();
+    collect_tickers_recursive(&node, &mut all_tickers);
+    all_tickers.sort();
+    all_tickers.dedup();
 
     // Always include SPY for benchmark
-    if !tickers.contains(&"SPY".to_string()) {
-        tickers.push("SPY".to_string());
+    if !all_tickers.contains(&"SPY".to_string()) {
+        all_tickers.push("SPY".to_string());
     }
 
-    if tickers.is_empty() {
+    if all_tickers.is_empty() {
         return Err("No tickers found in strategy".into());
     }
 
-    eprintln!("[Vectorized] Loading price data for {} tickers...", tickers.len());
+    eprintln!("[Vectorized] Loading price data: {} indicator tickers, {} position tickers, {} total",
+              indicator_tickers.len(), position_tickers.len(), all_tickers.len());
+    eprintln!("[Vectorized] Indicator tickers (for date filter): {:?}", indicator_tickers);
     let load_start = std::time::Instant::now();
 
-    // Load price database using existing infrastructure
-    let db = build_price_db(parquet_dir, &tickers)?;
+    // Load price database using indicator tickers for date intersection
+    // This matches Node.js behavior: indicator tickers determine the date range
+    let db = build_price_db_with_date_filter(parquet_dir, &indicator_tickers, &all_tickers)?;
     let num_days = db.len();
 
     if num_days < 252 {
@@ -526,6 +533,18 @@ pub fn run_backtest_vectorized(
     }
 
     eprintln!("[Vectorized] Data loaded in {:?}, {} days", load_start.elapsed(), num_days);
+
+    // Find first valid position index - when ALL position tickers have data
+    // This matches Node.js behavior to start backtesting only when all tickers are available
+    let first_valid_pos_index = find_first_valid_pos_index(&db, &position_tickers);
+
+    // Calculate start index: max of lookback period and first valid position index
+    // Use at least 50 days lookback for indicator warmup, similar to Node.js
+    let lookback = 50.max(252.min(num_days / 10));
+    let start_idx = first_valid_pos_index.max(lookback);
+
+    eprintln!("[Vectorized] Position tickers: {}, first_valid_pos_index: {}, lookback: {}, start_idx: {}",
+              position_tickers.len(), first_valid_pos_index, lookback, start_idx);
 
     // Create indicator cache
     let mut cache = IndicatorCache::new();
@@ -543,7 +562,7 @@ pub fn run_backtest_vectorized(
     // Build allocations and equity curve
     let alloc_start = std::time::Instant::now();
     let (equity_curve, benchmark_curve, drawdown_points, days, allocation_rows, monthly, metrics) =
-        build_results(&db, &positions, &signals, request.cost_bps, num_days)?;
+        build_results(&db, &positions, &signals, request.cost_bps, num_days, start_idx)?;
 
     eprintln!("[Vectorized] Results built in {:?}", alloc_start.elapsed());
     eprintln!("[Vectorized] Total time: {:?}", start_time.elapsed());
@@ -568,9 +587,9 @@ fn build_results(
     signals: &[Signal],
     cost_bps: f64,
     num_days: usize,
+    start_idx: usize,
 ) -> Result<(Vec<EquityPoint>, Vec<EquityPoint>, Vec<EquityPoint>, Vec<DayRow>, Vec<AllocationRow>, Vec<MonthlyReturn>, BacktestMetrics), String> {
 
-    let start_idx = 252.min(num_days / 4).max(50);
 
     let mut equity_curve = Vec::new();
     let mut benchmark_curve = Vec::new();

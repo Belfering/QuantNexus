@@ -32,7 +32,7 @@ fn read_parquet_file(path: &Path) -> Option<(Vec<String>, Vec<f64>, Vec<f64>, Ve
     for batch_result in reader {
         let batch = batch_result.ok()?;
 
-        // Column 0: Date (timestamp[ns, tz=UTC])
+        // Column 0: Date (timestamp[ns] or timestamp[ns, tz=UTC])
         let date_col = batch.column(0);
         let date_array = date_col.as_any().downcast_ref::<TimestampNanosecondArray>()?;
 
@@ -41,7 +41,10 @@ fn read_parquet_file(path: &Path) -> Option<(Vec<String>, Vec<f64>, Vec<f64>, Ve
         let high_col = batch.column(3).as_any().downcast_ref::<Float64Array>()?;
         let low_col = batch.column(4).as_any().downcast_ref::<Float64Array>()?;
         let adj_close_col = batch.column(6).as_any().downcast_ref::<Float64Array>()?;
-        let volume_col = batch.column(7).as_any().downcast_ref::<Int64Array>()?;
+
+        // Volume can be Int64 or Float64 depending on the parquet file
+        let volume_col_f64 = batch.column(7).as_any().downcast_ref::<Float64Array>();
+        let volume_col_i64 = batch.column(7).as_any().downcast_ref::<Int64Array>();
 
         for i in 0..batch.num_rows() {
             // Convert timestamp nanoseconds to YYYY-MM-DD
@@ -56,11 +59,157 @@ fn read_parquet_file(path: &Path) -> Option<(Vec<String>, Vec<f64>, Vec<f64>, Ve
             highs.push(if high_col.is_null(i) { f64::NAN } else { high_col.value(i) });
             lows.push(if low_col.is_null(i) { f64::NAN } else { low_col.value(i) });
             closes.push(if adj_close_col.is_null(i) { f64::NAN } else { adj_close_col.value(i) });
-            volumes.push(if volume_col.is_null(i) { 0.0 } else { volume_col.value(i) as f64 });
+
+            // Handle volume as either Float64 or Int64
+            let volume = if let Some(vol_f64) = volume_col_f64 {
+                if vol_f64.is_null(i) { 0.0 } else { vol_f64.value(i) }
+            } else if let Some(vol_i64) = volume_col_i64 {
+                if vol_i64.is_null(i) { 0.0 } else { vol_i64.value(i) as f64 }
+            } else {
+                0.0
+            };
+            volumes.push(volume);
         }
     }
 
     Some((dates, opens, highs, lows, closes, volumes))
+}
+
+/// Load price data for all tickers with date range determined by filter tickers
+/// This matches Node.js behavior: indicator tickers determine the date range,
+/// while all tickers' data is loaded (position tickers may have NaN before their data starts)
+pub fn build_price_db_with_date_filter(
+    parquet_dir: &Path,
+    date_filter_tickers: &[String],  // Tickers that determine the date range (indicator tickers)
+    all_tickers: &[String],          // All tickers to load (includes positions)
+) -> Result<PriceDb, String> {
+    use std::collections::BTreeSet;
+
+    // Load all ticker data first
+    let mut ticker_data: HashMap<String, HashMap<String, (f64, f64, f64, f64, f64)>> = HashMap::new();
+    let mut combined_tickers: Vec<String> = date_filter_tickers.to_vec();
+    for t in all_tickers {
+        if !combined_tickers.contains(t) {
+            combined_tickers.push(t.clone());
+        }
+    }
+
+    for ticker in &combined_tickers {
+        let path = parquet_dir.join(format!("{}.parquet", ticker));
+        if !path.exists() {
+            continue;
+        }
+
+        if let Some((dates, opens, highs, lows, closes, volumes)) = read_parquet_file(&path) {
+            let mut date_map: HashMap<String, (f64, f64, f64, f64, f64)> = HashMap::new();
+            for (i, date) in dates.iter().enumerate() {
+                date_map.insert(date.clone(), (
+                    opens.get(i).copied().unwrap_or(f64::NAN),
+                    highs.get(i).copied().unwrap_or(f64::NAN),
+                    lows.get(i).copied().unwrap_or(f64::NAN),
+                    closes.get(i).copied().unwrap_or(f64::NAN),
+                    volumes.get(i).copied().unwrap_or(0.0),
+                ));
+            }
+            ticker_data.insert(ticker.clone(), date_map);
+        }
+    }
+
+    // Find dates where ALL date_filter_tickers have data (intersection)
+    // This is the key difference from the union approach
+    let mut common_dates: BTreeSet<String> = BTreeSet::new();
+
+    // Get dates from the first filter ticker as starting point
+    let filter_tickers_with_data: Vec<&String> = date_filter_tickers.iter()
+        .filter(|t| ticker_data.contains_key(*t))
+        .collect();
+
+    if filter_tickers_with_data.is_empty() {
+        // Fallback: if no indicator tickers have data, use union of all tickers
+        eprintln!("[DB] Warning: No indicator tickers have data, falling back to union of all dates");
+        for (_, date_map) in &ticker_data {
+            for (date, (_, _, _, close, _)) in date_map {
+                // Only include dates with valid (non-NaN) close prices
+                if !close.is_nan() {
+                    common_dates.insert(date.clone());
+                }
+            }
+        }
+    } else {
+        // Start with dates from first filter ticker WHERE IT HAS VALID DATA
+        if let Some(first_data) = ticker_data.get(filter_tickers_with_data[0]) {
+            for (date, (_, _, _, close, _)) in first_data {
+                // Only include dates with valid (non-NaN) close prices
+                if !close.is_nan() {
+                    common_dates.insert(date.clone());
+                }
+            }
+        }
+
+        // Intersect with each other filter ticker's dates (only valid data)
+        for ticker in filter_tickers_with_data.iter().skip(1) {
+            if let Some(data) = ticker_data.get(*ticker) {
+                // Only include dates where this ticker has valid close price
+                let ticker_dates: BTreeSet<String> = data.iter()
+                    .filter(|(_, (_, _, _, close, _))| !close.is_nan())
+                    .map(|(date, _)| date.clone())
+                    .collect();
+                common_dates = common_dates.intersection(&ticker_dates).cloned().collect();
+            }
+        }
+    }
+
+    if common_dates.is_empty() {
+        return Err("No common dates found across indicator tickers".to_string());
+    }
+
+    let all_dates: Vec<String> = common_dates.into_iter().collect();
+    let num_dates = all_dates.len();
+
+    eprintln!("[DB] Date intersection from {} indicator tickers: {} dates", filter_tickers_with_data.len(), num_dates);
+    if num_dates > 0 {
+        eprintln!("[DB] Date range: {} to {}", all_dates.first().unwrap(), all_dates.last().unwrap());
+    }
+
+    // Build aligned arrays for ALL tickers (not just filter tickers)
+    let mut db = PriceDb::new();
+    db.date_strings = all_dates.clone();
+
+    for date_str in &db.date_strings {
+        let ts = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+            .unwrap_or(0);
+        db.dates.push(ts);
+    }
+
+    for ticker in &combined_tickers {
+        if let Some(date_map) = ticker_data.get(ticker) {
+            let mut opens = vec![f64::NAN; num_dates];
+            let mut highs = vec![f64::NAN; num_dates];
+            let mut lows = vec![f64::NAN; num_dates];
+            let mut closes = vec![f64::NAN; num_dates];
+            let mut volumes = vec![0.0; num_dates];
+
+            for (i, date) in all_dates.iter().enumerate() {
+                if let Some(&(o, h, l, c, v)) = date_map.get(date) {
+                    opens[i] = o;
+                    highs[i] = h;
+                    lows[i] = l;
+                    closes[i] = c;
+                    volumes[i] = v;
+                }
+            }
+
+            db.open.insert(ticker.clone(), opens);
+            db.high.insert(ticker.clone(), highs);
+            db.low.insert(ticker.clone(), lows);
+            db.close.insert(ticker.clone(), closes.clone());
+            db.adj_close.insert(ticker.clone(), closes);
+            db.volume.insert(ticker.clone(), volumes);
+        }
+    }
+
+    Ok(db)
 }
 
 /// Load price data for all tickers and build the price database
@@ -244,12 +393,74 @@ fn calculate_lookback(node: &FlowNode) -> usize {
 }
 
 /// Collect only position tickers (tickers that will be allocated to)
-fn collect_position_tickers(node: &FlowNode) -> Vec<String> {
+pub fn collect_position_tickers(node: &FlowNode) -> Vec<String> {
     let mut tickers = Vec::new();
     collect_position_tickers_recursive(node, &mut tickers);
     tickers.sort();
     tickers.dedup();
     tickers
+}
+
+/// Collect indicator tickers (conditions, scaling, function nodes - NOT positions)
+/// These are used for date intersection since they need longer history for lookback
+pub fn collect_indicator_tickers(node: &FlowNode) -> Vec<String> {
+    let mut tickers = Vec::new();
+    collect_indicator_tickers_recursive(node, &mut tickers);
+    tickers.sort();
+    tickers.dedup();
+    tickers
+}
+
+fn collect_indicator_tickers_recursive(node: &FlowNode, tickers: &mut Vec<String>) {
+    // Conditions (from indicator nodes, etc.)
+    if let Some(conditions) = &node.conditions {
+        for cond in conditions {
+            add_ticker(&cond.ticker, tickers);
+            if let Some(rt) = &cond.right_ticker {
+                add_ticker(rt, tickers);
+            }
+        }
+    }
+
+    // Scaling ticker
+    if let Some(ticker) = &node.scale_ticker {
+        add_ticker(ticker, tickers);
+    }
+
+    // Entry/exit conditions
+    if let Some(conditions) = &node.entry_conditions {
+        for cond in conditions {
+            add_ticker(&cond.ticker, tickers);
+        }
+    }
+    if let Some(conditions) = &node.exit_conditions {
+        for cond in conditions {
+            add_ticker(&cond.ticker, tickers);
+        }
+    }
+
+    // Numbered items
+    if let Some(numbered) = &node.numbered {
+        for item in &numbered.items {
+            for cond in &item.conditions {
+                add_ticker(&cond.ticker, tickers);
+            }
+        }
+    }
+
+    // Function nodes may have metric references
+    if matches!(node.kind, BlockKind::Function) {
+        if let Some(ticker) = &node.scale_ticker {
+            add_ticker(ticker, tickers);
+        }
+    }
+
+    // Recurse into children (but NOT collecting position tickers)
+    for children in node.children.values() {
+        for child in children.iter().flatten() {
+            collect_indicator_tickers_recursive(child, tickers);
+        }
+    }
 }
 
 fn collect_position_tickers_recursive(node: &FlowNode, tickers: &mut Vec<String>) {
@@ -278,7 +489,7 @@ fn collect_position_tickers_recursive(node: &FlowNode, tickers: &mut Vec<String>
 }
 
 /// Find first index where ALL position tickers have valid price data
-fn find_first_valid_pos_index(db: &PriceDb, position_tickers: &[String]) -> usize {
+pub fn find_first_valid_pos_index(db: &PriceDb, position_tickers: &[String]) -> usize {
     if position_tickers.is_empty() {
         return 0;
     }

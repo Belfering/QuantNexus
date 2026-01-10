@@ -48,6 +48,8 @@ struct OhlcData {
 }
 
 fn read_parquet_file(path: &PathBuf) -> Option<OhlcData> {
+    use arrow::array::TimestampNanosecondArray;
+
     let file = File::open(path).ok()?;
     let builder = ParquetRecordBatchReaderBuilder::try_new(file).ok()?;
     let reader = builder.build().ok()?;
@@ -62,11 +64,23 @@ fn read_parquet_file(path: &PathBuf) -> Option<OhlcData> {
     for batch in reader {
         let batch = batch.ok()?;
 
-        // Try to get date column
+        // Try to get date column - can be String or Timestamp[ns]
         if let Some(col) = batch.column_by_name("Date") {
+            // First try as StringArray
             if let Some(arr) = col.as_any().downcast_ref::<StringArray>() {
                 for i in 0..arr.len() {
                     dates.push(arr.value(i).to_string());
+                }
+            }
+            // Then try as TimestampNanosecondArray
+            else if let Some(arr) = col.as_any().downcast_ref::<TimestampNanosecondArray>() {
+                for i in 0..arr.len() {
+                    let ts_nanos = arr.value(i);
+                    let ts_secs = ts_nanos / 1_000_000_000;
+                    let date = chrono::DateTime::from_timestamp(ts_secs, 0)
+                        .map(|dt| dt.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default();
+                    dates.push(date);
                 }
             }
         }
@@ -85,7 +99,7 @@ fn read_parquet_file(path: &PathBuf) -> Option<OhlcData> {
         extract_f64(&batch, "Open", &mut opens);
         extract_f64(&batch, "High", &mut highs);
         extract_f64(&batch, "Low", &mut lows);
-        extract_f64(&batch, "Close", &mut closes);
+        extract_f64(&batch, "Adj Close", &mut closes);  // Use Adj Close for closes
         extract_f64(&batch, "Volume", &mut volumes);
     }
 
@@ -541,29 +555,9 @@ async fn run_full_backtest(
 ) -> Result<Json<FullBacktestResponse>, (StatusCode, String)> {
     let start = Instant::now();
 
-    // Try vectorized engine for compatible strategies
-    let use_vectorized = should_use_vectorized(&req);
-    eprintln!("Strategy vectorizable: {} -> using {} engine",
-              use_vectorized,
-              if use_vectorized { "Vectorized" } else { "V1" });
-
-    let result = if use_vectorized {
-        // Try vectorized engine first
-        match run_backtest_vectorized(&state.parquet_dir, &req) {
-            Ok(response) => {
-                let elapsed = start.elapsed().as_secs_f64() * 1000.0;
-                eprintln!("[Vectorized] Backtest completed in {:.2}ms", elapsed);
-                Ok(response)
-            }
-            Err(e) => {
-                eprintln!("[Vectorized] Error: {}, falling back to V1", e);
-                run_backtest(&state.parquet_dir, &req)
-            }
-        }
-    } else {
-        // Use V1 engine
-        run_backtest(&state.parquet_dir, &req)
-    };
+    // Always use V1 tree-walking engine (vectorized has bugs)
+    eprintln!("Using V1 tree-walking engine");
+    let result = run_backtest(&state.parquet_dir, &req);
 
     match result {
         Ok(response) => {
