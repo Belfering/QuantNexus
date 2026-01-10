@@ -367,7 +367,7 @@ pub struct BacktestMetrics {
     pub years: f64,
     pub total_return: f64,
     pub cagr: f64,
-    pub vol: f64,
+    pub volatility: f64,
     pub max_drawdown: f64,
     pub calmar: f64,
     pub sharpe: f64,

@@ -85,7 +85,7 @@ pub fn calculate_metrics(
         years,
         total_return,
         cagr,
-        vol,
+        volatility: vol,
         max_drawdown,
         calmar,
         sharpe,

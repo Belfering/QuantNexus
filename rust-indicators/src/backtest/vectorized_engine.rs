@@ -790,7 +790,7 @@ fn build_results(
         years,
         total_return,  // Decimal
         cagr,
-        vol,
+        volatility: vol,
         max_drawdown: max_dd,
         calmar,
         sharpe,
