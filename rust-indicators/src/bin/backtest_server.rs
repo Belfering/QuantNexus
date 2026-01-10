@@ -17,7 +17,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 // Import backtest module
-use flowchart_indicators::backtest::{BacktestRequest as FullBacktestRequest, BacktestResponse as FullBacktestResponse, run_backtest};
+use flowchart_indicators::backtest::{
+    BacktestRequest as FullBacktestRequest,
+    BacktestResponse as FullBacktestResponse,
+    run_backtest,
+    can_vectorize,
+    run_backtest_vectorized,
+    FlowNode,
+};
 
 // ============================================================================
 // State & Config
@@ -515,16 +522,50 @@ async fn run_backtest_simple(
 // Full Backtest Endpoint - matches Node.js API exactly
 // ============================================================================
 
+/// Check if strategy can use vectorized engine
+fn should_use_vectorized(req: &FullBacktestRequest) -> bool {
+    // Parse strategy to check
+    if let Ok(node) = serde_json::from_str::<FlowNode>(&req.payload) {
+        can_vectorize(&node)
+    } else {
+        false
+    }
+}
+
 async fn run_full_backtest(
     State(state): State<Arc<AppState>>,
     Json(req): Json<FullBacktestRequest>,
 ) -> Result<Json<FullBacktestResponse>, (StatusCode, String)> {
     let start = Instant::now();
 
-    match run_backtest(&state.parquet_dir, &req) {
-        Ok(mut response) => {
+    // Try vectorized engine for compatible strategies
+    let use_vectorized = should_use_vectorized(&req);
+    eprintln!("Strategy vectorizable: {} -> using {} engine",
+              use_vectorized,
+              if use_vectorized { "Vectorized" } else { "V1" });
+
+    let result = if use_vectorized {
+        // Try vectorized engine first
+        match run_backtest_vectorized(&state.parquet_dir, &req) {
+            Ok(response) => {
+                let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                eprintln!("[Vectorized] Backtest completed in {:.2}ms", elapsed);
+                Ok(response)
+            }
+            Err(e) => {
+                eprintln!("[Vectorized] Error: {}, falling back to V1", e);
+                run_backtest(&state.parquet_dir, &req)
+            }
+        }
+    } else {
+        // Use V1 engine
+        run_backtest(&state.parquet_dir, &req)
+    };
+
+    match result {
+        Ok(response) => {
             let elapsed = start.elapsed().as_secs_f64() * 1000.0;
-            eprintln!("Full backtest completed in {:.2}ms", elapsed);
+            eprintln!("Backtest completed in {:.2}ms", elapsed);
             Ok(Json(response))
         }
         Err(e) => {
