@@ -84,6 +84,7 @@ router.get('/:jobId/results', (req, res) => {
         branch_id,
         parameter_label,
         parameter_values,
+        ticker_substitutions,
         is_start_date,
         is_cagr,
         is_sharpe,
@@ -128,6 +129,7 @@ router.get('/:jobId/results', (req, res) => {
       branchId: result.branch_id,
       parameterLabel: result.parameter_label,
       parameterValues: JSON.parse(result.parameter_values),
+      tickerSubstitutions: result.ticker_substitutions ? JSON.parse(result.ticker_substitutions) : undefined,
       isMetrics: {
         startDate: result.is_start_date,
         cagr: result.is_cagr,
@@ -222,13 +224,13 @@ router.post('/jobs', (req, res) => {
     if (results && results.length > 0) {
       const insertResult = sqlite.prepare(`
         INSERT INTO optimization_results (
-          job_id, branch_id, parameter_label, parameter_values,
+          job_id, branch_id, parameter_label, parameter_values, ticker_substitutions,
           is_start_date, is_cagr, is_sharpe, is_calmar, is_max_drawdown, is_sortino, is_treynor,
           is_beta, is_volatility, is_win_rate, is_avg_turnover, is_avg_holdings, is_tim, is_timar,
           oos_start_date, oos_cagr, oos_sharpe, oos_calmar, oos_max_drawdown, oos_sortino, oos_treynor,
           oos_beta, oos_volatility, oos_win_rate, oos_avg_turnover, oos_avg_holdings, oos_tim, oos_timar,
           passed, failed_requirements
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
 
       const insertMany = sqlite.transaction((results) => {
@@ -238,6 +240,7 @@ router.post('/jobs', (req, res) => {
             result.branchId,
             result.parameterLabel,
             JSON.stringify(result.parameterValues),
+            result.tickerSubstitutions ? JSON.stringify(result.tickerSubstitutions) : null,
             result.isMetrics?.startDate ?? null,
             result.isMetrics?.cagr ?? null,
             result.isMetrics?.sharpe ?? null,

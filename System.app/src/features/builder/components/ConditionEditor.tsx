@@ -216,7 +216,19 @@ export const ConditionEditor = ({
               onClick={() => {
                 // In Forge mode, allow tickers, ratios, branches, and lists. In Model mode, exclude lists.
                 const allowedModes = isForgeMode ? ['tickers', 'ratios', 'branches', 'lists'] : ['tickers', 'ratios', 'branches']
-                openTickerModal?.((ticker) => onUpdate({ ticker: ticker as PositionChoice }), undefined, allowedModes, nodeKind, cond.ticker)
+                openTickerModal?.((ticker) => {
+                  // When changing ticker, clear ticker list fields if selecting a non-list ticker
+                  if (ticker.startsWith('list:')) {
+                    onUpdate({ ticker: ticker as PositionChoice })
+                  } else {
+                    // Clear ticker list metadata when selecting a regular ticker
+                    onUpdate({
+                      ticker: ticker as PositionChoice,
+                      tickerListId: undefined,
+                      tickerListName: undefined
+                    })
+                  }
+                }, undefined, allowedModes, nodeKind, cond.ticker)
               }}
             >
               {cond.ticker}
@@ -372,7 +384,19 @@ export const ConditionEditor = ({
                   onClick={() => {
                     // In Forge mode, allow tickers, ratios, branches, and lists. In Model mode, exclude lists.
                     const allowedModes = isForgeMode ? ['tickers', 'ratios', 'branches', 'lists'] : ['tickers', 'ratios', 'branches']
-                    openTickerModal?.((ticker) => onUpdate({ rightTicker: ticker as PositionChoice }), undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY')
+                    openTickerModal?.((ticker) => {
+                      // When changing ticker, clear ticker list fields if selecting a non-list ticker
+                      if (ticker.startsWith('list:')) {
+                        onUpdate({ rightTicker: ticker as PositionChoice })
+                      } else {
+                        // Clear ticker list metadata when selecting a regular ticker
+                        onUpdate({
+                          rightTicker: ticker as PositionChoice,
+                          rightTickerListId: undefined,
+                          rightTickerListName: undefined
+                        })
+                      }
+                    }, undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY')
                   }}
                 >
                   {cond.rightTicker ?? 'SPY'}

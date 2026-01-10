@@ -256,7 +256,34 @@ export function ForgeTab({
       const next = updateNode(current)
       push(next)
     } else {
-      treeStore.choosePosition(id, index, choice)
+      // Regular ticker selected - clear ticker list metadata
+      const updateNode = (node: FlowNode): FlowNode => {
+        if (node.id === id && node.kind === 'position') {
+          const newPositions = [...(node.positions || [])]
+          newPositions[index] = choice
+          return {
+            ...node,
+            positions: newPositions,
+            positionMode: 'manual', // Reset to manual mode
+            positionTickerListId: undefined,
+            positionTickerListName: undefined
+          }
+        }
+        // Recurse through children
+        if (node.children) {
+          const newChildren: Partial<Record<SlotId, FlowNode[]>> = {}
+          for (const [slotKey, slotNodes] of Object.entries(node.children)) {
+            if (Array.isArray(slotNodes)) {
+              newChildren[slotKey as SlotId] = slotNodes.map(child => child ? updateNode(child) : child)
+            }
+          }
+          return { ...node, children: newChildren }
+        }
+        return node
+      }
+
+      const next = updateNode(current)
+      push(next)
     }
 
     // Auto-create parameter range for ticker list references
@@ -289,6 +316,13 @@ export function ForgeTab({
           updatedRanges.push(parameterRange)
         }
 
+        botStore.setParameterRanges(activeBot.id, updatedRanges)
+      }
+    } else if (activeBot) {
+      // Regular ticker selected - remove ticker list parameter range if it exists
+      const paramId = `${id}-position-list`
+      const updatedRanges = (activeBot.parameterRanges || []).filter(r => r.id !== paramId)
+      if (updatedRanges.length !== (activeBot.parameterRanges || []).length) {
         botStore.setParameterRanges(activeBot.id, updatedRanges)
       }
     }
@@ -1376,45 +1410,54 @@ export function ForgeTab({
                     // Auto-create parameter ranges for ticker list references
                     if (activeBot && tickerLists) {
                       const handleTickerListRange = (ticker: string | undefined, isRightTicker: boolean) => {
-                        if (!ticker || !ticker.startsWith('list:')) return
-
-                        const listId = ticker.substring(5) // Remove 'list:' prefix
-                        const tickerList = tickerLists.find(l => l.id === listId)
-                        if (!tickerList) return
+                        if (!ticker) return
 
                         // Create parameter range ID
                         const paramId = isRightTicker
                           ? `${id}-${condId}-rightTicker-list`
                           : `${id}-${condId}-ticker-list`
 
-                        const updatedRanges = [...(activeBot.parameterRanges || [])]
-                        const existingIndex = updatedRanges.findIndex(r => r.id === paramId)
+                        if (ticker.startsWith('list:')) {
+                          // Ticker list selected - create/update parameter range
+                          const listId = ticker.substring(5) // Remove 'list:' prefix
+                          const tickerList = tickerLists.find(l => l.id === listId)
+                          if (!tickerList) return
 
-                        const parameterRange: ParameterRange = {
-                          id: paramId,
-                          type: 'ticker_list',
-                          nodeId: id,
-                          conditionId: condId,
-                          path: isRightTicker
-                            ? `${id}.conditions.${condId}.rightTicker`
-                            : `${id}.conditions.${condId}.ticker`,
-                          currentValue: 0, // Not used for ticker lists
-                          enabled: true,
-                          min: 0,
-                          max: 0,
-                          step: 1,
-                          tickerListId: tickerList.id,
-                          tickerListName: tickerList.name,
-                          tickers: tickerList.tickers
-                        }
+                          const updatedRanges = [...(activeBot.parameterRanges || [])]
+                          const existingIndex = updatedRanges.findIndex(r => r.id === paramId)
 
-                        if (existingIndex !== -1) {
-                          updatedRanges[existingIndex] = parameterRange
+                          const parameterRange: ParameterRange = {
+                            id: paramId,
+                            type: 'ticker_list',
+                            nodeId: id,
+                            conditionId: condId,
+                            path: isRightTicker
+                              ? `${id}.conditions.${condId}.rightTicker`
+                              : `${id}.conditions.${condId}.ticker`,
+                            currentValue: 0, // Not used for ticker lists
+                            enabled: true,
+                            min: 0,
+                            max: 0,
+                            step: 1,
+                            tickerListId: tickerList.id,
+                            tickerListName: tickerList.name,
+                            tickers: tickerList.tickers
+                          }
+
+                          if (existingIndex !== -1) {
+                            updatedRanges[existingIndex] = parameterRange
+                          } else {
+                            updatedRanges.push(parameterRange)
+                          }
+
+                          botStore.setParameterRanges(activeBot.id, updatedRanges)
                         } else {
-                          updatedRanges.push(parameterRange)
+                          // Regular ticker selected - remove ticker list parameter range if it exists
+                          const updatedRanges = (activeBot.parameterRanges || []).filter(r => r.id !== paramId)
+                          if (updatedRanges.length !== (activeBot.parameterRanges || []).length) {
+                            botStore.setParameterRanges(activeBot.id, updatedRanges)
+                          }
                         }
-
-                        botStore.setParameterRanges(activeBot.id, updatedRanges)
                       }
 
                       // Check both ticker and rightTicker

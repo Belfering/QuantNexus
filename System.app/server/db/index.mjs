@@ -316,6 +316,7 @@ export function initializeDatabase() {
       branch_id TEXT NOT NULL,
       parameter_label TEXT NOT NULL,
       parameter_values TEXT NOT NULL,
+      ticker_substitutions TEXT,
       is_cagr REAL,
       is_sharpe REAL,
       is_calmar REAL,
@@ -461,6 +462,19 @@ export function initializeDatabase() {
     // Columns might already exist
   }
 
+  // Migration: Add ticker_substitutions column to optimization_results table (Phase 3: Ticker List Optimization)
+  try {
+    const optResultsCols = sqlite.prepare("PRAGMA table_info(optimization_results)").all()
+    const hasTickerSubstitutions = optResultsCols.some(c => c.name === 'ticker_substitutions')
+    if (!hasTickerSubstitutions) {
+      console.log('[DB] Migrating optimization_results table: adding ticker_substitutions column...')
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN ticker_substitutions TEXT")
+      console.log('[DB] Migration complete: ticker_substitutions column added to optimization_results table')
+    }
+  } catch (e) {
+    // Column might already exist
+  }
+
   // Clean up duplicate watchlist_bots entries (keep only the first entry)
   const duplicates = sqlite.prepare(`
     SELECT watchlist_id, bot_id, COUNT(*) as cnt, MIN(id) as keep_id
@@ -598,6 +612,29 @@ export function initializeDatabase() {
 
   // FRD-035: Seed Variable Library with all built-in indicators
   seedVariableLibrary()
+
+  // Create local-user for development (matches auth.mjs mock user)
+  const existingLocalUser = sqlite.prepare('SELECT id FROM users WHERE id = ?').get('local-user')
+  if (!existingLocalUser) {
+    const now = Date.now()
+    sqlite.prepare(`
+      INSERT INTO users (id, username, email, password_hash, display_name, role, tier, email_verified, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'local-user',
+      'local',
+      'local@localhost',
+      'local-dev-no-password',
+      'Local Development User',
+      'main_admin',
+      'premium',
+      1,
+      'active',
+      now,
+      now
+    )
+    console.log('[DB] Created local-user for development')
+  }
 
   console.log('[DB] Database initialized')
 }

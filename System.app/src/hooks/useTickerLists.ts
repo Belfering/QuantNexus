@@ -1,7 +1,7 @@
 // src/hooks/useTickerLists.ts
 // Hook to fetch and manage ticker lists
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { TickerList } from '@/types/tickerList'
 
 export function useTickerLists() {
@@ -9,7 +9,7 @@ export function useTickerLists() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchTickerLists = async () => {
+  const fetchTickerLists = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -26,11 +26,11 @@ export function useTickerLists() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchTickerLists()
-  }, [])
+  }, [fetchTickerLists])
 
   return {
     tickerLists,

@@ -14,7 +14,9 @@ export function OptimizationResultsPanel() {
   const { jobs, loading: jobsLoading, error: jobsError, selectedJobId, setSelectedJobId, refresh } = useOptimizationJobs()
   const { results, loading: resultsLoading, sortBy, sortOrder, setSortBy, setSortOrder } = useOptimizationResults(selectedJobId)
   const { exportCSV, exporting } = useOptimizationExport()
-  const { activeBot } = useBotStore()
+  const bots = useBotStore((s) => s.bots)
+  const activeForgeBotId = useBotStore((s) => s.activeForgeBotId)
+  const activeBot = bots.find(b => b.id === activeForgeBotId)
   const { current, pushTree } = useTreeSync('Forge')
 
   const [isRenaming, setIsRenaming] = useState(false)
@@ -42,6 +44,7 @@ export function OptimizationResultsPanel() {
       id: result.branchId,
       parameterValues: result.parameterValues,
       label: result.parameterLabel,
+      tickerSubstitutions: result.tickerSubstitutions,
     }
 
     // Apply the branch parameters to the current tree

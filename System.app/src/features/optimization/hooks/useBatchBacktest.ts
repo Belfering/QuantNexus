@@ -438,6 +438,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
               branchId: r.branchId,
               parameterLabel: r.combination.label,
               parameterValues: r.combination.parameterValues,
+              tickerSubstitutions: r.combination.tickerSubstitutions,
               isMetrics: r.isMetrics,
               oosMetrics: r.oosMetrics,
               passed: r.passed,

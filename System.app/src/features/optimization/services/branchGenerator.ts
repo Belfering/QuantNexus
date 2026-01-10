@@ -121,12 +121,36 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
         condition.ticker = substitutions[condition.tickerListId]
         appliedTickers.add(condition.ticker)
         console.log(`[BranchGenerator] Substituted ticker ${condition.ticker} for list ${condition.tickerListId}`)
+        // Clear the list reference fields so backtest API doesn't get confused
+        delete (condition as any).tickerListId
+        delete (condition as any).tickerListName
+      }
+      // FALLBACK: Handle ticker field containing "list:UUID" directly (without tickerListId field)
+      else if (condition.ticker && typeof condition.ticker === 'string' && condition.ticker.startsWith('list:')) {
+        const listId = condition.ticker.substring(5)
+        if (substitutions[listId]) {
+          condition.ticker = substitutions[listId]
+          appliedTickers.add(condition.ticker)
+          console.log(`[BranchGenerator] Substituted ticker ${condition.ticker} for inline list ${listId}`)
+        }
       }
       // Replace right ticker if it references a ticker list
       if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
         appliedTickers.add(condition.rightTicker)
         console.log(`[BranchGenerator] Substituted right ticker ${condition.rightTicker} for list ${condition.rightTickerListId}`)
+        // Clear the list reference fields
+        delete (condition as any).rightTickerListId
+        delete (condition as any).rightTickerListName
+      }
+      // FALLBACK: Handle rightTicker field containing "list:UUID" directly
+      else if (condition.rightTicker && typeof condition.rightTicker === 'string' && condition.rightTicker.startsWith('list:')) {
+        const listId = condition.rightTicker.substring(5)
+        if (substitutions[listId]) {
+          condition.rightTicker = substitutions[listId]
+          appliedTickers.add(condition.rightTicker)
+          console.log(`[BranchGenerator] Substituted right ticker ${condition.rightTicker} for inline list ${listId}`)
+        }
       }
     }
   }
@@ -146,6 +170,26 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
       if (node.positions && node.positions.length > 0) {
         node.positions = node.positions.map(() => ticker)
         console.log(`[BranchGenerator] Substituted position ticker ${ticker} for list ${node.positionTickerListId}`)
+        // Clear the list reference fields
+        delete (node as any).positionTickerListId
+        delete (node as any).positionTickerListName
+      }
+    }
+    // FALLBACK: Handle positions array containing "list:UUID" directly (without positionTickerListId field)
+    else if (node.positions && node.positions.length > 0) {
+      // Check if any position starts with "list:"
+      for (let i = 0; i < node.positions.length; i++) {
+        const pos = node.positions[i]
+        if (pos && typeof pos === 'string' && pos.startsWith('list:')) {
+          const listId = pos.substring(5)
+          if (substitutions[listId]) {
+            // Replace all positions with the ticker from the list
+            const ticker = substitutions[listId]
+            node.positions = node.positions.map(() => ticker)
+            console.log(`[BranchGenerator] Substituted position ticker ${ticker} for inline list ${listId}`)
+            break // Only need to do this once for all positions
+          }
+        }
       }
     }
   }
@@ -156,10 +200,28 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
       if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
         appliedTickers.add(condition.ticker)
+        delete (condition as any).tickerListId
+        delete (condition as any).tickerListName
+      }
+      else if (condition.ticker && typeof condition.ticker === 'string' && condition.ticker.startsWith('list:')) {
+        const listId = condition.ticker.substring(5)
+        if (substitutions[listId]) {
+          condition.ticker = substitutions[listId]
+          appliedTickers.add(condition.ticker)
+        }
       }
       if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
         appliedTickers.add(condition.rightTicker)
+        delete (condition as any).rightTickerListId
+        delete (condition as any).rightTickerListName
+      }
+      else if (condition.rightTicker && typeof condition.rightTicker === 'string' && condition.rightTicker.startsWith('list:')) {
+        const listId = condition.rightTicker.substring(5)
+        if (substitutions[listId]) {
+          condition.rightTicker = substitutions[listId]
+          appliedTickers.add(condition.rightTicker)
+        }
       }
     }
   }
@@ -168,10 +230,28 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
       if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
         appliedTickers.add(condition.ticker)
+        delete (condition as any).tickerListId
+        delete (condition as any).tickerListName
+      }
+      else if (condition.ticker && typeof condition.ticker === 'string' && condition.ticker.startsWith('list:')) {
+        const listId = condition.ticker.substring(5)
+        if (substitutions[listId]) {
+          condition.ticker = substitutions[listId]
+          appliedTickers.add(condition.ticker)
+        }
       }
       if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
         appliedTickers.add(condition.rightTicker)
+        delete (condition as any).rightTickerListId
+        delete (condition as any).rightTickerListName
+      }
+      else if (condition.rightTicker && typeof condition.rightTicker === 'string' && condition.rightTicker.startsWith('list:')) {
+        const listId = condition.rightTicker.substring(5)
+        if (substitutions[listId]) {
+          condition.rightTicker = substitutions[listId]
+          appliedTickers.add(condition.rightTicker)
+        }
       }
     }
   }
@@ -184,10 +264,28 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
           if (condition.tickerListId && substitutions[condition.tickerListId]) {
             condition.ticker = substitutions[condition.tickerListId]
             appliedTickers.add(condition.ticker)
+            delete (condition as any).tickerListId
+            delete (condition as any).tickerListName
+          }
+          else if (condition.ticker && typeof condition.ticker === 'string' && condition.ticker.startsWith('list:')) {
+            const listId = condition.ticker.substring(5)
+            if (substitutions[listId]) {
+              condition.ticker = substitutions[listId]
+              appliedTickers.add(condition.ticker)
+            }
           }
           if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
             condition.rightTicker = substitutions[condition.rightTickerListId]
             appliedTickers.add(condition.rightTicker)
+            delete (condition as any).rightTickerListId
+            delete (condition as any).rightTickerListName
+          }
+          else if (condition.rightTicker && typeof condition.rightTicker === 'string' && condition.rightTicker.startsWith('list:')) {
+            const listId = condition.rightTicker.substring(5)
+            if (substitutions[listId]) {
+              condition.rightTicker = substitutions[listId]
+              appliedTickers.add(condition.rightTicker)
+            }
           }
         }
       }
