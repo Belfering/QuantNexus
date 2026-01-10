@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { POPULAR_TICKERS } from '@/constants'
 import { Button } from '@/components/ui/button'
+import type { TickerList } from '@/types/tickerList'
 
 export interface TickerMetadata {
   name?: string
@@ -12,7 +13,7 @@ export interface TickerMetadata {
   exchange?: string
 }
 
-export type TickerModalMode = 'tickers' | 'ratios' | 'branches'
+export type TickerModalMode = 'tickers' | 'ratios' | 'branches' | 'lists'
 export type BlockKind = 'basic' | 'function' | 'indicator' | 'position' | 'numbered' | 'call' | 'altExit' | 'scaling'
 
 // Common ratio tickers used in QuantMage strategies
@@ -61,6 +62,8 @@ export interface TickerSearchModalProps {
   allowedModes?: TickerModalMode[]
   nodeKind?: BlockKind // Parent node type for contextual branch filtering
   initialValue?: string // Current ticker value to pre-populate (e.g., "JNK/XLP" for ratios)
+  position?: 'center' | 'right' // Position modal center or right side
+  tickerLists?: TickerList[] // Available ticker lists for Forge mode
 }
 
 export function TickerSearchModal({
@@ -73,6 +76,8 @@ export function TickerSearchModal({
   allowedModes = ['tickers'],
   nodeKind,
   initialValue,
+  position = 'center',
+  tickerLists = [],
 }: TickerSearchModalProps) {
   const [search, setSearch] = useState('')
   const [includeETFs, setIncludeETFs] = useState(true)
@@ -171,13 +176,14 @@ export function TickerSearchModal({
 
   if (!open) return null
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-
-      {/* Modal */}
-      <div className="relative bg-surface border border-border rounded-lg shadow-2xl w-[500px] max-h-[70vh] flex flex-col">
+  // When positioned right, render as inline element (parent handles positioning)
+  // When centered, use fixed full-screen overlay
+  if (position === 'right') {
+    return (
+      <div
+        className="relative bg-surface border border-border rounded-lg shadow-2xl w-[500px] h-[70vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header with search */}
         <div className="p-4 border-b border-border">
           {mode === 'tickers' && (
@@ -293,6 +299,7 @@ export function TickerSearchModal({
                 {allowedModes.includes('tickers') && <option value="tickers">Tickers</option>}
                 {allowedModes.includes('ratios') && <option value="ratios">Ratios</option>}
                 {allowedModes.includes('branches') && <option value="branches">Branches</option>}
+                {allowedModes.includes('lists') && <option value="lists">Lists</option>}
               </select>
             )}
           </div>
@@ -309,7 +316,11 @@ export function TickerSearchModal({
                   <div
                     key={ticker}
                     className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
-                    onClick={() => { onSelect(ticker); onClose() }}
+                    onClick={() => {
+                      onSelect(ticker)
+                      // Only close if centered position (normal use), keep open if right position (ticker list builder)
+                      if (position === 'center') onClose()
+                    }}
                   >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <span className="font-mono font-bold shrink-0 w-16">{ticker}</span>
@@ -353,7 +364,10 @@ export function TickerSearchModal({
                 <div
                   key={ratio}
                   className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
-                  onClick={() => { onSelect(ratio); onClose() }}
+                  onClick={() => {
+                    onSelect(ratio)
+                    if (position === 'center') onClose()
+                  }}
                 >
                   <span className="font-mono font-bold">{ratio}</span>
                   <span className="text-xs text-muted-foreground">
@@ -420,7 +434,10 @@ export function TickerSearchModal({
                   <div
                     key={opt.value}
                     className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
-                    onClick={() => { onSelect(opt.value); onClose() }}
+                    onClick={() => {
+                      onSelect(opt.value)
+                      if (position === 'center') onClose()
+                    }}
                   >
                     <div className="flex flex-col">
                       <span className="font-mono font-bold">{opt.label}</span>
@@ -432,6 +449,321 @@ export function TickerSearchModal({
               {BRANCH_OPTIONS.filter(opt => !nodeKind || opt.nodeKinds.includes(nodeKind)).length === 0 && (
                 <div className="px-4 py-8 text-center text-muted-foreground">
                   No branch options available for this node type
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Lists mode */}
+          {mode === 'lists' && (
+            <>
+              {tickerLists.map(list => (
+                <div
+                  key={list.id}
+                  className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border/50"
+                  onClick={() => {
+                    onSelect(`list:${list.id}`)
+                    if (position === 'center') onClose()
+                  }}
+                >
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="font-bold truncate">{list.name}</span>
+                    {list.description && (
+                      <span className="text-xs text-muted-foreground truncate">{list.description}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <span className="text-xs text-muted-foreground">{list.tickers.length} tickers</span>
+                    {list.tags && list.tags.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-xs bg-blue-500/20 text-blue-400">
+                        {list.tags[0]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {tickerLists.length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">
+                  No ticker lists found. Create lists in the Ticker Lists tab.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Centered position - full screen overlay
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      {/* Modal */}
+      <div className="relative bg-surface border border-border rounded-lg shadow-2xl w-[500px] max-h-[70vh] flex flex-col">
+        {/* Header with search */}
+        <div className="p-4 border-b border-border">
+          {mode === 'tickers' && (
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search ticker or company name..."
+              className="w-full px-3 py-2 border border-border rounded bg-card text-sm"
+            />
+          )}
+
+          {mode === 'ratios' && !ratioPickerTarget && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRatioPickerTarget('left')
+                  setSearch('')
+                }}
+                className={cn(
+                  'flex-1 px-3 py-2 border rounded text-sm font-mono transition-colors',
+                  ratioLeft
+                    ? 'border-border bg-card hover:bg-muted'
+                    : 'border-dashed border-muted-foreground/50 bg-muted/30 hover:bg-muted',
+                )}
+              >
+                {ratioLeft || 'Select'}
+              </button>
+              <span className="text-muted-foreground">/</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setRatioPickerTarget('right')
+                  setSearch('')
+                }}
+                className={cn(
+                  'flex-1 px-3 py-2 border rounded text-sm font-mono transition-colors',
+                  ratioRight
+                    ? 'border-border bg-card hover:bg-muted'
+                    : 'border-dashed border-muted-foreground/50 bg-muted/30 hover:bg-muted',
+                )}
+              >
+                {ratioRight || 'Select'}
+              </button>
+            </div>
+          )}
+
+          {mode === 'ratios' && ratioPickerTarget && (
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={`Search ${ratioPickerTarget} side ticker...`}
+              className="w-full px-3 py-2 border border-border rounded bg-card text-sm"
+            />
+          )}
+
+          {mode === 'branches' && (
+            <div className="text-sm text-muted-foreground">
+              Select a branch equity curve to compare
+            </div>
+          )}
+        </div>
+
+        {/* Filters */}
+        <div className="px-4 py-2 border-b border-border flex gap-4 text-sm items-center">
+          {(mode === 'tickers' || (mode === 'ratios' && ratioPickerTarget)) && (
+            <>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeETFs}
+                  onChange={(e) => setIncludeETFs(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span>Include ETFs</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeStocks}
+                  onChange={(e) => setIncludeStocks(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span>Include Stocks</span>
+              </label>
+            </>
+          )}
+          {/* Mode dropdown - only show if multiple modes allowed and not in ratio picker sub-mode */}
+          {allowedModes.length > 1 && !ratioPickerTarget && (
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value as TickerModalMode)}
+              className="ml-auto px-2 py-1 border border-border rounded bg-card text-sm"
+            >
+              {allowedModes.includes('tickers') && <option value="tickers">Tickers</option>}
+              {allowedModes.includes('ratios') && <option value="ratios">Ratios</option>}
+              {allowedModes.includes('branches') && <option value="branches">Branches</option>}
+              {allowedModes.includes('lists') && <option value="lists">Lists</option>}
+            </select>
+          )}
+        </div>
+
+        {/* Results */}
+        <div className="flex-1 overflow-y-auto">
+          {mode === 'tickers' && (
+            <>
+              {filteredResults.map((ticker) => {
+                const meta = tickerMetadata.get(ticker.toUpperCase())
+                const assetType = meta?.assetType
+                const assetColor =
+                  assetType === 'ETF' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
+                const assetLabel = assetType === 'ETF' ? 'ETF' : assetType === 'Stock' ? 'Stock' : ''
+
+                return (
+                  <div
+                    key={ticker}
+                    onClick={() => onSelect(ticker)}
+                    className="px-4 py-3 hover:bg-muted cursor-pointer border-b border-border/50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold">{ticker}</span>
+                          {assetLabel && (
+                            <span className={cn('text-xs px-1.5 py-0.5 rounded', assetColor)}>{assetLabel}</span>
+                          )}
+                        </div>
+                        <span className="text-sm text-muted-foreground truncate">
+                          {meta?.name || 'No position'}
+                        </span>
+                      </div>
+                      {meta?.exchange && (
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {meta.exchange === 'Exchange Unavailable' ? '' : meta.exchange}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              {filteredResults.length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">No tickers found</div>
+              )}
+            </>
+          )}
+
+          {mode === 'ratios' && !ratioPickerTarget && (
+            <>
+              <div className="px-4 py-2 bg-muted/50 text-xs text-muted-foreground font-semibold">
+                Common Ratio Tickers
+              </div>
+              {COMMON_RATIO_TICKERS.map((ratio) => (
+                <div
+                  key={ratio}
+                  onClick={() => onSelect(ratio)}
+                  className="px-4 py-3 hover:bg-muted cursor-pointer border-b border-border/50"
+                >
+                  <span className="font-mono font-bold">{ratio}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {mode === 'ratios' && ratioPickerTarget && (
+            <>
+              {filteredResults.map((ticker) => {
+                const meta = tickerMetadata.get(ticker.toUpperCase())
+                return (
+                  <div
+                    key={ticker}
+                    onClick={() => {
+                      if (ratioPickerTarget === 'left') {
+                        setRatioLeft(ticker.toUpperCase())
+                      } else {
+                        setRatioRight(ticker.toUpperCase())
+                      }
+                      setRatioPickerTarget(null)
+                      setSearch('')
+
+                      // If both sides filled, auto-submit
+                      const left = ratioPickerTarget === 'left' ? ticker.toUpperCase() : ratioLeft
+                      const right = ratioPickerTarget === 'right' ? ticker.toUpperCase() : ratioRight
+                      if (left && right) {
+                        onSelect(`${left}/${right}`)
+                      }
+                    }}
+                    className="px-4 py-3 hover:bg-muted cursor-pointer border-b border-border/50"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="font-mono font-bold">{ticker}</span>
+                        <span className="text-sm text-muted-foreground truncate">{meta?.name || 'No position'}</span>
+                      </div>
+                      {meta?.exchange && (
+                        <span className="text-xs text-muted-foreground shrink-0">{meta.exchange}</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              {filteredResults.length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">No tickers found</div>
+              )}
+            </>
+          )}
+
+          {mode === 'branches' && (
+            <>
+              {BRANCH_OPTIONS.filter(opt => !nodeKind || opt.nodeKinds.includes(nodeKind)).map((opt) => (
+                <div
+                  key={opt.value}
+                  onClick={() => onSelect(opt.value)}
+                  className="px-4 py-3 hover:bg-muted cursor-pointer border-b border-border/50 flex items-center justify-between gap-3"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-mono font-bold">{opt.label}</span>
+                    <span className="text-xs text-muted-foreground">{opt.description}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground font-mono">{opt.value}</span>
+                </div>
+              ))}
+              {BRANCH_OPTIONS.filter(opt => !nodeKind || opt.nodeKinds.includes(nodeKind)).length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">
+                  No branch options available for this node type
+                </div>
+              )}
+            </>
+          )}
+
+          {mode === 'lists' && (
+            <>
+              {tickerLists.map(list => (
+                <div
+                  key={list.id}
+                  onClick={() => onSelect(`list:${list.id}`)}
+                  className="px-4 py-3 hover:bg-muted cursor-pointer border-b border-border/50"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="font-bold truncate">{list.name}</span>
+                      {list.description && (
+                        <span className="text-sm text-muted-foreground truncate">{list.description}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs text-muted-foreground">{list.tickers.length} tickers</span>
+                      {list.tags && list.tags.length > 0 && (
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-blue-500/20 text-blue-400">
+                          {list.tags[0]}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {tickerLists.length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">
+                  No ticker lists found. Create lists in the Ticker Lists tab.
                 </div>
               )}
             </>

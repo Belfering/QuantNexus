@@ -39,6 +39,8 @@ export const NodeCard = ({
   errorNodeIds,
   focusNodeId,
   tickerOptions,
+  tickerLists,
+  isForgeMode,
   onAdd,
   onAppend,
   onRemoveSlotEntry,
@@ -228,6 +230,8 @@ export const NodeCard = ({
                     errorNodeIds={errorNodeIds}
                     focusNodeId={focusNodeId}
                     tickerOptions={tickerOptions}
+                    tickerLists={tickerLists}
+                    isForgeMode={isForgeMode}
                     onAdd={onAdd}
                     onAppend={onAppend}
                     onRemoveSlotEntry={onRemoveSlotEntry}
@@ -354,6 +358,7 @@ export const NodeCard = ({
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
+            isForgeMode={isForgeMode}
           />
         )
 
@@ -375,6 +380,7 @@ export const NodeCard = ({
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
+            isForgeMode={isForgeMode}
           />
         )
 
@@ -397,6 +403,7 @@ export const NodeCard = ({
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
+            isForgeMode={isForgeMode}
           />
         )
 
@@ -414,6 +421,7 @@ export const NodeCard = ({
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
+            isForgeMode={isForgeMode}
           />
         )
 
@@ -483,6 +491,8 @@ export const NodeCard = ({
             onRemovePosition={onRemovePosition}
             onChoosePosition={onChoosePosition}
             openTickerModal={openTickerModal}
+            tickerLists={tickerLists}
+            isForgeMode={isForgeMode}
           />
           <CallReferenceBody
             node={node}

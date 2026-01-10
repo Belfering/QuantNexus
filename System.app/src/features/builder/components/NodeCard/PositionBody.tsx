@@ -11,6 +11,8 @@ export const PositionBody = ({
   onRemovePosition,
   onChoosePosition,
   openTickerModal,
+  tickerLists,
+  isForgeMode,
 }: PositionBodyProps) => {
   if (node.kind !== 'position' || !node.positions) return null
 
@@ -35,7 +37,11 @@ export const PositionBody = ({
             <div className="pill-select">
               <button
                 className="w-[120px] px-2 py-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50 text-left truncate"
-                onClick={() => openTickerModal?.((ticker) => commit(ticker))}
+                onClick={() => {
+                  // In Forge mode, allow both tickers and lists. In Model mode, only tickers.
+                  const allowedModes = isForgeMode ? ['tickers', 'lists'] : ['tickers']
+                  openTickerModal?.((ticker) => commit(ticker), undefined, allowedModes, 'position', shown !== 'Empty' ? shown : undefined)
+                }}
               >
                 {shown || 'Ticker'}
               </button>

@@ -27,6 +27,7 @@ export interface AltExitBodyProps {
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
+  isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
 }
 
 export const AltExitBody = ({
@@ -47,6 +48,7 @@ export const AltExitBody = ({
   renderSlot,
   parameterRanges,
   onUpdateRange,
+  isForgeMode,
 }: AltExitBodyProps) => {
   const weightingThen = node.weightingThen ?? node.weighting
   const weightingElse = node.weightingElse ?? node.weighting
@@ -87,6 +89,7 @@ export const AltExitBody = ({
                 nodeKind={node.kind}
                 parameterRanges={parameterRanges}
                 nodeId={node.id}
+                isForgeMode={isForgeMode}
                 onUpdateRange={onUpdateRange}
               />
             </div>
@@ -180,6 +183,7 @@ export const AltExitBody = ({
                 parameterRanges={parameterRanges}
                 nodeId={node.id}
                 onUpdateRange={onUpdateRange}
+                isForgeMode={isForgeMode}
               />
             </div>
           )

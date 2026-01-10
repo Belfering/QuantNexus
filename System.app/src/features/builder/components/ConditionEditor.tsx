@@ -76,6 +76,8 @@ export interface ConditionEditorProps {
   nodeId?: string
   /** Callback for updating parameter ranges */
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
+  /** Whether we're in Forge tab (enables ticker list features) */
+  isForgeMode?: boolean
 }
 
 export const ConditionEditor = ({
@@ -90,6 +92,7 @@ export const ConditionEditor = ({
   parameterRanges = [],
   nodeId,
   onUpdateRange,
+  isForgeMode,
 }: ConditionEditorProps) => {
   // State for range config popovers
   const [showWindowConfig, setShowWindowConfig] = useState(false)
@@ -210,7 +213,11 @@ export const ConditionEditor = ({
             {' of '}
             <button
               className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
-              onClick={() => openTickerModal?.((ticker) => onUpdate({ ticker: ticker as PositionChoice }), undefined, ['tickers', 'ratios', 'branches'], nodeKind, cond.ticker)}
+              onClick={() => {
+                // In Forge mode, allow tickers, ratios, branches, and lists. In Model mode, exclude lists.
+                const allowedModes = isForgeMode ? ['tickers', 'ratios', 'branches', 'lists'] : ['tickers', 'ratios', 'branches']
+                openTickerModal?.((ticker) => onUpdate({ ticker: ticker as PositionChoice }), undefined, allowedModes, nodeKind, cond.ticker)
+              }}
             >
               {cond.ticker}
             </button>
@@ -362,7 +369,11 @@ export const ConditionEditor = ({
                 of{' '}
                 <button
                   className="h-8 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
-                  onClick={() => openTickerModal?.((ticker) => onUpdate({ rightTicker: ticker as PositionChoice }), undefined, ['tickers', 'ratios', 'branches'], nodeKind, cond.rightTicker ?? 'SPY')}
+                  onClick={() => {
+                    // In Forge mode, allow tickers, ratios, branches, and lists. In Model mode, exclude lists.
+                    const allowedModes = isForgeMode ? ['tickers', 'ratios', 'branches', 'lists'] : ['tickers', 'ratios', 'branches']
+                    openTickerModal?.((ticker) => onUpdate({ rightTicker: ticker as PositionChoice }), undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY')
+                  }}
                 >
                   {cond.rightTicker ?? 'SPY'}
                 </button>

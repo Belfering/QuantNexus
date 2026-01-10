@@ -37,3 +37,6 @@ export { useTickerManager } from './useTickerManager'
 
 // Phase 2N-24: Call chain handlers hook
 export { useCallChainHandlers } from './useCallChainHandlers'
+
+// Phase 3: Ticker lists hook
+export { useTickerLists } from './useTickerLists'

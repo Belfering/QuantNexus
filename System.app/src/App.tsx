@@ -82,7 +82,7 @@ import {
 // useIndicatorOverlays - migrated to stores/useBacktestStore.ts (Phase 2N-13d)
 // useSaveMenu - migrated to stores/useUIStore.ts (Phase 2N-13b)
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useDashboardStore } from './stores'
-import { useTreeSync, useBacktestRunner, useAnalyzeRunner, useDashboardHandlers, useBotOperations, useWatchlistCallbacks, ensureDefaultWatchlist, useCallChainHandlers, useUserDataSync, useTickerManager } from './hooks'
+import { useTreeSync, useBacktestRunner, useAnalyzeRunner, useDashboardHandlers, useBotOperations, useWatchlistCallbacks, ensureDefaultWatchlist, useCallChainHandlers, useUserDataSync, useTickerManager, useTickerLists } from './hooks'
 // useCommunityState - migrated to stores/useDashboardStore.ts (Phase 2N-13e)
 // useDashboardUIState - migrated to stores/useDashboardStore.ts (Phase 2N-13e)
 
@@ -262,6 +262,17 @@ function App() {
   const tickerModalNodeKind = useUIStore(s => s.tickerModalNodeKind)
   const tickerModalInitialValue = useUIStore(s => s.tickerModalInitialValue)
   const setTickerModalOpen = useUIStore(s => s.setTickerModalOpen)
+
+  // Ticker lists for Forge optimization (Phase 3)
+  const { tickerLists, refetch: refetchTickerLists } = useTickerLists()
+  const forgeSubtab = useUIStore(s => s.forgeSubtab)
+
+  // Refetch ticker lists when switching to Builder subtab
+  useEffect(() => {
+    if (forgeSubtab === 'Builder') {
+      refetchTickerLists()
+    }
+  }, [forgeSubtab, refetchTickerLists])
 
   // Indicator overlay hook
   // Backtest Store - indicator overlays (migrated from useIndicatorOverlays, Phase 2N-13d)
@@ -1248,6 +1259,7 @@ function App() {
         allowedModes={tickerModalModes}
         nodeKind={tickerModalNodeKind}
         initialValue={tickerModalInitialValue}
+        tickerLists={tickerLists}
       />
       <main className={`flex-1 overflow-hidden min-h-0 ${tab === 'Model' || tab === 'Forge' ? 'pb-4' : ''}`}>
         {tab === 'Forge' ? (

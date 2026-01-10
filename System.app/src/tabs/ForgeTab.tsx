@@ -71,7 +71,7 @@ import { ParameterBoxPanel } from '@/features/parameters/components/ParameterBox
 import type { ParameterField, ParameterRange } from '@/features/parameters/types'
 import { loadCallChainsFromApi } from '@/features/auth'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
-import { useTreeSync, useTreeUndo } from '@/hooks'
+import { useTreeSync, useTreeUndo, useTickerLists } from '@/hooks'
 // Updated: TIM/TIMAR metrics now included
 import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest'
 import { applyBranchToTree } from '@/features/optimization/services/branchGenerator'
@@ -144,6 +144,9 @@ export function ForgeTab({
   // Flowchart scroll width for the horizontal scrollbar (updated by App.tsx)
   const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
   const { forgeSubtab, setForgeSubtab } = useUIStore()
+
+  // Ticker lists for Forge optimization (Phase 3)
+  const { tickerLists } = useTickerLists()
 
   // Tree operation handlers from store
   const handleAdd = (parentId: string, slot: SlotId, index: number, kind: BlockKind) => {
@@ -219,7 +222,75 @@ export function ForgeTab({
     treeStore.removePosition(id, index)
   }
   const handleChoosePos = (id: string, index: number, choice: PositionChoice) => {
-    treeStore.choosePosition(id, index, choice)
+    // If ticker list selected, also set node-level fields for branch generator
+    if (choice.startsWith('list:')) {
+      const listId = choice.substring(5)
+      const tickerList = tickerLists?.find(l => l.id === listId)
+
+      // Helper to recursively update node
+      const updateNode = (node: FlowNode): FlowNode => {
+        if (node.id === id && node.kind === 'position') {
+          const newPositions = [...(node.positions || [])]
+          newPositions[index] = choice
+          return {
+            ...node,
+            positions: newPositions,
+            positionTickerListId: listId,
+            positionTickerListName: tickerList?.name
+          }
+        }
+        // Recurse through children
+        if (node.children) {
+          const newChildren: Partial<Record<SlotId, FlowNode[]>> = {}
+          for (const [slotKey, slotNodes] of Object.entries(node.children)) {
+            if (Array.isArray(slotNodes)) {
+              newChildren[slotKey as SlotId] = slotNodes.map(child => child ? updateNode(child) : child)
+            }
+          }
+          return { ...node, children: newChildren }
+        }
+        return node
+      }
+
+      const next = updateNode(current)
+      push(next)
+    } else {
+      treeStore.choosePosition(id, index, choice)
+    }
+
+    // Auto-create parameter range for ticker list references
+    if (activeBot && tickerLists && choice.startsWith('list:')) {
+      const listId = choice.substring(5) // Remove 'list:' prefix
+      const tickerList = tickerLists.find(l => l.id === listId)
+      if (tickerList) {
+        const paramId = `${id}-position-list`
+        const updatedRanges = [...(activeBot.parameterRanges || [])]
+        const existingIndex = updatedRanges.findIndex(r => r.id === paramId)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'ticker_list',
+          nodeId: id,
+          path: `${id}.positions`,
+          currentValue: 0, // Not used for ticker lists
+          enabled: true,
+          min: 0,
+          max: 0,
+          step: 1,
+          tickerListId: tickerList.id,
+          tickerListName: tickerList.name,
+          tickers: tickerList.tickers
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+
+        botStore.setParameterRanges(activeBot.id, updatedRanges)
+      }
+    }
   }
   const handleUpdateCallRef = (id: string, callId: string | null) => {
     treeStore.updateCallReference(id, callId)
@@ -238,12 +309,151 @@ export function ForgeTab({
   }
   const handleUpdateEntryCondition = (id: string, condId: string, updates: Partial<ConditionLine>) => {
     treeStore.updateEntryCondition(id, condId, updates as Parameters<typeof treeStore.updateEntryCondition>[2])
+
+    // Auto-create parameter ranges for ticker list references in entry conditions
+    if (activeBot && tickerLists) {
+      const handleTickerListRange = (ticker: string | undefined, isRightTicker: boolean) => {
+        if (!ticker || !ticker.startsWith('list:')) return
+
+        const listId = ticker.substring(5)
+        const tickerList = tickerLists.find(l => l.id === listId)
+        if (!tickerList) return
+
+        const paramId = isRightTicker
+          ? `${id}-entry-${condId}-rightTicker-list`
+          : `${id}-entry-${condId}-ticker-list`
+
+        const updatedRanges = [...(activeBot.parameterRanges || [])]
+        const existingIndex = updatedRanges.findIndex(r => r.id === paramId)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'ticker_list',
+          nodeId: id,
+          conditionId: condId,
+          path: isRightTicker
+            ? `${id}.entryConditions.${condId}.rightTicker`
+            : `${id}.entryConditions.${condId}.ticker`,
+          currentValue: 0,
+          enabled: true,
+          min: 0,
+          max: 0,
+          step: 1,
+          tickerListId: tickerList.id,
+          tickerListName: tickerList.name,
+          tickers: tickerList.tickers
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+
+        botStore.setParameterRanges(activeBot.id, updatedRanges)
+      }
+
+      if (updates.ticker !== undefined) {
+        handleTickerListRange(updates.ticker as string, false)
+      }
+      if (updates.rightTicker !== undefined) {
+        handleTickerListRange(updates.rightTicker as string, true)
+      }
+    }
   }
   const handleUpdateExitCondition = (id: string, condId: string, updates: Partial<ConditionLine>) => {
     treeStore.updateExitCondition(id, condId, updates as Parameters<typeof treeStore.updateExitCondition>[2])
+
+    // Auto-create parameter ranges for ticker list references in exit conditions
+    if (activeBot && tickerLists) {
+      const handleTickerListRange = (ticker: string | undefined, isRightTicker: boolean) => {
+        if (!ticker || !ticker.startsWith('list:')) return
+
+        const listId = ticker.substring(5)
+        const tickerList = tickerLists.find(l => l.id === listId)
+        if (!tickerList) return
+
+        const paramId = isRightTicker
+          ? `${id}-exit-${condId}-rightTicker-list`
+          : `${id}-exit-${condId}-ticker-list`
+
+        const updatedRanges = [...(activeBot.parameterRanges || [])]
+        const existingIndex = updatedRanges.findIndex(r => r.id === paramId)
+
+        const parameterRange: ParameterRange = {
+          id: paramId,
+          type: 'ticker_list',
+          nodeId: id,
+          conditionId: condId,
+          path: isRightTicker
+            ? `${id}.exitConditions.${condId}.rightTicker`
+            : `${id}.exitConditions.${condId}.ticker`,
+          currentValue: 0,
+          enabled: true,
+          min: 0,
+          max: 0,
+          step: 1,
+          tickerListId: tickerList.id,
+          tickerListName: tickerList.name,
+          tickers: tickerList.tickers
+        }
+
+        if (existingIndex !== -1) {
+          updatedRanges[existingIndex] = parameterRange
+        } else {
+          updatedRanges.push(parameterRange)
+        }
+
+        botStore.setParameterRanges(activeBot.id, updatedRanges)
+      }
+
+      if (updates.ticker !== undefined) {
+        handleTickerListRange(updates.ticker as string, false)
+      }
+      if (updates.rightTicker !== undefined) {
+        handleTickerListRange(updates.rightTicker as string, true)
+      }
+    }
   }
   const handleUpdateScaling = (id: string, updates: Record<string, unknown>) => {
     treeStore.updateScaling(id, updates as Parameters<typeof treeStore.updateScaling>[1])
+
+    // Auto-create parameter range for ticker list references in scaling ticker
+    if (activeBot && tickerLists && updates.scaleTicker) {
+      const ticker = updates.scaleTicker as string
+      if (ticker.startsWith('list:')) {
+        const listId = ticker.substring(5)
+        const tickerList = tickerLists.find(l => l.id === listId)
+        if (tickerList) {
+          const paramId = `${id}-scaling-ticker-list`
+          const updatedRanges = [...(activeBot.parameterRanges || [])]
+          const existingIndex = updatedRanges.findIndex(r => r.id === paramId)
+
+          const parameterRange: ParameterRange = {
+            id: paramId,
+            type: 'ticker_list',
+            nodeId: id,
+            path: `${id}.scaleTicker`,
+            currentValue: 0,
+            enabled: true,
+            min: 0,
+            max: 0,
+            step: 1,
+            tickerListId: tickerList.id,
+            tickerListName: tickerList.name,
+            tickers: tickerList.tickers
+          }
+
+          if (existingIndex !== -1) {
+            updatedRanges[existingIndex] = parameterRange
+          } else {
+            updatedRanges.push(parameterRange)
+          }
+
+          botStore.setParameterRanges(activeBot.id, updatedRanges)
+        }
+      }
+    }
   }
   // Clipboard handlers using useBotStore
   const handleCopy = (id: string) => {
@@ -1087,6 +1297,8 @@ export function ForgeTab({
                   errorNodeIds={backtestErrorNodeIds}
                   focusNodeId={backtestFocusNodeId}
                   tickerOptions={tickerOptions}
+                  tickerLists={tickerLists}
+                  isForgeMode={true}
                   onAdd={handleAdd}
                   onAppend={handleAppend}
                   onRemoveSlotEntry={handleRemoveSlotEntry}
@@ -1111,8 +1323,76 @@ export function ForgeTab({
                   onFunctionMetric={handleFunctionMetric}
                   onFunctionRank={handleFunctionRank}
                   onUpdateCondition={(id, condId, updates, itemId) => {
-                    const next = updateConditionFields(current, id, condId, updates, itemId)
+                    // Set tickerListId field when ticker is a list reference
+                    const enhancedUpdates = { ...updates }
+                    if (updates.ticker && typeof updates.ticker === 'string' && updates.ticker.startsWith('list:')) {
+                      const listId = updates.ticker.substring(5)
+                      const tickerList = tickerLists?.find(l => l.id === listId)
+                      enhancedUpdates.tickerListId = listId
+                      enhancedUpdates.tickerListName = tickerList?.name
+                    }
+                    if (updates.rightTicker && typeof updates.rightTicker === 'string' && updates.rightTicker.startsWith('list:')) {
+                      const listId = updates.rightTicker.substring(5)
+                      const tickerList = tickerLists?.find(l => l.id === listId)
+                      enhancedUpdates.rightTickerListId = listId
+                      enhancedUpdates.rightTickerListName = tickerList?.name
+                    }
+
+                    const next = updateConditionFields(current, id, condId, enhancedUpdates, itemId)
                     push(next)
+
+                    // Auto-create parameter ranges for ticker list references
+                    if (activeBot && tickerLists) {
+                      const handleTickerListRange = (ticker: string | undefined, isRightTicker: boolean) => {
+                        if (!ticker || !ticker.startsWith('list:')) return
+
+                        const listId = ticker.substring(5) // Remove 'list:' prefix
+                        const tickerList = tickerLists.find(l => l.id === listId)
+                        if (!tickerList) return
+
+                        // Create parameter range ID
+                        const paramId = isRightTicker
+                          ? `${id}-${condId}-rightTicker-list`
+                          : `${id}-${condId}-ticker-list`
+
+                        const updatedRanges = [...(activeBot.parameterRanges || [])]
+                        const existingIndex = updatedRanges.findIndex(r => r.id === paramId)
+
+                        const parameterRange: ParameterRange = {
+                          id: paramId,
+                          type: 'ticker_list',
+                          nodeId: id,
+                          conditionId: condId,
+                          path: isRightTicker
+                            ? `${id}.conditions.${condId}.rightTicker`
+                            : `${id}.conditions.${condId}.ticker`,
+                          currentValue: 0, // Not used for ticker lists
+                          enabled: true,
+                          min: 0,
+                          max: 0,
+                          step: 1,
+                          tickerListId: tickerList.id,
+                          tickerListName: tickerList.name,
+                          tickers: tickerList.tickers
+                        }
+
+                        if (existingIndex !== -1) {
+                          updatedRanges[existingIndex] = parameterRange
+                        } else {
+                          updatedRanges.push(parameterRange)
+                        }
+
+                        botStore.setParameterRanges(activeBot.id, updatedRanges)
+                      }
+
+                      // Check both ticker and rightTicker
+                      if (updates.ticker !== undefined) {
+                        handleTickerListRange(updates.ticker as string, false)
+                      }
+                      if (updates.rightTicker !== undefined) {
+                        handleTickerListRange(updates.rightTicker as string, true)
+                      }
+                    }
                   }}
                   onAddPosition={handleAddPos}
                   onRemovePosition={handleRemovePos}

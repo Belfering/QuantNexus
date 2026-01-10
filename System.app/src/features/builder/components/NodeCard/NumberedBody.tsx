@@ -52,6 +52,7 @@ export interface NumberedBodyProps {
   renderSlot: (slot: SlotId, depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
+  isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
 }
 
 export const NumberedBody = ({
@@ -71,6 +72,7 @@ export const NumberedBody = ({
   renderSlot,
   parameterRanges,
   onUpdateRange,
+  isForgeMode,
 }: NumberedBodyProps) => {
   const [expandedLadderRows, setExpandedLadderRows] = useState<Set<string>>(() => new Set())
   const [showNConfig, setShowNConfig] = useState(false)
@@ -98,6 +100,7 @@ export const NumberedBody = ({
     <ConditionEditor
       key={cond.id}
       condition={cond}
+      isForgeMode={isForgeMode}
       index={idx}
       total={total}
       allowDeleteFirst={itemIndex > 0}

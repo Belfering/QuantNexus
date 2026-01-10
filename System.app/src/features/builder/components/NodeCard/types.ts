@@ -16,6 +16,7 @@ import type {
 } from '../../../../types'
 import type { TickerModalMode } from '@/shared/components'
 import type { ParameterRange } from '@/features/parameters/types'
+import type { TickerList } from '@/types/tickerList'
 
 /**
  * Line types used by buildLines for rendering node body
@@ -80,6 +81,8 @@ export interface CardProps {
   errorNodeIds?: Set<string>
   focusNodeId?: string | null
   tickerOptions: string[]
+  tickerLists?: TickerList[] // Forge-only: ticker lists for optimization
+  isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
 
   // Tree manipulation
   onAdd: (parentId: string, slot: SlotId, index: number, kind: BlockKind) => void
@@ -194,6 +197,8 @@ export interface PositionBodyProps {
   onRemovePosition: (id: string, index: number) => void
   onChoosePosition: (id: string, index: number, choice: PositionChoice) => void
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  tickerLists?: TickerList[] // Forge-only: ticker lists for optimization
+  isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
 }
 
 /**

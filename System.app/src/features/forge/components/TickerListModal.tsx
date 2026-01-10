@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { TickerSearchModal } from '@/shared/components/TickerSearchModal'
+import { useTickerManager } from '@/hooks/useTickerManager'
 import type { TickerList, TickerListCreateInput, CSVImportResult } from '@/types/tickerList'
 
 interface TickerListModalProps {
@@ -19,11 +21,14 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [tickers, setTickers] = useState<string[]>([])
-  const [tickerInput, setTickerInput] = useState('')
   const [metadata, setMetadata] = useState<Record<string, any>>({})
   const [saving, setSaving] = useState(false)
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
+  const [showTickerSearch, setShowTickerSearch] = useState(false)
+
+  // Use ticker manager to get ticker registry and metadata
+  const { tickerOptions, tickerMetadata } = useTickerManager({ etfsOnlyMode: false })
 
   // Reset form when modal opens/closes or editing list changes
   useEffect(() => {
@@ -42,6 +47,10 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
         setMetadata({})
         setCsvFile(null)
       }
+      // Auto-open ticker search in create mode
+      if (mode === 'create') {
+        setShowTickerSearch(true)
+      }
     }
   }, [isOpen, mode, editingList])
 
@@ -57,12 +66,26 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
     setTags(tags.filter(t => t !== tag))
   }
 
-  const handleAddTicker = () => {
-    const trimmed = tickerInput.trim().toUpperCase()
-    if (trimmed && !tickers.includes(trimmed)) {
+  const handleAddTicker = (ticker: string) => {
+    const trimmed = ticker.trim().toUpperCase()
+    if (trimmed && !tickers.includes(trimmed) && trimmed !== 'EMPTY') {
       setTickers([...tickers, trimmed])
-      setTickerInput('')
+
+      // Fetch metadata from ticker registry
+      const meta = tickerMetadata.get(trimmed)
+      if (meta) {
+        setMetadata(prev => ({
+          ...prev,
+          [trimmed]: {
+            name: meta.name,
+            assetType: meta.assetType,
+            exchange: meta.exchange
+          }
+        }))
+      }
     }
+    // Keep modal open for rapid multi-ticker selection
+    // User can click outside to close when done
   }
 
   const handleRemoveTicker = (ticker: string) => {
@@ -155,8 +178,14 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      {/* Modals Container */}
+      <div className="relative flex gap-4 items-start max-w-full px-4">
+        {/* Ticker List Card */}
+        <Card className="w-full max-w-2xl h-[70vh] flex flex-col p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">
             {mode === 'edit' ? 'Edit Ticker List' : mode === 'import' ? 'Import Ticker List' : 'Create Ticker List'}
@@ -166,7 +195,7 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
           </Button>
         </div>
 
-        <div className="flex-1 overflow-auto space-y-4">
+        <div className="flex-1 overflow-auto flex flex-col gap-4">
           {/* CSV Import Section (only in import mode) */}
           {mode === 'import' && (
             <div className="border border-border rounded p-4 space-y-3">
@@ -263,28 +292,22 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
           </div>
 
           {/* Tickers */}
-          <div>
+          <div className="flex-1 flex flex-col min-h-0">
             <label className="text-sm font-medium">Tickers *</label>
-            <div className="flex gap-2 mt-1">
-              <input
-                type="text"
-                value={tickerInput}
-                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    handleAddTicker()
-                  }
-                }}
-                placeholder="Add ticker and press Enter"
-                className="flex-1 px-3 py-2 border border-border rounded bg-card font-mono"
-              />
-              <Button size="sm" onClick={handleAddTicker}>
-                Add
-              </Button>
-            </div>
-            {tickers.length > 0 && (
-              <div className="mt-2 border border-border rounded max-h-48 overflow-auto">
+            {!showTickerSearch && (
+              <div className="flex gap-2 mt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowTickerSearch(true)}
+                  className="w-full justify-center"
+                >
+                  Search ticker or company name...
+                </Button>
+              </div>
+            )}
+            <div className="mt-2 border border-border rounded flex-1 overflow-auto">
+              {tickers.length > 0 ? (
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-muted">
                     <tr>
@@ -312,8 +335,12 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
+              ) : (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  Click tickers on the right to add them to your list
+                </div>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
               {tickers.length} {tickers.length === 1 ? 'ticker' : 'tickers'}
             </p>
@@ -330,6 +357,20 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
           </Button>
         </div>
       </Card>
+
+        {/* Ticker Search Modal - positioned to the right */}
+        {showTickerSearch && (
+          <TickerSearchModal
+            open={showTickerSearch}
+            onClose={() => setShowTickerSearch(false)}
+            onSelect={handleAddTicker}
+            tickerOptions={tickerOptions}
+            tickerMetadata={tickerMetadata}
+            allowedModes={['tickers']}
+            position="right"
+          />
+        )}
+      </div>
     </div>
   )
 }
