@@ -2,11 +2,14 @@
 """
 Persistent Python worker for batch backtesting
 Stays alive and processes multiple branches to maximize cache reuse
+Pre-loads tickers and pre-computes indicators on startup for massive speedup
 """
 
 import sys
 import json
 from backtester import Backtester
+from optimized_dataloader import get_global_cache
+from indicator_cache import SharedIndicatorCache
 
 def main():
     """
@@ -21,6 +24,8 @@ def main():
 
         config = json.loads(first_line)
         parquet_dir = config.get('parquetDir')
+        preload_tickers = config.get('preloadTickers', [])
+        preload_indicators = config.get('preloadIndicators', {})
 
         if not parquet_dir:
             print(json.dumps({'error': 'Missing parquetDir'}), flush=True)
@@ -28,6 +33,46 @@ def main():
 
         # Initialize backtester ONCE (caches persist across branches)
         backtester = Backtester(parquet_dir)
+
+        # OPTIMIZATION: Pre-load tickers and pre-compute indicators for massive speedup
+        if preload_tickers or preload_indicators:
+            print(f"[Worker] Pre-loading {len(preload_tickers)} tickers...", file=sys.stderr, flush=True)
+
+            # Get global cache instance
+            cache = get_global_cache(parquet_dir)
+
+            # Pre-load all tickers into cache
+            for ticker in preload_tickers:
+                try:
+                    cache.get_ticker_data(ticker, limit=20000)
+                except Exception as e:
+                    print(f"[Worker] Warning: Failed to load {ticker}: {e}", file=sys.stderr, flush=True)
+
+            cache_stats = cache.get_cache_info()
+            print(f"[Worker] ✓ Pre-loaded tickers. Cache: {cache_stats}", file=sys.stderr, flush=True)
+
+            # Pre-compute indicators if specified
+            if preload_indicators:
+                print(f"[Worker] Pre-computing indicators...", file=sys.stderr, flush=True)
+
+                # Create shared indicator cache
+                indicator_cache = SharedIndicatorCache()
+
+                # Build price data dict
+                price_data = {}
+                for ticker in preload_tickers:
+                    try:
+                        df = cache.get_ticker_data(ticker, limit=20000)
+                        if len(df) > 0 and 'Close' in df.columns:
+                            price_data[ticker] = df['Close'].values
+                    except Exception as e:
+                        print(f"[Worker] Warning: Failed to get prices for {ticker}: {e}", file=sys.stderr, flush=True)
+
+                # Pre-compute all indicators
+                indicator_cache.precompute_all(price_data, preload_indicators)
+
+                stats = indicator_cache.get_stats()
+                print(f"[Worker] ✓ Pre-computed indicators. Stats: {stats}", file=sys.stderr, flush=True)
 
         # Signal ready
         print(json.dumps({'status': 'ready'}), flush=True)

@@ -85,6 +85,9 @@ router.get('/:jobId/results', (req, res) => {
         parameter_label,
         parameter_values,
         ticker_substitutions,
+        condition_ticker,
+        position_ticker,
+        tree_json,
         is_start_date,
         is_cagr,
         is_sharpe,
@@ -130,6 +133,9 @@ router.get('/:jobId/results', (req, res) => {
       parameterLabel: result.parameter_label,
       parameterValues: JSON.parse(result.parameter_values),
       tickerSubstitutions: result.ticker_substitutions ? JSON.parse(result.ticker_substitutions) : undefined,
+      conditionTicker: result.condition_ticker,
+      positionTicker: result.position_ticker,
+      treeJson: result.tree_json,
       isMetrics: {
         startDate: result.is_start_date,
         cagr: result.is_cagr,
@@ -225,12 +231,13 @@ router.post('/jobs', (req, res) => {
       const insertResult = sqlite.prepare(`
         INSERT INTO optimization_results (
           job_id, branch_id, parameter_label, parameter_values, ticker_substitutions,
+          condition_ticker, position_ticker, tree_json,
           is_start_date, is_cagr, is_sharpe, is_calmar, is_max_drawdown, is_sortino, is_treynor,
           is_beta, is_volatility, is_win_rate, is_avg_turnover, is_avg_holdings, is_tim, is_timar,
           oos_start_date, oos_cagr, oos_sharpe, oos_calmar, oos_max_drawdown, oos_sortino, oos_treynor,
           oos_beta, oos_volatility, oos_win_rate, oos_avg_turnover, oos_avg_holdings, oos_tim, oos_timar,
           passed, failed_requirements
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
 
       const insertMany = sqlite.transaction((results) => {
@@ -241,6 +248,9 @@ router.post('/jobs', (req, res) => {
             result.parameterLabel,
             JSON.stringify(result.parameterValues),
             result.tickerSubstitutions ? JSON.stringify(result.tickerSubstitutions) : null,
+            result.conditionTicker ?? null,
+            result.positionTicker ?? null,
+            result.tree ?? null,
             result.isMetrics?.startDate ?? null,
             result.isMetrics?.cagr ?? null,
             result.isMetrics?.sharpe ?? null,
@@ -333,10 +343,106 @@ router.get('/:jobId/csv', (req, res) => {
       SELECT * FROM optimization_results WHERE job_id = ? ORDER BY is_cagr DESC
     `).all(jobId)
 
-    // Generate CSV
+    // Extract nodes from tree_json for each result
+    const SLOT_ORDER = {
+      indicator: ['then', 'else', 'next'],
+      basic: ['next'],
+      function: ['next'],
+      position: [],
+      numbered: ['next'],
+      altExit: ['next'],
+      scaling: ['next']
+    }
+
+    function extractNodeParameters(tree) {
+      const nodes = []
+
+      function traverse(node, isRoot = false) {
+        if (isRoot) {
+          const slots = SLOT_ORDER[node.kind] || ['next']
+          for (const slotKey of slots) {
+            const children = node.children?.[slotKey]
+            if (Array.isArray(children)) {
+              children.forEach(child => child && traverse(child, false))
+            }
+          }
+          return
+        }
+
+        const params = { kind: node.kind }
+
+        switch (node.kind) {
+          case 'indicator':
+            params.conditions = node.conditions
+            params.weighting = node.weighting
+            break
+          case 'position':
+            params.positions = node.positions
+            params.weighting = node.weighting
+            params.positionMode = node.positionMode
+            break
+          case 'function':
+            params.metric = node.metric
+            params.window = node.window
+            params.bottom = node.bottom
+            params.rank = node.rank
+            params.weighting = node.weighting
+            break
+          case 'numbered':
+            params.quantifier = node.quantifier
+            params.n = node.n
+            params.items = node.items
+            params.weighting = node.weighting
+            break
+          case 'basic':
+            params.title = node.title
+            params.weighting = node.weighting
+            break
+          case 'altExit':
+            params.entryConditions = node.entryConditions
+            params.exitConditions = node.exitConditions
+            break
+          case 'scaling':
+            params.scaleMetric = node.scaleMetric
+            params.scaleWindow = node.scaleWindow
+            params.scaleTicker = node.scaleTicker
+            params.scaleFrom = node.scaleFrom
+            params.scaleTo = node.scaleTo
+            break
+        }
+
+        nodes.push(params)
+
+        const slots = SLOT_ORDER[node.kind] || []
+        for (const slotKey of slots) {
+          const children = node.children?.[slotKey]
+          if (Array.isArray(children)) {
+            children.forEach(child => child && traverse(child, false))
+          }
+        }
+      }
+
+      traverse(tree, true)
+      return nodes
+    }
+
+    const allNodes = results.map(r => {
+      if (!r.tree_json) return []
+      try {
+        const tree = JSON.parse(r.tree_json)
+        return extractNodeParameters(tree)
+      } catch (e) {
+        return []
+      }
+    })
+
+    const maxNodes = Math.max(...allNodes.map(n => n.length), 0)
+
+    // Generate CSV with dynamic node columns
+    const nodeHeaders = Array.from({length: maxNodes}, (_, i) => `Node ${i+1}`)
     const headers = [
       'Branch ID',
-      'Parameters',
+      ...nodeHeaders,
       'Passed',
       'IS Start Date',
       'IS CAGR %',
@@ -369,10 +475,15 @@ router.get('/:jobId/csv', (req, res) => {
       'Failed Requirements',
     ]
 
-    const rows = results.map(r => [
-      r.branch_id,
-      r.parameter_label,
-      r.passed ? 'Yes' : 'No',
+    const rows = results.map((r, idx) => {
+      const nodes = allNodes[idx]
+      const nodeColumns = Array.from({length: maxNodes}, (_, i) =>
+        nodes[i] ? JSON.stringify(nodes[i]) : ''
+      )
+      return [
+        r.branch_id,
+        ...nodeColumns,
+        r.passed ? 'Yes' : 'No',
       r.is_start_date || '',
       r.is_cagr ? (r.is_cagr * 100).toFixed(2) : '',
       r.is_sharpe ? r.is_sharpe.toFixed(2) : '',
@@ -402,7 +513,8 @@ router.get('/:jobId/csv', (req, res) => {
       r.oos_avg_turnover ? (r.oos_avg_turnover * 100).toFixed(2) : '',
       r.oos_avg_holdings ? r.oos_avg_holdings.toFixed(2) : '',
       r.failed_requirements || '',
-    ])
+      ]
+    })
 
     // Escape CSV values (RFC 4180)
     const escapeCsv = (val) => {

@@ -14,8 +14,8 @@ type SortKey = 'branchId' | 'isCAGR' | 'isSharpe' | 'isCalmar' | 'oosCAGR' | 'oo
 type FilterType = 'all' | 'passed' | 'failed'
 
 export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTableProps) {
-  const [sortKey, setSortKey] = useState<SortKey>('isCAGR')
-  const [sortAsc, setSortAsc] = useState(false) // Default: descending
+  const [sortKey, setSortKey] = useState<SortKey>('branchId')
+  const [sortAsc, setSortAsc] = useState(true) // Default: ascending by branch ID
   const [filterType, setFilterType] = useState<FilterType>('all')
 
   // Filter results
@@ -106,6 +106,8 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
                 Branch{getSortIndicator('branchId')}
               </th>
               <th className="px-3 py-2 text-left">Parameters</th>
+              <th className="px-3 py-2 text-left">Condition Ticker</th>
+              <th className="px-3 py-2 text-left">Position Ticker</th>
               <th
                 className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
                 onClick={() => handleSort('isCAGR')}
@@ -154,6 +156,8 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
               >
                 <td className="px-3 py-2 font-mono text-xs">{result.branchId}</td>
                 <td className="px-3 py-2 text-xs">{result.combination.label}</td>
+                <td className="px-3 py-2 text-xs">{(result.combination as any).conditionTicker || '-'}</td>
+                <td className="px-3 py-2 text-xs">{(result.combination as any).positionTicker || '-'}</td>
                 <td className="px-3 py-2 text-right">
                   {result.isMetrics ? `${(result.isMetrics.cagr * 100).toFixed(2)}%` : '-'}
                 </td>

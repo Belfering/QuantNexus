@@ -1,261 +1,175 @@
 """
-Optimized price data loader with LRU caching
-Loads price data once and shares across all backtests for 1000x+ speedup
+Optimized Price Data Loader with Caching
+
+This module provides high-performance price data loading:
+- NumPy arrays (no pandas overhead in hot loops)
+- In-memory LRU cache (avoid repeated parquet reads)
+- Pre-computed returns arrays
+- Memory-efficient data structures
+
+Similar to Java's double[] arrays + Caffeine cache pattern.
 """
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Dict, Optional, Tuple
 from functools import lru_cache
 import sys
 
 
 class PriceDataCache:
     """
-    LRU-cached price data loader with hot cache for frequently used tickers
-    Cold load: ~50ms (disk I/O + parquet parsing)
-    Warm load: ~0.01ms (memory lookup) = 5000x faster
+    In-memory cache for price data (similar to Caffeine cache).
+
+    Uses Python's built-in LRU cache + manual dict for frequently accessed tickers.
     """
 
-    def __init__(self, parquet_dir: str, cache_size: int = 500, hot_tickers: Optional[list] = None):
-        """
-        Initialize price data cache
-
-        Args:
-            parquet_dir: Directory containing parquet files
-            cache_size: Maximum number of tickers to cache (default 500)
-            hot_tickers: List of frequently-used tickers to pre-load
-        """
-        self.parquet_dir = Path(parquet_dir)
-        self.cache: Dict[str, pd.DataFrame] = {}
+    def __init__(self, data_dir='../data/parquet', cache_size=500):
+        self.data_dir = Path(data_dir)
         self.cache_size = cache_size
-        self.hit_count = 0
-        self.miss_count = 0
+        self._hot_cache = {}  # Manual cache for most-used tickers
 
-        # Hot cache: pre-load common tickers
-        self.hot_tickers = hot_tickers or [
-            'SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'VEA', 'VWO', 'AGG', 'BND', 'TLT',
-            'GLD', 'SLV', 'DBC', 'DBO', 'USO', 'UNG', 'FXI', 'EWJ', 'EEM', 'EFA',
-            'XLF', 'XLE', 'XLK', 'XLV', 'XLI', 'XLP', 'XLY', 'XLU', 'XLB', 'XLRE',
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'BRK.B'
-        ]
-
-        self._preload_hot_cache()
-
-    def _preload_hot_cache(self):
-        """Pre-load frequently used tickers into cache"""
-        loaded = 0
-        for ticker in self.hot_tickers:
-            if self.parquet_dir.joinpath(f"{ticker}.parquet").exists():
-                try:
-                    df = self._load_parquet_file(ticker)
-                    if not df.empty:
-                        self.cache[ticker] = df
-                        loaded += 1
-                except Exception as e:
-                    pass
-
-        if loaded > 0:
-            print(f"[PriceDataCache] Pre-loaded {loaded} hot tickers into cache", file=sys.stderr)
-
-    def _load_parquet_file(self, ticker: str) -> pd.DataFrame:
-        """Load a single parquet file"""
-        parquet_file = self.parquet_dir / f"{ticker}.parquet"
-
-        if not parquet_file.exists():
-            return pd.DataFrame()
-
-        try:
-            df = pd.read_parquet(parquet_file)
-
-            # Ensure Date column is datetime
-            if 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date'])
-
-            # Filter to backtest start date (1993-01-01)
-            df = df[df['Date'] >= '1993-01-01']
-
-            # Sort by date
-            df = df.sort_values('Date')
-
-            # Add timestamp column (Unix epoch in seconds)
-            df['time'] = df['Date'].astype(np.int64) // 10**9
-
-            return df
-
-        except Exception as e:
-            print(f"[PriceDataCache] Error loading {ticker}: {e}", file=sys.stderr)
-            return pd.DataFrame()
-
-    def get_ticker_data(self, ticker: str, limit: Optional[int] = None) -> pd.DataFrame:
+    @lru_cache(maxsize=500)
+    def _load_parquet_cached(self, ticker):
         """
-        Get price data for a ticker (cached)
+        Load parquet file with LRU caching.
 
         Args:
-            ticker: Stock ticker symbol
-            limit: Optional limit on number of rows to return
+            ticker: Ticker symbol (sanitized, e.g., BRK-B)
 
         Returns:
-            DataFrame with OHLCV data + timestamp
+            Pandas DataFrame
         """
-        ticker = ticker.upper()
+        parquet_path = self.data_dir / f"{ticker}.parquet"
 
-        # Check cache
-        if ticker in self.cache:
-            self.hit_count += 1
-            df = self.cache[ticker]
-            if limit and limit < len(df):
-                return df.tail(limit)
-            return df
+        if not parquet_path.exists():
+            raise FileNotFoundError(f"Parquet file not found: {parquet_path}")
 
-        # Cache miss - load from disk
-        self.miss_count += 1
-        df = self._load_parquet_file(ticker)
-
-        # Add to cache (with LRU eviction if needed)
-        if not df.empty:
-            if len(self.cache) >= self.cache_size:
-                # Simple LRU: remove oldest (first) item
-                # In production, use collections.OrderedDict or proper LRU
-                oldest_ticker = next(iter(self.cache))
-                del self.cache[oldest_ticker]
-
-            self.cache[ticker] = df
-
-        if limit and limit < len(df):
-            return df.tail(limit)
+        # Use pyarrow for fast reading
+        df = pd.read_parquet(parquet_path, engine='pyarrow')
 
         return df
 
-    def get_price_array(self, ticker: str, column: str = 'Close') -> np.ndarray:
+    def get_price_arrays(self, ticker):
         """
-        Get price array for a specific column (fast)
+        Get price data as NumPy arrays (optimized for speed).
 
         Args:
-            ticker: Stock ticker symbol
-            column: Column name (Close, Open, High, Low, Volume)
+            ticker: Ticker symbol
 
         Returns:
-            NumPy array of prices
+            Dictionary with NumPy arrays:
+                - 'dates': Array of date strings
+                - 'open': Open prices
+                - 'high': High prices
+                - 'low': Low prices
+                - 'close': Close prices
+                - 'volume': Volume
+                - 'returns': Daily returns (close-to-close)
         """
-        df = self.get_ticker_data(ticker)
+        # Check hot cache first
+        if ticker in self._hot_cache:
+            return self._hot_cache[ticker]
 
-        if df.empty or column not in df.columns:
-            return np.array([])
+        # Load from parquet (LRU cached)
+        df = self._load_parquet_cached(ticker)
 
-        return df[column].values
-
-    def get_ohlcv_arrays(self, ticker: str) -> Dict[str, np.ndarray]:
-        """
-        Get all OHLCV data as NumPy arrays (fastest)
-
-        Args:
-            ticker: Stock ticker symbol
-
-        Returns:
-            Dict mapping column names to NumPy arrays
-        """
-        df = self.get_ticker_data(ticker)
-
-        if df.empty:
-            return {
-                'open': np.array([]),
-                'high': np.array([]),
-                'low': np.array([]),
-                'close': np.array([]),
-                'volume': np.array([]),
-                'time': np.array([])
-            }
-
-        return {
-            'open': df['Open'].values if 'Open' in df.columns else np.array([]),
-            'high': df['High'].values if 'High' in df.columns else np.array([]),
-            'low': df['Low'].values if 'Low' in df.columns else np.array([]),
-            'close': df['Close'].values if 'Close' in df.columns else np.array([]),
-            'volume': df['Volume'].values if 'Volume' in df.columns else np.array([]),
-            'time': df['time'].values if 'time' in df.columns else np.array([])
+        # Convert to NumPy arrays (much faster than pandas for calculations)
+        price_data = {
+            'dates': df.index.astype(str).values,
+            'open': df['Open'].values.astype(np.float64),
+            'high': df['High'].values.astype(np.float64),
+            'low': df['Low'].values.astype(np.float64),
+            'close': df['Close'].values.astype(np.float64),
+            'volume': df['Volume'].values.astype(np.float64),
         }
 
-    def preload_tickers(self, tickers: list):
-        """
-        Pre-load specific tickers into cache
+        # Pre-compute returns array (avoid recalculating)
+        close_prices = price_data['close']
+        returns = np.zeros(len(close_prices), dtype=np.float64)
+        returns[1:] = (close_prices[1:] - close_prices[:-1]) / close_prices[:-1]
 
-        Args:
-            tickers: List of ticker symbols to pre-load
-        """
-        loaded = 0
-        for ticker in tickers:
-            if ticker.upper() not in self.cache:
-                df = self.get_ticker_data(ticker)
-                if not df.empty:
-                    loaded += 1
+        price_data['returns'] = returns
+        price_data['length'] = len(close_prices)
 
-        print(f"[PriceDataCache] Pre-loaded {loaded} additional tickers", file=sys.stderr)
+        # Add to hot cache if frequently accessed
+        if len(self._hot_cache) < 100:  # Keep top 100 tickers in hot cache
+            self._hot_cache[ticker] = price_data
 
-    def get_stats(self) -> Dict:
-        """Get cache statistics"""
-        total = self.hit_count + self.miss_count
-        hit_rate = (self.hit_count / total * 100) if total > 0 else 0
+        return price_data
 
+    def clear_cache(self):
+        """Clear all caches."""
+        self._hot_cache.clear()
+        self._load_parquet_cached.cache_clear()
+
+    def get_cache_info(self):
+        """Get cache statistics."""
+        lru_info = self._load_parquet_cached.cache_info()
         return {
-            'size': len(self.cache),
-            'capacity': self.cache_size,
-            'hits': self.hit_count,
-            'misses': self.miss_count,
-            'hit_rate': hit_rate,
-            'speedup': f"{hit_rate:.1f}% of loads at 5000x speed"
+            'hot_cache_size': len(self._hot_cache),
+            'lru_hits': lru_info.hits,
+            'lru_misses': lru_info.misses,
+            'lru_hit_rate': lru_info.hits / (lru_info.hits + lru_info.misses) if (lru_info.hits + lru_info.misses) > 0 else 0,
         }
 
-    def clear_cold_cache(self):
-        """Clear cache except for hot tickers"""
-        hot_data = {ticker: df for ticker, df in self.cache.items() if ticker in self.hot_tickers}
-        self.cache = hot_data
 
-    def clear_all(self):
-        """Clear entire cache"""
-        self.cache.clear()
-        self.hit_count = 0
-        self.miss_count = 0
+# Global cache instance (reused across function calls)
+_global_cache = None
 
 
-# Global singleton cache instance
-_global_cache: Optional[PriceDataCache] = None
-
-
-def get_global_cache(parquet_dir: str) -> PriceDataCache:
-    """
-    Get or create global price data cache singleton
-
-    Args:
-        parquet_dir: Directory containing parquet files
-
-    Returns:
-        Global PriceDataCache instance
-    """
+def get_global_cache(data_dir='../data/parquet'):
+    """Get or create global price data cache."""
     global _global_cache
-
     if _global_cache is None:
-        _global_cache = PriceDataCache(parquet_dir, cache_size=500)
-
+        _global_cache = PriceDataCache(data_dir)
     return _global_cache
 
 
-def load_price_data_fast(ticker: str, parquet_dir: str, limit: Optional[int] = None) -> pd.DataFrame:
+def load_price_data_fast(ticker, data_dir='../data/parquet'):
     """
-    Fast price data loading using global cache
+    Fast price data loading with caching.
 
     Args:
-        ticker: Stock ticker symbol
-        parquet_dir: Directory containing parquet files
-        limit: Optional limit on rows
+        ticker: Ticker symbol
+        data_dir: Directory containing parquet files
 
     Returns:
-        DataFrame with OHLCV data
-
-    Performance:
-        - Cold load (first time): ~50ms
-        - Warm load (cached): ~0.01ms (5000x faster)
+        Dictionary with NumPy arrays
     """
-    cache = get_global_cache(parquet_dir)
-    return cache.get_ticker_data(ticker, limit)
+    cache = get_global_cache(data_dir)
+    return cache.get_price_arrays(ticker)
+
+
+if __name__ == '__main__':
+    # Benchmark test
+    print("Benchmarking optimized data loader...", file=sys.stderr)
+
+    import time
+
+    # Test ticker (adjust path if needed)
+    ticker = 'SPY'
+    data_dir = '../data/parquet'
+
+    # Cold load (triggers parquet read)
+    start = time.perf_counter()
+    data1 = load_price_data_fast(ticker, data_dir)
+    cold_time = (time.perf_counter() - start) * 1000
+
+    print(f"Cold load time: {cold_time:.2f} ms", file=sys.stderr)
+    print(f"Data shape: {data1['length']} days", file=sys.stderr)
+
+    # Warm load (from cache)
+    start = time.perf_counter()
+    for _ in range(100):
+        data2 = load_price_data_fast(ticker, data_dir)
+    warm_time = (time.perf_counter() - start) / 100 * 1000
+
+    print(f"Warm load time (avg of 100): {warm_time:.4f} ms", file=sys.stderr)
+
+    # Cache stats
+    cache = get_global_cache()
+    stats = cache.get_cache_info()
+    print(f"Cache stats: {stats}", file=sys.stderr)
+
+    print(f"\nSpeedup: {cold_time / warm_time:.0f}x faster on cached reads", file=sys.stderr)

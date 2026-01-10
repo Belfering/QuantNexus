@@ -1,6 +1,8 @@
 // src/types/branch.ts
 // Branch generation and optimization types
 
+import type { FlowNode } from './flowNode'
+
 // Represents a single combination of parameter values
 export interface BranchCombination {
   id: string
@@ -16,6 +18,7 @@ export type BranchStatus = 'pending' | 'running' | 'success' | 'error'
 export interface BranchResult {
   branchId: string
   combination: BranchCombination
+  tree?: FlowNode // Tree structure for this branch (for database storage)
   status: BranchStatus
   // Metrics only available if status === 'success'
   isMetrics?: {

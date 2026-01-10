@@ -104,9 +104,8 @@ export class WorkerPool {
     })
 
     python.stderr.on('data', (data) => {
-      // Suppress stderr output (cache loading messages, etc.)
-      // Uncomment for debugging:
-      // console.error(`[Worker ${workerId}]`, data.toString())
+      // Show stderr output to see pre-loading progress
+      console.error(`[Worker ${workerId}]`, data.toString().trim())
     })
 
     python.on('close', (code) => {
@@ -125,9 +124,11 @@ export class WorkerPool {
 
     this.workers.push(worker)
 
-    // Send initialization config
+    // Send initialization config (with optional pre-load metadata)
     const config = {
-      parquetDir: this.parquetDir
+      parquetDir: this.parquetDir,
+      preloadTickers: this.preloadTickers || [],
+      preloadIndicators: this.preloadIndicators || {}
     }
     python.stdin.write(JSON.stringify(config) + '\n')
   }
@@ -455,6 +456,10 @@ export class WorkerPool {
               if (result.tickers_loaded && result.indicators_computed) {
                 console.log(`[WorkerPool] ✓ Batch optimization complete:`, result.analysis)
                 console.log(`[WorkerPool] ✓ Estimated speedup: ${result.speedup_estimate}`)
+
+                // Store pre-load metadata for workers
+                this.preloadTickers = result.analysis?.tickers || []
+                this.preloadIndicators = result.analysis?.indicators || {}
               }
             }
           } catch (error) {

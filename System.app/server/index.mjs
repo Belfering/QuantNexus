@@ -74,7 +74,7 @@ app.use(cors(corsOptions))
 // Enable gzip/brotli compression for API responses (2-3x faster transfers)
 app.use(compression())
 
-app.use(express.json({ limit: '1.5mb' }))
+app.use(express.json({ limit: '50mb' }))  // Increased for large optimization jobs with ticker lists
 
 // Serve static frontend in production with proper cache headers
 if (isProduction) {

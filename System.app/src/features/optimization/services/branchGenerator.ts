@@ -107,12 +107,41 @@ export function generateBranchCombinations(ranges: ParameterRange[]): BranchComb
 }
 
 /**
+ * Check if tree contains any AUTO mode position nodes
+ * Exported as hasAutoModeInTree for use in optimization hooks
+ */
+export function hasAutoModeInTree(node: FlowNode): boolean {
+  if (node.kind === 'position' && node.positionMode === 'match_indicator') {
+    return true
+  }
+  if (node.children) {
+    for (const slotKey in node.children) {
+      const slot = node.children[slotKey as keyof typeof node.children]
+      if (Array.isArray(slot)) {
+        for (const child of slot) {
+          if (child && hasAutoModeInTree(child)) {
+            return true
+          }
+        }
+      }
+    }
+  }
+  return false
+}
+
+/**
  * Apply ticker substitutions to a tree
  * @param node - The node to apply substitutions to (will be modified recursively)
  * @param substitutions - Map of ticker list ID to selected ticker
  * @param appliedTickers - Set of tickers that have been applied to conditions (for match_indicator mode)
+ * @param extractedTickers - Object to collect the first condition ticker and position ticker found
  */
-function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, string>, appliedTickers: Set<string> = new Set()): void {
+function applyTickerSubstitutions(
+  node: FlowNode,
+  substitutions: Record<string, string>,
+  appliedTickers: Set<string> = new Set(),
+  extractedTickers?: { conditionTicker?: string, positionTicker?: string }
+): void {
   // Apply to condition tickers
   if (node.conditions && Array.isArray(node.conditions)) {
     for (const condition of node.conditions) {
@@ -120,6 +149,10 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
       if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
         appliedTickers.add(condition.ticker)
+        // Track first condition ticker for database
+        if (extractedTickers && !extractedTickers.conditionTicker) {
+          extractedTickers.conditionTicker = condition.ticker
+        }
         console.log(`[BranchGenerator] Substituted ticker ${condition.ticker} for list ${condition.tickerListId}`)
         // Clear the list reference fields so backtest API doesn't get confused
         delete (condition as any).tickerListId
@@ -131,7 +164,18 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
         if (substitutions[listId]) {
           condition.ticker = substitutions[listId]
           appliedTickers.add(condition.ticker)
+          // Track first condition ticker for database
+          if (extractedTickers && !extractedTickers.conditionTicker) {
+            extractedTickers.conditionTicker = condition.ticker
+          }
           console.log(`[BranchGenerator] Substituted ticker ${condition.ticker} for inline list ${listId}`)
+        }
+      }
+      // Also track regular (non-list) tickers for AUTO mode matching
+      else if (condition.ticker && typeof condition.ticker === 'string') {
+        appliedTickers.add(condition.ticker)
+        if (extractedTickers && !extractedTickers.conditionTicker) {
+          extractedTickers.conditionTicker = condition.ticker
         }
       }
       // Replace right ticker if it references a ticker list
@@ -152,6 +196,10 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
           console.log(`[BranchGenerator] Substituted right ticker ${condition.rightTicker} for inline list ${listId}`)
         }
       }
+      // Also track regular (non-list) right tickers for AUTO mode matching
+      else if (condition.rightTicker && typeof condition.rightTicker === 'string') {
+        appliedTickers.add(condition.rightTicker)
+      }
     }
   }
 
@@ -160,15 +208,22 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
     if (node.positionMode === 'match_indicator' && appliedTickers.size > 0) {
       // Match Indicator mode: use tickers from conditions above
       const ticker = Array.from(appliedTickers)[0] // Use first applied ticker
-      if (node.positions && node.positions.length > 0) {
-        node.positions = node.positions.map(() => ticker)
-        console.log(`[BranchGenerator] Match Indicator: Applied ticker ${ticker} to position`)
+      // ALWAYS set positions array to the matched ticker (even if empty initially)
+      node.positions = [ticker]
+      // Track position ticker for database
+      if (extractedTickers && !extractedTickers.positionTicker) {
+        extractedTickers.positionTicker = ticker
       }
+      console.log(`[BranchGenerator] Match Indicator: Applied ticker ${ticker} to position`)
     } else if (node.positionTickerListId && substitutions[node.positionTickerListId]) {
       // Ticker List mode: use ticker from list
       const ticker = substitutions[node.positionTickerListId]
       if (node.positions && node.positions.length > 0) {
         node.positions = node.positions.map(() => ticker)
+        // Track position ticker for database
+        if (extractedTickers && !extractedTickers.positionTicker) {
+          extractedTickers.positionTicker = ticker
+        }
         console.log(`[BranchGenerator] Substituted position ticker ${ticker} for list ${node.positionTickerListId}`)
         // Clear the list reference fields
         delete (node as any).positionTickerListId
@@ -186,6 +241,10 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
             // Replace all positions with the ticker from the list
             const ticker = substitutions[listId]
             node.positions = node.positions.map(() => ticker)
+            // Track position ticker for database
+            if (extractedTickers && !extractedTickers.positionTicker) {
+              extractedTickers.positionTicker = ticker
+            }
             console.log(`[BranchGenerator] Substituted position ticker ${ticker} for inline list ${listId}`)
             break // Only need to do this once for all positions
           }
@@ -299,7 +358,7 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
       if (Array.isArray(slot)) {
         for (const child of slot) {
           if (child) {
-            applyTickerSubstitutions(child, substitutions, appliedTickers)
+            applyTickerSubstitutions(child, substitutions, appliedTickers, extractedTickers)
           }
         }
       }
@@ -312,22 +371,34 @@ function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, 
  * @param tree - The flowchart tree to modify (should be a clone)
  * @param combination - The branch combination with parameter values
  * @param ranges - Array of parameter ranges (for path information)
+ * @param hasAutoMode - Whether the tree contains AUTO mode position nodes (cached to avoid repeated checks)
  * @returns Modified tree with parameter values applied
  */
 export function applyBranchToTree(
   tree: FlowNode,
   combination: BranchCombination,
-  ranges: ParameterRange[]
+  ranges: ParameterRange[],
+  hasAutoMode?: boolean
 ): FlowNode {
   // NOTE: Caller should clone the tree BEFORE calling this function
   // We apply parameters directly to preserve condition IDs for matching
 
-  console.log(`[BranchGenerator] Applying ${Object.keys(combination.parameterValues).length} parameters to ${combination.id}`)
+  // Apply ticker substitutions and process AUTO mode positions
+  // Only traverse tree if necessary (has ticker substitutions OR has AUTO mode position nodes)
+  const extractedTickers: { conditionTicker?: string, positionTicker?: string } = {}
+  const substitutions = combination.tickerSubstitutions || {}
+  const hasSubstitutions = Object.keys(substitutions).length > 0
+  const needsTraversal = hasSubstitutions || hasAutoMode
 
-  // Apply ticker substitutions if present
-  if (combination.tickerSubstitutions) {
-    console.log(`[BranchGenerator] Applying ${Object.keys(combination.tickerSubstitutions).length} ticker substitutions`)
-    applyTickerSubstitutions(tree, combination.tickerSubstitutions)
+  if (needsTraversal) {
+    applyTickerSubstitutions(tree, substitutions, new Set(), extractedTickers)
+    // Add extracted tickers to combination for database storage
+    if (extractedTickers.conditionTicker) {
+      (combination as any).conditionTicker = extractedTickers.conditionTicker
+    }
+    if (extractedTickers.positionTicker) {
+      (combination as any).positionTicker = extractedTickers.positionTicker
+    }
   }
 
   // Apply each parameter value from the combination
@@ -338,8 +409,6 @@ export function applyBranchToTree(
       console.warn(`[BranchGenerator] Could not find range for parameter ${parameterId}`)
       continue
     }
-
-    console.log(`[BranchGenerator] Applying ${parameterId} = ${value} (path: ${range.path})`)
 
     // Parse the path to navigate the tree (e.g., "node.conditions.1767985538054.window")
     const pathParts = range.path.split('.')
@@ -358,9 +427,6 @@ export function applyBranchToTree(
       // Recursively search for the condition
       const findAndUpdateCondition = (node: any): boolean => {
         if (node.conditions && Array.isArray(node.conditions)) {
-          // Log all condition IDs to help debug
-          console.log(`[BranchGenerator] Found ${node.conditions.length} conditions:`, node.conditions.map((c: any) => c.id))
-
           // Match by ID containing the conditionId (handles cloned nodes with new suffixes)
           const condition = node.conditions.find((c: any) =>
             c.id === conditionId || c.id.includes(conditionId) || c.id.startsWith('node-' + conditionId)
@@ -391,7 +457,6 @@ export function applyBranchToTree(
       }
 
       if (findAndUpdateCondition(tree)) {
-        console.log(`[BranchGenerator] ✓ Successfully updated condition ${conditionId}.${field} = ${value}`)
         continue // Successfully updated, move to next parameter
       } else {
         console.warn(`[BranchGenerator] ✗ Could not find condition with ID ${conditionId} in tree`)
@@ -431,13 +496,11 @@ export function applyBranchToTree(
         const found = current.find((item: any) => item.id === field)
         if (found && 'value' in found) {
           found.value = value
-          console.log(`[BranchGenerator] ✓ Successfully updated array item ${field}.value = ${value}`)
         } else {
           console.warn(`[BranchGenerator] ✗ Could not find value field in array item ${field}`)
         }
       } else {
         current[field] = value
-        console.log(`[BranchGenerator] ✓ Successfully updated field ${field} = ${value}`)
       }
     } else {
       console.warn(`[BranchGenerator] ✗ Could not find field ${field} in path ${range.path}`)

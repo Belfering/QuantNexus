@@ -1,0 +1,71 @@
+{
+  "jobId": "test-job-manual",
+  "branches": [
+    {
+      "branchId": "test-1",
+      "combination": {
+        "id": "test-1",
+        "label": "window=5, threshold=25",
+        "parameterValues": {}
+      },
+      "tree": {
+        "kind": "indicator",
+        "conditions": [{
+          "id": "1768060150907",
+          "ticker": "SPY",
+          "metric": "Relative Strength Index",
+          "window": 5,
+          "comparison": "Less Than",
+          "threshold": 25
+        }],
+        "children": {
+          "then": [{"kind": "position", "positions": ["SPY"]}],
+          "else": [{"kind": "position", "positions": []}]
+        }
+      },
+      "options": {
+        "mode": "CC",
+        "costBps": 5,
+        "splitConfig": {
+          "enabled": true,
+          "strategy": "chronological",
+          "chronologicalPercent": 50,
+          "minYears": 5
+        }
+      }
+    },
+    {
+      "branchId": "test-2",
+      "combination": {
+        "id": "test-2",
+        "label": "window=10, threshold=30",
+        "parameterValues": {}
+      },
+      "tree": {
+        "kind": "indicator",
+        "conditions": [{
+          "id": "1768060150907",
+          "ticker": "SPY",
+          "metric": "Relative Strength Index",
+          "window": 10,
+          "comparison": "Less Than",
+          "threshold": 30
+        }],
+        "children": {
+          "then": [{"kind": "position", "positions": ["SPY"]}],
+          "else": [{"kind": "position", "positions": []}]
+        }
+      },
+      "options": {
+        "mode": "CC",
+        "costBps": 5,
+        "splitConfig": {
+          "enabled": true,
+          "strategy": "chronological",
+          "chronologicalPercent": 50,
+          "minYears": 5
+        }
+      }
+    }
+  ]
+}

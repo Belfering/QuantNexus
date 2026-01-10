@@ -9,6 +9,7 @@ import { useOptimizationExport } from '../hooks/useOptimizationExport'
 import { useBotStore } from '@/stores/useBotStore'
 import { useTreeSync } from '@/hooks/useTreeSync'
 import { applyBranchToTree } from '../services/branchGenerator'
+import { extractNodeParameters } from '../services/nodeExtractor'
 
 export function OptimizationResultsPanel() {
   const { jobs, loading: jobsLoading, error: jobsError, selectedJobId, setSelectedJobId, refresh } = useOptimizationJobs()
@@ -33,6 +34,32 @@ export function OptimizationResultsPanel() {
     return results.filter(r => r.passed)
   }, [results, showPassingOnly])
 
+  // Extract nodes from tree JSON
+  const resultsWithNodes = useMemo(() => {
+    console.log('[OptimizationResultsPanel] Processing results:', filteredResults.length)
+    console.log('[OptimizationResultsPanel] First result:', filteredResults[0])
+    return filteredResults.map(r => {
+      if (!r.treeJson) {
+        console.log('[OptimizationResultsPanel] No treeJson for', r.branchId)
+        return { ...r, nodes: [] }
+      }
+      try {
+        const tree = JSON.parse(r.treeJson)
+        const nodes = extractNodeParameters(tree)
+        console.log('[OptimizationResultsPanel] Extracted', nodes.length, 'nodes for', r.branchId)
+        return { ...r, nodes }
+      } catch (e) {
+        console.error('Failed to parse tree JSON:', e)
+        return { ...r, nodes: [] }
+      }
+    })
+  }, [filteredResults])
+
+  // Calculate maximum number of nodes across all results
+  const maxNodes = useMemo(() => {
+    return Math.max(...resultsWithNodes.map(r => r.nodes?.length || 0), 0)
+  }, [resultsWithNodes])
+
   const handleLoadBranch = (result: typeof results[0]) => {
     if (!activeBot || !current) {
       alert('No active bot or tree')
@@ -48,6 +75,7 @@ export function OptimizationResultsPanel() {
     }
 
     // Apply the branch parameters to the current tree
+    // Note: We don't pass hasAutoMode here since this is a one-time operation for UI preview
     const modifiedTree = applyBranchToTree(current, combination, activeBot.parameterRanges || [])
     pushTree(modifiedTree)
 
@@ -291,7 +319,9 @@ export function OptimizationResultsPanel() {
                   <thead className="bg-muted/50 sticky top-0">
                     <tr>
                       <th className="px-3 py-2 text-left">Branch</th>
-                      <th className="px-3 py-2 text-left">Parameters</th>
+                      {Array.from({length: maxNodes}, (_, i) => (
+                        <th key={`node-${i+1}`} className="px-3 py-2 text-left">Node {i+1}</th>
+                      ))}
                       <th className="px-3 py-2 text-left">IS Start</th>
                       <th className="px-3 py-2 text-right">IS CAGR</th>
                       <th className="px-3 py-2 text-right">IS Sharpe</th>
@@ -321,13 +351,24 @@ export function OptimizationResultsPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredResults.map((result, idx) => (
+                    {resultsWithNodes.map((result, idx) => (
                       <tr
                         key={result.id}
                         className={`border-t border-border ${idx % 2 === 0 ? 'bg-background' : 'bg-muted/20'} hover:bg-muted/40`}
                       >
                         <td className="px-3 py-2 font-mono text-xs">{result.branchId}</td>
-                        <td className="px-3 py-2 text-xs">{result.parameterLabel}</td>
+                        {Array.from({length: maxNodes}, (_, nodeIdx) => {
+                          const node = result.nodes?.[nodeIdx]
+                          return (
+                            <td key={`node-${nodeIdx}`} className="px-3 py-2 text-xs">
+                              {node ? (
+                                <pre className="text-xs font-mono overflow-auto max-w-xs max-h-24 bg-muted/20 p-1 rounded">
+                                  {JSON.stringify(node, null, 2)}
+                                </pre>
+                              ) : '-'}
+                            </td>
+                          )
+                        })}
                         <td className="px-3 py-2 text-xs">{result.isMetrics?.startDate || '-'}</td>
                         <td className="px-3 py-2 text-right">{result.isMetrics?.cagr != null ? (result.isMetrics.cagr * 100).toFixed(2) + '%' : '-'}</td>
                         <td className="px-3 py-2 text-right">{result.isMetrics?.sharpe != null ? result.isMetrics.sharpe.toFixed(2) : '-'}</td>

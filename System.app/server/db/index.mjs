@@ -317,6 +317,9 @@ export function initializeDatabase() {
       parameter_label TEXT NOT NULL,
       parameter_values TEXT NOT NULL,
       ticker_substitutions TEXT,
+      condition_ticker TEXT,
+      position_ticker TEXT,
+      tree_json TEXT,
       is_cagr REAL,
       is_sharpe REAL,
       is_calmar REAL,
@@ -470,6 +473,33 @@ export function initializeDatabase() {
       console.log('[DB] Migrating optimization_results table: adding ticker_substitutions column...')
       sqlite.exec("ALTER TABLE optimization_results ADD COLUMN ticker_substitutions TEXT")
       console.log('[DB] Migration complete: ticker_substitutions column added to optimization_results table')
+    }
+  } catch (e) {
+    // Column might already exist
+  }
+
+  // Migration: Add condition_ticker and position_ticker columns
+  try {
+    const optResultsCols = sqlite.prepare("PRAGMA table_info(optimization_results)").all()
+    const hasConditionTicker = optResultsCols.some(c => c.name === 'condition_ticker')
+    if (!hasConditionTicker) {
+      console.log('[DB] Migrating optimization_results table: adding condition_ticker and position_ticker columns...')
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN condition_ticker TEXT")
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN position_ticker TEXT")
+      console.log('[DB] Migration complete: condition_ticker and position_ticker columns added to optimization_results table')
+    }
+  } catch (e) {
+    // Columns might already exist
+  }
+
+  // Migration: Add tree_json column
+  try {
+    const optResultsCols = sqlite.prepare("PRAGMA table_info(optimization_results)").all()
+    const hasTreeJson = optResultsCols.some(c => c.name === 'tree_json')
+    if (!hasTreeJson) {
+      console.log('[DB] Migrating optimization_results table: adding tree_json column...')
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN tree_json TEXT")
+      console.log('[DB] Migration complete: tree_json column added to optimization_results table')
     }
   } catch (e) {
     // Column might already exist

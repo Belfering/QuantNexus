@@ -842,6 +842,9 @@ export const deepCloneForCompression = (node: FlowNode | null): FlowNode | null 
   if (node.scaleTicker) clone.scaleTicker = node.scaleTicker
   if (node.scaleFrom !== undefined) clone.scaleFrom = node.scaleFrom
   if (node.scaleTo !== undefined) clone.scaleTo = node.scaleTo
+  if (node.positionMode) clone.positionMode = node.positionMode
+  if (node.positionTickerListId) clone.positionTickerListId = node.positionTickerListId
+  if (node.positionTickerListName) clone.positionTickerListName = node.positionTickerListName
 
   for (const slot of getAllSlotsForNode(node)) {
     const arr = node.children[slot]
