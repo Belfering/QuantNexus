@@ -39,6 +39,7 @@ export class WorkerPool {
     this.completedTasks = 0
     this.passingBranches = 0
     this.failedBranches = 0
+    this.startTime = Date.now()
 
     for (let i = 0; i < this.numWorkers; i++) {
       this.spawnWorker(i)
@@ -46,16 +47,89 @@ export class WorkerPool {
   }
 
   /**
-   * Spawn a single worker
+   * Spawn a single persistent Python worker
    */
   spawnWorker(workerId) {
+    const pythonScript = path.join(__dirname, 'persistent_worker.py')
+
+    // Spawn persistent Python process
+    const python = spawn('python', [pythonScript])
+
     const worker = {
       id: workerId,
       busy: false,
+      process: python,
+      buffer: '',
+      ready: false,
+      currentResolve: null,
+      currentReject: null
     }
 
+    // Handle stdout (line-buffered JSON responses)
+    python.stdout.on('data', (data) => {
+      worker.buffer += data.toString()
+
+      // Process complete lines
+      let newlineIndex
+      while ((newlineIndex = worker.buffer.indexOf('\n')) !== -1) {
+        const line = worker.buffer.substring(0, newlineIndex)
+        worker.buffer = worker.buffer.substring(newlineIndex + 1)
+
+        try {
+          const response = JSON.parse(line)
+
+          // Handle ready signal
+          if (response.status === 'ready') {
+            worker.ready = true
+            console.log(`[WorkerPool] Worker ${workerId} ready`)
+            this.processNextTask(worker)
+            continue
+          }
+
+          // Handle branch result
+          if (worker.currentResolve) {
+            worker.currentResolve(response)
+            worker.currentResolve = null
+            worker.currentReject = null
+          }
+        } catch (error) {
+          console.error(`[WorkerPool] Worker ${workerId} JSON parse error:`, error)
+          if (worker.currentReject) {
+            worker.currentReject(error)
+            worker.currentResolve = null
+            worker.currentReject = null
+          }
+        }
+      }
+    })
+
+    python.stderr.on('data', (data) => {
+      // Suppress stderr output (cache loading messages, etc.)
+      // Uncomment for debugging:
+      // console.error(`[Worker ${workerId}]`, data.toString())
+    })
+
+    python.on('close', (code) => {
+      console.log(`[WorkerPool] Worker ${workerId} exited with code ${code}`)
+      if (worker.currentReject) {
+        worker.currentReject(new Error(`Worker exited with code ${code}`))
+      }
+    })
+
+    python.on('error', (error) => {
+      console.error(`[WorkerPool] Worker ${workerId} error:`, error)
+      if (worker.currentReject) {
+        worker.currentReject(error)
+      }
+    })
+
     this.workers.push(worker)
-    this.processNextTask(worker)
+
+    // Send initialization config
+    const config = {
+      parquetDir: this.parquetDir
+    }
+    python.stdin.write(JSON.stringify(config) + '\n')
   }
 
   /**
@@ -89,6 +163,11 @@ export class WorkerPool {
       return
     }
 
+    // Skip if worker not ready yet
+    if (!worker.ready) {
+      return
+    }
+
     if (this.taskQueue.length === 0) {
       // No more tasks
       this.checkCompletion()
@@ -100,7 +179,7 @@ export class WorkerPool {
     this.activeWorkers++
 
     try {
-      const result = await this.runPythonBacktest(task)
+      const result = await this.runPythonBacktest(task, worker)
 
       if (result.error) {
         // Backtest failed
@@ -121,11 +200,23 @@ export class WorkerPool {
           metrics: result.metrics
         }
 
+        // Debug: Log first result
+        if (this.results.length === 0) {
+          console.log('[WorkerPool] First result:', JSON.stringify(branchResult, null, 2))
+        }
+
         this.results.push(branchResult)
         this.passingBranches++
       }
 
       this.completedTasks++
+
+      // Log throughput every 100 tasks
+      if (this.completedTasks % 100 === 0 || this.completedTasks === this.totalTasks) {
+        const elapsed = (Date.now() - this.startTime) / 1000
+        const throughput = this.completedTasks / elapsed
+        console.log(`[WorkerPool] Progress: ${this.completedTasks}/${this.totalTasks} (${throughput.toFixed(1)} branches/sec, ${this.passingBranches} passing, ${this.failedBranches} failed)`)
+      }
 
       // Report progress
       if (this.onProgress) {
@@ -157,56 +248,33 @@ export class WorkerPool {
   }
 
   /**
-   * Run Python backtester for a single branch
+   * Run Python backtester for a single branch using persistent worker
    */
-  runPythonBacktest(task) {
+  runPythonBacktest(task, worker) {
     return new Promise((resolve, reject) => {
-      const pythonScript = path.join(__dirname, 'backtester.py')
+      // Set up promise callbacks on worker
+      worker.currentResolve = resolve
+      worker.currentReject = reject
 
-      // Prepare input for Python script
-      const inputJson = JSON.stringify({
-        parquetDir: this.parquetDir,
+      // Debug: Log options for first task
+      if (this.completedTasks === 0 && this.activeWorkers === 1) {
+        console.log('[WorkerPool] First task options:', JSON.stringify(task.options, null, 2))
+      }
+
+      // Send task to persistent worker via stdin
+      const taskJson = JSON.stringify({
+        branchId: task.branchId,
         tree: task.tree,
         options: task.options
       })
 
-      // Spawn Python process
-      const python = spawn('python', [pythonScript, inputJson])
-
-      let stdout = ''
-      let stderr = ''
-
-      python.stdout.on('data', (data) => {
-        stdout += data.toString()
-      })
-
-      python.stderr.on('data', (data) => {
-        stderr += data.toString()
-      })
-
-      python.on('close', (code) => {
-        if (code !== 0) {
-          resolve({
-            error: `Python process exited with code ${code}: ${stderr}`
-          })
-          return
-        }
-
-        try {
-          const result = JSON.parse(stdout)
-          resolve(result)
-        } catch (error) {
-          resolve({
-            error: `Failed to parse Python output: ${stdout.substring(0, 200)}`
-          })
-        }
-      })
-
-      python.on('error', (error) => {
+      try {
+        worker.process.stdin.write(taskJson + '\n')
+      } catch (error) {
         resolve({
-          error: `Failed to spawn Python process: ${error.message}`
+          error: `Failed to send task to worker: ${error.message}`
         })
-      })
+      }
     })
   }
 
@@ -215,7 +283,10 @@ export class WorkerPool {
    */
   checkCompletion() {
     if (this.completedTasks >= this.totalTasks && this.activeWorkers === 0) {
-      console.log(`[WorkerPool] Complete: ${this.passingBranches} passing, ${this.failedBranches} failed out of ${this.totalTasks}`)
+      const elapsed = (Date.now() - this.startTime) / 1000
+      const throughput = this.completedTasks / elapsed
+      console.log(`[WorkerPool] ✓ COMPLETE: ${this.completedTasks} branches in ${elapsed.toFixed(2)}s (${throughput.toFixed(1)} branches/sec)`)
+      console.log(`[WorkerPool] Results: ${this.passingBranches} passing, ${this.failedBranches} failed`)
 
       if (this.onComplete) {
         this.onComplete({
@@ -236,6 +307,22 @@ export class WorkerPool {
     console.log('[WorkerPool] Cancelling...')
     this.cancelled = true
     this.taskQueue = []
+  }
+
+  /**
+   * Shutdown all workers
+   */
+  shutdown() {
+    console.log('[WorkerPool] Shutting down workers...')
+    for (const worker of this.workers) {
+      try {
+        // Send shutdown command
+        worker.process.stdin.write(JSON.stringify({ command: 'shutdown' }) + '\n')
+        worker.process.stdin.end()
+      } catch (error) {
+        // Worker already dead
+      }
+    }
   }
 
   /**
