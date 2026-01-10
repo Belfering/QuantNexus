@@ -38,7 +38,7 @@ class BatchOptimizer:
         Returns:
             Analysis summary with counts and lists
         """
-        print(f"[BatchOptimizer] Analyzing {len(branches)} branches...", file=sys.stderr)
+        print(f"[BatchOptimizer] Analyzing {len(branches)} branches...", file=sys.stderr, flush=True)
 
         for branch in branches:
             tree = branch.get('tree')
@@ -67,8 +67,8 @@ class BatchOptimizer:
             'branch_count': len(branches)
         }
 
-        print(f"[BatchOptimizer] Found {len(self.unique_tickers)} unique tickers", file=sys.stderr)
-        print(f"[BatchOptimizer] Found {total_indicators} unique indicators", file=sys.stderr)
+        print(f"[BatchOptimizer] Found {len(self.unique_tickers)} unique tickers", file=sys.stderr, flush=True)
+        print(f"[BatchOptimizer] Found {total_indicators} unique indicators", file=sys.stderr, flush=True)
 
         return analysis
 
@@ -80,11 +80,11 @@ class BatchOptimizer:
             True if successful
         """
         if not self.unique_tickers:
-            print("[BatchOptimizer] No tickers to pre-load", file=sys.stderr)
+            print("[BatchOptimizer] No tickers to pre-load", file=sys.stderr, flush=True)
             return False
 
         try:
-            print(f"[BatchOptimizer] Pre-loading {len(self.unique_tickers)} tickers...", file=sys.stderr)
+            print(f"[BatchOptimizer] Pre-loading {len(self.unique_tickers)} tickers...", file=sys.stderr, flush=True)
 
             # Get global cache instance
             cache = get_global_cache(str(self.parquet_dir))
@@ -94,16 +94,16 @@ class BatchOptimizer:
                 try:
                     cache.get_ticker_data(ticker, limit=20000)
                 except Exception as e:
-                    print(f"[BatchOptimizer] Warning: Failed to load {ticker}: {e}", file=sys.stderr)
+                    print(f"[BatchOptimizer] Warning: Failed to load {ticker}: {e}", file=sys.stderr, flush=True)
 
             cache_stats = cache.get_cache_info()
-            print(f"[BatchOptimizer] ✓ Pre-loaded tickers. Cache: {cache_stats}", file=sys.stderr)
+            print(f"[BatchOptimizer] ✓ Pre-loaded tickers. Cache: {cache_stats}", file=sys.stderr, flush=True)
 
             self.price_cache = cache
             return True
 
         except Exception as e:
-            print(f"[BatchOptimizer] Error pre-loading tickers: {e}", file=sys.stderr)
+            print(f"[BatchOptimizer] Error pre-loading tickers: {e}", file=sys.stderr, flush=True)
             return False
 
     def precompute_indicators(self) -> bool:
@@ -114,11 +114,11 @@ class BatchOptimizer:
             True if successful
         """
         if not self.unique_indicators or not self.price_cache:
-            print("[BatchOptimizer] No indicators to pre-compute or cache not initialized", file=sys.stderr)
+            print("[BatchOptimizer] No indicators to pre-compute or cache not initialized", file=sys.stderr, flush=True)
             return False
 
         try:
-            print(f"[BatchOptimizer] Pre-computing indicators...", file=sys.stderr)
+            print(f"[BatchOptimizer] Pre-computing indicators...", file=sys.stderr, flush=True)
 
             # Create shared indicator cache
             self.indicator_cache = SharedIndicatorCache()
@@ -131,18 +131,18 @@ class BatchOptimizer:
                     if len(df) > 0 and 'Close' in df.columns:
                         price_data[ticker] = df['Close'].values
                 except Exception as e:
-                    print(f"[BatchOptimizer] Warning: Failed to get prices for {ticker}: {e}", file=sys.stderr)
+                    print(f"[BatchOptimizer] Warning: Failed to get prices for {ticker}: {e}", file=sys.stderr, flush=True)
 
             # Pre-compute all indicators
             self.indicator_cache.precompute_all(price_data, self.unique_indicators)
 
             stats = self.indicator_cache.get_stats()
-            print(f"[BatchOptimizer] ✓ Pre-computed indicators. Stats: {stats}", file=sys.stderr)
+            print(f"[BatchOptimizer] ✓ Pre-computed indicators. Stats: {stats}", file=sys.stderr, flush=True)
 
             return True
 
         except Exception as e:
-            print(f"[BatchOptimizer] Error pre-computing indicators: {e}", file=sys.stderr)
+            print(f"[BatchOptimizer] Error pre-computing indicators: {e}", file=sys.stderr, flush=True)
             return False
 
     def optimize_batch(self, branches: List[Dict]) -> Dict:
@@ -288,7 +288,7 @@ def optimize_batch(branches: List[Dict], parquet_dir: str) -> Dict:
 
 if __name__ == '__main__':
     # Test batch optimizer
-    print("Testing batch optimizer...", file=sys.stderr)
+    print("Testing batch optimizer...", file=sys.stderr, flush=True)
 
     # Example: Read branches from stdin
     try:
@@ -297,8 +297,11 @@ if __name__ == '__main__':
         parquet_dir = input_data.get('parquetDir', '../data/parquet')
 
         result = optimize_batch(branches, parquet_dir)
-        print(json.dumps(result, indent=2))
+        # Output ONLY the JSON result to stdout (no extra messages!)
+        print(json.dumps(result), flush=True)
 
     except Exception as e:
-        print(json.dumps({'error': str(e)}))
+        # Send error to stderr and valid JSON error to stdout
+        print(f"[BatchOptimizer] ERROR: {e}", file=sys.stderr, flush=True)
+        print(json.dumps({'error': str(e)}), flush=True)
         sys.exit(1)

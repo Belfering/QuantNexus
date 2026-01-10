@@ -3,6 +3,7 @@ Vectorized indicator pre-computation with caching
 Calculates indicators across multiple periods in one pass for massive speedup
 """
 
+import sys
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
@@ -250,7 +251,7 @@ class SharedIndicatorCache:
         total_computations = sum(len(periods) for periods in indicators_config.values()) * len(self.tickers)
         computed = 0
 
-        print(f"[IndicatorCache] Pre-computing {total_computations} indicators...")
+        print(f"[IndicatorCache] Pre-computing {total_computations} indicators...", file=sys.stderr, flush=True)
 
         for ticker, prices in price_data.items():
             for indicator, periods in indicators_config.items():
@@ -258,7 +259,7 @@ class SharedIndicatorCache:
                 computed += len(periods)
 
         stats = self.cache.get_stats()
-        print(f"[IndicatorCache] Pre-computation complete: {stats['size']} indicators cached")
+        print(f"[IndicatorCache] Pre-computation complete: {stats['size']} indicators cached", file=sys.stderr, flush=True)
 
     def get_indicator(self, ticker: str, indicator: str, period: int, prices: np.ndarray) -> Optional[np.ndarray]:
         """Get indicator from cache (delegates to internal cache)"""
