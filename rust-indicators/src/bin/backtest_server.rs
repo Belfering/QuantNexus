@@ -593,7 +593,7 @@ async fn main() {
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit for large strategies
         .with_state(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3030));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3030));
     println!("Rust backtest server on http://{}", addr);
     println!("  GET  /tickers              - list tickers");
     println!("  GET  /candles/:ticker      - OHLCV data");
