@@ -70,7 +70,7 @@ export function generateBranchCombinations(ranges: ParameterRange[]): BranchComb
 
 /**
  * Apply a branch combination to a tree by updating parameter values
- * @param tree - The flowchart tree to modify
+ * @param tree - The flowchart tree to modify (should be a clone)
  * @param combination - The branch combination with parameter values
  * @param ranges - Array of parameter ranges (for path information)
  * @returns Modified tree with parameter values applied
@@ -80,8 +80,10 @@ export function applyBranchToTree(
   combination: BranchCombination,
   ranges: ParameterRange[]
 ): FlowNode {
-  // Deep clone the tree to avoid mutations
-  const clonedTree = cloneNode(tree)
+  // NOTE: Caller should clone the tree BEFORE calling this function
+  // We apply parameters directly to preserve condition IDs for matching
+
+  console.log(`[BranchGenerator] Applying ${Object.keys(combination.parameterValues).length} parameters to ${combination.id}`)
 
   // Apply each parameter value from the combination
   for (const [parameterId, value] of Object.entries(combination.parameterValues)) {
@@ -91,6 +93,8 @@ export function applyBranchToTree(
       console.warn(`[BranchGenerator] Could not find range for parameter ${parameterId}`)
       continue
     }
+
+    console.log(`[BranchGenerator] Applying ${parameterId} = ${value} (path: ${range.path})`)
 
     // Parse the path to navigate the tree (e.g., "node.conditions.1767985538054.window")
     const pathParts = range.path.split('.')
@@ -109,6 +113,9 @@ export function applyBranchToTree(
       // Recursively search for the condition
       const findAndUpdateCondition = (node: any): boolean => {
         if (node.conditions && Array.isArray(node.conditions)) {
+          // Log all condition IDs to help debug
+          console.log(`[BranchGenerator] Found ${node.conditions.length} conditions:`, node.conditions.map((c: any) => c.id))
+
           // Match by ID containing the conditionId (handles cloned nodes with new suffixes)
           const condition = node.conditions.find((c: any) =>
             c.id === conditionId || c.id.includes(conditionId) || c.id.startsWith('node-' + conditionId)
@@ -138,15 +145,16 @@ export function applyBranchToTree(
         return false
       }
 
-      if (findAndUpdateCondition(clonedTree)) {
+      if (findAndUpdateCondition(tree)) {
+        console.log(`[BranchGenerator] ✓ Successfully updated condition ${conditionId}.${field} = ${value}`)
         continue // Successfully updated, move to next parameter
       } else {
-        console.warn(`[BranchGenerator] Could not find condition with ID ${conditionId} in tree`)
+        console.warn(`[BranchGenerator] ✗ Could not find condition with ID ${conditionId} in tree`)
         continue
       }
     }
 
-    let current: any = clonedTree
+    let current: any = tree
 
     // Navigate to the parent of the target field
     for (let i = startIndex; i < pathParts.length - 1; i++) {
@@ -178,14 +186,18 @@ export function applyBranchToTree(
         const found = current.find((item: any) => item.id === field)
         if (found && 'value' in found) {
           found.value = value
+          console.log(`[BranchGenerator] ✓ Successfully updated array item ${field}.value = ${value}`)
+        } else {
+          console.warn(`[BranchGenerator] ✗ Could not find value field in array item ${field}`)
         }
       } else {
         current[field] = value
+        console.log(`[BranchGenerator] ✓ Successfully updated field ${field} = ${value}`)
       }
     } else {
-      console.warn(`[BranchGenerator] Could not find field ${field} in path ${range.path}`)
+      console.warn(`[BranchGenerator] ✗ Could not find field ${field} in path ${range.path}`)
     }
   }
 
-  return clonedTree
+  return tree
 }

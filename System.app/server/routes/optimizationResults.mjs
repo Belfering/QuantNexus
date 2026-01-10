@@ -71,8 +71,8 @@ router.get('/:jobId/results', (req, res) => {
     // Validate sortBy to prevent SQL injection
     const validSortFields = [
       'branch_id',
-      'is_cagr', 'is_sharpe', 'is_calmar', 'is_max_drawdown', 'is_sortino', 'is_treynor', 'is_beta', 'is_volatility', 'is_win_rate', 'is_avg_turnover', 'is_avg_holdings',
-      'oos_cagr', 'oos_sharpe', 'oos_calmar', 'oos_max_drawdown', 'oos_sortino', 'oos_treynor', 'oos_beta', 'oos_volatility', 'oos_win_rate', 'oos_avg_turnover', 'oos_avg_holdings'
+      'is_cagr', 'is_sharpe', 'is_calmar', 'is_max_drawdown', 'is_sortino', 'is_treynor', 'is_beta', 'is_volatility', 'is_win_rate', 'is_avg_turnover', 'is_avg_holdings', 'is_tim', 'is_timar',
+      'oos_cagr', 'oos_sharpe', 'oos_calmar', 'oos_max_drawdown', 'oos_sortino', 'oos_treynor', 'oos_beta', 'oos_volatility', 'oos_win_rate', 'oos_avg_turnover', 'oos_avg_holdings', 'oos_tim', 'oos_timar'
     ]
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'is_cagr'
     const sortOrder = order === 'asc' ? 'ASC' : 'DESC'
@@ -84,6 +84,7 @@ router.get('/:jobId/results', (req, res) => {
         branch_id,
         parameter_label,
         parameter_values,
+        is_start_date,
         is_cagr,
         is_sharpe,
         is_calmar,
@@ -95,6 +96,9 @@ router.get('/:jobId/results', (req, res) => {
         is_win_rate,
         is_avg_turnover,
         is_avg_holdings,
+        is_tim,
+        is_timar,
+        oos_start_date,
         oos_cagr,
         oos_sharpe,
         oos_calmar,
@@ -106,6 +110,8 @@ router.get('/:jobId/results', (req, res) => {
         oos_win_rate,
         oos_avg_turnover,
         oos_avg_holdings,
+        oos_tim,
+        oos_timar,
         passed,
         failed_requirements,
         created_at
@@ -123,6 +129,7 @@ router.get('/:jobId/results', (req, res) => {
       parameterLabel: result.parameter_label,
       parameterValues: JSON.parse(result.parameter_values),
       isMetrics: {
+        startDate: result.is_start_date,
         cagr: result.is_cagr,
         sharpe: result.is_sharpe,
         calmar: result.is_calmar,
@@ -134,8 +141,11 @@ router.get('/:jobId/results', (req, res) => {
         winRate: result.is_win_rate,
         avgTurnover: result.is_avg_turnover,
         avgHoldings: result.is_avg_holdings,
+        tim: result.is_tim,
+        timar: result.is_timar,
       },
       oosMetrics: {
+        startDate: result.oos_start_date,
         cagr: result.oos_cagr,
         sharpe: result.oos_sharpe,
         calmar: result.oos_calmar,
@@ -147,6 +157,8 @@ router.get('/:jobId/results', (req, res) => {
         winRate: result.oos_win_rate,
         avgTurnover: result.oos_avg_turnover,
         avgHoldings: result.oos_avg_holdings,
+        tim: result.oos_tim,
+        timar: result.oos_timar,
       },
       passed: Boolean(result.passed),
       failedRequirements: result.failed_requirements ? JSON.parse(result.failed_requirements) : [],
@@ -211,12 +223,12 @@ router.post('/jobs', (req, res) => {
       const insertResult = sqlite.prepare(`
         INSERT INTO optimization_results (
           job_id, branch_id, parameter_label, parameter_values,
-          is_cagr, is_sharpe, is_calmar, is_max_drawdown, is_sortino, is_treynor,
-          is_beta, is_volatility, is_win_rate, is_avg_turnover, is_avg_holdings,
-          oos_cagr, oos_sharpe, oos_calmar, oos_max_drawdown, oos_sortino, oos_treynor,
-          oos_beta, oos_volatility, oos_win_rate, oos_avg_turnover, oos_avg_holdings,
+          is_start_date, is_cagr, is_sharpe, is_calmar, is_max_drawdown, is_sortino, is_treynor,
+          is_beta, is_volatility, is_win_rate, is_avg_turnover, is_avg_holdings, is_tim, is_timar,
+          oos_start_date, oos_cagr, oos_sharpe, oos_calmar, oos_max_drawdown, oos_sortino, oos_treynor,
+          oos_beta, oos_volatility, oos_win_rate, oos_avg_turnover, oos_avg_holdings, oos_tim, oos_timar,
           passed, failed_requirements
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
 
       const insertMany = sqlite.transaction((results) => {
@@ -226,6 +238,7 @@ router.post('/jobs', (req, res) => {
             result.branchId,
             result.parameterLabel,
             JSON.stringify(result.parameterValues),
+            result.isMetrics?.startDate ?? null,
             result.isMetrics?.cagr ?? null,
             result.isMetrics?.sharpe ?? null,
             result.isMetrics?.calmar ?? null,
@@ -237,6 +250,9 @@ router.post('/jobs', (req, res) => {
             result.isMetrics?.winRate ?? null,
             result.isMetrics?.avgTurnover ?? null,
             result.isMetrics?.avgHoldings ?? null,
+            result.isMetrics?.tim ?? null,
+            result.isMetrics?.timar ?? null,
+            result.oosMetrics?.startDate ?? null,
             result.oosMetrics?.cagr ?? null,
             result.oosMetrics?.sharpe ?? null,
             result.oosMetrics?.calmar ?? null,
@@ -248,6 +264,8 @@ router.post('/jobs', (req, res) => {
             result.oosMetrics?.winRate ?? null,
             result.oosMetrics?.avgTurnover ?? null,
             result.oosMetrics?.avgHoldings ?? null,
+            result.oosMetrics?.tim ?? null,
+            result.oosMetrics?.timar ?? null,
             result.passed ? 1 : 0,
             JSON.stringify(result.failedRequirements || [])
           )
@@ -317,6 +335,7 @@ router.get('/:jobId/csv', (req, res) => {
       'Branch ID',
       'Parameters',
       'Passed',
+      'IS Start Date',
       'IS CAGR %',
       'IS Sharpe',
       'IS Calmar',
@@ -325,9 +344,12 @@ router.get('/:jobId/csv', (req, res) => {
       'IS Treynor',
       'IS Beta',
       'IS Vol %',
+      'IS TIM %',
+      'IS TIMAR %',
       'IS Win Rate %',
       'IS Avg Turnover %',
       'IS Avg Holdings',
+      'OOS Start Date',
       'OOS CAGR %',
       'OOS Sharpe',
       'OOS Calmar',
@@ -336,6 +358,8 @@ router.get('/:jobId/csv', (req, res) => {
       'OOS Treynor',
       'OOS Beta',
       'OOS Vol %',
+      'OOS TIM %',
+      'OOS TIMAR %',
       'OOS Win Rate %',
       'OOS Avg Turnover %',
       'OOS Avg Holdings',
@@ -346,6 +370,7 @@ router.get('/:jobId/csv', (req, res) => {
       r.branch_id,
       r.parameter_label,
       r.passed ? 'Yes' : 'No',
+      r.is_start_date || '',
       r.is_cagr ? (r.is_cagr * 100).toFixed(2) : '',
       r.is_sharpe ? r.is_sharpe.toFixed(2) : '',
       r.is_calmar ? r.is_calmar.toFixed(2) : '',
@@ -354,9 +379,12 @@ router.get('/:jobId/csv', (req, res) => {
       r.is_treynor ? r.is_treynor.toFixed(2) : '',
       r.is_beta ? r.is_beta.toFixed(2) : '',
       r.is_volatility ? (r.is_volatility * 100).toFixed(2) : '',
+      r.is_tim ? (r.is_tim * 100).toFixed(2) : '',
+      r.is_timar ? (r.is_timar * 100).toFixed(2) : '',
       r.is_win_rate ? (r.is_win_rate * 100).toFixed(2) : '',
       r.is_avg_turnover ? (r.is_avg_turnover * 100).toFixed(2) : '',
       r.is_avg_holdings ? r.is_avg_holdings.toFixed(2) : '',
+      r.oos_start_date || '',
       r.oos_cagr ? (r.oos_cagr * 100).toFixed(2) : '',
       r.oos_sharpe ? r.oos_sharpe.toFixed(2) : '',
       r.oos_calmar ? r.oos_calmar.toFixed(2) : '',
@@ -365,6 +393,8 @@ router.get('/:jobId/csv', (req, res) => {
       r.oos_treynor ? r.oos_treynor.toFixed(2) : '',
       r.oos_beta ? r.oos_beta.toFixed(2) : '',
       r.oos_volatility ? (r.oos_volatility * 100).toFixed(2) : '',
+      r.oos_tim ? (r.oos_tim * 100).toFixed(2) : '',
+      r.oos_timar ? (r.oos_timar * 100).toFixed(2) : '',
       r.oos_win_rate ? (r.oos_win_rate * 100).toFixed(2) : '',
       r.oos_avg_turnover ? (r.oos_avg_turnover * 100).toFixed(2) : '',
       r.oos_avg_holdings ? r.oos_avg_holdings.toFixed(2) : '',

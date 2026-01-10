@@ -1,7 +1,10 @@
 // src/features/optimization/hooks/useBatchBacktest.ts
 // Batch backtest hook for branch optimization
+// Updated: 2026-01-08 - Added TIM/TIMAR/startDate extraction
+// Updated: 2026-01-09 - Moved job state to store for persistence across tab changes
 
-import { useState, useRef } from 'react'
+import { useRef } from 'react'
+import { useBotStore } from '@/stores'
 import type { FlowNode } from '@/types'
 import type { ParameterRange } from '@/features/parameters/types'
 import type { ISOOSSplitConfig } from '@/types/split'
@@ -9,6 +12,7 @@ import type { BranchGenerationJob, BranchResult, BranchStatus } from '@/types/br
 import type { EligibilityRequirement } from '@/types/admin'
 import { generateBranchCombinations, applyBranchToTree } from '../services/branchGenerator'
 import { evaluateRequirements } from '../services/requirementsEvaluator'
+import { deepCloneForCompression } from '@/features/builder'
 
 interface UseBatchBacktestResult {
   job: BranchGenerationJob | null
@@ -26,7 +30,14 @@ interface UseBatchBacktestResult {
 }
 
 export function useBatchBacktest(): UseBatchBacktestResult {
-  const [job, setJob] = useState<BranchGenerationJob | null>(null)
+  const activeForgeBotId = useBotStore((state) => state.activeForgeBotId)
+  const bots = useBotStore((state) => state.bots)
+  const setBranchGenerationJob = useBotStore((state) => state.setBranchGenerationJob)
+
+  // Get job from active forge bot
+  const activeBot = bots.find(b => b.id === activeForgeBotId)
+  const job = activeBot?.branchGenerationJob || null
+
   const abortControllerRef = useRef<AbortController | null>(null)
   const resultsRef = useRef<BranchResult[]>([]) // Track results for database persistence
 
@@ -40,6 +51,13 @@ export function useBatchBacktest(): UseBatchBacktestResult {
     mode: string = 'CC',
     costBps: number = 5
   ) => {
+    // Helper to update job in store
+    const updateJob = (updater: (prev: BranchGenerationJob | undefined) => BranchGenerationJob | undefined) => {
+      const currentBot = useBotStore.getState().bots.find(b => b.id === botId)
+      const updated = updater(currentBot?.branchGenerationJob)
+      setBranchGenerationJob(botId, updated)
+    }
+
     // Generate all combinations
     const combinations = generateBranchCombinations(parameterRanges)
 
@@ -62,7 +80,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
       results: []
     }
 
-    setJob(newJob)
+    setBranchGenerationJob(botId, newJob)
 
     // Create abort controller for cancellation
     const abortController = new AbortController()
@@ -76,7 +94,9 @@ export function useBatchBacktest(): UseBatchBacktestResult {
       if (useParallelApi) {
         // Prepare branches for parallel processing
         const branches = combinations.map(combination => {
-          const modifiedTree = applyBranchToTree(tree, combination, parameterRanges)
+          // Clone tree preserving IDs, then apply parameters (preserves condition IDs for matching)
+          const clonedTree = deepCloneForCompression(tree)!
+          const modifiedTree = applyBranchToTree(clonedTree, combination, parameterRanges)
           return {
             branchId: combination.id,
             tree: modifiedTree,
@@ -112,7 +132,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
             await fetch(`/api/batch-backtest/cancel/${jobId}`, {
               method: 'POST'
             })
-            setJob(prev => prev ? {
+            updateJob(prev => prev ? {
               ...prev,
               status: 'cancelled',
               endTime: Date.now()
@@ -126,7 +146,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
             const status = await statusResponse.json()
 
             // Update job progress
-            setJob(prev => prev ? {
+            updateJob(prev => prev ? {
               ...prev,
               progress: {
                 completed: status.completed,
@@ -159,13 +179,34 @@ export function useBatchBacktest(): UseBatchBacktestResult {
                   // Evaluate requirements (IS metrics only)
                   const evaluation = evaluateRequirements(result.isMetrics, requirements)
 
+                  // Data quality validation - check minimum years requirement
+                  const failedRequirements: string[] = []
+
+                  if (splitConfig?.strategy === 'chronological' && splitConfig.minYears) {
+                    const isYears = result.isMetrics.years || 0
+                    const oosYears = result.oosMetrics.years || 0
+                    const totalYears = isYears + oosYears
+
+                    if (totalYears < splitConfig.minYears) {
+                      failedRequirements.push(
+                        `Insufficient data: ${totalYears.toFixed(1)} years < ${splitConfig.minYears} minimum`
+                      )
+                    }
+                  }
+
+                  console.log('[useBatchBacktest] RAW BACKTEST RESULT:', {
+                    isMetrics: result.isMetrics,
+                    oosMetrics: result.oosMetrics
+                  })
+
                   return {
                     branchId: result.branchId,
                     combination: combination!,
                     status: 'success' as const,
-                    passed: evaluation.passed,
-                    failedRequirements: evaluation.failedRequirements,
+                    passed: failedRequirements.length === 0 && evaluation.passed,
+                    failedRequirements: [...failedRequirements, ...evaluation.failedRequirements],
                     isMetrics: {
+                      startDate: result.isMetrics.startDate,
                       cagr: result.isMetrics.cagr,
                       sharpe: result.isMetrics.sharpe,
                       calmar: result.isMetrics.calmar,
@@ -176,9 +217,12 @@ export function useBatchBacktest(): UseBatchBacktestResult {
                       volatility: result.isMetrics.vol,
                       winRate: result.isMetrics.winRate,
                       avgTurnover: result.isMetrics.avgTurnover,
-                      avgHoldings: result.isMetrics.avgHoldings
+                      avgHoldings: result.isMetrics.avgHoldings,
+                      tim: result.isMetrics.tim,
+                      timar: result.isMetrics.timar
                     },
                     oosMetrics: {
+                      startDate: result.oosMetrics.startDate,
                       cagr: result.oosMetrics.cagr,
                       sharpe: result.oosMetrics.sharpe,
                       calmar: result.oosMetrics.calmar,
@@ -189,7 +233,9 @@ export function useBatchBacktest(): UseBatchBacktestResult {
                       volatility: result.oosMetrics.vol,
                       winRate: result.oosMetrics.winRate,
                       avgTurnover: result.oosMetrics.avgTurnover,
-                      avgHoldings: result.oosMetrics.avgHoldings
+                      avgHoldings: result.oosMetrics.avgHoldings,
+                      tim: result.oosMetrics.tim,
+                      timar: result.oosMetrics.timar
                     }
                   }
                 })
@@ -226,7 +272,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
         // Fallback: Sequential processing (original implementation)
         for (let i = 0; i < combinations.length; i++) {
           if (abortController.signal.aborted) {
-            setJob(prev => prev ? {
+            updateJob(prev => prev ? {
               ...prev,
               status: 'cancelled',
               endTime: Date.now()
@@ -235,7 +281,14 @@ export function useBatchBacktest(): UseBatchBacktestResult {
           }
 
           const combination = combinations[i]
-          const modifiedTree = applyBranchToTree(tree, combination, parameterRanges)
+
+          // Clone tree preserving IDs, then apply parameters (preserves condition IDs for matching)
+          const clonedTree = deepCloneForCompression(tree)!
+          const modifiedTree = applyBranchToTree(clonedTree, combination, parameterRanges)
+
+          // DEBUG: Log branch parameters being applied
+          console.log(`[BatchBacktest] Branch ${combination.id}: ${combination.label}`)
+          console.log(`[BatchBacktest] Parameters:`, combination.parameterValues)
 
           let branchResult: BranchResult = {
             branchId: combination.id,
@@ -264,6 +317,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
               if (data.isMetrics && data.oosMetrics) {
                 branchResult.status = 'success'
                 branchResult.isMetrics = {
+                  startDate: data.isMetrics.startDate,
                   cagr: data.isMetrics.cagr,
                   sharpe: data.isMetrics.sharpe,
                   calmar: data.isMetrics.calmar,
@@ -274,9 +328,12 @@ export function useBatchBacktest(): UseBatchBacktestResult {
                   volatility: data.isMetrics.vol,
                   winRate: data.isMetrics.winRate,
                   avgTurnover: data.isMetrics.avgTurnover,
-                  avgHoldings: data.isMetrics.avgHoldings
+                  avgHoldings: data.isMetrics.avgHoldings,
+                  tim: data.isMetrics.tim,
+                  timar: data.isMetrics.timar
                 }
                 branchResult.oosMetrics = {
+                  startDate: data.oosMetrics.startDate,
                   cagr: data.oosMetrics.cagr,
                   sharpe: data.oosMetrics.sharpe,
                   calmar: data.oosMetrics.calmar,
@@ -287,12 +344,33 @@ export function useBatchBacktest(): UseBatchBacktestResult {
                   volatility: data.oosMetrics.vol,
                   winRate: data.oosMetrics.winRate,
                   avgTurnover: data.oosMetrics.avgTurnover,
-                  avgHoldings: data.oosMetrics.avgHoldings
+                  avgHoldings: data.oosMetrics.avgHoldings,
+                  tim: data.oosMetrics.tim,
+                  timar: data.oosMetrics.timar
                 }
 
+                // Data quality validation - check minimum years requirement
+                const failedRequirements: string[] = []
+
+                // Check minYears from splitConfig (chronological strategy only)
+                if (splitConfig?.strategy === 'chronological' && splitConfig.minYears) {
+                  const isYears = data.isMetrics.years || 0
+                  const oosYears = data.oosMetrics.years || 0
+                  const totalYears = isYears + oosYears
+
+                  if (totalYears < splitConfig.minYears) {
+                    failedRequirements.push(
+                      `Insufficient data: ${totalYears.toFixed(1)} years < ${splitConfig.minYears} minimum`
+                    )
+                  }
+                }
+
+                // Evaluate user-defined performance requirements (IS metrics only)
                 const evaluation = evaluateRequirements(data.isMetrics, requirements)
-                branchResult.passed = evaluation.passed
-                branchResult.failedRequirements = evaluation.failedRequirements
+
+                // Combine data quality failures with performance requirement failures
+                branchResult.passed = failedRequirements.length === 0 && evaluation.passed
+                branchResult.failedRequirements = [...failedRequirements, ...evaluation.failedRequirements]
               } else {
                 branchResult.status = 'error'
                 branchResult.errorMessage = 'IS/OOS split not enabled in backtest response'
@@ -313,7 +391,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
           // Add to results ref for database persistence
           resultsRef.current.push(branchResult)
 
-          setJob(prev => prev ? {
+          updateJob(prev => prev ? {
             ...prev,
             progress: {
               completed: i + 1,
@@ -326,7 +404,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
 
       // Mark job as complete
       const endTime = Date.now()
-      setJob(prev => prev ? {
+      updateJob(prev => prev ? {
         ...prev,
         status: 'complete',
         endTime
@@ -338,6 +416,10 @@ export function useBatchBacktest(): UseBatchBacktestResult {
         const passingResults = finalResults.filter(r => r.passed)
 
         console.log(`[BatchBacktest] Total results: ${finalResults.length}, Passing: ${passingResults.length}`)
+        console.log('[BatchBacktest] FIRST RESULT METRICS TO SAVE:', {
+          isMetrics: finalResults[0]?.isMetrics,
+          oosMetrics: finalResults[0]?.oosMetrics
+        })
 
         // Save ALL results, not just passing ones - user can filter by passed column
         await fetch('/api/optimization/jobs', {
@@ -372,7 +454,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
 
     } catch (error: any) {
       // Overall job error
-      setJob(prev => prev ? {
+      updateJob(prev => prev ? {
         ...prev,
         status: 'error',
         endTime: Date.now(),

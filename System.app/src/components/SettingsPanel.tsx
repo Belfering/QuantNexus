@@ -22,6 +22,19 @@ export function SettingsPanel({ splitConfig, onSplitConfigChange }: SettingsPane
   const [newComparison, setNewComparison] = useState<'at_least' | 'at_most'>('at_least')
   const [newMetricValue, setNewMetricValue] = useState(0)
 
+  // Helper to determine if a metric should display as percentage
+  const isPercentageMetric = (metric: EligibilityMetric): boolean => {
+    return ['cagr', 'maxDrawdown', 'tim', 'winRate', 'vol'].includes(metric)
+  }
+
+  // Format metric value for display
+  const formatMetricValue = (metric: EligibilityMetric, value: number): string => {
+    if (isPercentageMetric(metric)) {
+      return `${value} %`
+    }
+    return value.toString()
+  }
+
   // Load requirements from API on mount
   useEffect(() => {
     async function loadRequirements() {
@@ -112,45 +125,39 @@ export function SettingsPanel({ splitConfig, onSplitConfigChange }: SettingsPane
         {/* Left Section - Add Metric Requirement */}
         <div className="p-4 bg-muted/30 rounded-lg">
           <div className="text-sm font-medium mb-3">Add Metric Requirement</div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">Must have</span>
-              <select
-                value={newMetric}
-                onChange={(e) => setNewMetric(e.target.value as EligibilityMetric)}
-                className="flex-1 px-2 py-1 rounded border border-border bg-background text-sm"
-              >
-                {(Object.keys(METRIC_LABELS) as EligibilityMetric[]).map(m => (
-                  <option key={m} value={m}>{METRIC_LABELS[m]}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">of</span>
-              <select
-                value={newComparison}
-                onChange={(e) => setNewComparison(e.target.value as 'at_least' | 'at_most')}
-                className="flex-1 px-2 py-1 rounded border border-border bg-background text-sm"
-              >
-                <option value="at_least">at least</option>
-                <option value="at_most">at most</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                step="0.01"
-                value={newMetricValue}
-                onChange={(e) => setNewMetricValue(parseFloat(e.target.value) || 0)}
-                className="flex-1 px-2 py-1 rounded border border-border bg-background text-sm"
-              />
-              <Button
-                size="sm"
-                onClick={handleAddMetricRequirement}
-              >
-                Add
-              </Button>
-            </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm whitespace-nowrap">Must have</span>
+            <select
+              value={newMetric}
+              onChange={(e) => setNewMetric(e.target.value as EligibilityMetric)}
+              className="px-2 py-1 rounded border border-border bg-background text-sm min-w-[140px]"
+            >
+              {(Object.keys(METRIC_LABELS) as EligibilityMetric[]).map(m => (
+                <option key={m} value={m}>{METRIC_LABELS[m]}</option>
+              ))}
+            </select>
+            <span className="text-sm whitespace-nowrap">of</span>
+            <select
+              value={newComparison}
+              onChange={(e) => setNewComparison(e.target.value as 'at_least' | 'at_most')}
+              className="px-2 py-1 rounded border border-border bg-background text-sm"
+            >
+              <option value="at_least">at least</option>
+              <option value="at_most">at most</option>
+            </select>
+            <input
+              type="number"
+              step="0.01"
+              value={newMetricValue}
+              onChange={(e) => setNewMetricValue(parseFloat(e.target.value) || 0)}
+              className="w-20 px-2 py-1 rounded border border-border bg-background text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={handleAddMetricRequirement}
+            >
+              Add
+            </Button>
           </div>
         </div>
 
@@ -160,16 +167,16 @@ export function SettingsPanel({ splitConfig, onSplitConfigChange }: SettingsPane
           {requirements.length === 0 ? (
             <div className="text-sm text-muted">No requirements set</div>
           ) : (
-            <ol className="list-decimal list-inside space-y-2 text-sm">
+            <div className="space-y-2">
               {requirements.map((req) => (
-                <li key={req.id} className="flex items-center justify-between">
-                  <span className="text-xs">
+                <div key={req.id} className="flex items-center justify-between">
+                  <span className="text-sm font-bold">
                     {req.type === 'live_months' ? (
                       <>Live {req.value}mo</>
                     ) : req.type === 'etfs_only' ? (
                       <>ETFs only</>
                     ) : (
-                      <>IS {METRIC_LABELS[req.metric!]} {req.comparison === 'at_least' ? '≥' : '≤'} {req.value}</>
+                      <>IS {METRIC_LABELS[req.metric!]} {req.comparison === 'at_least' ? '≥' : '≤'} {formatMetricValue(req.metric!, req.value)}</>
                     )}
                   </span>
                   <Button
@@ -180,9 +187,9 @@ export function SettingsPanel({ splitConfig, onSplitConfigChange }: SettingsPane
                   >
                     ×
                   </Button>
-                </li>
+                </div>
               ))}
-            </ol>
+            </div>
           )}
         </div>
 

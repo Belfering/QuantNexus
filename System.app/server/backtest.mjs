@@ -4023,6 +4023,28 @@ const turnoverFraction = (prevAlloc, alloc) => {
   return changed / 2
 }
 
+// Calculate Time in Market (TIM) as percentage of days invested in non-cash assets
+const calculateTIM = (dailyAllocations) => {
+  if (dailyAllocations.length === 0) return 0
+
+  let daysInMarket = 0
+  for (const { alloc } of dailyAllocations) {
+    // Check if any non-cash position has weight
+    let hasMarketPosition = false
+    for (const [ticker, weight] of Object.entries(alloc)) {
+      // Consider invested if ticker is not BIL, Empty, or has 0 weight
+      const normalizedTicker = ticker.toUpperCase().trim()
+      if (weight > 0 && normalizedTicker !== 'BIL' && normalizedTicker !== 'EMPTY') {
+        hasMarketPosition = true
+        break
+      }
+    }
+    if (hasMarketPosition) daysInMarket++
+  }
+
+  return daysInMarket / dailyAllocations.length
+}
+
 // ============================================
 // MAIN BACKTEST FUNCTION
 // ============================================
@@ -4065,6 +4087,9 @@ export async function runBacktest(payload, options = {}) {
   const indicatorOverlays = options.indicatorOverlays || [] // Conditions to show as chart overlays
   const customIndicators = options.customIndicators || [] // FRD-035: Custom indicators
   const splitConfig = options.splitConfig // IS/OOS split configuration
+
+  // DEBUG: Log splitConfig to verify it's being received
+  console.log(`[Backtest] >>> splitConfig:`, JSON.stringify(splitConfig))
 
   // Parse payload if string
   const rawNode = typeof payload === 'string' ? JSON.parse(payload) : payload
@@ -4461,18 +4486,47 @@ export async function runBacktest(payload, options = {}) {
   // Compute IS/OOS metrics if split is enabled
   let isMetrics = null
   let oosMetrics = null
+  console.log(`[Backtest] >>> Checking IS/OOS split - enabled: ${splitConfig?.enabled}, strategy: ${splitConfig?.strategy}, percent: ${splitConfig?.chronologicalPercent}`)
   if (splitConfig?.enabled) {
+    console.log(`[Backtest] >>> IS/OOS split is ENABLED, proceeding with split calculation`)
     // Extract all timestamps from the equity curve
     const allTimestamps = points.map(p => p.time)
 
+    // For chronological strategy, calculate the split date based on percentage
+    let chronologicalThresholdDate = null
+    if (splitConfig.strategy === 'chronological' && splitConfig.chronologicalPercent) {
+      // Sort timestamps to get date range
+      const sortedTimestamps = [...allTimestamps].sort((a, b) => a - b)
+      const startTime = sortedTimestamps[0]
+      const endTime = sortedTimestamps[sortedTimestamps.length - 1]
+
+      // Calculate threshold based on percentage (50% = halfway through data)
+      const percent = splitConfig.chronologicalPercent / 100
+      const thresholdTime = startTime + (endTime - startTime) * percent
+
+      // Convert to date string for splitDates function (expects YYYY-MM-DD)
+      const thresholdDate = new Date(thresholdTime * 1000)
+      chronologicalThresholdDate = thresholdDate.toISOString().split('T')[0]
+
+      console.log(`[Backtest] >>> SPLIT CALCULATION:`)
+      console.log(`[Backtest]   - Total data points: ${allTimestamps.length}`)
+      console.log(`[Backtest]   - Start time: ${startTime} (${new Date(startTime * 1000).toISOString()})`)
+      console.log(`[Backtest]   - End time: ${endTime} (${new Date(endTime * 1000).toISOString()})`)
+      console.log(`[Backtest]   - Split percent: ${splitConfig.chronologicalPercent}%`)
+      console.log(`[Backtest]   - Threshold date: ${chronologicalThresholdDate}`)
+    }
+
     // Split dates using the configured strategy
+    console.log(`[Backtest] >>> Calling splitDates with strategy=${splitConfig.strategy}, thresholdDate=${chronologicalThresholdDate}`)
     const { isDates, oosDates } = splitDates(
       allTimestamps,
       splitConfig.strategy,
-      splitConfig.chronologicalDate
+      chronologicalThresholdDate
     )
+    console.log(`[Backtest] >>> splitDates returned: IS=${isDates.size} dates, OOS=${oosDates.size} dates`)
 
     // Filter equity points and returns for IS
+    // Note: points has 1 more element than returns (initial equity point), so iterate up to returns.length
     const isIndices = []
     const isEquityValues = []
     const isReturns = []
@@ -4481,12 +4535,16 @@ export async function runBacktest(payload, options = {}) {
       if (isDates.has(points[i].time)) {
         isIndices.push(i)
         isEquityValues.push(points[i].value)
-        isReturns.push(returns[i])
-        isSpyReturns.push(spyReturns[i])
+        // Only push returns if they exist (returns array is 1 shorter than points)
+        if (i < returns.length) {
+          isReturns.push(returns[i])
+          isSpyReturns.push(spyReturns[i])
+        }
       }
     }
 
     // Filter equity points and returns for OOS
+    // Note: points has 1 more element than returns (initial equity point), so iterate up to returns.length
     const oosIndices = []
     const oosEquityValues = []
     const oosReturns = []
@@ -4495,10 +4553,17 @@ export async function runBacktest(payload, options = {}) {
       if (oosDates.has(points[i].time)) {
         oosIndices.push(i)
         oosEquityValues.push(points[i].value)
-        oosReturns.push(returns[i])
-        oosSpyReturns.push(spyReturns[i])
+        // Only push returns if they exist (returns array is 1 shorter than points)
+        if (i < returns.length) {
+          oosReturns.push(returns[i])
+          oosSpyReturns.push(spyReturns[i])
+        }
       }
     }
+
+    console.log(`[Backtest] >>> Filtered data:`)
+    console.log(`[Backtest]   - IS equity points: ${isEquityValues.length}`)
+    console.log(`[Backtest]   - OOS equity points: ${oosEquityValues.length}`)
 
     // Compute IS metrics
     if (isEquityValues.length > 0 && isReturns.length > 0) {
@@ -4535,6 +4600,15 @@ export async function runBacktest(payload, options = {}) {
       }
       const isWinRate = (isWinDays + isLossDays) > 0 ? isWinDays / (isWinDays + isLossDays) : 0
 
+      // Calculate IS TIM (Time in Market) - filter dailyAllocations for IS dates
+      // Note: dailyAllocations and points are built in the same loop, so indices align
+      const isDailyAllocs = dailyAllocations.filter((_, idx) => {
+        const pointTime = points[idx]?.time
+        return pointTime && isDates.has(pointTime)
+      })
+      const isTIM = calculateTIM(isDailyAllocs)
+      const isTIMAR = isTIM > 0 ? isBaseMetrics.cagr / isTIM : 0
+
       isMetrics = {
         startDate: isEquityValues.length > 0 ? safeIsoDate(points[isIndices[0]].time) : '',
         endDate: isEquityValues.length > 0 ? safeIsoDate(points[isIndices[isIndices.length - 1]].time) : '',
@@ -4554,12 +4628,72 @@ export async function runBacktest(payload, options = {}) {
         worstDay: isWorstDay === Infinity ? 0 : isWorstDay,
         avgTurnover: 0, // Not computed per-split (requires day-level allocation tracking)
         avgHoldings: 0, // Not computed per-split
+        tim: isTIM, // Time in Market as decimal (0-1)
+        timar: isTIMAR, // Time in Market Adjusted Return (CAGR/TIM)
       }
+      console.log(`[Backtest] >>> IS metrics computed: CAGR=${isMetrics.cagr.toFixed(4)}, Sharpe=${isMetrics.sharpe.toFixed(2)}, years=${isMetrics.years.toFixed(1)}, TIM=${(isTIM * 100).toFixed(1)}%, TIMAR=${(isTIMAR * 100).toFixed(2)}%`)
+    } else {
+      console.log(`[Backtest] >>> WARNING: IS metrics NOT computed (isEquityValues.length=${isEquityValues.length}, isReturns.length=${isReturns.length})`)
     }
 
     // Compute OOS metrics
     if (oosEquityValues.length > 0 && oosReturns.length > 0) {
       const oosBaseMetrics = computeMetrics(oosEquityValues, oosReturns)
+
+      // DEBUG: Log all input values for OOS volatility calculation
+      console.log(`[Backtest] >>> OOS VOLATILITY DEBUG:`)
+      console.log(`[Backtest]     - oosReturns.length: ${oosReturns.length}`)
+
+      // Safe formatter for returns (handles undefined, NaN, null)
+      const formatReturn = r => {
+        if (r === undefined) return 'undefined'
+        if (r === null) return 'null'
+        if (Number.isNaN(r)) return 'NaN'
+        return r.toFixed(6)
+      }
+
+      console.log(`[Backtest]     - oosReturns sample (first 10): ${oosReturns.slice(0, 10).map(formatReturn).join(', ')}`)
+      console.log(`[Backtest]     - oosReturns sample (last 10): ${oosReturns.slice(-10).map(formatReturn).join(', ')}`)
+
+      // Count NaN and undefined values in oosReturns
+      const nanCount = oosReturns.filter(r => Number.isNaN(r)).length
+      const undefinedCount = oosReturns.filter(r => r === undefined).length
+      const nullCount = oosReturns.filter(r => r === null).length
+      console.log(`[Backtest]     - NaN values in oosReturns: ${nanCount}`)
+      console.log(`[Backtest]     - undefined values in oosReturns: ${undefinedCount}`)
+      console.log(`[Backtest]     - null values in oosReturns: ${nullCount}`)
+      if (nanCount > 0 || undefinedCount > 0 || nullCount > 0) {
+        const badIndices = oosReturns.map((r, i) => (Number.isNaN(r) || r === undefined || r === null) ? i : -1).filter(i => i >= 0).slice(0, 20)
+        console.log(`[Backtest]     - First 20 bad value indices: ${badIndices.join(', ')}`)
+      }
+
+      console.log(`[Backtest]     - oosEquityValues.length: ${oosEquityValues.length}`)
+      console.log(`[Backtest]     - oosEquityValues sample (first 10): ${oosEquityValues.slice(0, 10).map(v => v.toFixed(4)).join(', ')}`)
+      console.log(`[Backtest]     - oosEquityValues sample (last 10): ${oosEquityValues.slice(-10).map(v => v.toFixed(4)).join(', ')}`)
+
+      // Recompute volatility with debug logging
+      const oosSum = oosReturns.reduce((a, b) => a + b, 0)
+      console.log(`[Backtest]     - oosReturns sum: ${oosSum}`)
+      const oosMean = oosSum / oosReturns.length
+      const oosVariance = oosReturns.length > 1 ? oosReturns.reduce((a, b) => a + (b - oosMean) ** 2, 0) / (oosReturns.length - 1) : 0
+      const oosStd = Math.sqrt(Math.max(0, oosVariance))
+      const oosVol = oosStd * Math.sqrt(252)
+      console.log(`[Backtest]     - Mean return: ${oosMean.toFixed(8)}`)
+      console.log(`[Backtest]     - Variance: ${oosVariance.toFixed(10)}`)
+      console.log(`[Backtest]     - Std dev (daily): ${oosStd.toFixed(8)}`)
+      console.log(`[Backtest]     - Vol (annualized): ${oosVol.toFixed(8)}`)
+      console.log(`[Backtest]     - oosBaseMetrics.volatility: ${oosBaseMetrics.volatility}`)
+
+      // Debug Sortino calculation
+      const oosDownsideSquaredSum = oosReturns.reduce((sum, r) => sum + (r < 0 ? r * r : 0), 0)
+      const oosDownsideVariance = oosReturns.length > 1 ? oosDownsideSquaredSum / (oosReturns.length - 1) : 0
+      const oosDownsideStd = Math.sqrt(Math.max(0, oosDownsideVariance))
+      const oosAnnualizedDownsideStd = oosDownsideStd * Math.sqrt(252)
+      console.log(`[Backtest]     - Downside squared sum: ${oosDownsideSquaredSum.toFixed(10)}`)
+      console.log(`[Backtest]     - Downside variance: ${oosDownsideVariance.toFixed(10)}`)
+      console.log(`[Backtest]     - Downside std: ${oosDownsideStd.toFixed(8)}`)
+      console.log(`[Backtest]     - Annualized downside std: ${oosAnnualizedDownsideStd.toFixed(8)}`)
+      console.log(`[Backtest]     - oosBaseMetrics.sortino: ${oosBaseMetrics.sortino}`)
 
       // Compute OOS Treynor and Beta
       let oosTreynor = 0
@@ -4592,6 +4726,15 @@ export async function runBacktest(payload, options = {}) {
       }
       const oosWinRate = (oosWinDays + oosLossDays) > 0 ? oosWinDays / (oosWinDays + oosLossDays) : 0
 
+      // Calculate OOS TIM (Time in Market) - filter dailyAllocations for OOS dates
+      // Note: dailyAllocations and points are built in the same loop, so indices align
+      const oosDailyAllocs = dailyAllocations.filter((_, idx) => {
+        const pointTime = points[idx]?.time
+        return pointTime && oosDates.has(pointTime)
+      })
+      const oosTIM = calculateTIM(oosDailyAllocs)
+      const oosTIMAR = oosTIM > 0 ? oosBaseMetrics.cagr / oosTIM : 0
+
       oosMetrics = {
         startDate: oosEquityValues.length > 0 ? safeIsoDate(points[oosIndices[0]].time) : '',
         endDate: oosEquityValues.length > 0 ? safeIsoDate(points[oosIndices[oosIndices.length - 1]].time) : '',
@@ -4611,8 +4754,15 @@ export async function runBacktest(payload, options = {}) {
         worstDay: oosWorstDay === Infinity ? 0 : oosWorstDay,
         avgTurnover: 0, // Not computed per-split
         avgHoldings: 0, // Not computed per-split
+        tim: oosTIM, // Time in Market as decimal (0-1)
+        timar: oosTIMAR, // Time in Market Adjusted Return (CAGR/TIM)
       }
+      console.log(`[Backtest] >>> OOS metrics computed: CAGR=${oosMetrics.cagr.toFixed(4)}, Sharpe=${oosMetrics.sharpe.toFixed(2)}, years=${oosMetrics.years.toFixed(1)}, TIM=${(oosTIM * 100).toFixed(1)}%, TIMAR=${(oosTIMAR * 100).toFixed(2)}%`)
+    } else {
+      console.log(`[Backtest] >>> WARNING: OOS metrics NOT computed (oosEquityValues.length=${oosEquityValues.length}, oosReturns.length=${oosReturns.length})`)
     }
+  } else {
+    console.log(`[Backtest] >>> IS/OOS split is DISABLED or not configured`)
   }
 
   // Create a context object for indicator lookups outside the main eval loop

@@ -16,6 +16,7 @@ export interface OptimizationJob {
 }
 
 export interface OptimizationResultMetrics {
+  startDate?: string // Start date of the period (IS or OOS)
   cagr: number
   sharpe: number
   calmar: number
@@ -27,6 +28,8 @@ export interface OptimizationResultMetrics {
   winRate: number
   avgTurnover: number
   avgHoldings: number
+  tim?: number // Time in Market (0-1)
+  timar?: number // Time in Market Adjusted Return (CAGR/TIM)
 }
 
 export interface OptimizationResult {

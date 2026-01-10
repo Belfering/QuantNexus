@@ -92,6 +92,12 @@ function createInitialBotSession(title: string, tabContext: 'Forge' | 'Model'): 
     callChains: [],
     customIndicators: [],
     parameterRanges: [],
+    splitConfig: {
+      enabled: true,
+      strategy: 'chronological',
+      chronologicalPercent: 50,
+      minYears: 5
+    },
     tabContext,
   }
 }

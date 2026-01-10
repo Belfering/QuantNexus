@@ -1,6 +1,7 @@
 // src/components/Forge/ISOOSSplitCard.tsx
 // IS/OOS split configuration component for optimization
 
+import { useEffect } from 'react'
 import { type ISOOSSplitConfig, type SplitStrategy, type RollingWindowPeriod } from '@/types/split'
 
 interface ISOOSSplitCardProps {
@@ -15,6 +16,18 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
   const minYears = splitConfig?.minYears ?? 5
   const rollingStartYear = splitConfig?.rollingStartYear ?? 1996
   const minWarmUpYears = splitConfig?.minWarmUpYears ?? 3
+
+  // Initialize splitConfig with defaults if it's undefined (for existing bots)
+  useEffect(() => {
+    if (!splitConfig) {
+      onSplitConfigChange({
+        enabled: true,
+        strategy: 'chronological',
+        chronologicalPercent: 50,
+        minYears: 5
+      })
+    }
+  }, [splitConfig, onSplitConfigChange]) // Run when splitConfig changes
 
   const handleStrategyChange = (newStrategy: SplitStrategy) => {
     onSplitConfigChange({

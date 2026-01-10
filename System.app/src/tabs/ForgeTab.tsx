@@ -71,8 +71,8 @@ import type { ParameterField, ParameterRange } from '@/features/parameters/types
 import { loadCallChainsFromApi } from '@/features/auth'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
 import { useTreeSync, useTreeUndo } from '@/hooks'
+// Updated: TIM/TIMAR metrics now included
 import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest'
-import { BranchGenerationPanel } from '@/features/optimization/components/BranchGenerationPanel'
 import { applyBranchToTree } from '@/features/optimization/services/branchGenerator'
 import type { EligibilityRequirement } from '@/types/admin'
 
@@ -704,15 +704,18 @@ export function ForgeTab({
     if (!activeBot) return
 
     const parameterRanges = activeBot.parameterRanges || []
-    const splitConfig = activeBot.splitConfig
+    // Ensure splitConfig has default values if not initialized
+    const splitConfig = activeBot.splitConfig || {
+      enabled: true,
+      strategy: 'chronological' as const,
+      chronologicalPercent: 50,
+      minYears: 5
+    }
     const mode = 'CC' // Default mode
     const costBps = 5 // Default cost
 
-    // Ensure split is enabled
-    if (!splitConfig?.enabled) {
-      alert('Please enable IS/OOS Split in the Settings Panel to run optimization')
-      return
-    }
+    // DEBUG: Log splitConfig to verify it's initialized
+    console.log('[ForgeTab] Starting optimization with splitConfig:', JSON.stringify(splitConfig))
 
     // Get bot name from database if saved, otherwise use fallback
     let botName = 'Unsaved Strategy'
@@ -785,10 +788,41 @@ export function ForgeTab({
 
             {/* Flowchart Toolbar - Run Forge + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
         <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg shrink-0 z-20 sticky top-0" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
-          {/* Left section: Run Forge button + branch count/ETA */}
+          {/* Left section: Run Forge button OR Branch generation progress */}
           <div className="flex items-center gap-3">
             {(() => {
-              // Calculate branch count from enabled parameter ranges
+              // If branch generation is running, show progress bar
+              if (batchJob && batchJob.status === 'running') {
+                const percentage = batchJob.progress.total > 0
+                  ? Math.round((batchJob.progress.completed / batchJob.progress.total) * 100)
+                  : 0
+
+                return (
+                  <>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center justify-between text-xs font-medium">
+                        <span>Branch Generation</span>
+                        <Button size="sm" variant="ghost" className="h-6 px-2" onClick={cancelJob}>
+                          Cancel
+                        </Button>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-5 overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-300 flex items-center justify-center text-xs font-medium text-primary-foreground"
+                          style={{ width: `${percentage}%` }}
+                        >
+                          {percentage}%
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Generating branches... {batchJob.progress.completed} / {batchJob.progress.total} completed
+                      </div>
+                    </div>
+                  </>
+                )
+              }
+
+              // Otherwise show Run Forge button
               const enabledRanges = (activeBot?.parameterRanges || []).filter(r => r.enabled)
               let branchCount = 1
               for (const range of enabledRanges) {
@@ -1129,15 +1163,6 @@ export function ForgeTab({
           >
             <div style={{ width: flowchartScrollWidth > 0 ? flowchartScrollWidth : 1, height: '1px' }} />
           </div>
-        )}
-
-        {/* Branch Generation Panel */}
-        {batchJob && (
-          <BranchGenerationPanel
-            job={batchJob}
-            onSelectBranch={handleSelectBranch}
-            onCancel={cancelJob}
-          />
         )}
           </>
         ) : (

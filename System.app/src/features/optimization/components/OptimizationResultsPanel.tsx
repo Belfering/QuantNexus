@@ -230,6 +230,9 @@ export function OptimizationResultsPanel() {
                   <option value="is_beta">IS Beta</option>
                   <option value="is_volatility">IS Volatility</option>
                   <option value="is_win_rate">IS Win Rate</option>
+                  <option value="is_max_drawdown">IS MaxDD</option>
+                  <option value="is_tim">IS TIM</option>
+                  <option value="is_timar">IS TIMAR</option>
                   <option value="oos_cagr">OOS CAGR</option>
                   <option value="oos_sharpe">OOS Sharpe</option>
                   <option value="oos_calmar">OOS Calmar</option>
@@ -238,6 +241,9 @@ export function OptimizationResultsPanel() {
                   <option value="oos_beta">OOS Beta</option>
                   <option value="oos_volatility">OOS Volatility</option>
                   <option value="oos_win_rate">OOS Win Rate</option>
+                  <option value="oos_max_drawdown">OOS MaxDD</option>
+                  <option value="oos_tim">OOS TIM</option>
+                  <option value="oos_timar">OOS TIMAR</option>
                 </select>
                 <select
                   value={sortOrder}
@@ -265,6 +271,7 @@ export function OptimizationResultsPanel() {
                     <tr>
                       <th className="px-3 py-2 text-left">Branch</th>
                       <th className="px-3 py-2 text-left">Parameters</th>
+                      <th className="px-3 py-2 text-left">IS Start</th>
                       <th className="px-3 py-2 text-right">IS CAGR</th>
                       <th className="px-3 py-2 text-right">IS Sharpe</th>
                       <th className="px-3 py-2 text-right">IS Calmar</th>
@@ -272,7 +279,11 @@ export function OptimizationResultsPanel() {
                       <th className="px-3 py-2 text-right">IS Treynor</th>
                       <th className="px-3 py-2 text-right">IS Beta</th>
                       <th className="px-3 py-2 text-right">IS Vol</th>
+                      <th className="px-3 py-2 text-right">IS MaxDD</th>
+                      <th className="px-3 py-2 text-right">IS TIM</th>
+                      <th className="px-3 py-2 text-right">IS TIMAR</th>
                       <th className="px-3 py-2 text-right">IS Win%</th>
+                      <th className="px-3 py-2 text-left">OOS Start</th>
                       <th className="px-3 py-2 text-right">OOS CAGR</th>
                       <th className="px-3 py-2 text-right">OOS Sharpe</th>
                       <th className="px-3 py-2 text-right">OOS Calmar</th>
@@ -280,6 +291,9 @@ export function OptimizationResultsPanel() {
                       <th className="px-3 py-2 text-right">OOS Treynor</th>
                       <th className="px-3 py-2 text-right">OOS Beta</th>
                       <th className="px-3 py-2 text-right">OOS Vol</th>
+                      <th className="px-3 py-2 text-right">OOS MaxDD</th>
+                      <th className="px-3 py-2 text-right">OOS TIM</th>
+                      <th className="px-3 py-2 text-right">OOS TIMAR</th>
                       <th className="px-3 py-2 text-right">OOS Win%</th>
                       <th className="px-3 py-2 text-center">Pass</th>
                       <th className="px-3 py-2 text-center">Actions</th>
@@ -293,22 +307,30 @@ export function OptimizationResultsPanel() {
                       >
                         <td className="px-3 py-2 font-mono text-xs">{result.branchId}</td>
                         <td className="px-3 py-2 text-xs">{result.parameterLabel}</td>
-                        <td className="px-3 py-2 text-right">{(result.isMetrics.cagr * 100).toFixed(2)}%</td>
-                        <td className="px-3 py-2 text-right">{result.isMetrics.sharpe.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right">{result.isMetrics.calmar.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right">{result.isMetrics.sortino != null ? result.isMetrics.sortino.toFixed(2) : '-'}</td>
-                        <td className="px-3 py-2 text-right">{result.isMetrics.treynor != null ? result.isMetrics.treynor.toFixed(2) : '-'}</td>
-                        <td className="px-3 py-2 text-right">{result.isMetrics.beta != null ? result.isMetrics.beta.toFixed(2) : '-'}</td>
-                        <td className="px-3 py-2 text-right">{result.isMetrics.volatility != null ? (result.isMetrics.volatility * 100).toFixed(2) + '%' : '-'}</td>
-                        <td className="px-3 py-2 text-right">{result.isMetrics.winRate != null ? (result.isMetrics.winRate * 100).toFixed(1) + '%' : '-'}</td>
-                        <td className="px-3 py-2 text-right">{(result.oosMetrics.cagr * 100).toFixed(2)}%</td>
-                        <td className="px-3 py-2 text-right">{result.oosMetrics.sharpe.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right">{result.oosMetrics.calmar.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right">{result.oosMetrics.sortino != null ? result.oosMetrics.sortino.toFixed(2) : '-'}</td>
-                        <td className="px-3 py-2 text-right">{result.oosMetrics.treynor != null ? result.oosMetrics.treynor.toFixed(2) : '-'}</td>
-                        <td className="px-3 py-2 text-right">{result.oosMetrics.beta != null ? result.oosMetrics.beta.toFixed(2) : '-'}</td>
-                        <td className="px-3 py-2 text-right">{result.oosMetrics.volatility != null ? (result.oosMetrics.volatility * 100).toFixed(2) + '%' : '-'}</td>
-                        <td className="px-3 py-2 text-right">{result.oosMetrics.winRate != null ? (result.oosMetrics.winRate * 100).toFixed(1) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-xs">{result.isMetrics?.startDate || '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.cagr != null ? (result.isMetrics.cagr * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.sharpe != null ? result.isMetrics.sharpe.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.calmar != null ? result.isMetrics.calmar.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.sortino != null ? result.isMetrics.sortino.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.treynor != null ? result.isMetrics.treynor.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.beta != null ? result.isMetrics.beta.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.volatility != null ? (result.isMetrics.volatility * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.maxDrawdown != null ? (result.isMetrics.maxDrawdown * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.tim != null ? (result.isMetrics.tim * 100).toFixed(1) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.timar != null ? (result.isMetrics.timar * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics?.winRate != null ? (result.isMetrics.winRate * 100).toFixed(1) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-xs">{result.oosMetrics?.startDate || '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.cagr != null ? (result.oosMetrics.cagr * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.sharpe != null ? result.oosMetrics.sharpe.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.calmar != null ? result.oosMetrics.calmar.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.sortino != null ? result.oosMetrics.sortino.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.treynor != null ? result.oosMetrics.treynor.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.beta != null ? result.oosMetrics.beta.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.volatility != null ? (result.oosMetrics.volatility * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.maxDrawdown != null ? (result.oosMetrics.maxDrawdown * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.tim != null ? (result.oosMetrics.tim * 100).toFixed(1) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.timar != null ? (result.oosMetrics.timar * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics?.winRate != null ? (result.oosMetrics.winRate * 100).toFixed(1) + '%' : '-'}</td>
                         <td className="px-3 py-2 text-center">
                           {result.passed ? (
                             <span className="text-green-500 font-bold">✓</span>

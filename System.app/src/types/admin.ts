@@ -17,7 +17,7 @@ export type AdminCandlesResponse = {
 }
 
 // Admin types for Atlas Overview
-export type EligibilityMetric = 'cagr' | 'maxDrawdown' | 'calmar' | 'sharpe' | 'sortino' | 'treynor' | 'beta' | 'vol' | 'winRate' | 'avgTurnover' | 'avgHoldings'
+export type EligibilityMetric = 'cagr' | 'maxDrawdown' | 'calmar' | 'sharpe' | 'sortino' | 'treynor' | 'beta' | 'vol' | 'winRate' | 'avgTurnover' | 'avgHoldings' | 'tim' | 'timar'
 
 export type EligibilityRequirement = {
   id: string
@@ -85,5 +85,7 @@ export const METRIC_LABELS: Record<EligibilityMetric, string> = {
   vol: 'Volatility',
   winRate: 'Win Rate',
   avgTurnover: 'Avg Turnover',
-  avgHoldings: 'Avg Holdings'
+  avgHoldings: 'Avg Holdings',
+  tim: 'Time in Market',
+  timar: 'TIM Adjusted Returns'
 }

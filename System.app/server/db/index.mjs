@@ -429,6 +429,24 @@ export function initializeDatabase() {
     // Column might already exist
   }
 
+  // Migration: Add TIM, TIMAR, and start date columns to optimization_results table
+  try {
+    const optResultsCols = sqlite.prepare("PRAGMA table_info(optimization_results)").all()
+    const hasIsTim = optResultsCols.some(c => c.name === 'is_tim')
+    if (!hasIsTim) {
+      console.log('[DB] Migrating optimization_results table: adding TIM/TIMAR/date columns...')
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN is_start_date TEXT")
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN is_tim REAL")
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN is_timar REAL")
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN oos_start_date TEXT")
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN oos_tim REAL")
+      sqlite.exec("ALTER TABLE optimization_results ADD COLUMN oos_timar REAL")
+      console.log('[DB] Migration complete: TIM/TIMAR/date columns added to optimization_results table')
+    }
+  } catch (e) {
+    // Columns might already exist
+  }
+
   // Clean up duplicate watchlist_bots entries (keep only the first entry)
   const duplicates = sqlite.prepare(`
     SELECT watchlist_id, bot_id, COUNT(*) as cnt, MIN(id) as keep_id
