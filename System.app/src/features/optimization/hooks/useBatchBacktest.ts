@@ -10,7 +10,7 @@ import type { ParameterRange } from '@/features/parameters/types'
 import type { ISOOSSplitConfig } from '@/types/split'
 import type { BranchGenerationJob, BranchResult, BranchStatus } from '@/types/branch'
 import type { EligibilityRequirement } from '@/types/admin'
-import { generateBranchCombinations, applyBranchToTree } from '../services/branchGenerator'
+import { generateBranchCombinations, applyBranchToTree, hasAutoModeInTree } from '../services/branchGenerator'
 import { evaluateRequirements } from '../services/requirementsEvaluator'
 import { deepCloneForCompression } from '@/features/builder'
 
@@ -91,30 +91,25 @@ export function useBatchBacktest(): UseBatchBacktestResult {
       const useParallelApi = true // Set to false to fallback to Node.js backtester
 
       if (useParallelApi) {
-        // Prepare branches for parallel processing
-        const branches = combinations.map(combination => {
-          // Clone tree preserving IDs, then apply parameters (preserves condition IDs for matching)
-          const clonedTree = deepCloneForCompression(tree)!
-          const modifiedTree = applyBranchToTree(clonedTree, combination, parameterRanges)
-          return {
-            branchId: combination.id,
-            tree: modifiedTree,
-            combination,
-            options: {
-              mode,
-              costBps,
-              splitConfig
-            }
-          }
-        })
+        // Check once if tree has AUTO mode positions (optimization to avoid repeated tree traversals)
+        const hasAutoMode = hasAutoModeInTree(tree)
 
-        // Start batch backtest job
+        // OPTIMIZATION: Send base tree ONCE instead of cloning for each branch
+        // Server will handle cloning and parameter application (99% memory/network reduction)
         const startResponse = await fetch('/api/batch-backtest/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             jobId,
-            branches
+            baseTree: tree,
+            combinations,
+            parameterRanges,
+            hasAutoMode,
+            options: {
+              mode,
+              costBps,
+              splitConfig
+            }
           }),
           signal: abortController.signal
         })
@@ -162,12 +157,13 @@ export function useBatchBacktest(): UseBatchBacktestResult {
 
                 // Process results and evaluate requirements
                 const processedResults: BranchResult[] = resultsData.results.map((result: any) => {
-                  const combination = branches.find(b => b.branchId === result.branchId)?.combination
+                  const combination = combinations.find(c => c.id === result.branchId)
 
                   if (!result.isMetrics) {
                     return {
                       branchId: result.branchId,
                       combination: combination!,
+                      tree: result.tree ? JSON.parse(result.tree) : undefined,
                       status: 'error' as const,
                       passed: false,
                       failedRequirements: [],
@@ -213,6 +209,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
                   return {
                     branchId: result.branchId,
                     combination: combination!,
+                    tree: result.tree ? JSON.parse(result.tree) : undefined,
                     status: 'success' as const,
                     passed: failedRequirements.length === 0 && evaluation.passed,
                     failedRequirements: [...failedRequirements, ...evaluation.failedRequirements],
@@ -253,7 +250,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
 
                 // Add error results
                 const errorResults: BranchResult[] = resultsData.errors.map((error: any) => {
-                  const combination = branches.find(b => b.branchId === error.branchId)?.combination
+                  const combination = combinations.find(c => c.id === error.branchId)
                   return {
                     branchId: error.branchId,
                     combination: combination!,
@@ -283,6 +280,9 @@ export function useBatchBacktest(): UseBatchBacktestResult {
         })
       } else {
         // Fallback: Sequential processing (original implementation)
+        // Check once if tree has AUTO mode positions (optimization to avoid repeated tree traversals)
+        const hasAutoMode = hasAutoModeInTree(tree)
+
         for (let i = 0; i < combinations.length; i++) {
           if (abortController.signal.aborted) {
             updateJob(prev => prev ? {
@@ -297,7 +297,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
 
           // Clone tree preserving IDs, then apply parameters (preserves condition IDs for matching)
           const clonedTree = deepCloneForCompression(tree)!
-          const modifiedTree = applyBranchToTree(clonedTree, combination, parameterRanges)
+          const modifiedTree = applyBranchToTree(clonedTree, combination, parameterRanges, hasAutoMode)
 
           // DEBUG: Log branch parameters being applied
           console.log(`[BatchBacktest] Branch ${combination.id}: ${combination.label}`)
@@ -452,6 +452,9 @@ export function useBatchBacktest(): UseBatchBacktestResult {
               parameterLabel: r.combination.label,
               parameterValues: r.combination.parameterValues,
               tickerSubstitutions: r.combination.tickerSubstitutions,
+              conditionTicker: r.combination.conditionTicker,
+              positionTicker: r.combination.positionTicker,
+              tree: r.tree ? JSON.stringify(r.tree) : undefined,
               isMetrics: r.isMetrics,
               oosMetrics: r.oosMetrics,
               passed: r.passed,

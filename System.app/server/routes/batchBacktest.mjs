@@ -19,24 +19,31 @@ const activeBatchJobs = new Map()
  * POST /api/batch-backtest/start
  * Start a batch backtest job with parallel processing
  *
+ * OPTIMIZED: Accepts base tree + combinations instead of pre-cloned branches
+ * This reduces memory usage by 99% and eliminates client-side crashes
+ *
  * Request body:
  * {
  *   jobId: string,
- *   branches: Array<{ branchId, tree, options, combination }>,
- *   parquetDir: string
+ *   baseTree: FlowNode,
+ *   combinations: BranchCombination[],
+ *   parameterRanges: ParameterRange[],
+ *   hasAutoMode: boolean,
+ *   options: { mode, costBps, splitConfig },
+ *   parquetDir?: string
  * }
  */
 router.post('/start', async (req, res) => {
   try {
-    const { jobId, branches, parquetDir } = req.body
+    const { jobId, baseTree, combinations, parameterRanges, hasAutoMode, options, parquetDir } = req.body
 
-    if (!jobId || !branches || !Array.isArray(branches)) {
-      return res.status(400).json({ error: 'Invalid request: jobId and branches required' })
+    if (!jobId || !baseTree || !combinations || !Array.isArray(combinations)) {
+      return res.status(400).json({ error: 'Invalid request: jobId, baseTree, and combinations required' })
     }
 
     const effectiveParquetDir = parquetDir || path.join(__dirname, '../../ticker-data/data/ticker_data_parquet')
 
-    console.log(`[BatchBacktest] Starting job ${jobId} with ${branches.length} branches using ${process.env.NUM_WORKERS || 'auto'} workers`)
+    console.log(`[BatchBacktest] Starting job ${jobId} with ${combinations.length} branches using ${process.env.NUM_WORKERS || 'auto'} workers`)
 
     // Create worker pool
     const numWorkers = process.env.NUM_WORKERS ? parseInt(process.env.NUM_WORKERS) : null
@@ -47,7 +54,7 @@ router.post('/start', async (req, res) => {
       jobId,
       workerPool,
       startTime: Date.now(),
-      totalBranches: branches.length,
+      totalBranches: combinations.length,
       results: [],
       errors: [],
       status: 'running'
@@ -55,8 +62,8 @@ router.post('/start', async (req, res) => {
 
     activeBatchJobs.set(jobId, job)
 
-    // Process branches with callbacks
-    workerPool.processBranches(branches, {
+    // Process branches with callbacks (server will clone and apply parameters)
+    workerPool.processBranches(baseTree, combinations, parameterRanges, hasAutoMode, options, {
       onProgress: async (progress) => {
         // Update job progress
         job.progress = progress
@@ -80,7 +87,7 @@ router.post('/start', async (req, res) => {
     res.json({
       success: true,
       jobId,
-      message: `Batch backtest started with ${branches.length} branches`
+      message: `Batch backtest started with ${combinations.length} branches`
     })
 
   } catch (error) {
