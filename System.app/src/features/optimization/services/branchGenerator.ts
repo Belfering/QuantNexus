@@ -19,8 +19,12 @@ export function generateBranchCombinations(ranges: ParameterRange[]): BranchComb
     return []
   }
 
-  // Generate value arrays for each range
-  const valueArrays: Array<{ id: string; label: string; values: number[] }> = enabledRanges.map(range => {
+  // Separate ticker list ranges from numeric parameter ranges
+  const tickerListRanges = enabledRanges.filter(r => r.type === 'ticker_list')
+  const numericRanges = enabledRanges.filter(r => r.type !== 'ticker_list')
+
+  // Generate value arrays for numeric ranges
+  const valueArrays: Array<{ id: string; label: string; values: number[] }> = numericRanges.map(range => {
     const values: number[] = []
     for (let v = range.min; v <= range.max; v += range.step) {
       values.push(v)
@@ -39,33 +43,152 @@ export function generateBranchCombinations(ranges: ParameterRange[]): BranchComb
     }
   })
 
-  // Generate cartesian product of all value arrays
+  // Generate ticker arrays for ticker list ranges
+  const tickerArrays: Array<{ id: string; label: string; tickers: string[] }> = tickerListRanges.map(range => {
+    return {
+      id: range.tickerListId || range.id,
+      label: range.tickerListName || 'ticker',
+      tickers: range.tickers || []
+    }
+  })
+
+  // Generate cartesian product of all value arrays (numeric) and ticker arrays
   const combinations: BranchCombination[] = []
-  const generateCombos = (index: number, current: Record<string, number>, labels: string[]) => {
-    if (index === valueArrays.length) {
-      // Create a branch combination
-      const id = `branch-${combinations.length + 1}`
-      const label = labels.join(', ')
-      combinations.push({
-        id,
-        parameterValues: { ...current },
-        label
-      })
+  const generateCombos = (
+    numericIndex: number,
+    tickerIndex: number,
+    currentParams: Record<string, number>,
+    currentTickers: Record<string, string>,
+    labels: string[]
+  ) => {
+    // First, iterate through all ticker variations
+    if (tickerIndex < tickerArrays.length) {
+      const { id: tickerListId, label: tickerLabel, tickers } = tickerArrays[tickerIndex]
+      for (const ticker of tickers) {
+        generateCombos(
+          numericIndex,
+          tickerIndex + 1,
+          currentParams,
+          { ...currentTickers, [tickerListId]: ticker },
+          [...labels, `${tickerLabel}=${ticker}`]
+        )
+      }
       return
     }
 
-    const { id: rangeId, label: rangeLabel, values } = valueArrays[index]
-    for (const value of values) {
-      generateCombos(
-        index + 1,
-        { ...current, [rangeId]: value },
-        [...labels, `${rangeLabel}=${value}`]
-      )
+    // Then iterate through numeric parameters
+    if (numericIndex < valueArrays.length) {
+      const { id: rangeId, label: rangeLabel, values } = valueArrays[numericIndex]
+      for (const value of values) {
+        generateCombos(
+          numericIndex + 1,
+          tickerIndex,
+          { ...currentParams, [rangeId]: value },
+          currentTickers,
+          [...labels, `${rangeLabel}=${value}`]
+        )
+      }
+      return
+    }
+
+    // Base case: we've generated all combinations
+    const id = `branch-${combinations.length + 1}`
+    const label = labels.length > 0 ? labels.join(', ') : 'base'
+    combinations.push({
+      id,
+      parameterValues: { ...currentParams },
+      label,
+      tickerSubstitutions: Object.keys(currentTickers).length > 0 ? currentTickers : undefined
+    })
+  }
+
+  generateCombos(0, 0, {}, {}, [])
+  return combinations
+}
+
+/**
+ * Apply ticker substitutions to a tree
+ * @param node - The node to apply substitutions to (will be modified recursively)
+ * @param substitutions - Map of ticker list ID to selected ticker
+ */
+function applyTickerSubstitutions(node: FlowNode, substitutions: Record<string, string>): void {
+  // Apply to condition tickers
+  if (node.conditions && Array.isArray(node.conditions)) {
+    for (const condition of node.conditions) {
+      // Replace ticker if it references a ticker list
+      if (condition.tickerListId && substitutions[condition.tickerListId]) {
+        condition.ticker = substitutions[condition.tickerListId]
+        console.log(`[BranchGenerator] Substituted ticker ${condition.ticker} for list ${condition.tickerListId}`)
+      }
+      // Replace right ticker if it references a ticker list
+      if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
+        condition.rightTicker = substitutions[condition.rightTickerListId]
+        console.log(`[BranchGenerator] Substituted right ticker ${condition.rightTicker} for list ${condition.rightTickerListId}`)
+      }
     }
   }
 
-  generateCombos(0, {}, [])
-  return combinations
+  // Apply to position node if it references a ticker list
+  if (node.kind === 'position' && node.positionTickerListId && substitutions[node.positionTickerListId]) {
+    const ticker = substitutions[node.positionTickerListId]
+    // Replace all positions with the selected ticker
+    if (node.positions && node.positions.length > 0) {
+      node.positions = node.positions.map(() => ticker)
+      console.log(`[BranchGenerator] Substituted position ticker ${ticker} for list ${node.positionTickerListId}`)
+    }
+  }
+
+  // Apply to entry/exit conditions for altExit nodes
+  if (node.entryConditions && Array.isArray(node.entryConditions)) {
+    for (const condition of node.entryConditions) {
+      if (condition.tickerListId && substitutions[condition.tickerListId]) {
+        condition.ticker = substitutions[condition.tickerListId]
+      }
+      if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
+        condition.rightTicker = substitutions[condition.rightTickerListId]
+      }
+    }
+  }
+  if (node.exitConditions && Array.isArray(node.exitConditions)) {
+    for (const condition of node.exitConditions) {
+      if (condition.tickerListId && substitutions[condition.tickerListId]) {
+        condition.ticker = substitutions[condition.tickerListId]
+      }
+      if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
+        condition.rightTicker = substitutions[condition.rightTickerListId]
+      }
+    }
+  }
+
+  // Apply to numbered node items
+  if (node.numbered && node.numbered.items) {
+    for (const item of node.numbered.items) {
+      if (item.conditions && Array.isArray(item.conditions)) {
+        for (const condition of item.conditions) {
+          if (condition.tickerListId && substitutions[condition.tickerListId]) {
+            condition.ticker = substitutions[condition.tickerListId]
+          }
+          if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
+            condition.rightTicker = substitutions[condition.rightTickerListId]
+          }
+        }
+      }
+    }
+  }
+
+  // Recursively apply to children
+  if (node.children) {
+    for (const slotKey in node.children) {
+      const slot = node.children[slotKey as keyof typeof node.children]
+      if (Array.isArray(slot)) {
+        for (const child of slot) {
+          if (child) {
+            applyTickerSubstitutions(child, substitutions)
+          }
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -84,6 +207,12 @@ export function applyBranchToTree(
   // We apply parameters directly to preserve condition IDs for matching
 
   console.log(`[BranchGenerator] Applying ${Object.keys(combination.parameterValues).length} parameters to ${combination.id}`)
+
+  // Apply ticker substitutions if present
+  if (combination.tickerSubstitutions) {
+    console.log(`[BranchGenerator] Applying ${Object.keys(combination.tickerSubstitutions).length} ticker substitutions`)
+    applyTickerSubstitutions(tree, combination.tickerSubstitutions)
+  }
 
   // Apply each parameter value from the combination
   for (const [parameterId, value] of Object.entries(combination.parameterValues)) {

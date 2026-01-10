@@ -49,6 +49,8 @@ export function evaluateRequirements(
         winRate: isMetrics.winRate * 100, // Convert to percentage
         avgTurnover: isMetrics.avgTurnover * 100, // Convert to percentage
         avgHoldings: isMetrics.avgHoldings,
+        tim: isMetrics.tim != null ? isMetrics.tim * 100 : undefined, // Time in Market (percentage)
+        timar: isMetrics.timar != null ? isMetrics.timar * 100 : undefined, // TIM Adjusted Returns (percentage)
       }
 
       const metricValue = metricValueMap[metric]

@@ -2111,6 +2111,7 @@ import oauthRoutes from './routes/oauth.mjs'
 import liveRoutes from './routes/live.mjs'
 import optimizationResultsRoutes from './routes/optimizationResults.mjs'
 import batchBacktestRoutes from './routes/batchBacktest.mjs'
+import tickerListsRoutes from './routes/tickerLists.mjs'
 
 // Register auth routes
 app.use('/api/auth', authRoutes)
@@ -2120,6 +2121,7 @@ app.use('/api/admin/invites', adminInviteRoutes)
 app.use('/api/admin', liveRoutes)
 app.use('/api/optimization', optimizationResultsRoutes)
 app.use('/api/batch-backtest', batchBacktestRoutes)
+app.use('/api/ticker-lists', tickerListsRoutes)
 
 // Initialize database on startup
 let dbInitialized = false

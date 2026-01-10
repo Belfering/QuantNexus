@@ -115,7 +115,9 @@
       "Bash(exit 0)",
       "Bash(pip install:*)",
       "Bash(cmd /c \"taskkill /F /PID 39612\")",
-      "Bash(npm run db:push:*)"
+      "Bash(npm run db:push:*)",
+      "Bash(Get-Content \"C:\\\\Users\\\\Trader\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Trader-Desktop-atlas-forge\\\\tasks\\\\b2038c3.output\" -Tail 50)",
+      "Bash(ping:*)"
     ]
   }
 }

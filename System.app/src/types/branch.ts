@@ -6,6 +6,7 @@ export interface BranchCombination {
   id: string
   parameterValues: Record<string, number> // Map of parameter ID to value (e.g., {"node-1-cond-1-window": 14})
   label: string // Human-readable label (e.g., "RSI(10) > 70, EMA(20)")
+  tickerSubstitutions?: Record<string, string> // Map of ticker list ID to selected ticker (Phase 3: Custom Ticker Lists)
 }
 
 // Status of a single branch execution

@@ -27,6 +27,11 @@ export type ConditionLine = {
   dateMonth?: number   // 1-12 for month (e.g., 1 = January)
   dateDay?: number     // 1-31 for day of month
   dateTo?: { month: number; day: number } // End of date range (when expanded)
+  // Ticker list references (Phase 3: Custom Ticker Lists)
+  tickerListId?: string
+  tickerListName?: string
+  rightTickerListId?: string
+  rightTickerListName?: string
 }
 
 export type NumberedItem = {
@@ -72,6 +77,10 @@ export type FlowNode = {
   scaleTicker?: string
   scaleFrom?: number
   scaleTo?: number
+  // Position node ticker list mode (Phase 3: Custom Ticker Lists)
+  positionMode?: 'manual' | 'ticker_list' | 'match_indicator'
+  positionTickerListId?: string
+  positionTickerListName?: string
 }
 
 export type CallChain = {

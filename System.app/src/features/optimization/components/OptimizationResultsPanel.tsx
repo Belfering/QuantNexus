@@ -19,10 +19,17 @@ export function OptimizationResultsPanel() {
 
   const [isRenaming, setIsRenaming] = useState(false)
   const [newName, setNewName] = useState('')
+  const [showPassingOnly, setShowPassingOnly] = useState(true)
 
   const selectedJob = useMemo(() => {
     return jobs.find(j => j.id === selectedJobId)
   }, [jobs, selectedJobId])
+
+  // Filter results based on passing status
+  const filteredResults = useMemo(() => {
+    if (!showPassingOnly) return results
+    return results.filter(r => r.passed)
+  }, [results, showPassingOnly])
 
   const handleLoadBranch = (result: typeof results[0]) => {
     if (!activeBot || !current) {
@@ -216,6 +223,15 @@ export function OptimizationResultsPanel() {
             {/* Actions */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
+                <label className="text-sm">
+                  <input
+                    type="checkbox"
+                    checked={showPassingOnly}
+                    onChange={(e) => setShowPassingOnly(e.target.checked)}
+                    className="mr-2"
+                  />
+                  Show passing only
+                </label>
                 <label className="text-sm">Sort by:</label>
                 <select
                   value={sortBy}
@@ -262,8 +278,10 @@ export function OptimizationResultsPanel() {
             {/* Table */}
             {resultsLoading ? (
               <div className="text-center text-muted-foreground py-8">Loading results...</div>
-            ) : results.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">No results found for this job.</div>
+            ) : filteredResults.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                {showPassingOnly ? 'No passing branches found.' : 'No results found for this job.'}
+              </div>
             ) : (
               <div className="overflow-auto max-h-[600px] border border-border rounded-lg">
                 <table className="w-full text-sm">
@@ -300,7 +318,7 @@ export function OptimizationResultsPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {results.map((result, idx) => (
+                    {filteredResults.map((result, idx) => (
                       <tr
                         key={result.id}
                         className={`border-t border-border ${idx % 2 === 0 ? 'bg-background' : 'bg-muted/20'} hover:bg-muted/40`}
@@ -352,7 +370,10 @@ export function OptimizationResultsPanel() {
 
             {/* Result count */}
             <div className="text-sm text-muted-foreground text-center">
-              Showing {results.length} result{results.length !== 1 ? 's' : ''}
+              Showing {filteredResults.length} result{filteredResults.length !== 1 ? 's' : ''}
+              {showPassingOnly && results.length !== filteredResults.length && (
+                <span> ({filteredResults.length} passing / {results.length} total)</span>
+              )}
             </div>
           </div>
         )}

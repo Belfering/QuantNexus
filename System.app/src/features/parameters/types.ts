@@ -20,7 +20,7 @@ export interface VisualParameter {
 
 export interface ParameterRange {
   id: string
-  type: 'period' | 'threshold'
+  type: 'period' | 'threshold' | 'ticker_list'
   nodeId: string
   conditionId?: string
   path: string
@@ -29,6 +29,10 @@ export interface ParameterRange {
   min: number
   max: number
   step: number
+  // Ticker list fields (Phase 3: Custom Ticker Lists)
+  tickerListId?: string
+  tickerListName?: string
+  tickers?: string[]
 }
 
 // Options for metric dropdown

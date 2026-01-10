@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { USED_TICKERS_DATALIST_ID } from '@/constants'
 import { OptimizationResultsPanel } from '@/features/optimization/components/OptimizationResultsPanel'
+import { TickerListsPanel } from '@/features/forge/components/TickerListsPanel'
 import type {
   FlowNode,
   CallChain,
@@ -764,6 +765,12 @@ export function ForgeTab({
             Builder
           </Button>
           <Button
+            variant={forgeSubtab === 'Ticker Lists' ? 'accent' : 'secondary'}
+            onClick={() => setForgeSubtab('Ticker Lists')}
+          >
+            Ticker Lists
+          </Button>
+          <Button
             variant={forgeSubtab === 'Results' ? 'accent' : 'secondary'}
             onClick={() => setForgeSubtab('Results')}
           >
@@ -1165,6 +1172,8 @@ export function ForgeTab({
           </div>
         )}
           </>
+        ) : forgeSubtab === 'Ticker Lists' ? (
+          <TickerListsPanel />
         ) : (
           <OptimizationResultsPanel />
         )}

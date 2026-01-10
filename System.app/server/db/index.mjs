@@ -343,6 +343,18 @@ export function initializeDatabase() {
       created_at INTEGER DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS ticker_lists (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      tags TEXT,
+      tickers TEXT NOT NULL,
+      metadata TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_id);
     CREATE INDEX IF NOT EXISTS idx_bots_visibility ON bots(visibility);
@@ -360,6 +372,8 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_session_user ON user_sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_session_token ON user_sessions(refresh_token_hash);
     CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_accounts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_ticker_lists_user ON ticker_lists(user_id);
+    CREATE INDEX IF NOT EXISTS idx_ticker_lists_name ON ticker_lists(user_id, name);
     CREATE INDEX IF NOT EXISTS idx_oauth_provider ON oauth_accounts(provider, provider_account_id);
     CREATE INDEX IF NOT EXISTS idx_opt_jobs_bot ON optimization_jobs(bot_id);
     CREATE INDEX IF NOT EXISTS idx_opt_jobs_status ON optimization_jobs(status);
@@ -1367,6 +1381,116 @@ export async function updateCallChain(id, ownerId, data) {
 
 export async function deleteCallChain(id, ownerId) {
   const result = sqlite.prepare('DELETE FROM call_chains WHERE id = ? AND owner_id = ?').run(id, ownerId)
+  return result.changes > 0
+}
+
+// ============================================
+// TICKER LIST OPERATIONS
+// ============================================
+
+/**
+ * Get all ticker lists for a user
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} Array of ticker lists
+ */
+export async function getTickerListsByUser(userId) {
+  const lists = sqlite.prepare(`
+    SELECT * FROM ticker_lists WHERE user_id = ? ORDER BY created_at DESC
+  `).all(userId)
+
+  return lists.map(list => ({
+    id: list.id,
+    userId: list.user_id,
+    name: list.name,
+    description: list.description,
+    tags: JSON.parse(list.tags || '[]'),
+    tickers: JSON.parse(list.tickers),
+    metadata: JSON.parse(list.metadata || '{}'),
+    createdAt: list.created_at,
+    updatedAt: list.updated_at
+  }))
+}
+
+/**
+ * Create a new ticker list
+ * @param {Object} data - Ticker list data
+ * @returns {Promise<string>} Created ticker list ID
+ */
+export async function createTickerList(data) {
+  const id = generateId()
+  const now = Date.now()
+
+  sqlite.prepare(`
+    INSERT INTO ticker_lists (id, user_id, name, description, tags, tickers, metadata, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    data.userId,
+    data.name,
+    data.description || null,
+    JSON.stringify(data.tags || []),
+    JSON.stringify(data.tickers),
+    JSON.stringify(data.metadata || {}),
+    now,
+    now
+  )
+
+  return id
+}
+
+/**
+ * Update an existing ticker list
+ * @param {string} id - Ticker list ID
+ * @param {string} userId - User ID (for ownership verification)
+ * @param {Object} data - Updated data
+ * @returns {Promise<string|null>} Ticker list ID or null if not found
+ */
+export async function updateTickerList(id, userId, data) {
+  // Verify ownership
+  const existing = sqlite.prepare('SELECT id FROM ticker_lists WHERE id = ? AND user_id = ?').get(id, userId)
+  if (!existing) return null
+
+  const now = Date.now()
+  const updates = []
+  const values = []
+
+  if (data.name !== undefined) {
+    updates.push('name = ?')
+    values.push(data.name)
+  }
+  if (data.description !== undefined) {
+    updates.push('description = ?')
+    values.push(data.description)
+  }
+  if (data.tags !== undefined) {
+    updates.push('tags = ?')
+    values.push(JSON.stringify(data.tags))
+  }
+  if (data.tickers !== undefined) {
+    updates.push('tickers = ?')
+    values.push(JSON.stringify(data.tickers))
+  }
+  if (data.metadata !== undefined) {
+    updates.push('metadata = ?')
+    values.push(JSON.stringify(data.metadata))
+  }
+
+  updates.push('updated_at = ?')
+  values.push(now)
+  values.push(id)
+
+  sqlite.prepare(`UPDATE ticker_lists SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+  return id
+}
+
+/**
+ * Delete a ticker list
+ * @param {string} id - Ticker list ID
+ * @param {string} userId - User ID (for ownership verification)
+ * @returns {Promise<boolean>} True if deleted, false if not found
+ */
+export async function deleteTickerList(id, userId) {
+  const result = sqlite.prepare('DELETE FROM ticker_lists WHERE id = ? AND user_id = ?').run(id, userId)
   return result.changes > 0
 }
 
