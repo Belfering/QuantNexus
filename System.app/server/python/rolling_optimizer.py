@@ -393,16 +393,26 @@ class RollingOptimizer:
 
         # Step 3: Calculate start year (earliest ticker + warmup)
         # Enforce 1993 minimum year to avoid unreliable pre-1993 data
-        earliest_ticker_year = max(1993, min(d.year for d in ticker_start_dates.values()))
-        is_start_year = earliest_ticker_year + min_warmup_years
+        earliest_ticker_date = min(ticker_start_dates.values())
+        earliest_ticker_year = max(1993, earliest_ticker_date.year)
+
+        # Check if earliest ticker starts exactly on January 1st
+        # If not, we need an extra year to ensure 3 FULL years of warm-up
+        is_january_1st = (earliest_ticker_date.month == 1 and earliest_ticker_date.day == 1)
+        extra_year = 0 if is_january_1st else 1
+
+        is_start_year = earliest_ticker_year + min_warmup_years + extra_year
 
         print(f"[RollingOptimizer] Earliest ticker year: {earliest_ticker_year}", file=sys.stderr)
-        print(f"[RollingOptimizer] IS start year: {is_start_year}", file=sys.stderr)
+        print(f"[RollingOptimizer] Earliest ticker date: {earliest_ticker_date.strftime('%Y-%m-%d')}", file=sys.stderr)
+        print(f"[RollingOptimizer] Starts on Jan 1st: {is_january_1st}", file=sys.stderr)
+        print(f"[RollingOptimizer] IS start year: {is_start_year} (warm-up + {'0' if is_january_1st else '1'} overflow year)", file=sys.stderr)
         print(f"[RollingOptimizer] Current year: {current_year}", file=sys.stderr)
 
-        # Step 4: Generate year range for splitting
-        year_range = list(range(is_start_year, current_year + 1))
-        print(f"[RollingOptimizer] Will calculate metrics for {len(year_range)} years: {is_start_year}-{current_year}", file=sys.stderr)
+        # Step 4: Generate year range for splitting - include ALL years from earliest ticker year
+        # This includes both warm-up years AND IS years in the metrics
+        year_range = list(range(earliest_ticker_year, current_year + 1))
+        print(f"[RollingOptimizer] Will calculate metrics for {len(year_range)} years: {earliest_ticker_year}-{current_year}", file=sys.stderr)
 
         # Step 5: Generate parameter branches from tree
         tree = config.get('tree')
