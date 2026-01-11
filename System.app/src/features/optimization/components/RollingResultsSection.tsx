@@ -99,10 +99,22 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
     return `${Math.floor(seconds)}s`
   }
 
-  const formatMetric = (value: number | null, isPercentage = true) => {
+  const formatMetric = (value: number | null, metricKey: string) => {
     if (value == null) return '-'
-    if (isPercentage) return `${(value * 100).toFixed(1)}%`
-    return value.toFixed(2)
+
+    // Normalize metric key: convert to lowercase and replace spaces with underscores
+    const normalizedKey = metricKey.toLowerCase().replace(/\s+/g, '_')
+
+    // Ratios (Sharpe, Calmar, Sortino, Treynor) should be displayed as raw numbers
+    const ratioMetrics = ['sharpe_ratio', 'calmar_ratio', 'sortino_ratio', 'treynor_ratio']
+    const isRatio = ratioMetrics.includes(normalizedKey)
+
+    if (isRatio) {
+      return value.toFixed(2)
+    } else {
+      // Percentages (CAGR, Total Return, Max Drawdown, Win Rate)
+      return `${(value * 100).toFixed(1)}%`
+    }
   }
 
   // Format the rank by metric name for display
@@ -150,13 +162,22 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
   })
 
   // Convert parameterValues to node arrays (matching chronological structure)
-  const branchesWithNodes = result.branches.map(branch => {
+  const branchesWithNodes = result.branches.map((branch, idx) => {
+    // Debug: Log parameter values for first branch
+    if (idx === 0) {
+      console.log('[RollingResults] First branch parameterValues:', branch.parameterValues)
+      console.log('[RollingResults] parameterValues keys:', Object.keys(branch.parameterValues || {}))
+    }
+
     // Extract node IDs in depth-first order from tree structure
     let nodeIds: string[]
     if (result.job.treeJson && typeof result.job.treeJson === 'string') {
       try {
         const tree = JSON.parse(result.job.treeJson)
         nodeIds = extractNodeIds(tree)
+        if (idx === 0) {
+          console.log('[RollingResults] Extracted nodeIds from tree:', nodeIds)
+        }
       } catch (e) {
         console.error('Failed to parse tree JSON:', e)
         // Fallback to alphabetical sort
@@ -171,6 +192,11 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
     const nodes = nodeIds
       .map(nodeId => branch.parameterValues[nodeId])
       .filter(Boolean) // Remove any undefined entries
+
+    if (idx === 0) {
+      console.log('[RollingResults] Mapped nodes for first branch:', nodes)
+    }
+
     return { ...branch, nodes }
   })
 
@@ -316,7 +342,7 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                           }`}
                           title={isBest && value != null ? 'Best branch this year' : undefined}
                         >
-                          {formatMetric(value)}
+                          {formatMetric(value, result.job.splitConfig.rankBy)}
                         </td>
                       )
                     })}

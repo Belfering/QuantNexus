@@ -14,8 +14,11 @@ interface RangeConfigPopoverProps {
 
 export function RangeConfigPopover({ parameter, onSave, onDisable }: RangeConfigPopoverProps) {
   const current = parameter.currentValue as number
-  const [min, setMin] = useState(parameter.min || current - 5)
-  const [max, setMax] = useState(parameter.max || current + 5)
+
+  // Always initialize from current value, not from stale saved ranges
+  // If saved ranges exist and are centered around a different value, they're stale
+  const [min, setMin] = useState(current - 5)
+  const [max, setMax] = useState(current + 5)
 
   const step = 1 // Fixed step value
   const branchCount = Math.floor((max - min) / step) + 1

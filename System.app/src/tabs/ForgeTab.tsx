@@ -932,7 +932,12 @@ export function ForgeTab({
 
   // Parameter ranges for optimization (stored in bot session)
   const botStore = useBotStore()
-  const parameterRanges = activeBot?.parameterRanges ?? []
+  // ROLLING ONLY: Use rollingParameterRanges when under rolling node for display
+  // This ensures saved ranges flow back to the UI after "Save Range" is clicked
+  const currentStrategy = activeBot?.splitConfig?.strategy || 'chronological'
+  const parameterRanges = currentStrategy === 'rolling'
+    ? (activeBot?.rollingParameterRanges ?? [])
+    : (activeBot?.parameterRanges ?? [])  // Chronological unchanged
 
   // Track flowchart container position for floating scrollbar
   useEffect(() => {
