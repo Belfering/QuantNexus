@@ -53,6 +53,7 @@ export interface NumberedBodyProps {
   parameterRanges?: ParameterRange[]
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
   isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
+  underRollingNode?: boolean // Whether this node is under a Rolling node
 }
 
 export const NumberedBody = ({
@@ -73,6 +74,7 @@ export const NumberedBody = ({
   parameterRanges,
   onUpdateRange,
   isForgeMode,
+  underRollingNode,
 }: NumberedBodyProps) => {
   const [expandedLadderRows, setExpandedLadderRows] = useState<Set<string>>(() => new Set())
   const [showNConfig, setShowNConfig] = useState(false)
@@ -118,6 +120,7 @@ export const NumberedBody = ({
       parameterRanges={parameterRanges}
       nodeId={node.id}
       onUpdateRange={onUpdateRange}
+      underRollingNode={underRollingNode}
     />
   )
 

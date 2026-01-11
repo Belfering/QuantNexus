@@ -16,6 +16,7 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
   const minYears = splitConfig?.minYears ?? 5
   const rollingStartYear = splitConfig?.rollingStartYear ?? 1996
   const minWarmUpYears = splitConfig?.minWarmUpYears ?? 3
+  const rankBy = splitConfig?.rankBy ?? 'Sharpe Ratio'
 
   // Initialize splitConfig with defaults if it's undefined (for existing bots)
   useEffect(() => {
@@ -37,7 +38,8 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
       rollingWindowPeriod: newStrategy === 'rolling' ? 'monthly' : undefined,
       minYears: newStrategy === 'chronological' ? 5 : undefined,
       rollingStartYear: newStrategy === 'rolling' ? 1996 : undefined,
-      minWarmUpYears: newStrategy === 'rolling' ? 3 : undefined
+      minWarmUpYears: newStrategy === 'rolling' ? 3 : undefined,
+      rankBy: newStrategy === 'rolling' ? 'Sharpe Ratio' : undefined
     })
   }
 
@@ -83,6 +85,15 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
       enabled: true,
       strategy,
       minWarmUpYears: years
+    })
+  }
+
+  const handleRankByChange = (metric: string) => {
+    onSplitConfigChange({
+      ...splitConfig,
+      enabled: true,
+      strategy,
+      rankBy: metric
     })
   }
 
@@ -136,21 +147,49 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
 
         {/* Rolling Window Period */}
         {strategy === 'rolling' && (
-          <div>
-            <label htmlFor="rolling-window" className="text-xs text-muted block mb-1">
-              Rolling Window Period
-            </label>
-            <select
-              id="rolling-window"
-              value={rollingWindowPeriod}
-              onChange={(e) => handleRollingWindowChange(e.target.value as RollingWindowPeriod)}
-              className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
-            >
-              <option value="yearly">Yearly</option>
-              <option value="monthly">Monthly</option>
-              <option value="daily">Daily</option>
-            </select>
-          </div>
+          <>
+            <div>
+              <label htmlFor="rolling-window" className="text-xs text-muted block mb-1">
+                Rolling Window Period
+              </label>
+              <select
+                id="rolling-window"
+                value={rollingWindowPeriod}
+                onChange={(e) => handleRollingWindowChange(e.target.value as RollingWindowPeriod)}
+                className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
+              >
+                <option value="yearly">Yearly</option>
+                <option value="monthly">Monthly</option>
+                <option value="daily">Daily</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="rank-by" className="text-xs text-muted block mb-1">
+                Rank By
+              </label>
+              <select
+                id="rank-by"
+                value={rankBy}
+                onChange={(e) => handleRankByChange(e.target.value)}
+                className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
+              >
+                <option value="CAGR">CAGR</option>
+                <option value="Max Drawdown">Max Drawdown</option>
+                <option value="Calmar Ratio">Calmar Ratio</option>
+                <option value="Sharpe Ratio">Sharpe Ratio</option>
+                <option value="Sortino Ratio">Sortino Ratio</option>
+                <option value="Treynor Ratio">Treynor Ratio</option>
+                <option value="Beta">Beta</option>
+                <option value="Volatility">Volatility</option>
+                <option value="Win Rate">Win Rate</option>
+                <option value="Avg Turnover">Avg Turnover</option>
+                <option value="Avg Holdings">Avg Holdings</option>
+                <option value="Time in Market">Time in Market</option>
+                <option value="TIM Adjusted Returns">TIM Adjusted Returns</option>
+              </select>
+            </div>
+          </>
         )}
 
         {/* Strategy Description */}

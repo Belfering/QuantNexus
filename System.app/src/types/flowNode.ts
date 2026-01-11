@@ -3,7 +3,7 @@
 
 import type { MetricChoice, ComparatorChoice, RankChoice } from './indicators'
 
-export type BlockKind = 'basic' | 'function' | 'indicator' | 'numbered' | 'position' | 'call' | 'altExit' | 'scaling'
+export type BlockKind = 'basic' | 'function' | 'indicator' | 'numbered' | 'position' | 'call' | 'altExit' | 'scaling' | 'rolling'
 export type SlotId = 'next' | 'then' | 'else' | `ladder-${number}`
 export type PositionChoice = string
 export type WeightMode = 'equal' | 'defined' | 'inverse' | 'pro' | 'capped'
@@ -81,6 +81,9 @@ export type FlowNode = {
   positionMode?: 'manual' | 'ticker_list' | 'match_indicator'
   positionTickerListId?: string
   positionTickerListName?: string
+  // Rolling node properties
+  rollingWindow?: 'daily' | 'monthly' | 'yearly'
+  rankBy?: string  // Metric name for ranking branches in rolling optimization
 }
 
 export type CallChain = {
@@ -119,4 +122,5 @@ export const SLOT_ORDER: Record<BlockKind, SlotId[]> = {
   call: [],
   altExit: ['then', 'else'],
   scaling: ['then', 'else'],
+  rolling: ['next'],
 }

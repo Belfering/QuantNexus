@@ -347,6 +347,21 @@ export function initializeDatabase() {
       created_at INTEGER DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS rolling_optimization_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id TEXT NOT NULL,
+      bot_name TEXT NOT NULL,
+      split_config TEXT NOT NULL,
+      valid_tickers TEXT NOT NULL,
+      ticker_start_dates TEXT,
+      oos_period_count INTEGER NOT NULL,
+      selected_branches TEXT NOT NULL,
+      oos_trades TEXT NOT NULL,
+      oos_metrics TEXT NOT NULL,
+      elapsed_seconds REAL NOT NULL,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
     CREATE TABLE IF NOT EXISTS ticker_lists (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -362,6 +377,7 @@ export function initializeDatabase() {
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_id);
     CREATE INDEX IF NOT EXISTS idx_bots_visibility ON bots(visibility);
+    CREATE INDEX IF NOT EXISTS idx_rolling_results_bot ON rolling_optimization_results(bot_id);
     CREATE INDEX IF NOT EXISTS idx_bots_nexus ON bots(visibility, deleted_at) WHERE visibility = 'nexus';
     CREATE INDEX IF NOT EXISTS idx_metrics_cagr ON bot_metrics(cagr DESC);
     CREATE INDEX IF NOT EXISTS idx_metrics_calmar ON bot_metrics(calmar_ratio DESC);

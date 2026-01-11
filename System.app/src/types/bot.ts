@@ -48,6 +48,23 @@ export type Watchlist = {
   isDefault?: boolean
 }
 
+export type RollingOptimizationResult = {
+  validTickers: string[]
+  tickerStartDates?: Record<string, string>
+  oosPeriodCount: number
+  selectedBranches: Array<{
+    oosPeriod: [string, string]
+    branchId: number
+    params: Record<string, any>
+    isMetric: number | null
+    oosMetrics: Record<string, any>
+  }>
+  oosEquityCurve: Array<[number, number]>  // [timestamp, equity] pairs
+  oosMetrics: Record<string, any>
+  elapsedSeconds: number
+  branchCount?: number  // Total branches tested per period
+}
+
 export type BotSession = {
   id: string
   history: FlowNode[]
@@ -59,6 +76,7 @@ export type BotSession = {
   parameterRanges: ParameterRange[] // Optimization ranges for parameters
   splitConfig?: ISOOSSplitConfig // IS/OOS split configuration for optimization
   branchGenerationJob?: BranchGenerationJob // Current branch generation job state
+  rollingResult?: RollingOptimizationResult // Rolling optimization results
   tabContext: 'Forge' | 'Model' // Which tab this bot belongs to
 }
 

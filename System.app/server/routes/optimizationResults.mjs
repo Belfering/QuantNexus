@@ -543,4 +543,232 @@ router.get('/:jobId/csv', (req, res) => {
   }
 })
 
+/**
+ * POST /api/optimization/rolling
+ * Run rolling optimization with expanding window walk-forward
+ */
+router.get('/rolling', async (req, res) => {
+  try {
+    // Parse query params (EventSource only supports GET)
+    const botId = req.query.botId
+    const tree = JSON.parse(req.query.tree || '{}')
+    const tickers = JSON.parse(req.query.tickers || '[]')
+    const splitConfig = JSON.parse(req.query.splitConfig || '{}')
+    const parameterRanges = JSON.parse(req.query.parameterRanges || '[]')
+
+    console.log('[Optimization] GET /rolling - Starting rolling optimization')
+    console.log('  Bot ID:', botId)
+    console.log('  Tickers:', tickers?.length || 0)
+    console.log('  Split Config:', JSON.stringify(splitConfig))
+    console.log('  Parameter Ranges:', parameterRanges?.length || 0)
+
+    // Validate inputs
+    if (!botId || !tree || !tickers || !splitConfig) {
+      return res.status(400).json({ error: 'Missing required fields: botId, tree, tickers, splitConfig' })
+    }
+
+    if (splitConfig.strategy !== 'rolling') {
+      return res.status(400).json({ error: 'Split config strategy must be "rolling"' })
+    }
+
+    // Check for Rolling node in tree
+    const hasRollingNode = (node) => {
+      if (node.kind === 'rolling') return true
+      if (node.children) {
+        for (const slot in node.children) {
+          const children = node.children[slot]
+          if (Array.isArray(children)) {
+            for (const child of children) {
+              if (child && hasRollingNode(child)) return true
+            }
+          }
+        }
+      }
+      return false
+    }
+
+    if (!hasRollingNode(tree)) {
+      return res.status(400).json({ error: 'Tree must contain a Rolling node' })
+    }
+
+    // Prepare config for Python rolling optimizer
+    const config = {
+      tickers,
+      tree,
+      splitConfig,
+      parameterRanges: parameterRanges || [],
+      dataDir: process.env.PARQUET_DIR || 'ticker-data/data/ticker_data_parquet'
+    }
+
+    // Call Python rolling optimizer
+    const { spawn } = await import('child_process')
+    const { fileURLToPath } = await import('url')
+    const { dirname, join } = await import('path')
+
+    const __filename = fileURLToPath(import.meta.url)
+    const __dirname = dirname(__filename)
+    const pythonScript = join(__dirname, '../python/rolling_optimizer.py')
+
+    console.log('[Optimization] Spawning Python rolling optimizer...')
+
+    // Set headers for Server-Sent Events
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+
+    const python = spawn('python', [pythonScript, JSON.stringify(config)])
+
+    let stdout = ''
+    let stderr = ''
+
+    python.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
+
+    python.stderr.on('data', (data) => {
+      stderr += data.toString()
+      const output = data.toString().trim()
+
+      // Log stderr in real-time for progress tracking
+      console.error('[Rolling Optimizer]', output)
+
+      // Try to parse as JSON progress update
+      try {
+        const parsed = JSON.parse(output)
+        if (parsed.type === 'progress') {
+          // Send progress update to client via SSE
+          res.write(`data: ${JSON.stringify(parsed)}\n\n`)
+        }
+      } catch (e) {
+        // Not JSON, ignore (regular log message)
+      }
+    })
+
+    python.on('close', (code) => {
+      if (code !== 0) {
+        console.error('[Optimization] Rolling optimizer failed with code:', code)
+        console.error('[Optimization] Stderr:', stderr)
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: 'Rolling optimization failed',
+          stderr: stderr.split('\n').slice(-10).join('\n')
+        })}\n\n`)
+        res.end()
+        return
+      }
+
+      // Check if stdout is empty
+      if (!stdout || stdout.trim() === '') {
+        console.error('[Optimization] Rolling optimizer returned empty output')
+        console.error('[Optimization] Stderr:', stderr)
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: 'Rolling optimizer returned no output',
+          stderr: stderr.split('\n').slice(-10).join('\n')
+        })}\n\n`)
+        res.end()
+        return
+      }
+
+      try {
+        console.log('[Optimization] Parsing stdout:', stdout.substring(0, 200) + '...')
+        const result = JSON.parse(stdout)
+
+        if (!result.success) {
+          console.error('[Optimization] Rolling optimizer returned error:', result.error)
+          res.write(`data: ${JSON.stringify({
+            type: 'error',
+            error: result.error,
+            details: result
+          })}\n\n`)
+          res.end()
+          return
+        }
+
+        console.log('[Optimization] Rolling optimization complete')
+        console.log('  Valid Tickers:', result.validTickers?.length || 0)
+        console.log('  OOS Periods:', result.oosPeriodCount || 0)
+        console.log('  Selected Branches:', result.selectedBranches?.length || 0)
+        console.log('  OOS Equity Points:', result.oosEquityCurve?.length || 0)
+        console.log('  Branches per Period:', result.branchCount || 'N/A')
+
+        // Save rolling results to database
+        try {
+          const stmt = sqlite.prepare(`
+            INSERT INTO rolling_optimization_results (
+              bot_id, bot_name, split_config, valid_tickers, ticker_start_dates,
+              oos_period_count, selected_branches, oos_trades, oos_metrics, elapsed_seconds
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+
+          const info = stmt.run(
+            botId,
+            'Rolling Optimization', // TODO: Get actual bot name
+            JSON.stringify(splitConfig),
+            JSON.stringify(result.validTickers),
+            JSON.stringify(result.tickerStartDates || {}),
+            result.oosPeriodCount,
+            JSON.stringify(result.selectedBranches),
+            JSON.stringify(result.oosEquityCurve || []),  // Store equity curve instead of trades
+            JSON.stringify(result.oosMetrics),
+            result.elapsedSeconds
+          )
+
+          console.log('[Optimization] Saved rolling results to database with ID:', info.lastInsertRowid)
+        } catch (dbError) {
+          console.error('[Optimization] Failed to save rolling results to database:', dbError)
+          // Don't fail the request, just log the error
+        }
+
+        // Send final result via SSE
+        res.write(`data: ${JSON.stringify({
+          type: 'complete',
+          success: true,
+          results: {
+            validTickers: result.validTickers,
+            tickerStartDates: result.tickerStartDates,
+            oosPeriodCount: result.oosPeriodCount,
+            selectedBranches: result.selectedBranches,
+            oosEquityCurve: result.oosEquityCurve,
+            oosMetrics: result.oosMetrics,
+            elapsedSeconds: result.elapsedSeconds,
+            branchCount: result.branchCount
+          }
+        })}\n\n`)
+        res.end()
+      } catch (parseError) {
+        console.error('[Optimization] Failed to parse Python output:', parseError)
+        console.error('[Optimization] Stdout:', stdout)
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: 'Failed to parse optimizer output',
+          stdout: stdout.substring(0, 1000)
+        })}\n\n`)
+        res.end()
+      }
+    })
+
+    python.on('error', (error) => {
+      console.error('[Optimization] Python spawn error:', error)
+      res.write(`data: ${JSON.stringify({
+        type: 'error',
+        error: 'Failed to start optimizer process'
+      })}\n\n`)
+      res.end()
+    })
+
+  } catch (error) {
+    console.error('[Optimization] Rolling optimization error:', error)
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Rolling optimization failed: ' + error.message })
+    } else {
+      res.write(`data: ${JSON.stringify({
+        type: 'error',
+        error: 'Rolling optimization failed: ' + error.message
+      })}\n\n`)
+      res.end()
+    }
+  }
+})
+
 export default router

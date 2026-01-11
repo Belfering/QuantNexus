@@ -83,6 +83,7 @@ export interface CardProps {
   tickerOptions: string[]
   tickerLists?: TickerList[] // Forge-only: ticker lists for optimization
   isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
+  underRollingNode?: boolean // Whether this node is a descendant of a Rolling node
 
   // Tree manipulation
   onAdd: (parentId: string, slot: SlotId, index: number, kind: BlockKind) => void
@@ -144,6 +145,9 @@ export interface CardProps {
 
   // Scaling handlers
   onUpdateScaling: (id: string, updates: ScalingUpdate) => void
+
+  // Rolling handlers
+  onUpdateRolling: (id: string, updates: { rollingWindow?: string; rankBy?: string }) => void
 
   // Find/Replace highlighting
   highlightedInstance?: TickerInstance | null

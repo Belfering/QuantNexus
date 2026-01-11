@@ -11,6 +11,7 @@ import { IndicatorBody } from './IndicatorBody'
 import { NumberedBody } from './NumberedBody'
 import { AltExitBody } from './AltExitBody'
 import { ScalingBody } from './ScalingBody'
+import { RollingBody } from './RollingBody'
 import { DefaultBody } from './DefaultBody'
 import { buildLines } from './buildLines'
 import type { FlowNode, SlotId } from '../../../../types'
@@ -41,6 +42,7 @@ export const NodeCard = ({
   tickerOptions,
   tickerLists,
   isForgeMode,
+  underRollingNode,
   onAdd,
   onAppend,
   onRemoveSlotEntry,
@@ -82,6 +84,7 @@ export const NodeCard = ({
   onUpdateEntryCondition,
   onUpdateExitCondition,
   onUpdateScaling,
+  onUpdateRolling,
   highlightedInstance,
   enabledOverlays,
   onToggleOverlay,
@@ -233,6 +236,7 @@ export const NodeCard = ({
                     tickerOptions={tickerOptions}
                     tickerLists={tickerLists}
                     isForgeMode={isForgeMode}
+                    underRollingNode={node.kind === 'rolling' || underRollingNode}
                     onAdd={onAdd}
                     onAppend={onAppend}
                     onRemoveSlotEntry={onRemoveSlotEntry}
@@ -274,6 +278,7 @@ export const NodeCard = ({
                     onUpdateEntryCondition={onUpdateEntryCondition}
                     onUpdateExitCondition={onUpdateExitCondition}
                     onUpdateScaling={onUpdateScaling}
+                    onUpdateRolling={onUpdateRolling}
                     highlightedInstance={highlightedInstance}
                     enabledOverlays={enabledOverlays}
                     onToggleOverlay={onToggleOverlay}
@@ -361,6 +366,7 @@ export const NodeCard = ({
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
             isForgeMode={isForgeMode}
+            underRollingNode={underRollingNode}
           />
         )
 
@@ -383,6 +389,7 @@ export const NodeCard = ({
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
             isForgeMode={isForgeMode}
+            underRollingNode={underRollingNode}
           />
         )
 
@@ -406,6 +413,7 @@ export const NodeCard = ({
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
             isForgeMode={isForgeMode}
+            underRollingNode={underRollingNode}
           />
         )
 
@@ -424,6 +432,16 @@ export const NodeCard = ({
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
             isForgeMode={isForgeMode}
+            underRollingNode={underRollingNode}
+          />
+        )
+
+      case 'rolling':
+        return (
+          <RollingBody
+            node={node}
+            onUpdateRolling={onUpdateRolling}
+            renderSlot={renderSlot}
           />
         )
 
@@ -443,6 +461,7 @@ export const NodeCard = ({
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
+            underRollingNode={underRollingNode}
           />
         )
     }

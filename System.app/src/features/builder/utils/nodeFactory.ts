@@ -28,7 +28,9 @@ export const createNode = (kind: BlockKind): FlowNode => {
                   ? 'Alt Exit'
                   : kind === 'scaling'
                     ? 'Scaling'
-                    : 'Basic',
+                    : kind === 'rolling'
+                      ? 'Rolling'
+                      : 'Basic',
     children: {},
     weighting: 'equal',
     weightingThen: needsThenElseWeighting ? 'equal' : undefined,
@@ -121,6 +123,9 @@ export const createNode = (kind: BlockKind): FlowNode => {
     scaleTicker: kind === 'scaling' ? 'SPY' : undefined,
     scaleFrom: kind === 'scaling' ? 30 : undefined,
     scaleTo: kind === 'scaling' ? 70 : undefined,
+    // Rolling properties
+    rollingWindow: kind === 'rolling' ? 'monthly' : undefined,
+    rankBy: kind === 'rolling' ? 'Sharpe Ratio' : undefined,
   }
   SLOT_ORDER[kind].forEach((slot) => {
     base.children[slot] = [null]

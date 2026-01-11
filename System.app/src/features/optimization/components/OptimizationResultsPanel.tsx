@@ -10,6 +10,8 @@ import { useBotStore } from '@/stores/useBotStore'
 import { useTreeSync } from '@/hooks/useTreeSync'
 import { applyBranchToTree } from '../services/branchGenerator'
 import { extractNodeParameters } from '../services/nodeExtractor'
+import { RollingResultsSection } from './RollingResultsSection'
+import type { RollingResultsSectionProps } from './RollingResultsSection'
 
 export function OptimizationResultsPanel() {
   const { jobs, loading: jobsLoading, error: jobsError, selectedJobId, setSelectedJobId, refresh } = useOptimizationJobs()
@@ -23,6 +25,9 @@ export function OptimizationResultsPanel() {
   const [isRenaming, setIsRenaming] = useState(false)
   const [newName, setNewName] = useState('')
   const [showPassingOnly, setShowPassingOnly] = useState(true)
+
+  // Get rolling result from active bot
+  const rollingResult = activeBot?.rollingResult || null
 
   const selectedJob = useMemo(() => {
     return jobs.find(j => j.id === selectedJobId)
@@ -127,6 +132,20 @@ export function OptimizationResultsPanel() {
     if (hours > 0) return `${hours}h ${minutes % 60}m`
     if (minutes > 0) return `${minutes}m ${seconds % 60}s`
     return `${seconds}s`
+  }
+
+  // If rolling result exists, display it
+  if (rollingResult) {
+    return (
+      <RollingResultsSection
+        result={rollingResult}
+        onClose={() => {
+          if (activeBot) {
+            useBotStore.getState().setRollingResult(activeBot.id, undefined)
+          }
+        }}
+      />
+    )
   }
 
   if (jobsLoading) {

@@ -28,6 +28,7 @@ export interface AltExitBodyProps {
   parameterRanges?: ParameterRange[]
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
   isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
+  underRollingNode?: boolean // Whether this node is under a Rolling node
 }
 
 export const AltExitBody = ({
@@ -49,6 +50,7 @@ export const AltExitBody = ({
   parameterRanges,
   onUpdateRange,
   isForgeMode,
+  underRollingNode,
 }: AltExitBodyProps) => {
   const weightingThen = node.weightingThen ?? node.weighting
   const weightingElse = node.weightingElse ?? node.weighting
@@ -91,6 +93,7 @@ export const AltExitBody = ({
                 nodeId={node.id}
                 isForgeMode={isForgeMode}
                 onUpdateRange={onUpdateRange}
+                underRollingNode={underRollingNode}
               />
             </div>
           )
@@ -184,6 +187,7 @@ export const AltExitBody = ({
                 nodeId={node.id}
                 onUpdateRange={onUpdateRange}
                 isForgeMode={isForgeMode}
+                underRollingNode={underRollingNode}
               />
             </div>
           )

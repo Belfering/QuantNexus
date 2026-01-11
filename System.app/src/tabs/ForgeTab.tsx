@@ -515,6 +515,24 @@ export function ForgeTab({
       }
     }
   }
+  const handleUpdateRolling = (id: string, updates: Record<string, unknown>) => {
+    treeStore.updateRolling(id, updates as Parameters<typeof treeStore.updateRolling>[1])
+
+    // Sync to IS/OOS Split config when Rolling node is updated
+    if (activeBot && activeBot.splitConfig?.strategy === 'rolling') {
+      const typedUpdates = updates as { rollingWindow?: string; rankBy?: string }
+      const updatedConfig = { ...activeBot.splitConfig }
+
+      if (typedUpdates.rollingWindow) {
+        updatedConfig.rollingWindowPeriod = typedUpdates.rollingWindow as 'daily' | 'monthly' | 'yearly'
+      }
+      if (typedUpdates.rankBy) {
+        updatedConfig.rankBy = typedUpdates.rankBy
+      }
+
+      useBotStore.getState().setSplitConfig(activeBot.id, updatedConfig)
+    }
+  }
   // Clipboard handlers using useBotStore
   const handleCopy = (id: string) => {
     const found = findNode(current, id)
@@ -953,6 +971,8 @@ export function ForgeTab({
   // --- Optimization state and handlers ---
   const [requirements, setRequirements] = useState<EligibilityRequirement[]>([])
   const { job: batchJob, runBatchBacktest, cancelJob } = useBatchBacktest()
+  const [rollingOptimizationRunning, setRollingOptimizationRunning] = useState(false)
+  const [rollingProgress, setRollingProgress] = useState<{completed: number, total: number, currentPeriod: number, totalPeriods: number} | null>(null)
 
   // Load requirements from API on mount
   useEffect(() => {
@@ -988,21 +1008,189 @@ export function ForgeTab({
     // DEBUG: Log splitConfig to verify it's initialized
     console.log('[ForgeTab] Starting optimization with splitConfig:', JSON.stringify(splitConfig))
 
-    // Get bot name from database if saved, otherwise use fallback
-    let botName = 'Unsaved Strategy'
-    if (activeBot.savedBotId) {
-      try {
-        const response = await fetch(`/api/bots/${activeBot.savedBotId}`)
-        if (response.ok) {
-          const bot = await response.json()
-          botName = bot.name || botName
+    // Check if tree contains Rolling node
+    const hasRollingNode = (node: FlowNode): boolean => {
+      if (node.kind === 'rolling') return true
+      if (node.children) {
+        for (const slot in node.children) {
+          const children = node.children[slot as SlotId]
+          if (Array.isArray(children)) {
+            for (const child of children) {
+              if (child && hasRollingNode(child)) return true
+            }
+          }
         }
-      } catch (error) {
-        console.error('Failed to fetch bot name:', error)
       }
+      return false
     }
 
-    await runBatchBacktest(current, parameterRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
+    // If Rolling node exists and strategy is rolling, use rolling optimization endpoint
+    if (hasRollingNode(current) && splitConfig.strategy === 'rolling') {
+      console.log('[ForgeTab] Detected Rolling node - using rolling optimization endpoint')
+
+      // Extract tickers from ticker lists in parameter ranges
+      console.log('[ForgeTab] Parameter ranges:', JSON.stringify(parameterRanges, null, 2))
+      const tickerListRanges = parameterRanges.filter(r => r.type === 'ticker_list')
+      console.log('[ForgeTab] Filtered ticker list ranges:', tickerListRanges)
+
+      const tickers: string[] = []
+      for (const range of tickerListRanges) {
+        if (range.tickers) {
+          tickers.push(...range.tickers)
+        }
+      }
+
+      // Fallback: If no ticker list parameter ranges, extract tickers from position nodes in tree
+      if (tickers.length === 0) {
+        console.log('[ForgeTab] No ticker list parameter ranges found, extracting from position nodes...')
+        console.log('[ForgeTab] Current tree:', JSON.stringify(current, null, 2))
+
+        const extractTickersFromTree = (node: FlowNode, depth = 0): string[] => {
+          const found: string[] = []
+          const indent = '  '.repeat(depth)
+
+          console.log(`${indent}[ForgeTab] Checking node:`, node.kind, node.id)
+
+          // If this is a position node, extract tickers
+          if (node.kind === 'position') {
+            console.log(`${indent}  Position node found, positions:`, node.positions)
+            if (node.positions && Array.isArray(node.positions)) {
+              for (const pos of node.positions) {
+                console.log(`${indent}    Position entry:`, pos)
+                // Positions can be either strings or objects with ticker property
+                const ticker = typeof pos === 'string' ? pos : pos.ticker
+                if (ticker && ticker !== 'Empty' && ticker !== '') {
+                  console.log(`${indent}      Adding ticker: ${ticker}`)
+                  found.push(ticker)
+                }
+              }
+            }
+          }
+
+          // Recursively check children
+          if (node.children) {
+            console.log(`${indent}  Checking children:`, Object.keys(node.children))
+            for (const slot in node.children) {
+              const children = node.children[slot as SlotId]
+              if (Array.isArray(children)) {
+                for (const child of children) {
+                  if (child) {
+                    found.push(...extractTickersFromTree(child, depth + 1))
+                  }
+                }
+              }
+            }
+          }
+
+          return found
+        }
+
+        tickers.push(...extractTickersFromTree(current))
+        console.log('[ForgeTab] Extracted tickers from position nodes:', tickers)
+      }
+
+      // Deduplicate tickers
+      const uniqueTickers = Array.from(new Set(tickers))
+
+      console.log('[ForgeTab] Rolling optimization tickers:', uniqueTickers)
+
+      // Validate that we have tickers
+      if (uniqueTickers.length === 0) {
+        alert('Rolling optimization requires at least one ticker.\n\nPlease add:\n1. A ticker list parameter range, OR\n2. Position nodes with tickers in your tree')
+        return
+      }
+
+      setRollingOptimizationRunning(true)
+      setRollingProgress(null)
+
+      // Use POST to initiate, then stream progress via GET with query params
+      const params = new URLSearchParams({
+        botId: activeBot.id,
+        tree: JSON.stringify(current),
+        tickers: JSON.stringify(uniqueTickers),
+        splitConfig: JSON.stringify(splitConfig),
+        parameterRanges: JSON.stringify(parameterRanges)
+      })
+
+      const eventSource = new EventSource(`/api/optimization/rolling?${params}`)
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          console.log('[ForgeTab] SSE event:', data)
+
+          if (data.type === 'progress') {
+            // Update progress
+            setRollingProgress({
+              completed: data.completed,
+              total: data.total,
+              currentPeriod: data.currentPeriod,
+              totalPeriods: data.totalPeriods
+            })
+          } else if (data.type === 'complete') {
+            // Optimization complete
+            console.log('[ForgeTab] Rolling optimization complete:', data.results)
+
+            // Store results
+            useBotStore.getState().setRollingResult(activeBot.id, data.results)
+
+            // Clean up
+            eventSource.close()
+            setRollingOptimizationRunning(false)
+            setRollingProgress(null)
+
+            // Switch to Results tab
+            setForgeSubtab('Results')
+
+            // Show success notification
+            alert(`Rolling optimization complete!\nValid tickers: ${data.results.validTickers.length}\nOOS periods: ${data.results.oosPeriodCount}\nBranches tested per period: ${data.results.branchCount || 'N/A'}\nFinal CAGR: ${((data.results.oosMetrics?.cagr || 0) * 100).toFixed(2)}%\n\nResults are now available in the Results tab.`)
+          } else if (data.type === 'error') {
+            // Error occurred
+            console.error('[ForgeTab] Rolling optimization error:', data.error)
+            alert(`Rolling optimization failed: ${data.error}`)
+
+            // Clean up
+            eventSource.close()
+            setRollingOptimizationRunning(false)
+            setRollingProgress(null)
+          }
+        } catch (error) {
+          console.error('[ForgeTab] Failed to parse SSE data:', error)
+        }
+      }
+
+      eventSource.onerror = (error) => {
+        console.error('[ForgeTab] SSE error:', error)
+        alert('Connection to rolling optimizer lost')
+        eventSource.close()
+        setRollingOptimizationRunning(false)
+        setRollingProgress(null)
+      }
+    } else {
+      // Use existing chronological batch backtest
+      console.log('[ForgeTab] Using chronological batch optimization')
+
+      // Get bot name from database if saved, otherwise use fallback
+      let botName = 'Unsaved Strategy'
+      if (activeBot.savedBotId) {
+        try {
+          const response = await fetch(`/api/bots/${activeBot.savedBotId}`)
+          if (response.ok) {
+            const bot = await response.json()
+            botName = bot.name || botName
+          }
+        } catch (error) {
+          console.error('Failed to fetch bot name:', error)
+        }
+      }
+
+      // Filter out ticker_list parameter ranges for chronological optimization
+      // (ticker_list ranges are only used for rolling optimization)
+      const chronologicalRanges = parameterRanges.filter(r => r.type !== 'ticker_list')
+      console.log('[ForgeTab] Filtered parameter ranges for chronological:', chronologicalRanges.length, 'of', parameterRanges.length)
+
+      await runBatchBacktest(current, chronologicalRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
+    }
   }
 
   // Handler to load a selected branch
@@ -1057,7 +1245,49 @@ export function ForgeTab({
                 splitConfig={activeBot?.splitConfig}
                 onSplitConfigChange={(config) => {
                   if (activeBot) {
+                    const previousStrategy = activeBot.splitConfig?.strategy
                     useBotStore.getState().setSplitConfig(activeBot.id, config)
+
+                    // Auto-manage tree structure based on strategy change
+                    if (config.strategy !== previousStrategy) {
+                      if (config.strategy === 'rolling') {
+                        // Switch to Rolling: Clear tree and add Rolling node
+                        const rollingNode = createNode('rolling')
+                        rollingNode.rollingWindow = config.rollingWindowPeriod ?? 'monthly'
+                        rollingNode.rankBy = config.rankBy ?? 'Sharpe Ratio'
+                        treeStore.setRoot(ensureSlots(rollingNode))
+                      } else if (config.strategy === 'chronological') {
+                        // Switch to Chronological: Reset to default basic node
+                        const basicNode = createNode('basic')
+                        treeStore.setRoot(ensureSlots(basicNode))
+                      }
+                    } else if (config.strategy === 'rolling' && config.rollingWindowPeriod && config.rankBy) {
+                      // Same strategy but updated rolling config - sync to existing Rolling nodes
+                      const updateRollingNodes = (node: FlowNode): FlowNode => {
+                        if (node.kind === 'rolling') {
+                          return {
+                            ...node,
+                            rollingWindow: config.rollingWindowPeriod,
+                            rankBy: config.rankBy,
+                            children: Object.fromEntries(
+                              Object.entries(node.children).map(([slot, arr]) => [
+                                slot,
+                                arr?.map((c) => (c ? updateRollingNodes(c) : c))
+                              ])
+                            )
+                          }
+                        }
+                        // Recursively update children
+                        const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+                        Object.entries(node.children).forEach(([slot, arr]) => {
+                          children[slot as SlotId] = arr?.map((c) => (c ? updateRollingNodes(c) : c))
+                        })
+                        return { ...node, children }
+                      }
+
+                      const updatedTree = updateRollingNodes(current)
+                      treeStore.setRoot(updatedTree)
+                    }
                   }
                 }}
               />
@@ -1068,6 +1298,36 @@ export function ForgeTab({
           {/* Left section: Run Forge button OR Branch generation progress */}
           <div className="flex items-center gap-3">
             {(() => {
+              // If rolling optimization is running, show progress
+              if (rollingOptimizationRunning) {
+                const percentage = rollingProgress && rollingProgress.total > 0
+                  ? Math.round((rollingProgress.completed / rollingProgress.total) * 100)
+                  : 0
+
+                return (
+                  <>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center justify-between text-xs font-medium">
+                        <span>Rolling Optimization</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-5 overflow-hidden">
+                        <div
+                          className={`h-full bg-primary flex items-center justify-center text-xs font-medium text-primary-foreground transition-all duration-300 ${!rollingProgress ? 'animate-pulse' : ''}`}
+                          style={{ width: rollingProgress ? `${percentage}%` : '100%' }}
+                        >
+                          {rollingProgress ? `${percentage}%` : 'Starting...'}
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {rollingProgress
+                          ? `Period ${rollingProgress.currentPeriod} of ${rollingProgress.totalPeriods} • ${rollingProgress.completed} / ${rollingProgress.total} branches tested`
+                          : 'Initializing rolling optimization...'}
+                      </div>
+                    </div>
+                  </>
+                )
+              }
+
               // If branch generation is running, show progress bar
               if (batchJob && batchJob.status === 'running') {
                 const percentage = batchJob.progress.total > 0
@@ -1486,6 +1746,7 @@ export function ForgeTab({
                   onUpdateEntryCondition={handleUpdateEntryCondition}
                   onUpdateExitCondition={handleUpdateExitCondition}
                   onUpdateScaling={handleUpdateScaling}
+                  onUpdateRolling={handleUpdateRolling}
                   onExpandAllBelow={(id, currentlyCollapsed) => {
                     const next = setCollapsedBelow(current, id, !currentlyCollapsed)
                     push(next)

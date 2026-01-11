@@ -46,6 +46,7 @@ export interface DefaultBodyProps {
   renderSlot: (slot: SlotId, depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
+  underRollingNode?: boolean
 }
 
 export const DefaultBody = ({
@@ -62,6 +63,7 @@ export const DefaultBody = ({
   renderSlot,
   parameterRanges = [],
   onUpdateRange,
+  underRollingNode,
 }: DefaultBodyProps) => {
   const [showWindowConfig, setShowWindowConfig] = useState(false)
   const [showBottomConfig, setShowBottomConfig] = useState(false)
@@ -99,11 +101,11 @@ export const DefaultBody = ({
                   Of the{' '}
                   {isWindowlessIndicator(node.metric ?? 'Relative Strength Index') ? null : (
                     <>
-                      {onUpdateRange ? (
+                      {(underRollingNode || onUpdateRange) ? (
                         (() => {
                           const paramId = `${node.id}-function-window`
                           const range = parameterRanges?.find(r => r.id === paramId)
-                          const isOptimized = range?.enabled
+                          const isOptimized = range?.enabled || underRollingNode
 
                           return (
                             <Popover open={showWindowConfig} onOpenChange={setShowWindowConfig}>
@@ -114,7 +116,7 @@ export const DefaultBody = ({
                                 >
                                   {isOptimized ? (
                                     <span className="h-7 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
-                                      {range.min}-{range.max}
+                                      {range?.min ?? ((node.window ?? 10) - 1)}-{range?.max ?? ((node.window ?? 10) + 1)}
                                     </span>
                                   ) : (
                                     <div className="w-14 h-7 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
@@ -135,11 +137,11 @@ export const DefaultBody = ({
                                     step: range?.step,
                                   } as VisualParameter}
                                   onSave={(range) => {
-                                    onUpdateRange(paramId, true, range)
+                                    onUpdateRange?.(paramId, true, range)
                                     setShowWindowConfig(false)
                                   }}
                                   onDisable={() => {
-                                    onUpdateRange(paramId, false)
+                                    onUpdateRange?.(paramId, false)
                                     setShowWindowConfig(false)
                                   }}
                                 />
@@ -174,11 +176,11 @@ export const DefaultBody = ({
                     <option value="Bottom">Bottom</option>
                     <option value="Top">Top</option>
                   </Select>{' '}
-                  {onUpdateRange ? (
+                  {(underRollingNode || onUpdateRange) ? (
                     (() => {
                       const paramId = `${node.id}-function-bottom`
                       const range = parameterRanges?.find(r => r.id === paramId)
-                      const isOptimized = range?.enabled
+                      const isOptimized = range?.enabled || underRollingNode
 
                       return (
                         <Popover open={showBottomConfig} onOpenChange={setShowBottomConfig}>
@@ -189,7 +191,7 @@ export const DefaultBody = ({
                             >
                               {isOptimized ? (
                                 <span className="h-7 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
-                                  {range.min}-{range.max}
+                                  {range?.min ?? 1}-{range?.max ?? 1}
                                 </span>
                               ) : (
                                 <div className="w-14 h-7 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
@@ -210,11 +212,11 @@ export const DefaultBody = ({
                                 step: range?.step,
                               } as VisualParameter}
                               onSave={(range) => {
-                                onUpdateRange(paramId, true, range)
+                                onUpdateRange?.(paramId, true, range)
                                 setShowBottomConfig(false)
                               }}
                               onDisable={() => {
-                                onUpdateRange(paramId, false)
+                                onUpdateRange?.(paramId, false)
                                 setShowBottomConfig(false)
                               }}
                             />

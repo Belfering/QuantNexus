@@ -15,4 +15,5 @@ export interface ISOOSSplitConfig {
   minYears?: number // Minimum number of years for chronological (5-15+)
   rollingStartYear?: number // Rolling start year (1996-2026)
   minWarmUpYears?: number // Minimum warm up years for rolling (3-10+)
+  rankBy?: string // Metric for ranking branches in rolling optimization (CAGR, Sharpe Ratio, etc.)
 }

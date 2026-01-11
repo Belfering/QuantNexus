@@ -78,6 +78,8 @@ export interface ConditionEditorProps {
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
   /** Whether we're in Forge tab (enables ticker list features) */
   isForgeMode?: boolean
+  /** Whether this node is under a Rolling node */
+  underRollingNode?: boolean
 }
 
 export const ConditionEditor = ({
@@ -93,6 +95,7 @@ export const ConditionEditor = ({
   nodeId,
   onUpdateRange,
   isForgeMode,
+  underRollingNode,
 }: ConditionEditorProps) => {
   // State for range config popovers
   const [showWindowConfig, setShowWindowConfig] = useState(false)
@@ -150,11 +153,11 @@ export const ConditionEditor = ({
             {/* Window input (hidden for windowless indicators) */}
             {isWindowlessIndicator(cond.metric) ? null : (
               <>
-                {onUpdateRange && nodeId ? (
+                {(underRollingNode || onUpdateRange) && nodeId ? (
                   (() => {
                     const paramId = `${nodeId}-${cond.id}-window`
                     const range = parameterRanges?.find(r => r.id === paramId)
-                    const isOptimized = range?.enabled
+                    const isOptimized = range?.enabled || underRollingNode
 
                     return (
                       <Popover open={showWindowConfig} onOpenChange={setShowWindowConfig}>
@@ -165,7 +168,7 @@ export const ConditionEditor = ({
                           >
                             {isOptimized ? (
                               <span className="h-8 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
-                                {range.min}-{range.max}
+                                {range?.min ?? (cond.window - 1)}-{range?.max ?? (cond.window + 1)}
                               </span>
                             ) : (
                               <div className="w-14 h-8 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
@@ -186,11 +189,11 @@ export const ConditionEditor = ({
                               step: range?.step,
                             } as VisualParameter}
                             onSave={(range) => {
-                              onUpdateRange(paramId, true, range)
+                              onUpdateRange?.(paramId, true, range)
                               setShowWindowConfig(false)
                             }}
                             onDisable={() => {
-                              onUpdateRange(paramId, false)
+                              onUpdateRange?.(paramId, false)
                               setShowWindowConfig(false)
                             }}
                           />
@@ -257,11 +260,11 @@ export const ConditionEditor = ({
 
             {/* Threshold (hidden when expanded) */}
             {cond.expanded ? null : (
-              onUpdateRange && nodeId ? (
+              (underRollingNode || onUpdateRange) && nodeId ? (
                 (() => {
                   const paramId = `${nodeId}-${cond.id}-threshold`
                   const range = parameterRanges?.find(r => r.id === paramId)
-                  const isOptimized = range?.enabled
+                  const isOptimized = range?.enabled || underRollingNode
 
                   return (
                     <Popover open={showThresholdConfig} onOpenChange={setShowThresholdConfig}>
@@ -272,7 +275,7 @@ export const ConditionEditor = ({
                         >
                           {isOptimized ? (
                             <span className="h-8 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
-                              {range.min}-{range.max}
+                              {range?.min ?? (cond.threshold - 1)}-{range?.max ?? (cond.threshold + 1)}
                             </span>
                           ) : (
                             <div className="w-14 h-8 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
@@ -293,11 +296,11 @@ export const ConditionEditor = ({
                             step: range?.step,
                           } as VisualParameter}
                           onSave={(range) => {
-                            onUpdateRange(paramId, true, range)
+                            onUpdateRange?.(paramId, true, range)
                             setShowThresholdConfig(false)
                           }}
                           onDisable={() => {
-                            onUpdateRange(paramId, false)
+                            onUpdateRange?.(paramId, false)
                             setShowThresholdConfig(false)
                           }}
                         />
@@ -322,11 +325,11 @@ export const ConditionEditor = ({
                 the{' '}
                 {isWindowlessIndicator(cond.rightMetric ?? 'Relative Strength Index') ? null : (
                   <>
-                    {onUpdateRange && nodeId ? (
+                    {(underRollingNode || onUpdateRange) && nodeId ? (
                       (() => {
                         const paramId = `${nodeId}-${cond.id}-rightWindow`
                         const range = parameterRanges?.find(r => r.id === paramId)
-                        const isOptimized = range?.enabled
+                        const isOptimized = range?.enabled || underRollingNode
 
                         return (
                           <Popover open={showRightWindowConfig} onOpenChange={setShowRightWindowConfig}>
@@ -337,7 +340,7 @@ export const ConditionEditor = ({
                               >
                                 {isOptimized ? (
                                   <span className="h-8 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
-                                    {range.min}-{range.max}
+                                    {range?.min ?? ((cond.rightWindow ?? 14) - 1)}-{range?.max ?? ((cond.rightWindow ?? 14) + 1)}
                                   </span>
                                 ) : (
                                   <div className="w-14 h-8 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
@@ -358,11 +361,11 @@ export const ConditionEditor = ({
                                   step: range?.step,
                                 } as VisualParameter}
                                 onSave={(range) => {
-                                  onUpdateRange(paramId, true, range)
+                                  onUpdateRange?.(paramId, true, range)
                                   setShowRightWindowConfig(false)
                                 }}
                                 onDisable={() => {
-                                  onUpdateRange(paramId, false)
+                                  onUpdateRange?.(paramId, false)
                                   setShowRightWindowConfig(false)
                                 }}
                               />
@@ -414,11 +417,11 @@ export const ConditionEditor = ({
 
             {/* For X consecutive days */}
             {' '}for{' '}
-            {onUpdateRange && nodeId ? (
+            {(underRollingNode || onUpdateRange) && nodeId ? (
               (() => {
                 const paramId = `${nodeId}-${cond.id}-forDays`
                 const range = parameterRanges?.find(r => r.id === paramId)
-                const isOptimized = range?.enabled
+                const isOptimized = range?.enabled || underRollingNode
 
                 return (
                   <Popover open={showForDaysConfig} onOpenChange={setShowForDaysConfig}>
@@ -429,7 +432,7 @@ export const ConditionEditor = ({
                       >
                         {isOptimized ? (
                           <span className="h-7 px-2 flex items-center border border-primary rounded bg-primary/10 text-sm font-medium text-primary">
-                            {range.min}-{range.max}
+                            {range?.min ?? 1}-{range?.max ?? 1}
                           </span>
                         ) : (
                           <div className="w-12 h-7 px-1.5 inline-flex items-center justify-center border border-input rounded-md bg-background text-sm cursor-pointer hover:bg-accent/10">
@@ -450,11 +453,11 @@ export const ConditionEditor = ({
                           step: range?.step,
                         } as VisualParameter}
                         onSave={(range) => {
-                          onUpdateRange(paramId, true, range)
+                          onUpdateRange?.(paramId, true, range)
                           setShowForDaysConfig(false)
                         }}
                         onDisable={() => {
-                          onUpdateRange(paramId, false)
+                          onUpdateRange?.(paramId, false)
                           setShowForDaysConfig(false)
                         }}
                       />

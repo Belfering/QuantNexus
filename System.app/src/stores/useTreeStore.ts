@@ -45,6 +45,7 @@ import {
   updateEntryConditionFields,
   updateExitConditionFields,
   updateScalingFields,
+  updateRollingFields,
   updateNumberedQuantifier,
   updateNumberedN,
   addNumberedItem,
@@ -152,6 +153,15 @@ interface TreeState {
       scaleTicker: string
       scaleFrom: number
       scaleTo: number
+    }>
+  ) => void
+
+  // Rolling node
+  updateRolling: (
+    nodeId: string,
+    updates: Partial<{
+      rollingWindow: string
+      rankBy: string
     }>
   ) => void
 
@@ -332,6 +342,12 @@ export const useTreeStore = create<TreeState>()(
       updateScaling: (nodeId, updates) =>
         set((state) => ({
           root: updateScalingFields(state.root, nodeId, updates),
+        })),
+
+      // Rolling
+      updateRolling: (nodeId, updates) =>
+        set((state) => ({
+          root: updateRollingFields(state.root, nodeId, updates),
         })),
 
       // Numbered

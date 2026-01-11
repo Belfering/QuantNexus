@@ -670,6 +670,29 @@ export const updateScalingFields = (
 }
 
 // ============================================================================
+// ROLLING NODE OPERATIONS
+// ============================================================================
+
+export const updateRollingFields = (
+  node: FlowNode,
+  id: string,
+  updates: Partial<{
+    rollingWindow: string
+    rankBy: string
+  }>
+): FlowNode => {
+  if (node.id === id && node.kind === 'rolling') {
+    return { ...node, ...updates }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  getAllSlotsForNode(node).forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? updateRollingFields(c, id, updates) : c)) : arr
+  })
+  return { ...node, children }
+}
+
+// ============================================================================
 // NUMBERED NODE OPERATIONS
 // ============================================================================
 

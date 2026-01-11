@@ -75,6 +75,7 @@ interface BotState {
   setParameterRanges: (botId: string, ranges: import('@/features/parameters/types').ParameterRange[]) => void
   setSplitConfig: (botId: string, config: import('@/types/split').ISOOSSplitConfig | undefined) => void
   setBranchGenerationJob: (botId: string, job: import('@/types/branch').BranchGenerationJob | undefined) => void
+  setRollingResult: (botId: string, result: import('@/types/bot').RollingOptimizationResult | undefined) => void
 
   // Reset for logout
   reset: () => void
@@ -292,6 +293,14 @@ export const useBotStore = create<BotState>()((set, get) => ({
     set((state) => ({
       bots: state.bots.map((b) =>
         b.id === botId ? { ...b, branchGenerationJob: job } : b
+      ),
+    }))
+  },
+
+  setRollingResult: (botId, result) => {
+    set((state) => ({
+      bots: state.bots.map((b) =>
+        b.id === botId ? { ...b, rollingResult: result } : b
       ),
     }))
   },

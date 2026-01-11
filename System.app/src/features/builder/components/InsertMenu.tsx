@@ -53,6 +53,9 @@ export const InsertMenu = ({
     <button onClick={() => { onAdd(parentId, parentSlot, index, 'scaling'); onClose() }}>
       Mixed
     </button>
+    <button onClick={() => { onAdd(parentId, parentSlot, index, 'rolling'); onClose() }}>
+      Rolling
+    </button>
     {clipboard && (
       <button onClick={() => { onPaste(parentId, parentSlot, index, clipboard); onClose() }}>
         Paste
