@@ -14,7 +14,6 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
   const chronologicalPercent = splitConfig?.chronologicalPercent ?? 50
   const rollingWindowPeriod = splitConfig?.rollingWindowPeriod ?? 'monthly'
   const minYears = splitConfig?.minYears ?? 5
-  const rollingStartYear = splitConfig?.rollingStartYear ?? 1996
   const minWarmUpYears = splitConfig?.minWarmUpYears ?? 3
   const rankBy = splitConfig?.rankBy ?? 'Sharpe Ratio'
 
@@ -37,7 +36,6 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
       chronologicalPercent: newStrategy === 'chronological' ? 50 : undefined,
       rollingWindowPeriod: newStrategy === 'rolling' ? 'monthly' : undefined,
       minYears: newStrategy === 'chronological' ? 5 : undefined,
-      rollingStartYear: newStrategy === 'rolling' ? 1996 : undefined,
       minWarmUpYears: newStrategy === 'rolling' ? 3 : undefined,
       rankBy: newStrategy === 'rolling' ? 'Sharpe Ratio' : undefined
     })
@@ -67,15 +65,6 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
       enabled: true,
       strategy,
       minYears: years
-    })
-  }
-
-  const handleRollingStartYearChange = (year: number) => {
-    onSplitConfigChange({
-      ...splitConfig,
-      enabled: true,
-      strategy,
-      rollingStartYear: year
     })
   }
 
@@ -224,23 +213,6 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
 
         {strategy === 'rolling' && (
           <>
-            {/* Rolling Start Year */}
-            <div>
-              <label htmlFor="rolling-start-year" className="text-xs text-muted block mb-1">
-                Rolling Start Year
-              </label>
-              <select
-                id="rolling-start-year"
-                value={rollingStartYear}
-                onChange={(e) => handleRollingStartYearChange(Number(e.target.value))}
-                className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
-              >
-                {Array.from({ length: 31 }, (_, i) => 1996 + i).map(year => (
-                  <option key={year} value={year}>{year}</option>
-                ))}
-              </select>
-            </div>
-
             {/* Minimum Warm Up Years */}
             <div>
               <label htmlFor="min-warmup-years" className="text-xs text-muted block mb-1">

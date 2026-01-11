@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { USED_TICKERS_DATALIST_ID } from '@/constants'
 import { OptimizationResultsPanel } from '@/features/optimization/components/OptimizationResultsPanel'
+import { RollingResultsSection } from '@/features/optimization/components/RollingResultsSection'
 import { TickerListsPanel } from '@/features/forge/components/TickerListsPanel'
 import type {
   FlowNode,
@@ -973,6 +974,7 @@ export function ForgeTab({
   const { job: batchJob, runBatchBacktest, cancelJob } = useBatchBacktest()
   const [rollingOptimizationRunning, setRollingOptimizationRunning] = useState(false)
   const [rollingProgress, setRollingProgress] = useState<{completed: number, total: number, currentPeriod: number, totalPeriods: number} | null>(null)
+  const [resultsSubtab, setResultsSubtab] = useState<'Chronological' | 'Rolling'>('Chronological')
 
   // Load requirements from API on mount
   useEffect(() => {
@@ -1139,8 +1141,9 @@ export function ForgeTab({
             setRollingOptimizationRunning(false)
             setRollingProgress(null)
 
-            // Switch to Results tab
+            // Switch to Results tab and Rolling subtab
             setForgeSubtab('Results')
+            setResultsSubtab('Rolling')
 
             // Show success notification
             alert(`Rolling optimization complete!\nValid tickers: ${data.results.validTickers.length}\nOOS periods: ${data.results.oosPeriodCount}\nBranches tested per period: ${data.results.branchCount || 'N/A'}\nFinal CAGR: ${((data.results.oosMetrics?.cagr || 0) * 100).toFixed(2)}%\n\nResults are now available in the Results tab.`)
@@ -1792,7 +1795,38 @@ export function ForgeTab({
         ) : forgeSubtab === 'Ticker Lists' ? (
           <TickerListsPanel />
         ) : (
-          <OptimizationResultsPanel />
+          <>
+            {/* Results Sub-Subtabs */}
+            <div className="flex gap-2 shrink-0">
+              <Button
+                variant={resultsSubtab === 'Chronological' ? 'accent' : 'secondary'}
+                onClick={() => setResultsSubtab('Chronological')}
+              >
+                Chronological
+              </Button>
+              <Button
+                variant={resultsSubtab === 'Rolling' ? 'accent' : 'secondary'}
+                onClick={() => setResultsSubtab('Rolling')}
+              >
+                Rolling
+              </Button>
+            </div>
+
+            {/* Results Content */}
+            {resultsSubtab === 'Chronological' ? (
+              <OptimizationResultsPanel />
+            ) : (
+              <RollingResultsSection
+                result={activeBot?.rollingResult ?? null}
+                onClose={() => {
+                  // Clear the rolling result when closed
+                  if (activeBot) {
+                    useBotStore.getState().setRollingResult(activeBot.id, undefined)
+                  }
+                }}
+              />
+            )}
+          </>
         )}
       </CardContent>
     </Card>
