@@ -697,8 +697,8 @@ router.get('/rolling', async (req, res) => {
           const jobStmt = sqlite.prepare(`
             INSERT INTO rolling_optimization_jobs (
               bot_id, bot_name, split_config, valid_tickers,
-              ticker_start_dates, branch_count, elapsed_seconds, tree_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              ticker_start_dates, branch_count, elapsed_seconds, tree_json, adaptive_metrics
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `)
 
           const jobInfo = jobStmt.run(
@@ -709,7 +709,8 @@ router.get('/rolling', async (req, res) => {
             JSON.stringify(result.jobMetadata?.tickerStartDates || {}),
             result.jobMetadata?.branchCount || 0,
             result.elapsedSeconds || 0,
-            JSON.stringify(tree)
+            JSON.stringify(tree),
+            JSON.stringify(result.adaptiveMetrics || {})
           )
 
           jobId = jobInfo.lastInsertRowid
@@ -719,8 +720,8 @@ router.get('/rolling', async (req, res) => {
           const branchStmt = sqlite.prepare(`
             INSERT INTO rolling_optimization_branches (
               job_id, branch_id, parameter_values, is_start_year,
-              yearly_metrics, rank_by_metric
-            ) VALUES (?, ?, ?, ?, ?, ?)
+              yearly_metrics, is_oos_metrics, rank_by_metric
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
           `)
 
           const insertBranches = sqlite.transaction((branches) => {
@@ -731,6 +732,7 @@ router.get('/rolling', async (req, res) => {
                 JSON.stringify(branch.parameterValues),
                 branch.isStartYear,
                 JSON.stringify(branch.yearlyMetrics),
+                JSON.stringify(branch.isOosMetrics || {}),
                 branch.rankByMetric
               )
             }
@@ -859,8 +861,12 @@ router.get('/rolling/:jobId', (req, res) => {
         parameterValues: JSON.parse(b.parameter_values),
         isStartYear: b.is_start_year,
         yearlyMetrics: JSON.parse(b.yearly_metrics),
+        isOosMetrics: JSON.parse(b.is_oos_metrics || '{}'),
         rankByMetric: b.rank_by_metric
-      }))
+      })),
+      adaptivePortfolio: {
+        isOosMetrics: JSON.parse(job.adaptive_metrics || '{}')
+      }
     }
 
     res.json(result)

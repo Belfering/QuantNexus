@@ -133,23 +133,15 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
 
   const metricName = getMetricDisplayName(result.job.splitConfig.rankBy)
 
-  // Extract all unique years from branches and sort
-  const allYears = new Set<number>()
-  result.branches.forEach(branch => {
-    Object.keys(branch.yearlyMetrics).forEach(year => {
-      allYears.add(parseInt(year, 10))
-    })
-  })
-  const years = Array.from(allYears).sort((a, b) => a - b)
+  // Find best branch for IS and OOS periods
+  const periodBestBranch: Record<'IS' | 'OOS', number> = { IS: -1, OOS: -1 }
 
-  // Find best branch per year (highest metric value)
-  const yearBestBranch: Record<number, number> = {}
-  years.forEach(year => {
+  ;(['IS', 'OOS'] as const).forEach(period => {
     let bestValue = -Infinity
     let bestBranchId = -1
 
     result.branches.forEach(branch => {
-      const value = branch.yearlyMetrics[year.toString()]
+      const value = branch.isOosMetrics[period]
       if (value != null && value > bestValue) {
         bestValue = value
         bestBranchId = branch.branchId
@@ -157,9 +149,12 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
     })
 
     if (bestBranchId !== -1) {
-      yearBestBranch[year] = bestBranchId
+      periodBestBranch[period] = bestBranchId
     }
   })
+
+  // Use pre-calculated adaptive portfolio metrics from backend
+  const adaptivePortfolio = result.adaptivePortfolio?.isOosMetrics || { IS: null, OOS: null }
 
   // Convert parameterValues to node arrays (matching chronological structure)
   const branchesWithNodes = result.branches.map((branch, idx) => {
@@ -277,14 +272,14 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
               <span className="font-medium">Min Warm-Up:</span> {result.job.splitConfig.minWarmUpYears} years
             </div>
             <div>
-              <span className="font-medium">Years Tested:</span> {years.length}
+              <span className="font-medium">OOS Start Year:</span> {result.branches[0]?.isStartYear || 'N/A'}
             </div>
           </div>
         </div>
 
         {/* Branch Matrix Table */}
         <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Branch Performance Matrix (Annual {metricName})</h3>
+          <h3 className="text-lg font-semibold">Branch Performance Matrix (IS/OOS {metricName})</h3>
           <div className="overflow-auto max-h-[600px] border border-border rounded-lg">
             <table className="w-full text-xs">
               <thead className="bg-muted/50 sticky top-0 z-10">
@@ -297,14 +292,39 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                       Node {i + 1}
                     </th>
                   ))}
-                  {years.map(year => (
-                    <th key={year} className="px-2 py-2 text-center min-w-[70px]">
-                      {year} {metricName}
-                    </th>
-                  ))}
+                  <th className="px-2 py-2 text-center min-w-[100px]">
+                    IS {metricName}
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[100px]">
+                    OOS {metricName}
+                  </th>
                 </tr>
               </thead>
               <tbody>
+                {/* Adaptive Portfolio Row */}
+                <tr className="border-t-2 border-primary bg-primary/5 font-semibold">
+                  <td className="px-2 py-2 sticky left-0 bg-primary/5 border-r border-border">
+                    Adaptive
+                  </td>
+                  {Array.from({ length: maxNodes }, () => (
+                    <td key={Math.random()} className="px-2 py-2 text-xs">
+                      -
+                    </td>
+                  ))}
+                  <td
+                    className="px-2 py-2 text-center bg-blue-500/10"
+                    title="Adaptive portfolio: IS period performance"
+                  >
+                    {formatMetric(adaptivePortfolio.IS, result.job.splitConfig.rankBy)}
+                  </td>
+                  <td
+                    className="px-2 py-2 text-center bg-blue-500/10"
+                    title="Adaptive portfolio: OOS period performance"
+                  >
+                    {formatMetric(adaptivePortfolio.OOS, result.job.splitConfig.rankBy)}
+                  </td>
+                </tr>
+
                 {/* Branch rows */}
                 {branchesWithNodes.map((branch, idx) => (
                   <tr
@@ -330,29 +350,44 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                         </td>
                       )
                     })}
-                    {years.map(year => {
-                      const value = branch.yearlyMetrics[year.toString()]
-                      const isBest = yearBestBranch[year] === branch.branchId
-
-                      return (
-                        <td
-                          key={year}
-                          className={`px-2 py-2 text-center ${
-                            isBest && value != null ? 'bg-green-500/20 font-semibold' : ''
-                          }`}
-                          title={isBest && value != null ? 'Best branch this year' : undefined}
-                        >
-                          {formatMetric(value, result.job.splitConfig.rankBy)}
-                        </td>
-                      )
-                    })}
+                    {/* IS metric */}
+                    <td
+                      className={`px-2 py-2 text-center ${
+                        periodBestBranch.IS === branch.branchId && branch.isOosMetrics.IS != null
+                          ? 'bg-green-500/20 font-semibold'
+                          : ''
+                      }`}
+                      title={
+                        periodBestBranch.IS === branch.branchId && branch.isOosMetrics.IS != null
+                          ? 'Best branch for IS period'
+                          : undefined
+                      }
+                    >
+                      {formatMetric(branch.isOosMetrics.IS, result.job.splitConfig.rankBy)}
+                    </td>
+                    {/* OOS metric */}
+                    <td
+                      className={`px-2 py-2 text-center ${
+                        periodBestBranch.OOS === branch.branchId && branch.isOosMetrics.OOS != null
+                          ? 'bg-green-500/20 font-semibold'
+                          : ''
+                      }`}
+                      title={
+                        periodBestBranch.OOS === branch.branchId && branch.isOosMetrics.OOS != null
+                          ? 'Best branch for OOS period'
+                          : undefined
+                      }
+                    >
+                      {formatMetric(branch.isOosMetrics.OOS, result.job.splitConfig.rankBy)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Green cells indicate the best-performing branch for that year. "-" indicates no data for that period.
+            <strong>Adaptive</strong> row shows a walk-forward strategy that stitches together yearly returns from the branch that performed best in the previous year.
+            Green cells indicate the best-performing branch for that period (IS or OOS). "-" indicates no data for that period.
           </p>
         </div>
 

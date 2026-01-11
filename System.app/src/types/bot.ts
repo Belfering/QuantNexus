@@ -65,9 +65,13 @@ export type RollingOptimizationResult = {
     branchId: number
     parameterValues: Record<string, any>  // Node structure by node ID
     isStartYear: number
-    yearlyMetrics: Record<string, number | null>  // { "1993": 0.125, "1994": 0.153, ... }
+    yearlyMetrics: Record<string, number | null>  // { "1993": 0.125, "1994": 0.153, ... } - CUMULATIVE metrics for adaptive logic
+    isOosMetrics: { IS: number | null; OOS: number | null }  // For display: IS/OOS metrics
     rankByMetric: string
   }>
+  adaptivePortfolio?: {
+    isOosMetrics: { IS: number | null; OOS: number | null }  // Composite equity curve IS/OOS metrics
+  }
 }
 
 export type BotSession = {

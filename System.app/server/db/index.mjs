@@ -382,6 +382,7 @@ export function initializeDatabase() {
       parameter_values TEXT NOT NULL,
       is_start_year INTEGER NOT NULL,
       yearly_metrics TEXT NOT NULL,
+      is_oos_metrics TEXT,
       rank_by_metric TEXT NOT NULL,
       created_at INTEGER DEFAULT (unixepoch())
     );
@@ -619,6 +620,32 @@ export function initializeDatabase() {
     }
   } catch (e) {
     console.log('[DB] Migration warning for tree_json column:', e.message)
+  }
+
+  // Migration: Add is_oos_metrics column to rolling_optimization_branches table
+  try {
+    const branchesCols = sqlite.prepare("PRAGMA table_info(rolling_optimization_branches)").all()
+    const hasIsOosMetrics = branchesCols.some(c => c.name === 'is_oos_metrics')
+    if (!hasIsOosMetrics) {
+      console.log('[DB] Migrating rolling_optimization_branches table: adding is_oos_metrics column...')
+      sqlite.exec("ALTER TABLE rolling_optimization_branches ADD COLUMN is_oos_metrics TEXT")
+      console.log('[DB] Migration complete: is_oos_metrics column added to rolling_optimization_branches table')
+    }
+  } catch (e) {
+    console.log('[DB] Migration warning for is_oos_metrics column:', e.message)
+  }
+
+  // Migration: Add adaptive_metrics column to rolling_optimization_jobs table
+  try {
+    const rollingJobsCols2 = sqlite.prepare("PRAGMA table_info(rolling_optimization_jobs)").all()
+    const hasAdaptiveMetrics = rollingJobsCols2.some(c => c.name === 'adaptive_metrics')
+    if (!hasAdaptiveMetrics) {
+      console.log('[DB] Migrating rolling_optimization_jobs table: adding adaptive_metrics column...')
+      sqlite.exec("ALTER TABLE rolling_optimization_jobs ADD COLUMN adaptive_metrics TEXT")
+      console.log('[DB] Migration complete: adaptive_metrics column added to rolling_optimization_jobs table')
+    }
+  } catch (e) {
+    console.log('[DB] Migration warning for adaptive_metrics column:', e.message)
   }
 
   // Clean up duplicate watchlist_bots entries (keep only the first entry)

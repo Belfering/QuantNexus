@@ -338,6 +338,140 @@ class RollingOptimizer:
 
         return result
 
+    def _calculate_adaptive_portfolio(
+        self,
+        branch_results: list,
+        all_branch_equity_segments: dict,
+        year_range: list,
+        is_start_year: int,
+        metric_key: str,
+        backtester
+    ) -> dict:
+        """
+        Calculate adaptive portfolio IS/OOS metrics by building a composite equity curve.
+
+        The adaptive portfolio follows a walk-forward strategy:
+        - For each year, invest in the branch that was best in the PREVIOUS year
+        - Build a composite equity curve by stitching together yearly returns
+        - Calculate IS and OOS metrics on the composite curve
+
+        Args:
+            branch_results: List of all branch results with yearly metrics
+            all_branch_equity_segments: Dict of {branch_id: {year: [(timestamp, equity), ...]}}
+            year_range: List of years to process
+            is_start_year: Year where OOS period starts
+            metric_key: The metric key to calculate (e.g., 'sharpe', 'calmar')
+            backtester: Backtester instance for metric calculation
+
+        Returns:
+            Dictionary with 'IS' and 'OOS' metrics for adaptive portfolio
+        """
+        # Step 1: Identify best branch for each year based on CUMULATIVE metrics
+        best_branch_by_year = {}
+        for year in year_range:
+            best_value = -float('inf')
+            best_branch_id = None
+
+            for branch in branch_results:
+                metric_value = branch['yearlyMetrics'].get(str(year))
+                if metric_value is not None and metric_value > best_value:
+                    best_value = metric_value
+                    best_branch_id = branch['branchId']
+
+            if best_branch_id is not None:
+                best_branch_by_year[year] = best_branch_id
+
+        # Step 2: Build composite equity curve using walk-forward strategy
+        # For each year, use the branch that was best in the PREVIOUS year
+        composite_equity_curve = []
+        last_equity_value = 10000.0  # Starting equity
+
+        for year_idx, year in enumerate(year_range):
+            if year_idx == 0:
+                # First year: can't predict best branch, skip
+                continue
+
+            # Use branch that was best in PREVIOUS year
+            prev_year = year_range[year_idx - 1]
+            best_prev_branch_id = best_branch_by_year.get(prev_year)
+
+            if best_prev_branch_id is None:
+                # No best branch for previous year, skip
+                continue
+
+            # Get this year's equity segment from the best previous branch
+            branch_equity_segments = all_branch_equity_segments.get(best_prev_branch_id, {})
+            year_segment = branch_equity_segments.get(year, [])
+
+            if not year_segment:
+                # No data for this year
+                continue
+
+            # Normalize segment to start where previous segment ended
+            first_value = year_segment[0][1]
+
+            # Calculate return multiplier for this year
+            normalized_segment = [
+                (timestamp, last_equity_value * (equity / first_value))
+                for timestamp, equity in year_segment
+            ]
+
+            # Add normalized segment to composite curve
+            composite_equity_curve.extend(normalized_segment)
+
+            # Update last equity value for next year
+            if normalized_segment:
+                last_equity_value = normalized_segment[-1][1]
+
+        if not composite_equity_curve:
+            return {'IS': None, 'OOS': None}
+
+        # Step 3: Calculate IS and OOS metrics on composite curve
+        adaptive_metrics = {}
+
+        # Convert to DataFrame for easier filtering
+        composite_df = pd.DataFrame(composite_equity_curve, columns=['timestamp', 'equity'])
+        composite_df['date'] = pd.to_datetime(composite_df['timestamp'], unit='s')
+        composite_df['year'] = composite_df['date'].dt.year
+
+        # IS metric (before is_start_year)
+        is_data = composite_df[composite_df['year'] < is_start_year]
+        if len(is_data) > 0:
+            is_equity = is_data[['timestamp', 'equity']].values.tolist()
+            is_timestamps = [int(t) for t, e in is_equity]
+            is_db = {
+                'dates': is_timestamps,
+                'close': {'SPY': [0] * len(is_timestamps)}
+            }
+            try:
+                is_metrics = backtester.calculate_metrics(is_equity, is_db, 'CC')
+                adaptive_metrics['IS'] = is_metrics.get(metric_key)
+            except Exception as e:
+                print(f"[RollingOptimizer]   Warning: Failed to calculate adaptive IS metric: {e}", file=sys.stderr)
+                adaptive_metrics['IS'] = None
+        else:
+            adaptive_metrics['IS'] = None
+
+        # OOS metric (from is_start_year onward)
+        oos_data = composite_df[composite_df['year'] >= is_start_year]
+        if len(oos_data) > 0:
+            oos_equity = oos_data[['timestamp', 'equity']].values.tolist()
+            oos_timestamps = [int(t) for t, e in oos_equity]
+            oos_db = {
+                'dates': oos_timestamps,
+                'close': {'SPY': [0] * len(oos_timestamps)}
+            }
+            try:
+                oos_metrics = backtester.calculate_metrics(oos_equity, oos_db, 'CC')
+                adaptive_metrics['OOS'] = oos_metrics.get(metric_key)
+            except Exception as e:
+                print(f"[RollingOptimizer]   Warning: Failed to calculate adaptive OOS metric: {e}", file=sys.stderr)
+                adaptive_metrics['OOS'] = None
+        else:
+            adaptive_metrics['OOS'] = None
+
+        return adaptive_metrics
+
     def run_rolling_optimization(
         self,
         config: Dict
@@ -472,6 +606,7 @@ class RollingOptimizer:
         backtester = Backtester(str(self.parquet_dir))
 
         branch_results = []
+        all_branch_equity_segments = {}  # Store per-year equity segments for adaptive portfolio
 
         for branch_idx, branch in enumerate(branches):
             print(f"[RollingOptimizer] Testing branch {branch_idx}/{len(branches)}...", file=sys.stderr)
@@ -561,18 +696,31 @@ class RollingOptimizer:
                     print(f"  Year range to process: {year_range[0]} to {year_range[-1]}", file=sys.stderr)
                     sys.stderr.flush()
 
-                # Split by year and calculate metric for each year
+                # Split by year and calculate CUMULATIVE metric for each year
+                # Also store per-year equity segments for adaptive portfolio
                 yearly_metrics = {}
+                yearly_equity_segments = {}
 
                 for year in year_range:
-                    year_data = equity_df[equity_df['year'] == year]
+                    # CUMULATIVE: Filter from start to end of this year (not just this year)
+                    year_data = equity_df[equity_df['year'] <= year]
+
+                    # Also filter for JUST this year for equity segments
+                    year_only_data = equity_df[equity_df['year'] == year]
 
                     if len(year_data) == 0:
                         # No data for this year
                         yearly_metrics[str(year)] = None
                         continue
 
-                    # Calculate metric for this year
+                    # Store this year's equity segment for adaptive portfolio calculation
+                    if len(year_only_data) > 0:
+                        yearly_equity_segments[year] = list(zip(
+                            year_only_data['timestamp'].tolist(),
+                            year_only_data['equity'].tolist()
+                        ))
+
+                    # Calculate CUMULATIVE metric for this year
                     year_equity = year_data[['timestamp', 'equity']].values.tolist()
 
                     # DEBUG: Log year data for first branch, first year
@@ -608,8 +756,50 @@ class RollingOptimizer:
                         traceback.print_exc(file=sys.stderr)
                         yearly_metrics[str(year)] = None
 
+                # Calculate IS and OOS metrics for display
+                is_oos_metrics = {}
+
+                # IS metric (warm-up period: before is_start_year)
+                is_data = equity_df[equity_df['year'] < is_start_year]
+                if len(is_data) > 0:
+                    is_equity = is_data[['timestamp', 'equity']].values.tolist()
+                    is_timestamps = [int(t) for t, e in is_equity]
+                    is_db = {
+                        'dates': is_timestamps,
+                        'close': {'SPY': [0] * len(is_timestamps)}
+                    }
+                    try:
+                        is_metrics = backtester.calculate_metrics(is_equity, is_db, 'CC')
+                        is_oos_metrics['IS'] = is_metrics.get(metric_key)
+                    except Exception as e:
+                        print(f"[RollingOptimizer]   Warning: Failed to calculate IS metrics: {e}", file=sys.stderr)
+                        is_oos_metrics['IS'] = None
+                else:
+                    is_oos_metrics['IS'] = None
+
+                # OOS metric (testing period: from is_start_year onward)
+                oos_data = equity_df[equity_df['year'] >= is_start_year]
+                if len(oos_data) > 0:
+                    oos_equity = oos_data[['timestamp', 'equity']].values.tolist()
+                    oos_timestamps = [int(t) for t, e in oos_equity]
+                    oos_db = {
+                        'dates': oos_timestamps,
+                        'close': {'SPY': [0] * len(oos_timestamps)}
+                    }
+                    try:
+                        oos_metrics = backtester.calculate_metrics(oos_equity, oos_db, 'CC')
+                        is_oos_metrics['OOS'] = oos_metrics.get(metric_key)
+                    except Exception as e:
+                        print(f"[RollingOptimizer]   Warning: Failed to calculate OOS metrics: {e}", file=sys.stderr)
+                        is_oos_metrics['OOS'] = None
+                else:
+                    is_oos_metrics['OOS'] = None
+
                 # Extract node structure from the branch tree
                 parameter_values = self._extract_node_structure(branch['tree'])
+
+                # Store equity segments for this branch for adaptive portfolio calculation
+                all_branch_equity_segments[branch_idx] = yearly_equity_segments
 
                 # Store branch result
                 branch_results.append({
@@ -617,6 +807,7 @@ class RollingOptimizer:
                     'parameterValues': parameter_values,
                     'isStartYear': is_start_year,
                     'yearlyMetrics': yearly_metrics,
+                    'isOosMetrics': is_oos_metrics,
                     'rankByMetric': rank_by
                 })
 
@@ -635,9 +826,22 @@ class RollingOptimizer:
         print(f"  Branches tested: {len(branch_results)}/{len(branches)}", file=sys.stderr)
         print(f"  Years per branch: {len(year_range)}", file=sys.stderr)
 
+        # Calculate adaptive portfolio metrics
+        print(f"\n[RollingOptimizer] Calculating adaptive portfolio...", file=sys.stderr)
+        adaptive_metrics = self._calculate_adaptive_portfolio(
+            branch_results,
+            all_branch_equity_segments,
+            year_range,
+            is_start_year,
+            metric_key,
+            backtester
+        )
+        print(f"[RollingOptimizer]   ✓ Adaptive portfolio complete (IS: {adaptive_metrics.get('IS')}, OOS: {adaptive_metrics.get('OOS')})", file=sys.stderr)
+
         return {
             'success': True,
             'branches': branch_results,
+            'adaptiveMetrics': adaptive_metrics,
             'jobMetadata': {
                 'validTickers': valid_tickers,
                 'tickerStartDates': {k: v.strftime('%Y-%m-%d') for k, v in ticker_start_dates.items()},
