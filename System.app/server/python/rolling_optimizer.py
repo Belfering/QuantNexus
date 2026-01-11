@@ -275,7 +275,10 @@ class RollingOptimizer:
                 cond_id = cond.get('id', '')
                 if condition_id in cond_id or cond_id == condition_id:
                     # Found it! Update the field
+                    old_value = cond.get(field)
                     cond[field] = value
+                    # DEBUG: Log parameter updates for first branch
+                    print(f"[DEBUG] Updated condition {cond_id[:20]}... field '{field}': {old_value} → {value}", file=sys.stderr, flush=True)
                     return True
 
         # Recursively check children
@@ -475,7 +478,32 @@ class RollingOptimizer:
 
             # DEBUG: Comprehensive branch info
             print(f"\n[DEBUG] Branch {branch_idx} Details:", file=sys.stderr)
-            print(f"  Branch Structure: {json.dumps(branch['tree'], indent=2)[:500]}...", file=sys.stderr)
+
+            # DEBUG: Extract and log indicator condition values to verify parameter substitution
+            def extract_conditions(node):
+                conditions = []
+                if 'conditions' in node and isinstance(node['conditions'], list):
+                    for cond in node['conditions']:
+                        conditions.append({
+                            'id': cond.get('id', '')[:30],
+                            'metric': cond.get('metric', ''),
+                            'comparator': cond.get('comparator', ''),
+                            'threshold': cond.get('threshold'),
+                            'window': cond.get('window')
+                        })
+                if 'children' in node:
+                    for slot_key, slot_children in node['children'].items():
+                        if isinstance(slot_children, list):
+                            for child in slot_children:
+                                if child and isinstance(child, dict):
+                                    conditions.extend(extract_conditions(child))
+                return conditions
+
+            conditions = extract_conditions(branch['tree'])
+            print(f"  Indicator Conditions After Parameter Substitution:", file=sys.stderr)
+            for cond in conditions:
+                print(f"    {cond['metric']} {cond['comparator']} {cond['threshold']} (window={cond['window']})", file=sys.stderr)
+
             print(f"  Available Ticker Dates:", file=sys.stderr)
             for ticker, start_date in ticker_start_dates.items():
                 print(f"    {ticker}: {start_date.strftime('%Y-%m-%d')} to present", file=sys.stderr)
