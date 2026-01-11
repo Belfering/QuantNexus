@@ -124,6 +124,13 @@ class Backtester:
         # Sort dates
         dates = sorted(list(common_dates))
 
+        # Enforce 1993 minimum year to avoid unreliable pre-1993 data
+        min_timestamp = pd.Timestamp('1993-01-01').value // 10**9  # Convert to Unix timestamp
+        dates = [d for d in dates if d >= min_timestamp]
+
+        if not dates or len(dates) < MIN_DATES:
+            return None
+
         # Build aligned arrays for each ticker
         db = {
             'dates': np.array(dates),

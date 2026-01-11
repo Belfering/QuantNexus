@@ -180,18 +180,11 @@ class RollingOptimizer:
         import copy
         from itertools import product
 
-        print(f"[DEBUG] generate_branches: received {len(parameter_ranges)} parameter ranges", file=sys.stderr, flush=True)
-
         # Filter to only enabled ranges and exclude ticker_list type
         enabled_ranges = [r for r in parameter_ranges if r.get('enabled', True) and r.get('type') != 'ticker_list']
 
-        print(f"[DEBUG] generate_branches: {len(enabled_ranges)} enabled ranges after filtering", file=sys.stderr, flush=True)
-        for i, r in enumerate(enabled_ranges[:3]):  # Log first 3
-            print(f"[DEBUG]   Range {i}: type={r.get('type')}, path={r.get('path')}, min={r.get('min')}, max={r.get('max')}, step={r.get('step')}", file=sys.stderr, flush=True)
-
         if len(enabled_ranges) == 0:
             # No parameter ranges - return base tree only
-            print(f"[DEBUG] No enabled ranges, returning single branch with base tree", file=sys.stderr, flush=True)
             return [{'id': 0, 'tree': tree, 'params': {}}]
 
         # Generate value arrays for each range
@@ -265,9 +258,7 @@ class RollingOptimizer:
             field = parts[3]
 
             # Recursively search tree for node with this condition
-            found = self._find_and_update_condition(node, condition_id, field, value)
-            if not found:
-                print(f"[WARNING] Could not find condition {condition_id} to update field '{field}'", file=sys.stderr, flush=True)
+            self._find_and_update_condition(node, condition_id, field, value)
 
     def _find_and_update_condition(self, node: Dict, condition_id: str, field: str, value) -> bool:
         """
@@ -284,9 +275,7 @@ class RollingOptimizer:
                 cond_id = cond.get('id', '')
                 if condition_id in cond_id or cond_id == condition_id:
                     # Found it! Update the field
-                    old_value = cond.get(field, 'N/A')
                     cond[field] = value
-                    print(f"[DEBUG] Updated condition {cond_id} field '{field}': {old_value} -> {value}", file=sys.stderr, flush=True)
                     return True
 
         # Recursively check children
@@ -300,61 +289,93 @@ class RollingOptimizer:
 
         return False
 
+    def _extract_node_structure(self, node: Dict, result: Dict = None) -> Dict:
+        """
+        Recursively extract node structure for display in results table.
+        Returns dict of {nodeId: {kind, indicator, threshold, window, positions, ...}}
+        """
+        if result is None:
+            result = {}
+
+        node_id = node.get('id')
+        kind = node.get('kind')
+
+        # Extract nodes with optimized parameters or positions
+        if kind == 'indicator' and node.get('conditions'):
+            for cond in node['conditions']:
+                cond_id = cond.get('id')
+                result[cond_id] = {
+                    'kind': 'indicator',
+                    'indicator': cond.get('indicator', ''),
+                    'operator': cond.get('operator', ''),
+                    'threshold': cond.get('threshold'),
+                    'window': cond.get('window')
+                }
+        elif kind == 'function':
+            result[node_id] = {
+                'kind': 'function',
+                'rank': node.get('rank', ''),
+                'bottom': node.get('bottom'),
+                'metric': node.get('metric', ''),
+                'window': node.get('window')
+            }
+        elif kind == 'position' and node.get('positions'):
+            result[node_id] = {
+                'kind': 'position',
+                'positions': node.get('positions', [])
+            }
+
+        # Recurse into children
+        if node.get('children'):
+            for slot_children in node['children'].values():
+                if isinstance(slot_children, list):
+                    for child in slot_children:
+                        if child:
+                            self._extract_node_structure(child, result)
+
+        return result
+
     def run_rolling_optimization(
         self,
         config: Dict
     ) -> Dict:
         """
-        Run complete rolling optimization with expanding window.
+        Run rolling optimization with "run once and split" algorithm.
+
+        NEW ALGORITHM:
+        - Run each branch ONCE across entire time period
+        - Split trade log by calendar year
+        - Calculate "Rank By" metric for each year
+        - Store per-year metrics for ALL branches (not just winners)
 
         Args:
             config: Configuration dictionary with:
                 - tickers: List of ticker symbols
-                - splitConfig: Split configuration (rollingStartYear, minWarmUpYears, rollingWindowPeriod, rankBy)
+                - splitConfig: Split configuration (minWarmUpYears, rankBy)
                 - tree: FlowNode tree structure
                 - parameterRanges: List of parameter ranges for optimization
 
         Returns:
-            Dictionary with OOS results, metrics, and selected branches
+            Dictionary with all branches and their yearly metrics
         """
         start_time = time.perf_counter()
 
         # Extract configuration
         tickers = config['tickers']
         split_config = config.get('splitConfig', {})
-        rolling_start_year = split_config.get('rollingStartYear', 1996)
         min_warmup_years = split_config.get('minWarmUpYears', 3)
-        rolling_period = split_config.get('rollingWindowPeriod', 'yearly')
         rank_by = split_config.get('rankBy', 'CAGR')
 
-        # Debug: Log parameter ranges received
-        parameter_ranges = config.get('parameterRanges', [])
-
-        # Write detailed debug log to file
-        import os
-        debug_log_path = os.path.join(os.path.dirname(__file__), '..', '..', 'rolling_debug.log')
-        with open(debug_log_path, 'w') as debug_file:
-            debug_file.write("=== ROLLING OPTIMIZATION DEBUG LOG ===\n\n")
-            debug_file.write(f"Rolling Start Year: {rolling_start_year}\n")
-            debug_file.write(f"Min Warm-Up Years: {min_warmup_years}\n")
-            debug_file.write(f"Rolling Period: {rolling_period}\n")
-            debug_file.write(f"Rank By: {rank_by}\n")
-            debug_file.write(f"Input Tickers: {len(tickers)}\n")
-            debug_file.write(f"\nParameter Ranges Received: {len(parameter_ranges)}\n")
-            for i, pr in enumerate(parameter_ranges):
-                debug_file.write(f"  [{i}] {pr}\n")
-
-        print(f"\n[RollingOptimizer] Starting rolling optimization", file=sys.stderr)
-        print(f"  Debug log: {debug_log_path}", file=sys.stderr)
-        print(f"  Rolling Start Year: {rolling_start_year}", file=sys.stderr)
+        print(f"\n[RollingOptimizer] Starting rolling optimization (run once and split)", file=sys.stderr)
         print(f"  Min Warm-Up Years: {min_warmup_years}", file=sys.stderr)
-        print(f"  Rolling Period: {rolling_period}", file=sys.stderr)
         print(f"  Rank By: {rank_by}", file=sys.stderr)
         print(f"  Input Tickers: {len(tickers)}", file=sys.stderr)
-        print(f"  Parameter Ranges: {len(parameter_ranges)}", file=sys.stderr)
 
-        # Step 1: Pre-filter tickers by start date
-        min_start_year = rolling_start_year - min_warmup_years
+        # Step 1: Calculate minimum start year
+        current_year = datetime.now().year
+        min_start_year = current_year - min_warmup_years
+
+        # Step 2: Pre-filter tickers by start date
         valid_tickers, ticker_start_dates = self.filter_tickers_by_start_date(
             tickers,
             min_start_year
@@ -370,15 +391,20 @@ class RollingOptimizer:
 
         print(f"[RollingOptimizer] Using {len(valid_tickers)} valid tickers", file=sys.stderr)
 
-        # Step 2: Get OOS periods
-        oos_periods = self.get_oos_periods(
-            rolling_start_year,
-            rolling_period
-        )
+        # Step 3: Calculate start year (earliest ticker + warmup)
+        # Enforce 1993 minimum year to avoid unreliable pre-1993 data
+        earliest_ticker_year = max(1993, min(d.year for d in ticker_start_dates.values()))
+        is_start_year = earliest_ticker_year + min_warmup_years
 
-        print(f"[RollingOptimizer] Testing {len(oos_periods)} OOS periods", file=sys.stderr)
+        print(f"[RollingOptimizer] Earliest ticker year: {earliest_ticker_year}", file=sys.stderr)
+        print(f"[RollingOptimizer] IS start year: {is_start_year}", file=sys.stderr)
+        print(f"[RollingOptimizer] Current year: {current_year}", file=sys.stderr)
 
-        # Step 3: Generate parameter branches from tree
+        # Step 4: Generate year range for splitting
+        year_range = list(range(is_start_year, current_year + 1))
+        print(f"[RollingOptimizer] Will calculate metrics for {len(year_range)} years: {is_start_year}-{current_year}", file=sys.stderr)
+
+        # Step 5: Generate parameter branches from tree
         tree = config.get('tree')
         parameter_ranges = config.get('parameterRanges', [])
 
@@ -394,167 +420,54 @@ class RollingOptimizer:
         branches = self.generate_branches(tree, parameter_ranges)
         print(f"[RollingOptimizer] Generated {len(branches)} branches", file=sys.stderr)
 
-        # Log first 3 branches for debugging
-        for i in range(min(3, len(branches))):
-            print(f"[RollingOptimizer]   Branch {i} params: {branches[i]['params']}", file=sys.stderr)
+        # Map frontend metric names to backend metric keys
+        metric_map = {
+            'CAGR': 'cagr',
+            'Max Drawdown': 'maxDrawdown',
+            'Calmar Ratio': 'calmarRatio',
+            'Sharpe Ratio': 'sharpe',
+            'Sortino Ratio': 'sortino',
+            'Treynor Ratio': 'treynor',
+            'Beta': 'beta',
+            'Volatility': 'volatility',
+            'Win Rate': 'winRate',
+            'Avg Turnover': 'avgTurnover',
+            'Avg Holdings': 'avgHoldings',
+            'Time in Market': 'tim',
+            'TIM Adjusted Returns': 'timar'
+        }
 
-        # Append branch info to debug log
-        with open(debug_log_path, 'a') as debug_file:
-            debug_file.write(f"\n\nBranches Generated: {len(branches)}\n")
-            for i in range(min(5, len(branches))):
-                debug_file.write(f"\nBranch {i}:\n")
-                debug_file.write(f"  Params: {branches[i]['params']}\n")
-                # Also check if conditions were actually updated in the tree
-                if 'tree' in branches[i]:
-                    branch_tree = branches[i]['tree']
-                    debug_file.write(f"  Tree ID: {branch_tree.get('id')}\n")
-                    # Try to find the first condition to verify it was updated
-                    def find_first_condition(node):
-                        if 'conditions' in node and len(node['conditions']) > 0:
-                            return node['conditions'][0]
-                        if 'children' in node:
-                            for slot, children in node['children'].items():
-                                if children:
-                                    for child in children:
-                                        if child:
-                                            result = find_first_condition(child)
-                                            if result:
-                                                return result
-                        return None
-                    first_cond = find_first_condition(branch_tree)
-                    if first_cond:
-                        debug_file.write(f"  First condition: {first_cond}\n")
+        metric_key = metric_map.get(rank_by, 'timar')
+        print(f"[RollingOptimizer] Will rank branches by: {rank_by} (backend key: {metric_key})", file=sys.stderr)
 
-        # Step 4: Run expanding window optimization
-        print(f"\n[RollingOptimizer] Starting expanding window optimization...", file=sys.stderr)
-        print(f"  Periods: {len(oos_periods)}", file=sys.stderr)
-        print(f"  Branches per period: {len(branches)}", file=sys.stderr)
-        print(f"  Total backtests: {len(oos_periods) * len(branches) * 2}", file=sys.stderr)  # 2x for IS + OOS
+        # Step 6: Run each branch ONCE and split by year
+        print(f"\n[RollingOptimizer] Starting branch testing...", file=sys.stderr)
 
-        # Emit initial progress
-        total_backtests = len(oos_periods) * len(branches)
-        print(json.dumps({
-            'type': 'progress',
-            'completed': 0,
-            'total': total_backtests,
-            'currentPeriod': 0,
-            'totalPeriods': len(oos_periods)
-        }), file=sys.stderr, flush=True)
-
-        all_oos_equity = []  # Collect equity curve points from all OOS periods
-        selected_branches = []
-
-        # Initialize backtester for running tests
         from backtester import Backtester
         backtester = Backtester(str(self.parquet_dir))
 
-        for period_idx, (oos_start, oos_end) in enumerate(oos_periods):
-            print(f"\n[RollingOptimizer] === Period {period_idx + 1}/{len(oos_periods)}: {oos_start.strftime('%Y-%m-%d')} to {oos_end.strftime('%Y-%m-%d')} ===", file=sys.stderr)
+        branch_results = []
 
-            # Emit progress for this period
-            print(json.dumps({
-                'type': 'progress',
-                'completed': period_idx * len(branches),
-                'total': total_backtests,
-                'currentPeriod': period_idx + 1,
-                'totalPeriods': len(oos_periods),
-                'periodStart': oos_start.strftime('%Y-%m-%d'),
-                'periodEnd': oos_end.strftime('%Y-%m-%d')
-            }), file=sys.stderr, flush=True)
+        for branch_idx, branch in enumerate(branches):
+            print(f"[RollingOptimizer] Testing branch {branch_idx}/{len(branches)}...", file=sys.stderr)
 
-            # IS period: ticker_start → day before oos_start
-            is_end = oos_start - timedelta(days=1)
-            is_end_str = is_end.strftime('%Y-%m-%d')
+            # DEBUG: Comprehensive branch info
+            print(f"\n[DEBUG] Branch {branch_idx} Details:", file=sys.stderr)
+            print(f"  Branch Structure: {json.dumps(branch['tree'], indent=2)[:500]}...", file=sys.stderr)
+            print(f"  Available Ticker Dates:", file=sys.stderr)
+            for ticker, start_date in ticker_start_dates.items():
+                print(f"    {ticker}: {start_date.strftime('%Y-%m-%d')} to present", file=sys.stderr)
+            print(f"  Backtest Date Range: {is_start_year}-01-01 to {current_year}-12-31", file=sys.stderr)
+            print(f"", file=sys.stderr)
 
-            print(f"[RollingOptimizer]   IS period: ticker_start → {is_end_str}", file=sys.stderr)
-
-            # Backtest all branches on IS period
-            is_results = []
-            for branch_idx, branch in enumerate(branches):
-                try:
-                    # Log first few branches for debugging
-                    if branch_idx < 3:
-                        print(f"[RollingOptimizer]     Testing branch {branch['id']} with params: {branch['params']}", file=sys.stderr)
-
-                    # Run backtest on IS period
-                    result = backtester.run_backtest(
-                        branch['tree'],
-                        {
-                            'mode': 'CC',
-                            'endDate': is_end_str,
-                            'costBps': 1.0,
-                            'splitConfig': {
-                                'enabled': False,
-                                'strategy': 'chronological'
-                            }
-                        }
-                    )
-
-                    if result.get('success'):
-                        is_results.append({
-                            'branch_id': branch['id'],
-                            'params': branch['params'],
-                            'tree': branch['tree'],
-                            'metrics': result.get('metrics', {})
-                        })
-                        # Log first successful branch
-                        if len(is_results) == 1:
-                            print(f"[RollingOptimizer]     ✓ Branch {branch['id']} passed with metrics: {result.get('metrics', {})}", file=sys.stderr)
-                    else:
-                        # Log full result for debugging (but only first few failures)
-                        error_msg = result.get('error', 'Unknown error')
-                        if branch_idx < 3:
-                            print(f"[RollingOptimizer]     ✗ Branch {branch['id']} failed on IS: {error_msg}", file=sys.stderr)
-                            print(f"[RollingOptimizer]       Full result: {result}", file=sys.stderr)
-
-                except Exception as e:
-                    import traceback
-                    print(f"[RollingOptimizer]     Branch {branch['id']} exception on IS: {e}", file=sys.stderr)
-                    print(f"[RollingOptimizer]       Traceback: {traceback.format_exc()}", file=sys.stderr)
-
-            if len(is_results) == 0:
-                print(f"[RollingOptimizer]   WARNING: No branches passed IS period, skipping OOS", file=sys.stderr)
-                continue
-
-            # Rank branches by specified metric
-            # Map frontend metric names to backend metric keys
-            metric_map = {
-                'CAGR': 'cagr',
-                'Max Drawdown': 'maxDrawdown',
-                'Calmar Ratio': 'calmarRatio',
-                'Sharpe Ratio': 'sharpe',
-                'Sortino Ratio': 'sortino',
-                'Treynor Ratio': 'treynor',
-                'Beta': 'beta',
-                'Volatility': 'volatility',
-                'Win Rate': 'winRate',
-                'Avg Turnover': 'avgTurnover',
-                'Avg Holdings': 'avgHoldings',
-                'Time in Market': 'tim',
-                'TIM Adjusted Returns': 'timar'
-            }
-
-            metric_key = metric_map.get(rank_by, 'timar')
-
-            # Handle inverse metrics (lower is better)
-            if metric_key in ['maxDrawdown', 'volatility']:
-                # For these metrics, lower is better, so negate for sorting
-                best_branch = min(is_results, key=lambda x: x['metrics'].get(metric_key, float('inf')))
-            else:
-                # Higher is better
-                best_branch = max(is_results, key=lambda x: x['metrics'].get(metric_key, float('-inf')))
-
-            is_metric_value = best_branch['metrics'].get(metric_key, None)
-            print(f"[RollingOptimizer]   Best branch: #{best_branch['branch_id']}, {rank_by} = {is_metric_value}", file=sys.stderr)
-
-            # Run best branch on OOS period
             try:
-                oos_result = backtester.run_backtest(
-                    best_branch['tree'],
+                # Run backtest ONCE across entire time period
+                result = backtester.run_backtest(
+                    branch['tree'],
                     {
                         'mode': 'CC',
-                        'startDate': oos_start.strftime('%Y-%m-%d'),
-                        'endDate': oos_end.strftime('%Y-%m-%d'),
+                        'startDate': f"{is_start_year}-01-01",
+                        'endDate': f"{current_year}-12-31",
                         'costBps': 1.0,
                         'splitConfig': {
                             'enabled': False,
@@ -563,84 +476,86 @@ class RollingOptimizer:
                     }
                 )
 
-                if oos_result.get('success'):
-                    oos_metrics = oos_result.get('metrics', {})
-                    oos_equity_curve = oos_result.get('equityCurve', [])
+                if not result.get('success'):
+                    print(f"[RollingOptimizer]   ✗ Branch {branch_idx} failed: {result.get('error')}", file=sys.stderr)
+                    continue
 
-                    # Add equity curve points to cumulative list
-                    all_oos_equity.extend(oos_equity_curve)
+                # Get full equity curve (list of [timestamp, equity] pairs)
+                equity_curve = result.get('equityCurve', [])
 
-                    # Record branch selection
-                    selected_branches.append({
-                        'oosPeriod': [oos_start.strftime('%Y-%m-%d'), oos_end.strftime('%Y-%m-%d')],
-                        'branchId': best_branch['branch_id'],
-                        'params': best_branch['params'],
-                        'isMetric': is_metric_value,
-                        'oosMetrics': oos_metrics
-                    })
+                if len(equity_curve) == 0:
+                    print(f"[RollingOptimizer]   ✗ Branch {branch_idx} returned empty equity curve", file=sys.stderr)
+                    continue
 
-                    print(f"[RollingOptimizer]   OOS: {len(oos_equity_curve)} equity points, {rank_by} = {oos_metrics.get(metric_key, 'N/A')}", file=sys.stderr)
-                else:
-                    print(f"[RollingOptimizer]   OOS backtest failed: {oos_result.get('error', 'Unknown error')}", file=sys.stderr)
+                # Convert equity curve to DataFrame for easier filtering
+                equity_df = pd.DataFrame(equity_curve, columns=['timestamp', 'equity'])
+                equity_df['date'] = pd.to_datetime(equity_df['timestamp'], unit='ms')
+                equity_df['year'] = equity_df['date'].dt.year
 
-            except Exception as e:
-                print(f"[RollingOptimizer]   OOS backtest error: {e}", file=sys.stderr)
+                # Split by year and calculate metric for each year
+                yearly_metrics = {}
 
-        # Step 5: Calculate final OOS metrics from concatenated equity curve
-        print(f"\n[RollingOptimizer] Calculating final OOS metrics from {len(all_oos_equity)} equity points...", file=sys.stderr)
+                for year in year_range:
+                    year_data = equity_df[equity_df['year'] == year]
 
-        # Calculate metrics from all concatenated OOS equity curve
-        if len(all_oos_equity) > 0:
-            try:
-                # Sort equity curve by timestamp (in case periods are out of order)
-                all_oos_equity.sort(key=lambda x: x[0])
+                    if len(year_data) == 0:
+                        # No data for this year
+                        yearly_metrics[str(year)] = None
+                        continue
 
-                # Use backtester's calculate_metrics with minimal db info
-                # Create a minimal db dict just for metric calculation
-                timestamps = [point[0] for point in all_oos_equity]
-                min_db = {
-                    'dates': timestamps,
-                    'close': {'SPY': [0] * len(timestamps)}  # Dummy SPY data for TIM calculation
-                }
+                    # Calculate metric for this year
+                    year_equity = year_data[['timestamp', 'equity']].values.tolist()
 
-                # Convert equity curve to expected format
-                equity_for_metrics = [(point[0], point[1]) for point in all_oos_equity]
+                    # Create minimal db for metric calculation
+                    year_timestamps = [int(t) for t, e in year_equity]
+                    min_db = {
+                        'dates': year_timestamps,
+                        'close': {'SPY': [0] * len(year_timestamps)}
+                    }
 
-                # Calculate metrics
-                oos_metrics = backtester.calculate_metrics(equity_for_metrics, min_db, 'CC')
+                    try:
+                        year_metrics = backtester.calculate_metrics(year_equity, min_db, 'CC')
+                        yearly_metrics[str(year)] = year_metrics.get(metric_key)
+                    except Exception as e:
+                        print(f"[RollingOptimizer]   Warning: Failed to calculate metrics for year {year}: {e}", file=sys.stderr)
+                        yearly_metrics[str(year)] = None
 
-                print(f"[RollingOptimizer] Final OOS metrics calculated: CAGR={oos_metrics.get('cagr', 'N/A')}, Sharpe={oos_metrics.get('sharpe', 'N/A')}", file=sys.stderr)
+                # Extract node structure from the branch tree
+                parameter_values = self._extract_node_structure(branch['tree'])
+
+                # Store branch result
+                branch_results.append({
+                    'branchId': branch_idx,
+                    'parameterValues': parameter_values,
+                    'isStartYear': is_start_year,
+                    'yearlyMetrics': yearly_metrics,
+                    'rankByMetric': rank_by
+                })
+
+                print(f"[RollingOptimizer]   ✓ Branch {branch_idx} complete ({len(yearly_metrics)} years)", file=sys.stderr)
 
             except Exception as e:
                 import traceback
-                print(f"[RollingOptimizer] Exception calculating metrics: {e}", file=sys.stderr)
-                print(f"[RollingOptimizer]   Traceback: {traceback.format_exc()}", file=sys.stderr)
-                oos_metrics = {
-                    'message': f"Metrics calculation error: {str(e)}"
-                }
-        else:
-            oos_metrics = {
-                'message': 'No equity curve points generated across all OOS periods'
-            }
+                print(f"[RollingOptimizer]   ✗ Branch {branch_idx} exception: {e}", file=sys.stderr)
+                print(f"[RollingOptimizer]     Traceback: {traceback.format_exc()}", file=sys.stderr)
+                continue
 
         elapsed_time = time.perf_counter() - start_time
 
         print(f"\n[RollingOptimizer] === COMPLETE ===", file=sys.stderr)
         print(f"  Total time: {elapsed_time:.2f}s", file=sys.stderr)
-        print(f"  Periods tested: {len(selected_branches)}", file=sys.stderr)
-        print(f"  Total OOS equity points: {len(all_oos_equity)}", file=sys.stderr)
-        print(f"  Final CAGR: {oos_metrics.get('cagr', 'N/A')}", file=sys.stderr)
+        print(f"  Branches tested: {len(branch_results)}/{len(branches)}", file=sys.stderr)
+        print(f"  Years per branch: {len(year_range)}", file=sys.stderr)
 
         return {
             'success': True,
-            'validTickers': valid_tickers,
-            'tickerStartDates': {k: v.strftime('%Y-%m-%d') for k, v in ticker_start_dates.items()},
-            'oosPeriodCount': len(oos_periods),
-            'selectedBranches': selected_branches,
-            'oosEquityCurve': all_oos_equity,  # Return full equity curve
-            'oosMetrics': oos_metrics,
-            'elapsedSeconds': elapsed_time,
-            'branchCount': len(branches)  # Add total branches tested per period
+            'branches': branch_results,
+            'jobMetadata': {
+                'validTickers': valid_tickers,
+                'tickerStartDates': {k: v.strftime('%Y-%m-%d') for k, v in ticker_start_dates.items()},
+                'branchCount': len(branches)
+            },
+            'elapsedSeconds': elapsed_time
         }
 
 
