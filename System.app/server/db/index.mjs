@@ -547,6 +547,67 @@ export function initializeDatabase() {
     // Column might already exist
   }
 
+  // Migration: Add parameter_values column to rolling_optimization_branches table
+  try {
+    const rollingBranchesCols = sqlite.prepare("PRAGMA table_info(rolling_optimization_branches)").all()
+    const hasParameterValues = rollingBranchesCols.some(c => c.name === 'parameter_values')
+    if (!hasParameterValues) {
+      console.log('[DB] Migrating rolling_optimization_branches table: adding parameter_values column...')
+      sqlite.exec("ALTER TABLE rolling_optimization_branches ADD COLUMN parameter_values TEXT NOT NULL DEFAULT '{}'")
+      console.log('[DB] Migration complete: parameter_values column added to rolling_optimization_branches table')
+    }
+  } catch (e) {
+    // Column might already exist
+    console.log('[DB] Migration warning for parameter_values:', e.message)
+  }
+
+  // Migration: Drop legacy 'parameters' column from rolling_optimization_branches table
+  // SQLite doesn't support DROP COLUMN directly, so we need to recreate the table
+  try {
+    const rollingBranchesCols = sqlite.prepare("PRAGMA table_info(rolling_optimization_branches)").all()
+    const hasLegacyParameters = rollingBranchesCols.some(c => c.name === 'parameters')
+
+    if (hasLegacyParameters) {
+      console.log('[DB] Migrating rolling_optimization_branches table: dropping legacy parameters column...')
+
+      // Create new table without the legacy 'parameters' column
+      sqlite.exec(`
+        CREATE TABLE rolling_optimization_branches_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id INTEGER NOT NULL REFERENCES rolling_optimization_jobs(id) ON DELETE CASCADE,
+          branch_id INTEGER NOT NULL,
+          parameter_values TEXT NOT NULL DEFAULT '{}',
+          is_start_year INTEGER NOT NULL,
+          yearly_metrics TEXT NOT NULL,
+          rank_by_metric TEXT NOT NULL,
+          created_at INTEGER DEFAULT (unixepoch())
+        )
+      `)
+
+      // Copy data from old table to new table
+      sqlite.exec(`
+        INSERT INTO rolling_optimization_branches_new
+          (id, job_id, branch_id, parameter_values, is_start_year, yearly_metrics, rank_by_metric, created_at)
+        SELECT
+          id, job_id, branch_id, parameter_values, is_start_year, yearly_metrics, rank_by_metric, created_at
+        FROM rolling_optimization_branches
+      `)
+
+      // Drop old table
+      sqlite.exec('DROP TABLE rolling_optimization_branches')
+
+      // Rename new table to original name
+      sqlite.exec('ALTER TABLE rolling_optimization_branches_new RENAME TO rolling_optimization_branches')
+
+      // Recreate index
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_rolling_branches_job ON rolling_optimization_branches(job_id)')
+
+      console.log('[DB] Migration complete: legacy parameters column dropped from rolling_optimization_branches table')
+    }
+  } catch (e) {
+    console.log('[DB] Migration warning for dropping parameters column:', e.message)
+  }
+
   // Clean up duplicate watchlist_bots entries (keep only the first entry)
   const duplicates = sqlite.prepare(`
     SELECT watchlist_id, bot_id, COUNT(*) as cnt, MIN(id) as keep_id

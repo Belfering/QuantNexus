@@ -35,6 +35,22 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
     return value.toFixed(2)
   }
 
+  // Format the rank by metric name for display
+  const getMetricDisplayName = (rankBy: string) => {
+    const metricMap: Record<string, string> = {
+      'sharpe_ratio': 'Sharpe',
+      'calmar_ratio': 'Calmar',
+      'sortino_ratio': 'Sortino',
+      'cagr': 'CAGR',
+      'total_return': 'Return',
+      'max_drawdown': 'Drawdown',
+      'win_rate': 'WinRate',
+    }
+    return metricMap[rankBy] || rankBy
+  }
+
+  const metricName = getMetricDisplayName(result.job.splitConfig.rankBy)
+
   // Extract all unique years from branches and sort
   const allYears = new Set<number>()
   result.branches.forEach(branch => {
@@ -43,18 +59,6 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
     })
   })
   const years = Array.from(allYears).sort((a, b) => a - b)
-
-  // Calculate average metric per year across all branches
-  const yearAverages: Record<number, number> = {}
-  years.forEach(year => {
-    const values = result.branches
-      .map(b => b.yearlyMetrics[year.toString()])
-      .filter((v): v is number => v != null)
-
-    if (values.length > 0) {
-      yearAverages[year] = values.reduce((sum, v) => sum + v, 0) / values.length
-    }
-  })
 
   // Find best branch per year (highest metric value)
   const yearBestBranch: Record<number, number> = {}
@@ -74,6 +78,18 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
       yearBestBranch[year] = bestBranchId
     }
   })
+
+  // Convert parameterValues to node arrays (matching chronological structure)
+  const branchesWithNodes = result.branches.map(branch => {
+    // Extract node values from parameterValues object into an array
+    // parameterValues is keyed by nodeId, we need consistent ordering
+    const nodeIds = Object.keys(branch.parameterValues || {}).sort()
+    const nodes = nodeIds.map(nodeId => branch.parameterValues[nodeId])
+    return { ...branch, nodes }
+  })
+
+  // Calculate maximum number of nodes across all branches
+  const maxNodes = Math.max(...branchesWithNodes.map(b => b.nodes.length), 0)
 
   return (
     <Card className="p-6">
@@ -118,7 +134,7 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
 
         {/* Branch Matrix Table */}
         <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Branch Performance Matrix (Annual Returns)</h3>
+          <h3 className="text-lg font-semibold">Branch Performance Matrix (Annual {metricName})</h3>
           <div className="overflow-auto max-h-[600px] border border-border rounded-lg">
             <table className="w-full text-xs">
               <thead className="bg-muted/50 sticky top-0 z-10">
@@ -126,34 +142,21 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
                   <th className="px-2 py-2 text-left sticky left-0 bg-muted/50 border-r border-border min-w-[60px]">
                     Branch
                   </th>
-                  <th className="px-2 py-2 text-left sticky left-[60px] bg-muted/50 border-r border-border min-w-[200px]">
-                    Parameters
-                  </th>
+                  {Array.from({ length: maxNodes }, (_, i) => (
+                    <th key={`node-${i + 1}`} className="px-2 py-2 text-left">
+                      Node {i + 1}
+                    </th>
+                  ))}
                   {years.map(year => (
                     <th key={year} className="px-2 py-2 text-center min-w-[70px]">
-                      {year}
+                      {year} {metricName}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {/* Average row */}
-                <tr className="border-t border-border bg-blue-500/10 font-semibold">
-                  <td className="px-2 py-2 sticky left-0 bg-blue-500/10 border-r border-border">
-                    Avg
-                  </td>
-                  <td className="px-2 py-2 sticky left-[60px] bg-blue-500/10 border-r border-border text-xs">
-                    Average across all branches
-                  </td>
-                  {years.map(year => (
-                    <td key={year} className="px-2 py-2 text-center">
-                      {yearAverages[year] != null ? formatMetric(yearAverages[year]) : '-'}
-                    </td>
-                  ))}
-                </tr>
-
                 {/* Branch rows */}
-                {result.branches.map((branch, idx) => (
+                {branchesWithNodes.map((branch, idx) => (
                   <tr
                     key={branch.branchId}
                     className={`border-t border-border ${
@@ -163,23 +166,20 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
                     <td className="px-2 py-2 font-mono sticky left-0 bg-inherit border-r border-border">
                       {branch.branchId}
                     </td>
-                    <td className="px-2 py-2 sticky left-[60px] bg-inherit border-r border-border">
-                      <div className="text-xs space-y-0.5 max-w-[200px]">
-                        {Object.entries(branch.parameterValues || {}).map(([nodeId, nodeInfo]: [string, any]) => (
-                          <div key={nodeId} className="font-mono">
-                            {nodeInfo.kind === 'indicator' && (
-                              <span>{nodeInfo.indicator} {nodeInfo.operator} {nodeInfo.threshold} (w={nodeInfo.window})</span>
-                            )}
-                            {nodeInfo.kind === 'function' && (
-                              <span>{nodeInfo.rank} {nodeInfo.bottom} by {nodeInfo.metric} (w={nodeInfo.window})</span>
-                            )}
-                            {nodeInfo.kind === 'position' && nodeInfo.positions && (
-                              <span>→ {nodeInfo.positions.join(', ')}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </td>
+                    {Array.from({ length: maxNodes }, (_, nodeIdx) => {
+                      const node = branch.nodes?.[nodeIdx]
+                      return (
+                        <td key={`node-${nodeIdx}`} className="px-2 py-2 text-xs">
+                          {node ? (
+                            <pre className="text-xs font-mono overflow-auto max-w-xs max-h-24 bg-muted/20 p-1 rounded">
+                              {JSON.stringify(node, null, 2)}
+                            </pre>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                      )
+                    })}
                     {years.map(year => {
                       const value = branch.yearlyMetrics[year.toString()]
                       const isBest = yearBestBranch[year] === branch.branchId

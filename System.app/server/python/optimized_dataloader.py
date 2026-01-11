@@ -50,6 +50,42 @@ class PriceDataCache:
 
         return df
 
+    def get_ticker_data(self, ticker, limit=20000):
+        """
+        Get ticker data as pandas DataFrame with date filtering and limit.
+
+        Args:
+            ticker: Ticker symbol
+            limit: Maximum number of rows to return (most recent)
+
+        Returns:
+            Pandas DataFrame with OHLC data
+        """
+        # Load from parquet (LRU cached)
+        df = self._load_parquet_cached(ticker)
+
+        # Ensure Date column is datetime
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'])
+        elif df.index.name == 'Date':
+            df = df.reset_index()
+            df['Date'] = pd.to_datetime(df['Date'])
+
+        # Filter to backtest start date (1993-01-01 minimum)
+        df = df[df['Date'] >= '1993-01-01']
+
+        # Sort by date
+        df = df.sort_values('Date')
+
+        # Add timestamp column (Unix epoch in seconds)
+        df['time'] = df['Date'].astype(np.int64) // 10**9
+
+        # Apply limit
+        if limit and limit < len(df):
+            df = df.tail(limit)
+
+        return df
+
     def get_price_arrays(self, ticker):
         """
         Get price data as NumPy arrays (optimized for speed).

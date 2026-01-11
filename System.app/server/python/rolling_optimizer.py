@@ -306,8 +306,8 @@ class RollingOptimizer:
                 cond_id = cond.get('id')
                 result[cond_id] = {
                     'kind': 'indicator',
-                    'indicator': cond.get('indicator', ''),
-                    'operator': cond.get('operator', ''),
+                    'indicator': cond.get('metric', ''),  # Frontend uses 'metric'
+                    'operator': cond.get('comparator', ''),  # Frontend uses 'comparator'
                     'threshold': cond.get('threshold'),
                     'window': cond.get('window')
                 }
@@ -427,8 +427,20 @@ class RollingOptimizer:
         print(f"[RollingOptimizer] Generating branches from {len(parameter_ranges)} parameter ranges...", file=sys.stderr)
 
         # Generate branches from parameter ranges
+        # DEBUG: Log the original tree structure to see what conditions look like
+        print(f"\n[DEBUG] Original tree structure (first 2000 chars):", file=sys.stderr)
+        tree_str = json.dumps(tree, indent=2)
+        print(f"{tree_str[:2000]}...", file=sys.stderr)
+
         branches = self.generate_branches(tree, parameter_ranges)
         print(f"[RollingOptimizer] Generated {len(branches)} branches", file=sys.stderr)
+
+        # DEBUG: Log first branch's tree after generation
+        if len(branches) > 0:
+            first_branch_tree = branches[0]['tree']
+            print(f"\n[DEBUG] First branch tree after generation (first 2000 chars):", file=sys.stderr)
+            branch_str = json.dumps(first_branch_tree, indent=2)
+            print(f"{branch_str[:2000]}...", file=sys.stderr)
 
         # Map frontend metric names to backend metric keys
         metric_map = {
@@ -486,12 +498,23 @@ class RollingOptimizer:
                     }
                 )
 
-                if not result.get('success'):
+                # Backtester returns dict with metrics/equityCurve, no 'success' key
+                # Check for error condition (no equity curve or empty)
+                if 'error' in result:
                     print(f"[RollingOptimizer]   ✗ Branch {branch_idx} failed: {result.get('error')}", file=sys.stderr)
                     continue
 
                 # Get full equity curve (list of [timestamp, equity] pairs)
                 equity_curve = result.get('equityCurve', [])
+
+                # DEBUG: Log equity curve info for first branch
+                if branch_idx == 0:
+                    print(f"\n[DEBUG] Branch {branch_idx} equity curve info:", file=sys.stderr)
+                    print(f"  Equity curve length: {len(equity_curve)}", file=sys.stderr)
+                    if len(equity_curve) > 0:
+                        print(f"  First point: {equity_curve[0]}", file=sys.stderr)
+                        print(f"  Last point: {equity_curve[-1]}", file=sys.stderr)
+                    sys.stderr.flush()
 
                 if len(equity_curve) == 0:
                     print(f"[RollingOptimizer]   ✗ Branch {branch_idx} returned empty equity curve", file=sys.stderr)
@@ -499,8 +522,16 @@ class RollingOptimizer:
 
                 # Convert equity curve to DataFrame for easier filtering
                 equity_df = pd.DataFrame(equity_curve, columns=['timestamp', 'equity'])
-                equity_df['date'] = pd.to_datetime(equity_df['timestamp'], unit='ms')
+                equity_df['date'] = pd.to_datetime(equity_df['timestamp'], unit='s')  # Fixed: timestamps are in seconds, not ms
                 equity_df['year'] = equity_df['date'].dt.year
+
+                # DEBUG: Log DataFrame info for first branch
+                if branch_idx == 0:
+                    print(f"\n[DEBUG] Branch {branch_idx} DataFrame info:", file=sys.stderr)
+                    print(f"  DataFrame shape: {equity_df.shape}", file=sys.stderr)
+                    print(f"  Unique years: {sorted(equity_df['year'].unique())}", file=sys.stderr)
+                    print(f"  Year range to process: {year_range[0]} to {year_range[-1]}", file=sys.stderr)
+                    sys.stderr.flush()
 
                 # Split by year and calculate metric for each year
                 yearly_metrics = {}
@@ -516,6 +547,14 @@ class RollingOptimizer:
                     # Calculate metric for this year
                     year_equity = year_data[['timestamp', 'equity']].values.tolist()
 
+                    # DEBUG: Log year data for first branch, first year
+                    if branch_idx == 0 and year == year_range[0]:
+                        print(f"\n[DEBUG] Year {year} processing:", file=sys.stderr)
+                        print(f"  Year data shape: {year_data.shape}", file=sys.stderr)
+                        print(f"  Year equity length: {len(year_equity)} points", file=sys.stderr)
+                        print(f"  First equity point: {year_equity[0] if year_equity else 'None'}", file=sys.stderr)
+                        print(f"  Last equity point: {year_equity[-1] if year_equity else 'None'}", file=sys.stderr)
+
                     # Create minimal db for metric calculation
                     year_timestamps = [int(t) for t, e in year_equity]
                     min_db = {
@@ -525,9 +564,20 @@ class RollingOptimizer:
 
                     try:
                         year_metrics = backtester.calculate_metrics(year_equity, min_db, 'CC')
-                        yearly_metrics[str(year)] = year_metrics.get(metric_key)
+                        metric_value = year_metrics.get(metric_key)
+
+                        # DEBUG: Log the metrics for first year and first branch
+                        if branch_idx == 0 and year == year_range[0]:
+                            print(f"[DEBUG] Year {year} calculated metrics:", file=sys.stderr)
+                            print(f"  Full metrics dict: {year_metrics}", file=sys.stderr)
+                            print(f"  Looking for metric_key: {metric_key}", file=sys.stderr)
+                            print(f"  Extracted value: {metric_value}", file=sys.stderr)
+
+                        yearly_metrics[str(year)] = metric_value
                     except Exception as e:
                         print(f"[RollingOptimizer]   Warning: Failed to calculate metrics for year {year}: {e}", file=sys.stderr)
+                        import traceback
+                        traceback.print_exc(file=sys.stderr)
                         yearly_metrics[str(year)] = None
 
                 # Extract node structure from the branch tree
