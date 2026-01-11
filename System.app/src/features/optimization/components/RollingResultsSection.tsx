@@ -3,13 +3,83 @@
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import type { RollingOptimizationResult } from '@/types/bot'
+import { extractNodeIds } from '../services/nodeExtractor'
+import { useRollingJobs } from '../hooks/useRollingJobs'
+import { useRollingResults } from '../hooks/useRollingResults'
 
 export interface RollingResultsSectionProps {
   result: RollingOptimizationResult | null
   onClose: () => void
 }
 
-export function RollingResultsSection({ result, onClose }: RollingResultsSectionProps) {
+export function RollingResultsSection({ result: currentResult, onClose }: RollingResultsSectionProps) {
+  const { jobs, loading: jobsLoading, error: jobsError, selectedJobId, setSelectedJobId, refresh } = useRollingJobs()
+  const { result: selectedResult, loading: resultsLoading } = useRollingResults(selectedJobId)
+
+  // Show current result if available, otherwise show selected job result
+  const result = currentResult || selectedResult
+
+  const formatTimestamp = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString()
+  }
+
+  // If showing a browsed job (not current result)
+  const isBrowsingHistory = !currentResult && selectedResult
+
+  const handleDeleteJob = async () => {
+    if (!selectedJobId) return
+
+    const jobName = `Job #${selectedJobId}`
+    if (!confirm(`Are you sure you want to delete "${jobName}"? This cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/optimization/rolling/jobs/${selectedJobId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete rolling job')
+      }
+
+      // Clear selection and refresh jobs list
+      setSelectedJobId(null)
+      refresh()
+      alert('Job deleted successfully')
+    } catch (error) {
+      console.error('Failed to delete rolling job:', error)
+      alert('Failed to delete rolling job')
+    }
+  }
+
+  if (!result && jobsLoading) {
+    return (
+      <Card className="p-6">
+        <div className="text-center text-muted-foreground">Loading jobs...</div>
+      </Card>
+    )
+  }
+
+  if (!result && jobsError) {
+    return (
+      <Card className="p-6">
+        <div className="text-center text-red-500">Error: {jobsError}</div>
+      </Card>
+    )
+  }
+
+  if (!result && jobs.length === 0) {
+    return (
+      <Card className="p-6">
+        <div className="text-center text-muted-foreground">
+          <p className="mb-2">No rolling optimization jobs found.</p>
+          <p className="text-sm">Run a rolling optimization from the Builder tab to see results here.</p>
+        </div>
+      </Card>
+    )
+  }
+
   if (!result) {
     return (
       <Card className="p-6">
@@ -81,10 +151,26 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
 
   // Convert parameterValues to node arrays (matching chronological structure)
   const branchesWithNodes = result.branches.map(branch => {
-    // Extract node values from parameterValues object into an array
-    // parameterValues is keyed by nodeId, we need consistent ordering
-    const nodeIds = Object.keys(branch.parameterValues || {}).sort()
-    const nodes = nodeIds.map(nodeId => branch.parameterValues[nodeId])
+    // Extract node IDs in depth-first order from tree structure
+    let nodeIds: string[]
+    if (result.job.treeJson && typeof result.job.treeJson === 'string') {
+      try {
+        const tree = JSON.parse(result.job.treeJson)
+        nodeIds = extractNodeIds(tree)
+      } catch (e) {
+        console.error('Failed to parse tree JSON:', e)
+        // Fallback to alphabetical sort
+        nodeIds = Object.keys(branch.parameterValues || {}).sort()
+      }
+    } else {
+      // Fallback for old results without tree JSON
+      nodeIds = Object.keys(branch.parameterValues || {}).sort()
+    }
+
+    // Extract parameter values in the correct order
+    const nodes = nodeIds
+      .map(nodeId => branch.parameterValues[nodeId])
+      .filter(Boolean) // Remove any undefined entries
     return { ...branch, nodes }
   })
 
@@ -97,10 +183,48 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
         {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold">Rolling Optimization Results</h2>
-          <Button size="sm" variant="outline" onClick={onClose}>
-            Close
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={refresh}>
+              Refresh
+            </Button>
+            <Button size="sm" variant="outline" onClick={onClose}>
+              Close
+            </Button>
+          </div>
         </div>
+
+        {/* Job Selector - only show if browsing history */}
+        {!currentResult && jobs.length > 0 && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Select Job:</label>
+            <div className="flex gap-2">
+              <select
+                value={selectedJobId || ''}
+                onChange={(e) => setSelectedJobId(Number(e.target.value))}
+                className="flex-1 px-3 py-2 rounded border border-border bg-background"
+              >
+                <option value="">-- Select a job --</option>
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    Job #{job.id} - {job.botName} - {formatTimestamp(job.createdAt)} - {job.branchCount} branches
+                  </option>
+                ))}
+              </select>
+              {selectedJobId && (
+                <Button size="sm" variant="outline" onClick={handleDeleteJob}>
+                  Delete
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {resultsLoading && (
+          <div className="text-center text-muted-foreground py-8">Loading results...</div>
+        )}
+
+        {!resultsLoading && result && (
+          <>
 
         {/* Summary Statistics */}
         <div className="p-4 rounded bg-muted/20 space-y-2">
@@ -227,6 +351,8 @@ export function RollingResultsSection({ result, onClose }: RollingResultsSection
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
     </Card>
   )

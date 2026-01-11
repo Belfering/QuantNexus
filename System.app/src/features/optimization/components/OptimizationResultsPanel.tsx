@@ -120,6 +120,33 @@ export function OptimizationResultsPanel() {
     }
   }
 
+  const handleDeleteJob = async () => {
+    if (!selectedJobId) return
+
+    const jobName = selectedJob?.name || `Job #${selectedJobId}`
+    if (!confirm(`Are you sure you want to delete "${jobName}"? This cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/optimization/jobs/${selectedJobId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete job')
+      }
+
+      // Clear selection and refresh jobs list
+      setSelectedJobId(null)
+      refresh()
+      alert('Job deleted successfully')
+    } catch (error) {
+      console.error('Failed to delete job:', error)
+      alert('Failed to delete job')
+    }
+  }
+
   const formatTimestamp = (timestamp: number) => {
     return new Date(timestamp).toLocaleString()
   }
@@ -203,9 +230,14 @@ export function OptimizationResultsPanel() {
               ))}
             </select>
             {selectedJobId && !isRenaming && (
-              <Button size="sm" variant="outline" onClick={handleStartRename}>
-                Rename
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={handleStartRename}>
+                  Rename
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleDeleteJob}>
+                  Delete
+                </Button>
+              </>
             )}
           </div>
           {isRenaming && (

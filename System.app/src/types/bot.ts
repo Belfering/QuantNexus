@@ -59,6 +59,7 @@ export type RollingOptimizationResult = {
     branchCount: number
     elapsedSeconds: number
     createdAt?: number
+    treeJson?: string  // JSON string of tree structure
   }
   branches: Array<{
     branchId: number

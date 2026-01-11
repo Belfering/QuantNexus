@@ -1,5 +1,5 @@
 // Extract node parameters from tree structure for optimization results display
-import type { FlowNode } from '@/types/branch'
+import type { FlowNode } from '@/types/flowNode'
 
 const SLOT_ORDER: Record<string, string[]> = {
   indicator: ['then', 'else', 'next'],
@@ -90,4 +90,50 @@ export function extractNodeParameters(tree: FlowNode): Array<Record<string, any>
 
   traverse(tree, true)
   return nodes
+}
+
+/**
+ * Extract node IDs and condition IDs from tree in depth-first order
+ * Used by rolling optimization to order parameterValues correctly
+ * @param tree - The complete tree structure
+ * @returns Array of node/condition IDs in depth-first order
+ */
+export function extractNodeIds(tree: FlowNode): string[] {
+  const ids: string[] = []
+
+  function traverse(node: FlowNode, isRoot: boolean = false) {
+    // Skip root node
+    if (isRoot) {
+      const slots = SLOT_ORDER[node.kind] || ['next']
+      for (const slotKey of slots) {
+        const children = node.children?.[slotKey as keyof typeof node.children]
+        if (Array.isArray(children)) {
+          children.forEach(child => child && traverse(child, false))
+        }
+      }
+      return
+    }
+
+    // For indicators, extract condition IDs
+    if (node.kind === 'indicator' && node.conditions) {
+      node.conditions.forEach((cond: any) => {
+        if (cond.id) ids.push(cond.id)
+      })
+    } else {
+      // For other nodes, extract node ID
+      if (node.id) ids.push(node.id)
+    }
+
+    // Recursively traverse children
+    const slots = SLOT_ORDER[node.kind] || []
+    for (const slotKey of slots) {
+      const children = node.children?.[slotKey as keyof typeof node.children]
+      if (Array.isArray(children)) {
+        children.forEach(child => child && traverse(child, false))
+      }
+    }
+  }
+
+  traverse(tree, true)
+  return ids
 }

@@ -608,6 +608,19 @@ export function initializeDatabase() {
     console.log('[DB] Migration warning for dropping parameters column:', e.message)
   }
 
+  // Migration: Add tree_json column to rolling_optimization_jobs table
+  try {
+    const rollingJobsCols = sqlite.prepare("PRAGMA table_info(rolling_optimization_jobs)").all()
+    const hasTreeJson = rollingJobsCols.some(c => c.name === 'tree_json')
+    if (!hasTreeJson) {
+      console.log('[DB] Migrating rolling_optimization_jobs table: adding tree_json column...')
+      sqlite.exec("ALTER TABLE rolling_optimization_jobs ADD COLUMN tree_json TEXT")
+      console.log('[DB] Migration complete: tree_json column added to rolling_optimization_jobs table')
+    }
+  } catch (e) {
+    console.log('[DB] Migration warning for tree_json column:', e.message)
+  }
+
   // Clean up duplicate watchlist_bots entries (keep only the first entry)
   const duplicates = sqlite.prepare(`
     SELECT watchlist_id, bot_id, COUNT(*) as cnt, MIN(id) as keep_id

@@ -697,8 +697,8 @@ router.get('/rolling', async (req, res) => {
           const jobStmt = sqlite.prepare(`
             INSERT INTO rolling_optimization_jobs (
               bot_id, bot_name, split_config, valid_tickers,
-              ticker_start_dates, branch_count, elapsed_seconds
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+              ticker_start_dates, branch_count, elapsed_seconds, tree_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `)
 
           const jobInfo = jobStmt.run(
@@ -708,7 +708,8 @@ router.get('/rolling', async (req, res) => {
             JSON.stringify(result.jobMetadata?.validTickers || []),
             JSON.stringify(result.jobMetadata?.tickerStartDates || {}),
             result.jobMetadata?.branchCount || 0,
-            result.elapsedSeconds || 0
+            result.elapsedSeconds || 0,
+            JSON.stringify(tree)
           )
 
           jobId = jobInfo.lastInsertRowid
@@ -787,6 +788,33 @@ router.get('/rolling', async (req, res) => {
   }
 })
 
+// Get all rolling optimization jobs
+router.get('/rolling/jobs', (req, res) => {
+  try {
+    const jobs = sqlite.prepare(`
+      SELECT * FROM rolling_optimization_jobs
+      ORDER BY created_at DESC
+    `).all()
+
+    const formatted = jobs.map(job => ({
+      id: job.id,
+      botId: job.bot_id,
+      botName: job.bot_name,
+      splitConfig: JSON.parse(job.split_config),
+      validTickers: JSON.parse(job.valid_tickers),
+      tickerStartDates: JSON.parse(job.ticker_start_dates || '{}'),
+      branchCount: job.branch_count,
+      elapsedSeconds: job.elapsed_seconds,
+      createdAt: job.created_at * 1000, // Convert to ms
+    }))
+
+    res.json(formatted)
+  } catch (error) {
+    console.error('[Optimization] Error fetching rolling jobs:', error)
+    res.status(500).json({ error: 'Failed to fetch rolling jobs' })
+  }
+})
+
 // Get rolling optimization results by job ID
 router.get('/rolling/:jobId', (req, res) => {
   try {
@@ -823,6 +851,7 @@ router.get('/rolling/:jobId', (req, res) => {
         tickerStartDates: JSON.parse(job.ticker_start_dates || '{}'),
         branchCount: job.branch_count,
         elapsedSeconds: job.elapsed_seconds,
+        treeJson: job.tree_json,  // Keep as string, parse in frontend
         createdAt: job.created_at
       },
       branches: branches.map(b => ({
@@ -838,6 +867,54 @@ router.get('/rolling/:jobId', (req, res) => {
   } catch (error) {
     console.error('[Optimization] Error fetching rolling results:', error)
     res.status(500).json({ error: 'Failed to fetch rolling results' })
+  }
+})
+
+// Delete a chronological optimization job
+router.delete('/jobs/:jobId', (req, res) => {
+  try {
+    const { jobId } = req.params
+
+    console.log('[Optimization] DELETE /jobs/:jobId - Deleting job:', jobId)
+
+    // Check if job exists
+    const job = sqlite.prepare('SELECT id FROM optimization_jobs WHERE id = ?').get(jobId)
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' })
+    }
+
+    // Delete the job (cascade will delete results)
+    sqlite.prepare('DELETE FROM optimization_jobs WHERE id = ?').run(jobId)
+
+    console.log('[Optimization] Successfully deleted job:', jobId)
+    res.json({ success: true, message: 'Job deleted successfully' })
+  } catch (error) {
+    console.error('[Optimization] Error deleting job:', error)
+    res.status(500).json({ error: 'Failed to delete job' })
+  }
+})
+
+// Delete a rolling optimization job
+router.delete('/rolling/jobs/:jobId', (req, res) => {
+  try {
+    const { jobId } = req.params
+
+    console.log('[Optimization] DELETE /rolling/jobs/:jobId - Deleting rolling job:', jobId)
+
+    // Check if job exists
+    const job = sqlite.prepare('SELECT id FROM rolling_optimization_jobs WHERE id = ?').get(jobId)
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' })
+    }
+
+    // Delete the job (cascade will delete branches)
+    sqlite.prepare('DELETE FROM rolling_optimization_jobs WHERE id = ?').run(jobId)
+
+    console.log('[Optimization] Successfully deleted rolling job:', jobId)
+    res.json({ success: true, message: 'Job deleted successfully' })
+  } catch (error) {
+    console.error('[Optimization] Error deleting rolling job:', error)
+    res.status(500).json({ error: 'Failed to delete rolling job' })
   }
 })
 
