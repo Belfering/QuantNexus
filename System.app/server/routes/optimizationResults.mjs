@@ -686,37 +686,61 @@ router.get('/rolling', async (req, res) => {
         }
 
         console.log('[Optimization] Rolling optimization complete')
-        console.log('  Valid Tickers:', result.validTickers?.length || 0)
-        console.log('  OOS Periods:', result.oosPeriodCount || 0)
-        console.log('  Selected Branches:', result.selectedBranches?.length || 0)
-        console.log('  OOS Equity Points:', result.oosEquityCurve?.length || 0)
-        console.log('  Branches per Period:', result.branchCount || 'N/A')
+        console.log('  Valid Tickers:', result.jobMetadata?.validTickers?.length || 0)
+        console.log('  Branches Tested:', result.branches?.length || 0)
+        console.log('  Elapsed Time:', result.elapsedSeconds?.toFixed(2), 's')
 
-        // Save rolling results to database
+        // Save rolling results to NEW database structure
+        let jobId = null
         try {
-          const stmt = sqlite.prepare(`
-            INSERT INTO rolling_optimization_results (
-              bot_id, bot_name, split_config, valid_tickers, ticker_start_dates,
-              oos_period_count, selected_branches, oos_trades, oos_metrics, elapsed_seconds
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          // Insert job record
+          const jobStmt = sqlite.prepare(`
+            INSERT INTO rolling_optimization_jobs (
+              bot_id, bot_name, split_config, valid_tickers,
+              ticker_start_dates, branch_count, elapsed_seconds
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
           `)
 
-          const info = stmt.run(
+          const jobInfo = jobStmt.run(
             botId,
             'Rolling Optimization', // TODO: Get actual bot name
             JSON.stringify(splitConfig),
-            JSON.stringify(result.validTickers),
-            JSON.stringify(result.tickerStartDates || {}),
-            result.oosPeriodCount,
-            JSON.stringify(result.selectedBranches),
-            JSON.stringify(result.oosEquityCurve || []),  // Store equity curve instead of trades
-            JSON.stringify(result.oosMetrics),
-            result.elapsedSeconds
+            JSON.stringify(result.jobMetadata?.validTickers || []),
+            JSON.stringify(result.jobMetadata?.tickerStartDates || {}),
+            result.jobMetadata?.branchCount || 0,
+            result.elapsedSeconds || 0
           )
 
-          console.log('[Optimization] Saved rolling results to database with ID:', info.lastInsertRowid)
+          jobId = jobInfo.lastInsertRowid
+          console.log('[Optimization] Created rolling job with ID:', jobId)
+
+          // Insert all branch records in a transaction
+          const branchStmt = sqlite.prepare(`
+            INSERT INTO rolling_optimization_branches (
+              job_id, branch_id, parameter_values, is_start_year,
+              yearly_metrics, rank_by_metric
+            ) VALUES (?, ?, ?, ?, ?, ?)
+          `)
+
+          const insertBranches = sqlite.transaction((branches) => {
+            for (const branch of branches) {
+              branchStmt.run(
+                jobId,
+                branch.branchId,
+                JSON.stringify(branch.parameterValues),
+                branch.isStartYear,
+                JSON.stringify(branch.yearlyMetrics),
+                branch.rankByMetric
+              )
+            }
+          })
+
+          insertBranches(result.branches || [])
+
+          console.log('[Optimization] Saved', result.branches?.length || 0, 'branches to database')
         } catch (dbError) {
           console.error('[Optimization] Failed to save rolling results to database:', dbError)
+          console.error('[Optimization] Error stack:', dbError.stack)
           // Don't fail the request, just log the error
         }
 
@@ -724,16 +748,8 @@ router.get('/rolling', async (req, res) => {
         res.write(`data: ${JSON.stringify({
           type: 'complete',
           success: true,
-          results: {
-            validTickers: result.validTickers,
-            tickerStartDates: result.tickerStartDates,
-            oosPeriodCount: result.oosPeriodCount,
-            selectedBranches: result.selectedBranches,
-            oosEquityCurve: result.oosEquityCurve,
-            oosMetrics: result.oosMetrics,
-            elapsedSeconds: result.elapsedSeconds,
-            branchCount: result.branchCount
-          }
+          jobId: jobId,
+          branchCount: result.jobMetadata?.branchCount || 0
         })}\n\n`)
         res.end()
       } catch (parseError) {
@@ -768,6 +784,60 @@ router.get('/rolling', async (req, res) => {
       })}\n\n`)
       res.end()
     }
+  }
+})
+
+// Get rolling optimization results by job ID
+router.get('/rolling/:jobId', (req, res) => {
+  try {
+    const { jobId } = req.params
+
+    console.log('[Optimization] GET /rolling/:jobId - Fetching results for job:', jobId)
+
+    // Get job metadata
+    const job = sqlite.prepare(`
+      SELECT * FROM rolling_optimization_jobs WHERE id = ?
+    `).get(jobId)
+
+    if (!job) {
+      console.log('[Optimization] Job not found:', jobId)
+      return res.status(404).json({ error: 'Job not found' })
+    }
+
+    // Get all branches for this job
+    const branches = sqlite.prepare(`
+      SELECT * FROM rolling_optimization_branches WHERE job_id = ?
+      ORDER BY branch_id
+    `).all(jobId)
+
+    console.log('[Optimization] Found', branches.length, 'branches for job', jobId)
+
+    // Transform to frontend format
+    const result = {
+      job: {
+        id: job.id,
+        botId: job.bot_id,
+        botName: job.bot_name,
+        splitConfig: JSON.parse(job.split_config),
+        validTickers: JSON.parse(job.valid_tickers),
+        tickerStartDates: JSON.parse(job.ticker_start_dates || '{}'),
+        branchCount: job.branch_count,
+        elapsedSeconds: job.elapsed_seconds,
+        createdAt: job.created_at
+      },
+      branches: branches.map(b => ({
+        branchId: b.branch_id,
+        parameterValues: JSON.parse(b.parameter_values),
+        isStartYear: b.is_start_year,
+        yearlyMetrics: JSON.parse(b.yearly_metrics),
+        rankByMetric: b.rank_by_metric
+      }))
+    }
+
+    res.json(result)
+  } catch (error) {
+    console.error('[Optimization] Error fetching rolling results:', error)
+    res.status(500).json({ error: 'Failed to fetch rolling results' })
   }
 })
 

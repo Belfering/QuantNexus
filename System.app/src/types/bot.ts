@@ -49,20 +49,24 @@ export type Watchlist = {
 }
 
 export type RollingOptimizationResult = {
-  validTickers: string[]
-  tickerStartDates?: Record<string, string>
-  oosPeriodCount: number
-  selectedBranches: Array<{
-    oosPeriod: [string, string]
+  job: {
+    id: number
+    botId: string
+    botName: string
+    splitConfig: ISOOSSplitConfig
+    validTickers: string[]
+    tickerStartDates: Record<string, string>
+    branchCount: number
+    elapsedSeconds: number
+    createdAt?: number
+  }
+  branches: Array<{
     branchId: number
-    params: Record<string, any>
-    isMetric: number | null
-    oosMetrics: Record<string, any>
+    parameterValues: Record<string, any>  // Node structure by node ID
+    isStartYear: number
+    yearlyMetrics: Record<string, number | null>  // { "1993": 0.125, "1994": 0.153, ... }
+    rankByMetric: string
   }>
-  oosEquityCurve: Array<[number, number]>  // [timestamp, equity] pairs
-  oosMetrics: Record<string, any>
-  elapsedSeconds: number
-  branchCount?: number  // Total branches tested per period
 }
 
 export type BotSession = {
@@ -73,7 +77,8 @@ export type BotSession = {
   backtest: BotBacktestState
   callChains: CallChain[] // Per-bot call chains (stored with bot payload)
   customIndicators: CustomIndicator[] // Per-bot custom indicators (FRD-035)
-  parameterRanges: ParameterRange[] // Optimization ranges for parameters
+  parameterRanges: ParameterRange[] // Chronological optimization ranges
+  rollingParameterRanges?: ParameterRange[] // Rolling optimization ranges (separate from chronological)
   splitConfig?: ISOOSSplitConfig // IS/OOS split configuration for optimization
   branchGenerationJob?: BranchGenerationJob // Current branch generation job state
   rollingResult?: RollingOptimizationResult // Rolling optimization results

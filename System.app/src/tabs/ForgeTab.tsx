@@ -662,7 +662,12 @@ export function ForgeTab({
   ) => {
     if (!activeBot) return
 
-    const updatedRanges = [...parameterRanges]
+    // Read from the appropriate parameter range array based on current strategy
+    const currentStrategy = activeBot.splitConfig?.strategy || 'chronological'
+    const sourceRanges = currentStrategy === 'rolling'
+      ? (activeBot.rollingParameterRanges || [])
+      : parameterRanges
+    const updatedRanges = [...sourceRanges]
 
     if (enabled && range) {
       // Find or create parameter range
@@ -857,7 +862,12 @@ export function ForgeTab({
       }
     }
 
-    botStore.setParameterRanges(activeBot.id, updatedRanges)
+    // Save to the appropriate parameter range array based on current strategy
+    if (currentStrategy === 'rolling') {
+      botStore.setRollingParameterRanges(activeBot.id, updatedRanges)
+    } else {
+      botStore.setParameterRanges(activeBot.id, updatedRanges)
+    }
   }
 
   // --- Zustand stores ---
@@ -992,6 +1002,121 @@ export function ForgeTab({
     loadRequirements()
   }, [])
 
+  // Clear old batch job when switching to Forge tab
+  useEffect(() => {
+    if (activeBot) {
+      console.log('[ForgeTab] Clearing old batch job on tab mount')
+      useBotStore.getState().setBranchGenerationJob(activeBot.id, undefined)
+    }
+  }, []) // Run only on mount
+
+  // Auto-extract parameter ranges from tree values (ROLLING ONLY)
+  // This parses syntax like "9-10" → min:9, max:10 from indicator conditions
+  const extractRollingRanges = (node: FlowNode): ParameterRange[] => {
+    const ranges: ParameterRange[] = []
+
+    // Recursively traverse tree
+    const traverse = (n: FlowNode) => {
+      console.log('[extractRollingRanges] Checking node:', n.kind, n.id)
+
+      if (n.kind === 'indicator' && n.conditions) {
+        console.log('[extractRollingRanges] Found indicator with conditions:', n.conditions)
+
+        for (const cond of n.conditions) {
+          const condId = cond.id
+          console.log('[extractRollingRanges] Condition:', condId, cond)
+
+          // Parse window (e.g., "9-10" → min:9, max:10)
+          if (cond.window) {
+            console.log('[extractRollingRanges] Window:', cond.window, typeof cond.window)
+            const parts = String(cond.window).split('-')
+            console.log('[extractRollingRanges] Window parts:', parts)
+            if (parts.length === 2) {
+              const min = parseInt(parts[0])
+              const max = parseInt(parts[1])
+              if (!isNaN(min) && !isNaN(max)) {
+                console.log('[extractRollingRanges] Adding window range:', min, max)
+                ranges.push({
+                  id: `${n.id}-${condId}-window`,
+                  type: 'period',
+                  path: `${n.id}.conditions.${condId}.window`,
+                  min,
+                  max,
+                  step: 1,
+                  enabled: true
+                })
+              }
+            }
+          }
+
+          // Parse threshold (e.g., "25-26" → min:25, max:26)
+          if (cond.threshold !== undefined) {
+            console.log('[extractRollingRanges] Threshold:', cond.threshold, typeof cond.threshold)
+            const parts = String(cond.threshold).split('-')
+            console.log('[extractRollingRanges] Threshold parts:', parts)
+            if (parts.length === 2) {
+              const min = parseFloat(parts[0])
+              const max = parseFloat(parts[1])
+              if (!isNaN(min) && !isNaN(max)) {
+                console.log('[extractRollingRanges] Adding threshold range:', min, max)
+                ranges.push({
+                  id: `${n.id}-${condId}-threshold`,
+                  type: 'threshold',
+                  path: `${n.id}.conditions.${condId}.threshold`,
+                  min,
+                  max,
+                  step: 1,
+                  enabled: true
+                })
+              }
+            }
+          }
+
+          // Parse forDays (e.g., "10-12" → min:10, max:12)
+          if (cond.forDays !== undefined) {
+            console.log('[extractRollingRanges] ForDays:', cond.forDays, typeof cond.forDays)
+            const parts = String(cond.forDays).split('-')
+            console.log('[extractRollingRanges] ForDays parts:', parts)
+            if (parts.length === 2) {
+              const min = parseInt(parts[0])
+              const max = parseInt(parts[1])
+              if (!isNaN(min) && !isNaN(max)) {
+                console.log('[extractRollingRanges] Adding forDays range:', min, max)
+                ranges.push({
+                  id: `${n.id}-${condId}-forDays`,
+                  type: 'period',
+                  path: `${n.id}.conditions.${condId}.forDays`,
+                  min,
+                  max,
+                  step: 1,
+                  enabled: true
+                })
+              }
+            }
+          }
+        }
+      }
+
+      // Recursively check children
+      if (n.children) {
+        for (const slot in n.children) {
+          const children = n.children[slot as SlotId]
+          if (Array.isArray(children)) {
+            for (const child of children) {
+              if (child) {
+                traverse(child)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    traverse(node)
+    console.log('[extractRollingRanges] Final ranges:', ranges)
+    return ranges
+  }
+
   // Handler to start branch generation
   const handleGenerateBranches = async () => {
     if (!activeBot) return
@@ -1030,9 +1155,16 @@ export function ForgeTab({
     if (hasRollingNode(current) && splitConfig.strategy === 'rolling') {
       console.log('[ForgeTab] Detected Rolling node - using rolling optimization endpoint')
 
-      // Extract tickers from ticker lists in parameter ranges
-      console.log('[ForgeTab] Parameter ranges:', JSON.stringify(parameterRanges, null, 2))
-      const tickerListRanges = parameterRanges.filter(r => r.type === 'ticker_list')
+      // Clear any old batch job before starting new rolling optimization
+      useBotStore.getState().setBranchGenerationJob(activeBot.id, undefined)
+
+      // ROLLING: Use separate rollingParameterRanges
+      const rollingParameterRanges = activeBot.rollingParameterRanges || []
+      console.log('[ForgeTab] Using rolling parameter ranges:', rollingParameterRanges)
+
+      // Extract tickers from ticker lists in rolling parameter ranges
+      console.log('[ForgeTab] Rolling parameter ranges:', JSON.stringify(rollingParameterRanges, null, 2))
+      const tickerListRanges = rollingParameterRanges.filter(r => r.type === 'ticker_list')
       console.log('[ForgeTab] Filtered ticker list ranges:', tickerListRanges)
 
       const tickers: string[] = []
@@ -1111,7 +1243,7 @@ export function ForgeTab({
         tree: JSON.stringify(current),
         tickers: JSON.stringify(uniqueTickers),
         splitConfig: JSON.stringify(splitConfig),
-        parameterRanges: JSON.stringify(parameterRanges)
+        parameterRanges: JSON.stringify(rollingParameterRanges)
       })
 
       const eventSource = new EventSource(`/api/optimization/rolling?${params}`)
@@ -1130,23 +1262,34 @@ export function ForgeTab({
               totalPeriods: data.totalPeriods
             })
           } else if (data.type === 'complete') {
-            // Optimization complete
-            console.log('[ForgeTab] Rolling optimization complete:', data.results)
+            // Optimization complete - fetch full results
+            console.log('[ForgeTab] Rolling optimization complete, job ID:', data.jobId)
 
-            // Store results
-            useBotStore.getState().setRollingResult(activeBot.id, data.results)
-
-            // Clean up
+            // Clean up SSE
             eventSource.close()
             setRollingOptimizationRunning(false)
             setRollingProgress(null)
 
-            // Switch to Results tab and Rolling subtab
-            setForgeSubtab('Results')
-            setResultsSubtab('Rolling')
+            // Fetch full results from API
+            fetch(`/api/optimization/rolling/${data.jobId}`)
+              .then(res => res.json())
+              .then(results => {
+                console.log('[ForgeTab] Fetched rolling results:', results)
 
-            // Show success notification
-            alert(`Rolling optimization complete!\nValid tickers: ${data.results.validTickers.length}\nOOS periods: ${data.results.oosPeriodCount}\nBranches tested per period: ${data.results.branchCount || 'N/A'}\nFinal CAGR: ${((data.results.oosMetrics?.cagr || 0) * 100).toFixed(2)}%\n\nResults are now available in the Results tab.`)
+                // Store results
+                useBotStore.getState().setRollingResult(activeBot.id, results)
+
+                // Switch to Results tab and Rolling subtab
+                setForgeSubtab('Results')
+                setResultsSubtab('Rolling')
+
+                // Show success notification
+                alert(`Rolling optimization complete!\nJob ID: ${data.jobId}\nValid tickers: ${results.job.validTickers.length}\nBranches tested: ${results.job.branchCount}\nYears: ${results.branches[0]?.isStartYear || '?'} - present\n\nResults are now available in the Results tab.`)
+              })
+              .catch(error => {
+                console.error('[ForgeTab] Failed to fetch rolling results:', error)
+                alert(`Rolling optimization completed but failed to load results: ${error.message}`)
+              })
           } else if (data.type === 'error') {
             // Error occurred
             console.error('[ForgeTab] Rolling optimization error:', data.error)
@@ -1253,6 +1396,10 @@ export function ForgeTab({
 
                     // Auto-manage tree structure based on strategy change
                     if (config.strategy !== previousStrategy) {
+                      // Clear old batch job when switching strategies
+                      console.log(`[ForgeTab] Strategy changed from ${previousStrategy} to ${config.strategy} - clearing old batch job`)
+                      useBotStore.getState().setBranchGenerationJob(activeBot.id, undefined)
+
                       if (config.strategy === 'rolling') {
                         // Switch to Rolling: Clear tree and add Rolling node
                         const rollingNode = createNode('rolling')
@@ -1363,7 +1510,32 @@ export function ForgeTab({
               }
 
               // Otherwise show Run Forge button
-              const enabledRanges = (activeBot?.parameterRanges || []).filter(r => r.enabled)
+              // Use rolling parameter ranges if strategy is rolling, otherwise use chronological ranges
+              const currentSplitConfig = activeBot?.splitConfig || { strategy: 'chronological' as const }
+              const isRollingStrategy = currentSplitConfig.strategy === 'rolling'
+
+              // Check if tree has Rolling node
+              const hasRollingNodeInTree = (node: FlowNode): boolean => {
+                if (node.kind === 'rolling') return true
+                if (node.children) {
+                  for (const slot in node.children) {
+                    const children = node.children[slot as SlotId]
+                    if (Array.isArray(children)) {
+                      for (const child of children) {
+                        if (child && hasRollingNodeInTree(child)) return true
+                      }
+                    }
+                  }
+                }
+                return false
+              }
+
+              // Use separate parameter ranges for rolling vs chronological
+              const rangesToUse = isRollingStrategy
+                ? (activeBot?.rollingParameterRanges || [])
+                : (activeBot?.parameterRanges || [])
+              const enabledRanges = rangesToUse.filter(r => r.enabled)
+
               let branchCount = 1
               for (const range of enabledRanges) {
                 if (range.type === 'ticker_list') {
@@ -1375,7 +1547,12 @@ export function ForgeTab({
                   branchCount *= steps
                 }
               }
-              const hasRanges = enabledRanges.length > 0
+
+              // For rolling: enable if Rolling node exists AND has ranges, for chronological: enable if ranges exist
+              const hasRanges = isRollingStrategy
+                ? (hasRollingNodeInTree(current) && enabledRanges.length > 0)
+                : enabledRanges.length > 0
+
               const etaMinutes = Math.ceil(branchCount * 0.5 / 60) // Rough estimate: 0.5s per branch
 
               return (
@@ -1389,7 +1566,7 @@ export function ForgeTab({
                   </Button>
                   {hasRanges && (
                     <span className="text-xs text-muted-foreground">
-                      {branchCount} branches (~{etaMinutes} min)
+                      {branchCount} {branchCount === 1 ? 'branch' : 'branches'} (~{etaMinutes} min)
                     </span>
                   )}
                 </>
