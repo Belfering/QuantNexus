@@ -70,7 +70,7 @@ export type RollingOptimizationResult = {
     rankByMetric: string
   }>
   adaptivePortfolio?: {
-    isOosMetrics: { IS: number | null; OOS: number | null }  // Composite equity curve IS/OOS metrics
+    yearlyMetrics: Record<string, number | null>  // Composite equity curve yearly cumulative metrics
   }
 }
 

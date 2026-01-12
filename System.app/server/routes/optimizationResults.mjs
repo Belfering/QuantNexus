@@ -865,7 +865,7 @@ router.get('/rolling/:jobId', (req, res) => {
         rankByMetric: b.rank_by_metric
       })),
       adaptivePortfolio: {
-        isOosMetrics: JSON.parse(job.adaptive_metrics || '{}')
+        yearlyMetrics: JSON.parse(job.adaptive_metrics || '{}')
       }
     }
 

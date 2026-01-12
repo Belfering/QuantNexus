@@ -424,9 +424,10 @@ class RollingOptimizer:
                 last_equity_value = normalized_segment[-1][1]
 
         if not composite_equity_curve:
-            return {'IS': None, 'OOS': None}
+            # Return None for all years if no composite curve
+            return {str(year): None for year in year_range}
 
-        # Step 3: Calculate IS and OOS metrics on composite curve
+        # Step 3: Calculate CUMULATIVE metrics on composite curve for each year
         adaptive_metrics = {}
 
         # Convert to DataFrame for easier filtering
@@ -434,41 +435,36 @@ class RollingOptimizer:
         composite_df['date'] = pd.to_datetime(composite_df['timestamp'], unit='s')
         composite_df['year'] = composite_df['date'].dt.year
 
-        # IS metric (before is_start_year)
-        is_data = composite_df[composite_df['year'] < is_start_year]
-        if len(is_data) > 0:
-            is_equity = is_data[['timestamp', 'equity']].values.tolist()
-            is_timestamps = [int(t) for t, e in is_equity]
-            is_db = {
-                'dates': is_timestamps,
-                'close': {'SPY': [0] * len(is_timestamps)}
-            }
-            try:
-                is_metrics = backtester.calculate_metrics(is_equity, is_db, 'CC')
-                adaptive_metrics['IS'] = is_metrics.get(metric_key)
-            except Exception as e:
-                print(f"[RollingOptimizer]   Warning: Failed to calculate adaptive IS metric: {e}", file=sys.stderr)
-                adaptive_metrics['IS'] = None
-        else:
-            adaptive_metrics['IS'] = None
+        # Calculate cumulative metric for each year
+        for year_idx, year in enumerate(year_range):
+            if year_idx == 0:
+                # First year: no adaptive data (can't predict best branch)
+                adaptive_metrics[str(year)] = None
+                continue
 
-        # OOS metric (from is_start_year onward)
-        oos_data = composite_df[composite_df['year'] >= is_start_year]
-        if len(oos_data) > 0:
-            oos_equity = oos_data[['timestamp', 'equity']].values.tolist()
-            oos_timestamps = [int(t) for t, e in oos_equity]
-            oos_db = {
-                'dates': oos_timestamps,
-                'close': {'SPY': [0] * len(oos_timestamps)}
+            # Get composite equity curve up to and including this year
+            composite_up_to_year = composite_df[composite_df['year'] <= year]
+
+            if len(composite_up_to_year) == 0:
+                # No composite data yet
+                adaptive_metrics[str(year)] = None
+                continue
+
+            # Calculate cumulative metric on composite curve up to this year
+            year_equity = composite_up_to_year[['timestamp', 'equity']].values.tolist()
+            year_timestamps = [int(t) for t, e in year_equity]
+            year_db = {
+                'dates': year_timestamps,
+                'close': {'SPY': [0] * len(year_timestamps)}
             }
+
             try:
-                oos_metrics = backtester.calculate_metrics(oos_equity, oos_db, 'CC')
-                adaptive_metrics['OOS'] = oos_metrics.get(metric_key)
+                year_metrics = backtester.calculate_metrics(year_equity, year_db, 'CC')
+                metric_value = year_metrics.get(metric_key)
+                adaptive_metrics[str(year)] = metric_value
             except Exception as e:
-                print(f"[RollingOptimizer]   Warning: Failed to calculate adaptive OOS metric: {e}", file=sys.stderr)
-                adaptive_metrics['OOS'] = None
-        else:
-            adaptive_metrics['OOS'] = None
+                print(f"[RollingOptimizer]   Warning: Failed to calculate adaptive metric for year {year}: {e}", file=sys.stderr)
+                adaptive_metrics[str(year)] = None
 
         return adaptive_metrics
 
@@ -836,7 +832,7 @@ class RollingOptimizer:
             metric_key,
             backtester
         )
-        print(f"[RollingOptimizer]   ✓ Adaptive portfolio complete (IS: {adaptive_metrics.get('IS')}, OOS: {adaptive_metrics.get('OOS')})", file=sys.stderr)
+        print(f"[RollingOptimizer]   ✓ Adaptive portfolio complete ({len(adaptive_metrics)} years)", file=sys.stderr)
 
         return {
             'success': True,
