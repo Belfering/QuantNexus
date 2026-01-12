@@ -710,7 +710,7 @@ router.get('/rolling', async (req, res) => {
             result.jobMetadata?.branchCount || 0,
             result.elapsedSeconds || 0,
             JSON.stringify(tree),
-            JSON.stringify(result.adaptiveMetrics || {})
+            JSON.stringify(result.adaptivePortfolio || {})
           )
 
           jobId = jobInfo.lastInsertRowid
@@ -864,9 +864,7 @@ router.get('/rolling/:jobId', (req, res) => {
         isOosMetrics: JSON.parse(b.is_oos_metrics || '{}'),
         rankByMetric: b.rank_by_metric
       })),
-      adaptivePortfolio: {
-        yearlyMetrics: JSON.parse(job.adaptive_metrics || '{}')
-      }
+      adaptivePortfolio: JSON.parse(job.adaptive_metrics || '{}')
     }
 
     res.json(result)

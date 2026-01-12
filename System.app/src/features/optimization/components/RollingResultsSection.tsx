@@ -347,6 +347,18 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                       Node {i + 1}
                     </th>
                   ))}
+                  <th className="px-2 py-2 text-center min-w-[90px]">
+                    IS Start
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[80px]">
+                    IS Sharpe
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[90px]">
+                    OOS Start
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[80px]">
+                    OOS Sharpe
+                  </th>
                   {years.map(year => (
                     <th key={year} className="px-2 py-2 text-center min-w-[70px]">
                       {year} {metricName}
@@ -374,6 +386,19 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                       </td>
                     )
                   })}
+                  {/* IS/OOS metrics columns */}
+                  <td className="px-2 py-2 text-center text-xs">
+                    {result.adaptivePortfolio?.isStartDate || '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isSharpe != null ? result.adaptivePortfolio.isSharpe.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center text-xs">
+                    {result.adaptivePortfolio?.oosStartDate || '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosSharpe != null ? result.adaptivePortfolio.oosSharpe.toFixed(2) : '-'}
+                  </td>
                   {/* Adaptive portfolio yearly metrics */}
                   {years.map(year => {
                     const value = adaptivePortfolio[year.toString()]
@@ -389,55 +414,14 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                   })}
                 </tr>
 
-                {/* Branch rows */}
-                {branchesWithNodes.map((branch, idx) => (
-                  <tr
-                    key={branch.branchId}
-                    className={`border-t border-border ${
-                      idx % 2 === 0 ? 'bg-background' : 'bg-muted/20'
-                    } hover:bg-muted/40`}
-                  >
-                    <td className="px-2 py-2 font-mono sticky left-0 bg-inherit border-r border-border">
-                      {branch.branchId}
-                    </td>
-                    {Array.from({ length: maxNodes }, (_, nodeIdx) => {
-                      const node = branch.nodes?.[nodeIdx]
-                      return (
-                        <td key={`node-${nodeIdx}`} className="px-2 py-2 text-xs">
-                          {node ? (
-                            <pre className="text-xs font-mono overflow-auto max-w-xs max-h-24 bg-muted/20 p-1 rounded">
-                              {JSON.stringify(node, null, 2)}
-                            </pre>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                      )
-                    })}
-                    {years.map(year => {
-                      const value = branch.yearlyMetrics[year.toString()]
-                      const isBest = yearBestBranch[year] === branch.branchId
-
-                      return (
-                        <td
-                          key={year}
-                          className={`px-2 py-2 text-center ${
-                            isBest && value != null ? 'bg-green-500/20 font-semibold' : ''
-                          }`}
-                          title={isBest && value != null ? 'Best branch this year' : undefined}
-                        >
-                          {formatMetric(value, result.job.splitConfig.rankBy)}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
+                {/* Individual branch rows hidden - all calculations still run in backend */}
+                {/* The adaptive portfolio above shows the composite equity curve from walk-forward strategy */}
               </tbody>
             </table>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             <strong>Adaptive</strong> row shows a walk-forward strategy that builds a composite equity curve by stitching together yearly returns from the branch that performed best in the previous year.
-            Green cells indicate the best-performing branch for that year. "-" indicates no data for that period.
+            "-" indicates no data for that period.
           </p>
         </div>
 

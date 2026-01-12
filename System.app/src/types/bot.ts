@@ -71,6 +71,10 @@ export type RollingOptimizationResult = {
   }>
   adaptivePortfolio?: {
     yearlyMetrics: Record<string, number | null>  // Composite equity curve yearly cumulative metrics
+    isSharpe: number | null  // Sharpe ratio for IS period
+    oosSharpe: number | null  // Sharpe ratio for OOS period
+    isStartDate: string  // IS period start date (YYYY-MM-DD)
+    oosStartDate: string  // OOS period start date (YYYY-MM-DD)
   }
 }
 

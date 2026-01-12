@@ -345,7 +345,8 @@ class RollingOptimizer:
         year_range: list,
         is_start_year: int,
         metric_key: str,
-        backtester
+        backtester,
+        min_warmup_years: int
     ) -> dict:
         """
         Calculate adaptive portfolio IS/OOS metrics by building a composite equity curve.
@@ -466,7 +467,68 @@ class RollingOptimizer:
                 print(f"[RollingOptimizer]   Warning: Failed to calculate adaptive metric for year {year}: {e}", file=sys.stderr)
                 adaptive_metrics[str(year)] = None
 
-        return adaptive_metrics
+        # Step 4: Calculate IS/OOS Sharpe ratios
+        is_sharpe = None
+        oos_sharpe = None
+        is_start_date = None
+        oos_start_date = None
+
+        # Find first year with at least 250 data points
+        first_valid_year = None
+        for year in year_range:
+            year_data = composite_df[composite_df['year'] == year]
+            if len(year_data) >= 250:
+                first_valid_year = year
+                is_start_date = year_data['date'].min().strftime('%Y-%m-%d')
+                break
+
+        if first_valid_year is not None:
+            # Calculate IS end year (first valid year + min_warmup_years)
+            is_end_year = first_valid_year + min_warmup_years - 1
+
+            # Split composite curve into IS and OOS periods
+            is_data = composite_df[
+                (composite_df['year'] >= first_valid_year) &
+                (composite_df['year'] <= is_end_year)
+            ]
+            oos_data = composite_df[composite_df['year'] > is_end_year]
+
+            # Calculate IS Sharpe if we have data
+            if len(is_data) > 0:
+                is_equity = is_data[['timestamp', 'equity']].values.tolist()
+                is_timestamps = [int(t) for t, e in is_equity]
+                is_db = {
+                    'dates': is_timestamps,
+                    'close': {'SPY': [0] * len(is_timestamps)}
+                }
+                try:
+                    is_metrics = backtester.calculate_metrics(is_equity, is_db, 'CC')
+                    is_sharpe = is_metrics.get('sharpe')
+                except Exception as e:
+                    print(f"[RollingOptimizer]   Warning: Failed to calculate IS Sharpe: {e}", file=sys.stderr)
+
+            # Calculate OOS Sharpe if we have data
+            if len(oos_data) > 0:
+                oos_start_date = oos_data['date'].min().strftime('%Y-%m-%d')
+                oos_equity = oos_data[['timestamp', 'equity']].values.tolist()
+                oos_timestamps = [int(t) for t, e in oos_equity]
+                oos_db = {
+                    'dates': oos_timestamps,
+                    'close': {'SPY': [0] * len(oos_timestamps)}
+                }
+                try:
+                    oos_metrics = backtester.calculate_metrics(oos_equity, oos_db, 'CC')
+                    oos_sharpe = oos_metrics.get('sharpe')
+                except Exception as e:
+                    print(f"[RollingOptimizer]   Warning: Failed to calculate OOS Sharpe: {e}", file=sys.stderr)
+
+        return {
+            'yearlyMetrics': adaptive_metrics,
+            'isSharpe': is_sharpe,
+            'oosSharpe': oos_sharpe,
+            'isStartDate': is_start_date or '',
+            'oosStartDate': oos_start_date or ''
+        }
 
     def run_rolling_optimization(
         self,
@@ -824,20 +886,23 @@ class RollingOptimizer:
 
         # Calculate adaptive portfolio metrics
         print(f"\n[RollingOptimizer] Calculating adaptive portfolio...", file=sys.stderr)
-        adaptive_metrics = self._calculate_adaptive_portfolio(
+        adaptive_result = self._calculate_adaptive_portfolio(
             branch_results,
             all_branch_equity_segments,
             year_range,
             is_start_year,
             metric_key,
-            backtester
+            backtester,
+            min_warmup_years
         )
-        print(f"[RollingOptimizer]   ✓ Adaptive portfolio complete ({len(adaptive_metrics)} years)", file=sys.stderr)
+        print(f"[RollingOptimizer]   ✓ Adaptive portfolio complete ({len(adaptive_result['yearlyMetrics'])} years)", file=sys.stderr)
+        print(f"[RollingOptimizer]   IS Sharpe: {adaptive_result.get('isSharpe', 'N/A')}", file=sys.stderr)
+        print(f"[RollingOptimizer]   OOS Sharpe: {adaptive_result.get('oosSharpe', 'N/A')}", file=sys.stderr)
 
         return {
             'success': True,
             'branches': branch_results,
-            'adaptiveMetrics': adaptive_metrics,
+            'adaptivePortfolio': adaptive_result,
             'jobMetadata': {
                 'validTickers': valid_tickers,
                 'tickerStartDates': {k: v.strftime('%Y-%m-%d') for k, v in ticker_start_dates.items()},
