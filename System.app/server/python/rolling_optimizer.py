@@ -501,8 +501,24 @@ class RollingOptimizer:
                     'dates': is_timestamps,
                     'close': {'SPY': [0] * len(is_timestamps)}
                 }
+                # Identify invested bars by detecting equity changes
+                # A bar is invested if equity changes from previous bar (not flat/empty)
+                is_allocations = []
+                for i in range(len(is_equity)):
+                    if i == 0:
+                        # First bar is considered invested
+                        is_allocations.append({'invested': 1.0})
+                    else:
+                        prev_equity = is_equity[i-1][1]
+                        curr_equity = is_equity[i][1]
+                        # If equity changed, consider it invested
+                        if abs(curr_equity - prev_equity) > 0.001:  # Small threshold for floating point
+                            is_allocations.append({'invested': 1.0})
+                        else:
+                            # Flat equity = empty/cash
+                            is_allocations.append({})
                 try:
-                    is_metrics_dict = backtester.calculate_metrics(is_equity, is_db, 'CC')
+                    is_metrics_dict = backtester.calculate_metrics(is_equity, is_db, 'CC', allocations=is_allocations)
                 except Exception as e:
                     print(f"[RollingOptimizer]   Warning: Failed to calculate IS metrics: {e}", file=sys.stderr)
 
@@ -515,8 +531,23 @@ class RollingOptimizer:
                     'dates': oos_timestamps,
                     'close': {'SPY': [0] * len(oos_timestamps)}
                 }
+                # Identify invested bars by detecting equity changes
+                oos_allocations = []
+                for i in range(len(oos_equity)):
+                    if i == 0:
+                        # First bar is considered invested
+                        oos_allocations.append({'invested': 1.0})
+                    else:
+                        prev_equity = oos_equity[i-1][1]
+                        curr_equity = oos_equity[i][1]
+                        # If equity changed, consider it invested
+                        if abs(curr_equity - prev_equity) > 0.001:
+                            oos_allocations.append({'invested': 1.0})
+                        else:
+                            # Flat equity = empty/cash
+                            oos_allocations.append({})
                 try:
-                    oos_metrics_dict = backtester.calculate_metrics(oos_equity, oos_db, 'CC')
+                    oos_metrics_dict = backtester.calculate_metrics(oos_equity, oos_db, 'CC', allocations=oos_allocations)
                 except Exception as e:
                     print(f"[RollingOptimizer]   Warning: Failed to calculate OOS metrics: {e}", file=sys.stderr)
 
