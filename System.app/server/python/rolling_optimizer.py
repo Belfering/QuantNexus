@@ -467,11 +467,11 @@ class RollingOptimizer:
                 print(f"[RollingOptimizer]   Warning: Failed to calculate adaptive metric for year {year}: {e}", file=sys.stderr)
                 adaptive_metrics[str(year)] = None
 
-        # Step 4: Calculate IS/OOS Sharpe ratios
-        is_sharpe = None
-        oos_sharpe = None
+        # Step 4: Calculate IS/OOS metrics from composite equity curve
         is_start_date = None
         oos_start_date = None
+        is_metrics_dict = {}
+        oos_metrics_dict = {}
 
         # Find first year with at least 250 data points
         first_valid_year = None
@@ -493,7 +493,7 @@ class RollingOptimizer:
             ]
             oos_data = composite_df[composite_df['year'] > is_end_year]
 
-            # Calculate IS Sharpe if we have data
+            # Calculate IS metrics if we have data
             if len(is_data) > 0:
                 is_equity = is_data[['timestamp', 'equity']].values.tolist()
                 is_timestamps = [int(t) for t, e in is_equity]
@@ -502,12 +502,11 @@ class RollingOptimizer:
                     'close': {'SPY': [0] * len(is_timestamps)}
                 }
                 try:
-                    is_metrics = backtester.calculate_metrics(is_equity, is_db, 'CC')
-                    is_sharpe = is_metrics.get('sharpe')
+                    is_metrics_dict = backtester.calculate_metrics(is_equity, is_db, 'CC')
                 except Exception as e:
-                    print(f"[RollingOptimizer]   Warning: Failed to calculate IS Sharpe: {e}", file=sys.stderr)
+                    print(f"[RollingOptimizer]   Warning: Failed to calculate IS metrics: {e}", file=sys.stderr)
 
-            # Calculate OOS Sharpe if we have data
+            # Calculate OOS metrics if we have data
             if len(oos_data) > 0:
                 oos_start_date = oos_data['date'].min().strftime('%Y-%m-%d')
                 oos_equity = oos_data[['timestamp', 'equity']].values.tolist()
@@ -517,17 +516,37 @@ class RollingOptimizer:
                     'close': {'SPY': [0] * len(oos_timestamps)}
                 }
                 try:
-                    oos_metrics = backtester.calculate_metrics(oos_equity, oos_db, 'CC')
-                    oos_sharpe = oos_metrics.get('sharpe')
+                    oos_metrics_dict = backtester.calculate_metrics(oos_equity, oos_db, 'CC')
                 except Exception as e:
-                    print(f"[RollingOptimizer]   Warning: Failed to calculate OOS Sharpe: {e}", file=sys.stderr)
+                    print(f"[RollingOptimizer]   Warning: Failed to calculate OOS metrics: {e}", file=sys.stderr)
 
         return {
             'yearlyMetrics': adaptive_metrics,
-            'isSharpe': is_sharpe,
-            'oosSharpe': oos_sharpe,
             'isStartDate': is_start_date or '',
-            'oosStartDate': oos_start_date or ''
+            'isCagr': is_metrics_dict.get('cagr'),
+            'isSharpe': is_metrics_dict.get('sharpe'),
+            'isCalmar': is_metrics_dict.get('calmarRatio'),
+            'isSortino': is_metrics_dict.get('sortino'),
+            'isTreynor': is_metrics_dict.get('treynor'),
+            'isBeta': is_metrics_dict.get('beta'),
+            'isVol': is_metrics_dict.get('volatility'),
+            'isMaxDD': is_metrics_dict.get('maxDrawdown'),
+            'isTim': is_metrics_dict.get('tim'),
+            'isTimar': is_metrics_dict.get('timar'),
+            'isWinRate': is_metrics_dict.get('winRate'),
+            'oosStartDate': oos_start_date or '',
+            'oosCagr': oos_metrics_dict.get('cagr'),
+            'oosSharpe': oos_metrics_dict.get('sharpe'),
+            'oosCalmar': oos_metrics_dict.get('calmarRatio'),
+            'oosSortino': oos_metrics_dict.get('sortino'),
+            'oosTreynor': oos_metrics_dict.get('treynor'),
+            'oosBeta': oos_metrics_dict.get('beta'),
+            'oosVol': oos_metrics_dict.get('volatility'),
+            'oosMaxDD': oos_metrics_dict.get('maxDrawdown'),
+            'oosTim': oos_metrics_dict.get('tim'),
+            'oosTimar': oos_metrics_dict.get('timar'),
+            'oosWinRate': oos_metrics_dict.get('winRate'),
+            'pass': None  # TODO: Calculate pass based on requirements
         }
 
     def run_rolling_optimization(
