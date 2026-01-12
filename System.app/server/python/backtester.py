@@ -487,6 +487,9 @@ class Backtester:
             return self._eval_function(ctx, node)
         elif kind == 'basic':
             return self._eval_basic(ctx, node)
+        elif kind == 'rolling':
+            # Rolling node is a pass-through container like basic node
+            return self._eval_basic(ctx, node)
         elif kind == 'scaling':
             return self._eval_scaling(ctx, node)
         elif kind == 'altExit':
@@ -895,7 +898,7 @@ class Backtester:
         # Calculate start date
         start_date = datetime.fromtimestamp(timestamps[0]).strftime('%Y-%m-%d') if len(timestamps) > 0 else None
 
-        # Calculate number of years
+        # Calculate number of years (252 trading days per year)
         n_years = len(values) / 252.0 if len(values) > 0 else 1.0
 
         # Calculate strategy returns
