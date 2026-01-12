@@ -350,20 +350,81 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                   <th className="px-2 py-2 text-center min-w-[90px]">
                     IS Start
                   </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS CAGR
+                  </th>
                   <th className="px-2 py-2 text-center min-w-[80px]">
                     IS Sharpe
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS Calmar
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS Sortino
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS Treynor
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS Beta
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS Vol
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS MaxDD
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS TIM
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS TIMAR
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    IS Win%
                   </th>
                   <th className="px-2 py-2 text-center min-w-[90px]">
                     OOS Start
                   </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS CAGR
+                  </th>
                   <th className="px-2 py-2 text-center min-w-[80px]">
                     OOS Sharpe
                   </th>
-                  {years.map(year => (
-                    <th key={year} className="px-2 py-2 text-center min-w-[70px]">
-                      {year} {metricName}
-                    </th>
-                  ))}
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS Calmar
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS Sortino
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS Treynor
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS Beta
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS Vol
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS MaxDD
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS TIM
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS TIMAR
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[70px]">
+                    OOS Win%
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[60px]">
+                    Pass
+                  </th>
+                  <th className="px-2 py-2 text-center min-w-[80px]">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -391,27 +452,80 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                     {result.adaptivePortfolio?.isStartDate || '-'}
                   </td>
                   <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isCagr != null ? formatMetric(result.adaptivePortfolio.isCagr, 'cagr') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
                     {result.adaptivePortfolio?.isSharpe != null ? result.adaptivePortfolio.isSharpe.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isCalmar != null ? result.adaptivePortfolio.isCalmar.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isSortino != null ? result.adaptivePortfolio.isSortino.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isTreynor != null ? result.adaptivePortfolio.isTreynor.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isBeta != null ? result.adaptivePortfolio.isBeta.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isVol != null ? formatMetric(result.adaptivePortfolio.isVol, 'vol') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isMaxDD != null ? formatMetric(result.adaptivePortfolio.isMaxDD, 'max_drawdown') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isTim != null ? formatMetric(result.adaptivePortfolio.isTim, 'tim') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isTimar != null ? formatMetric(result.adaptivePortfolio.isTimar, 'timar') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.isWinRate != null ? formatMetric(result.adaptivePortfolio.isWinRate, 'win_rate') : '-'}
                   </td>
                   <td className="px-2 py-2 text-center text-xs">
                     {result.adaptivePortfolio?.oosStartDate || '-'}
                   </td>
                   <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosCagr != null ? formatMetric(result.adaptivePortfolio.oosCagr, 'cagr') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
                     {result.adaptivePortfolio?.oosSharpe != null ? result.adaptivePortfolio.oosSharpe.toFixed(2) : '-'}
                   </td>
-                  {/* Adaptive portfolio yearly metrics */}
-                  {years.map(year => {
-                    const value = adaptivePortfolio[year.toString()]
-                    return (
-                      <td
-                        key={`adaptive-${year}`}
-                        className="px-2 py-2 text-center bg-blue-500/10"
-                        title="Adaptive portfolio: composite equity curve from walk-forward strategy"
-                      >
-                        {formatMetric(value, result.job.splitConfig.rankBy)}
-                      </td>
-                    )
-                  })}
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosCalmar != null ? result.adaptivePortfolio.oosCalmar.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosSortino != null ? result.adaptivePortfolio.oosSortino.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosTreynor != null ? result.adaptivePortfolio.oosTreynor.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosBeta != null ? result.adaptivePortfolio.oosBeta.toFixed(2) : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosVol != null ? formatMetric(result.adaptivePortfolio.oosVol, 'vol') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosMaxDD != null ? formatMetric(result.adaptivePortfolio.oosMaxDD, 'max_drawdown') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosTim != null ? formatMetric(result.adaptivePortfolio.oosTim, 'tim') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosTimar != null ? formatMetric(result.adaptivePortfolio.oosTimar, 'timar') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.oosWinRate != null ? formatMetric(result.adaptivePortfolio.oosWinRate, 'win_rate') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {result.adaptivePortfolio?.pass != null ? (result.adaptivePortfolio.pass ? 'Yes' : 'No') : '-'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    -
+                  </td>
                 </tr>
 
                 {/* Individual branch rows hidden - all calculations still run in backend */}

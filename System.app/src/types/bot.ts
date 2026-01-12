@@ -71,10 +71,31 @@ export type RollingOptimizationResult = {
   }>
   adaptivePortfolio?: {
     yearlyMetrics: Record<string, number | null>  // Composite equity curve yearly cumulative metrics
-    isSharpe: number | null  // Sharpe ratio for IS period
-    oosSharpe: number | null  // Sharpe ratio for OOS period
     isStartDate: string  // IS period start date (YYYY-MM-DD)
+    isCagr: number | null  // CAGR for IS period
+    isSharpe: number | null  // Sharpe ratio for IS period
+    isCalmar: number | null  // Calmar ratio for IS period
+    isSortino: number | null  // Sortino ratio for IS period
+    isTreynor: number | null  // Treynor ratio for IS period
+    isBeta: number | null  // Beta for IS period
+    isVol: number | null  // Volatility for IS period
+    isMaxDD: number | null  // Max drawdown for IS period
+    isTim: number | null  // TIM for IS period
+    isTimar: number | null  // TIMAR for IS period
+    isWinRate: number | null  // Win rate for IS period
     oosStartDate: string  // OOS period start date (YYYY-MM-DD)
+    oosCagr: number | null  // CAGR for OOS period
+    oosSharpe: number | null  // Sharpe ratio for OOS period
+    oosCalmar: number | null  // Calmar ratio for OOS period
+    oosSortino: number | null  // Sortino ratio for OOS period
+    oosTreynor: number | null  // Treynor ratio for OOS period
+    oosBeta: number | null  // Beta for OOS period
+    oosVol: number | null  // Volatility for OOS period
+    oosMaxDD: number | null  // Max drawdown for OOS period
+    oosTim: number | null  // TIM for OOS period
+    oosTimar: number | null  // TIMAR for OOS period
+    oosWinRate: number | null  // Win rate for OOS period
+    pass: boolean | null  // Whether the adaptive portfolio passes the criteria
   }
 }
 
