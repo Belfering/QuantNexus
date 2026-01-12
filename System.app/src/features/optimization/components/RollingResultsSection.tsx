@@ -207,6 +207,52 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
   // Calculate maximum number of nodes across all branches
   const maxNodes = Math.max(...branchesWithNodes.map(b => b.nodes.length), 0)
 
+  // Calculate parameter ranges for Adaptive row
+  const adaptiveNodeRanges = Array.from({ length: maxNodes }, (_, nodeIdx) => {
+    const allNodeValues: any[] = []
+    branchesWithNodes.forEach(branch => {
+      const nodeValue = branch.nodes?.[nodeIdx]
+      if (nodeValue) {
+        allNodeValues.push(nodeValue)
+      }
+    })
+
+    if (allNodeValues.length === 0) return null
+
+    // Aggregate parameters across all branches
+    const aggregated: Record<string, any> = {}
+
+    // First pass: collect all parameter keys
+    const allKeys = new Set<string>()
+    allNodeValues.forEach(node => {
+      Object.keys(node).forEach(key => allKeys.add(key))
+    })
+
+    // Second pass: aggregate each parameter
+    allKeys.forEach(key => {
+      const values = allNodeValues.map(node => node[key]).filter(v => v != null)
+      if (values.length === 0) return
+
+      // Check if numeric (for ranges)
+      if (typeof values[0] === 'number') {
+        const min = Math.min(...values)
+        const max = Math.max(...values)
+        aggregated[key] = min === max ? min : `${min}-${max}`
+      } else if (Array.isArray(values[0])) {
+        // For arrays, flatten and collect unique values
+        const flattened = values.flat()
+        const unique = Array.from(new Set(flattened))
+        aggregated[key] = unique.length === 1 ? unique[0] : unique
+      } else {
+        // For non-numeric, non-array values, collect unique values
+        const unique = Array.from(new Set(values))
+        aggregated[key] = unique.length === 1 ? unique[0] : unique.join(' | ')
+      }
+    })
+
+    return aggregated
+  })
+
   return (
     <Card className="p-6">
       <div className="space-y-6">
@@ -314,11 +360,20 @@ export function RollingResultsSection({ result: currentResult, onClose }: Rollin
                   <td className="px-2 py-2 sticky left-0 bg-primary/5 border-r border-border">
                     Adaptive
                   </td>
-                  {Array.from({ length: maxNodes }, () => (
-                    <td key={Math.random()} className="px-2 py-2 text-xs">
-                      -
-                    </td>
-                  ))}
+                  {Array.from({ length: maxNodes }, (_, nodeIdx) => {
+                    const nodeRange = adaptiveNodeRanges[nodeIdx]
+                    return (
+                      <td key={`adaptive-node-${nodeIdx}`} className="px-2 py-2 text-xs">
+                        {nodeRange ? (
+                          <pre className="text-xs font-mono overflow-auto max-w-xs max-h-24 bg-muted/20 p-1 rounded">
+                            {JSON.stringify(nodeRange, null, 2)}
+                          </pre>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                    )
+                  })}
                   {/* Adaptive portfolio yearly metrics */}
                   {years.map(year => {
                     const value = adaptivePortfolio[year.toString()]
