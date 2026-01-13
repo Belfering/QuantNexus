@@ -1,7 +1,7 @@
 // src/tabs/ForgeTab.tsx
 // Forge tab component - lazy loadable wrapper for flowchart builder
 
-import { type RefObject, useState, useEffect } from 'react'
+import { type RefObject, useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { USED_TICKERS_DATALIST_ID } from '@/constants'
@@ -68,6 +68,8 @@ import {
   NodeCard,
 } from '@/features/builder'
 import { SettingsPanel } from '@/components/SettingsPanel'
+import { ChronologicalSettingsPanel } from '@/components/Forge/ChronologicalSettingsPanel'
+import { WalkForwardSettingsPanel } from '@/components/Forge/WalkForwardSettingsPanel'
 import { ParameterBoxPanel } from '@/features/parameters/components/ParameterBoxPanel'
 import type { ParameterField, ParameterRange } from '@/features/parameters/types'
 import { loadCallChainsFromApi } from '@/features/auth'
@@ -148,6 +150,72 @@ export function ForgeTab({
 
   // Ticker lists for Forge optimization (Phase 3)
   const { tickerLists } = useTickerLists()
+
+  // Manage separate trees for Split and Walk Forward tabs
+  const prevSubtabRef = useRef<string | null>(null)
+  const isLoadingTreeRef = useRef(false)
+
+  useEffect(() => {
+    if (!activeBot) return
+    if (isLoadingTreeRef.current) return // Prevent re-entry during tree load
+
+    // Check if this is a tab switch
+    const isTabSwitch = prevSubtabRef.current !== null && prevSubtabRef.current !== forgeSubtab
+
+    if (isTabSwitch) {
+      // Save current tree to the previous tab's field (get fresh value from store)
+      const currentTree = useTreeStore.getState().root
+      if (prevSubtabRef.current === 'Split') {
+        useBotStore.getState().updateBot(activeBot.id, { splitTree: currentTree })
+        console.log('[ForgeTab] Saved Split tree to bot storage')
+      } else if (prevSubtabRef.current === 'Walk Forward') {
+        useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: currentTree })
+        console.log('[ForgeTab] Saved Walk Forward tree to bot storage')
+      }
+    }
+
+    // Load the tree for the new tab (always load to ensure correct tree is displayed)
+    isLoadingTreeRef.current = true
+
+    if (forgeSubtab === 'Walk Forward') {
+      if (activeBot.walkForwardTree) {
+        // Load existing Walk Forward tree
+        treeStore.setRoot(activeBot.walkForwardTree)
+        console.log('[ForgeTab] Loaded existing Walk Forward tree:', activeBot.walkForwardTree.kind)
+      } else {
+        // Initialize new rolling tree
+        const rollingNode = createNode('rolling')
+        rollingNode.rollingWindow = activeBot.splitConfig?.rollingWindowPeriod ?? 'monthly'
+        rollingNode.rankBy = activeBot.splitConfig?.rankBy ?? 'Sharpe Ratio'
+        const newTree = ensureSlots(rollingNode)
+        treeStore.setRoot(newTree)
+        // Save the initialized tree immediately
+        useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: newTree })
+        console.log('[ForgeTab] Initialized Walk Forward tab with new rolling node')
+      }
+    } else if (forgeSubtab === 'Split') {
+      if (activeBot.splitTree) {
+        // Load existing Split tree
+        treeStore.setRoot(activeBot.splitTree)
+        console.log('[ForgeTab] Loaded existing Split tree:', activeBot.splitTree.kind)
+      } else {
+        // Initialize new basic tree
+        const basicNode = createNode('basic')
+        const newTree = ensureSlots(basicNode)
+        treeStore.setRoot(newTree)
+        // Save the initialized tree immediately
+        useBotStore.getState().updateBot(activeBot.id, { splitTree: newTree })
+        console.log('[ForgeTab] Initialized Split tab with new basic node')
+      }
+    }
+
+    prevSubtabRef.current = forgeSubtab
+
+    // Allow re-entry on next render cycle
+    requestAnimationFrame(() => {
+      isLoadingTreeRef.current = false
+    })
+  }, [forgeSubtab, activeBot?.id])
 
   // Tree operation handlers from store
   const handleAdd = (parentId: string, slot: SlotId, index: number, kind: BlockKind) => {
@@ -662,11 +730,10 @@ export function ForgeTab({
   ) => {
     if (!activeBot) return
 
-    // Read from the appropriate parameter range array based on current strategy
-    const currentStrategy = activeBot.splitConfig?.strategy || 'chronological'
-    const sourceRanges = currentStrategy === 'rolling'
+    // Read from the appropriate parameter range array based on active tab
+    const sourceRanges = forgeSubtab === 'Walk Forward'
       ? (activeBot.rollingParameterRanges || [])
-      : parameterRanges
+      : (activeBot.parameterRanges || [])  // Split tab / default
     const updatedRanges = [...sourceRanges]
 
     if (enabled && range) {
@@ -862,8 +929,8 @@ export function ForgeTab({
       }
     }
 
-    // Save to the appropriate parameter range array based on current strategy
-    if (currentStrategy === 'rolling') {
+    // Save to the appropriate parameter range array based on active tab
+    if (forgeSubtab === 'Walk Forward') {
       botStore.setRollingParameterRanges(activeBot.id, updatedRanges)
     } else {
       botStore.setParameterRanges(activeBot.id, updatedRanges)
@@ -932,12 +999,11 @@ export function ForgeTab({
 
   // Parameter ranges for optimization (stored in bot session)
   const botStore = useBotStore()
-  // ROLLING ONLY: Use rollingParameterRanges when under rolling node for display
-  // This ensures saved ranges flow back to the UI after "Save Range" is clicked
-  const currentStrategy = activeBot?.splitConfig?.strategy || 'chronological'
-  const parameterRanges = currentStrategy === 'rolling'
+  // Use correct parameter ranges based on active tab
+  // Split tab uses parameterRanges (chronological), Walk Forward uses rollingParameterRanges
+  const parameterRanges = forgeSubtab === 'Walk Forward'
     ? (activeBot?.rollingParameterRanges ?? [])
-    : (activeBot?.parameterRanges ?? [])  // Chronological unchanged
+    : (activeBot?.parameterRanges ?? [])  // Split tab / default
 
   // Track flowchart container position for floating scrollbar
   useEffect(() => {
@@ -985,27 +1051,10 @@ export function ForgeTab({
   }, [flowchartScrollRef])
 
   // --- Optimization state and handlers ---
-  const [requirements, setRequirements] = useState<EligibilityRequirement[]>([])
   const { job: batchJob, runBatchBacktest, cancelJob } = useBatchBacktest()
   const [rollingOptimizationRunning, setRollingOptimizationRunning] = useState(false)
   const [rollingProgress, setRollingProgress] = useState<{completed: number, total: number, currentPeriod: number, totalPeriods: number} | null>(null)
   const [resultsSubtab, setResultsSubtab] = useState<'Chronological' | 'Rolling'>('Chronological')
-
-  // Load requirements from API on mount
-  useEffect(() => {
-    async function loadRequirements() {
-      try {
-        const response = await fetch('/api/admin/eligibility')
-        if (response.ok) {
-          const data = await response.json()
-          setRequirements(data.eligibilityRequirements || [])
-        }
-      } catch (error) {
-        console.error('Failed to load eligibility requirements:', error)
-      }
-    }
-    loadRequirements()
-  }, [])
 
   // Clear old batch job when switching to Forge tab
   useEffect(() => {
@@ -1126,50 +1175,50 @@ export function ForgeTab({
   const handleGenerateBranches = async () => {
     if (!activeBot) return
 
-    const parameterRanges = activeBot.parameterRanges || []
-    // Ensure splitConfig has default values if not initialized
-    const splitConfig = activeBot.splitConfig || {
+    // Determine strategy and data based on active tab
+    const isWalkForward = forgeSubtab === 'Walk Forward'
+
+    // Use correct parameter ranges based on tab
+    const parameterRanges = isWalkForward
+      ? (activeBot.rollingParameterRanges || [])
+      : (activeBot.parameterRanges || [])
+
+    // Use correct requirements based on tab
+    const requirements = isWalkForward
+      ? (activeBot.rollingRequirements || [])
+      : (activeBot.chronologicalRequirements || [])
+
+    // Ensure splitConfig has correct strategy based on tab
+    const splitConfig = {
+      ...(activeBot.splitConfig || {}),
       enabled: true,
-      strategy: 'chronological' as const,
-      chronologicalPercent: 50,
-      minYears: 5
+      strategy: isWalkForward ? ('rolling' as const) : ('chronological' as const),
+      chronologicalPercent: activeBot.splitConfig?.chronologicalPercent ?? 50,
+      minYears: activeBot.splitConfig?.minYears ?? 5,
+      rollingWindowPeriod: activeBot.splitConfig?.rollingWindowPeriod ?? 'monthly',
+      rankBy: activeBot.splitConfig?.rankBy ?? 'Sharpe Ratio',
+      minWarmUpYears: activeBot.splitConfig?.minWarmUpYears ?? 3
     }
+
     const mode = 'CC' // Default mode
     const costBps = 5 // Default cost
 
-    // DEBUG: Log splitConfig to verify it's initialized
-    console.log('[ForgeTab] Starting optimization with splitConfig:', JSON.stringify(splitConfig))
+    // DEBUG: Log config to verify
+    console.log(`[ForgeTab] Starting ${isWalkForward ? 'rolling' : 'chronological'} optimization from ${forgeSubtab} tab`)
+    console.log('[ForgeTab] splitConfig:', JSON.stringify(splitConfig))
+    console.log('[ForgeTab] parameterRanges:', parameterRanges.length)
+    console.log('[ForgeTab] requirements:', requirements.length)
 
-    // Check if tree contains Rolling node
-    const hasRollingNode = (node: FlowNode): boolean => {
-      if (node.kind === 'rolling') return true
-      if (node.children) {
-        for (const slot in node.children) {
-          const children = node.children[slot as SlotId]
-          if (Array.isArray(children)) {
-            for (const child of children) {
-              if (child && hasRollingNode(child)) return true
-            }
-          }
-        }
-      }
-      return false
-    }
-
-    // If Rolling node exists and strategy is rolling, use rolling optimization endpoint
-    if (hasRollingNode(current) && splitConfig.strategy === 'rolling') {
-      console.log('[ForgeTab] Detected Rolling node - using rolling optimization endpoint')
+    // If Walk Forward tab, use rolling optimization endpoint
+    if (isWalkForward) {
+      console.log('[ForgeTab] Walk Forward tab - using rolling optimization endpoint')
 
       // Clear any old batch job before starting new rolling optimization
       useBotStore.getState().setBranchGenerationJob(activeBot.id, undefined)
 
-      // ROLLING: Use separate rollingParameterRanges
-      const rollingParameterRanges = activeBot.rollingParameterRanges || []
-      console.log('[ForgeTab] Using rolling parameter ranges:', rollingParameterRanges)
-
-      // Extract tickers from ticker lists in rolling parameter ranges
-      console.log('[ForgeTab] Rolling parameter ranges:', JSON.stringify(rollingParameterRanges, null, 2))
-      const tickerListRanges = rollingParameterRanges.filter(r => r.type === 'ticker_list')
+      // Extract tickers from ticker lists in parameter ranges (already set to rolling)
+      console.log('[ForgeTab] Parameter ranges:', JSON.stringify(parameterRanges, null, 2))
+      const tickerListRanges = parameterRanges.filter(r => r.type === 'ticker_list')
       console.log('[ForgeTab] Filtered ticker list ranges:', tickerListRanges)
 
       const tickers: string[] = []
@@ -1248,7 +1297,7 @@ export function ForgeTab({
         tree: JSON.stringify(current),
         tickers: JSON.stringify(uniqueTickers),
         splitConfig: JSON.stringify(splitConfig),
-        parameterRanges: JSON.stringify(rollingParameterRanges)
+        parameterRanges: JSON.stringify(parameterRanges)  // Already set to rolling ranges at top
       })
 
       const eventSource = new EventSource(`/api/optimization/rolling?${params}`)
@@ -1340,6 +1389,7 @@ export function ForgeTab({
       const chronologicalRanges = parameterRanges.filter(r => r.type !== 'ticker_list')
       console.log('[ForgeTab] Filtered parameter ranges for chronological:', chronologicalRanges.length, 'of', parameterRanges.length)
 
+      // Use requirements from the tab-aware variable (already set to chronological at top)
       await runBatchBacktest(current, chronologicalRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
     }
   }
@@ -1368,10 +1418,16 @@ export function ForgeTab({
         {/* Subtab Navigation */}
         <div className="flex gap-2 shrink-0">
           <Button
-            variant={forgeSubtab === 'Builder' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Builder')}
+            variant={forgeSubtab === 'Split' ? 'accent' : 'secondary'}
+            onClick={() => setForgeSubtab('Split')}
           >
-            Builder
+            Split
+          </Button>
+          <Button
+            variant={forgeSubtab === 'Walk Forward' ? 'accent' : 'secondary'}
+            onClick={() => setForgeSubtab('Walk Forward')}
+          >
+            Walk Forward
           </Button>
           <Button
             variant={forgeSubtab === 'Ticker Lists' ? 'accent' : 'secondary'}
@@ -1387,70 +1443,39 @@ export function ForgeTab({
           </Button>
         </div>
 
-        {/* Conditional Content */}
-        {forgeSubtab === 'Builder' ? (
+        {/* Split Tab Content */}
+        {forgeSubtab === 'Split' && (
           <>
-            {/* Top Zone - Settings Panel */}
+            {/* Top Zone - Chronological Settings Panel */}
             <div className="shrink-0 border-b border-border pb-4">
-              <SettingsPanel
-                splitConfig={activeBot?.splitConfig}
+              <ChronologicalSettingsPanel
+                requirements={activeBot?.chronologicalRequirements ?? []}
+                onRequirementsChange={(requirements) => {
+                  if (activeBot) {
+                    useBotStore.getState().setChronologicalRequirements(activeBot.id, requirements)
+                  }
+                }}
+                splitConfig={{
+                  ...activeBot?.splitConfig,
+                  enabled: activeBot?.splitConfig?.enabled ?? true,
+                  strategy: 'chronological'
+                }}
                 onSplitConfigChange={(config) => {
                   if (activeBot) {
-                    const previousStrategy = activeBot.splitConfig?.strategy
-                    useBotStore.getState().setSplitConfig(activeBot.id, config)
-
-                    // Auto-manage tree structure based on strategy change
-                    if (config.strategy !== previousStrategy) {
-                      // Clear old batch job when switching strategies
-                      console.log(`[ForgeTab] Strategy changed from ${previousStrategy} to ${config.strategy} - clearing old batch job`)
-                      useBotStore.getState().setBranchGenerationJob(activeBot.id, undefined)
-
-                      if (config.strategy === 'rolling') {
-                        // Switch to Rolling: Clear tree and add Rolling node
-                        const rollingNode = createNode('rolling')
-                        rollingNode.rollingWindow = config.rollingWindowPeriod ?? 'monthly'
-                        rollingNode.rankBy = config.rankBy ?? 'Sharpe Ratio'
-                        treeStore.setRoot(ensureSlots(rollingNode))
-                      } else if (config.strategy === 'chronological') {
-                        // Switch to Chronological: Reset to default basic node
-                        const basicNode = createNode('basic')
-                        treeStore.setRoot(ensureSlots(basicNode))
-                      }
-                    } else if (config.strategy === 'rolling' && config.rollingWindowPeriod && config.rankBy) {
-                      // Same strategy but updated rolling config - sync to existing Rolling nodes
-                      const updateRollingNodes = (node: FlowNode): FlowNode => {
-                        if (node.kind === 'rolling') {
-                          return {
-                            ...node,
-                            rollingWindow: config.rollingWindowPeriod,
-                            rankBy: config.rankBy,
-                            children: Object.fromEntries(
-                              Object.entries(node.children).map(([slot, arr]) => [
-                                slot,
-                                arr?.map((c) => (c ? updateRollingNodes(c) : c))
-                              ])
-                            )
-                          }
-                        }
-                        // Recursively update children
-                        const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
-                        Object.entries(node.children).forEach(([slot, arr]) => {
-                          children[slot as SlotId] = arr?.map((c) => (c ? updateRollingNodes(c) : c))
-                        })
-                        return { ...node, children }
-                      }
-
-                      const updatedTree = updateRollingNodes(current)
-                      treeStore.setRoot(updatedTree)
-                    }
+                    useBotStore.getState().setSplitConfig(activeBot.id, {
+                      ...config,
+                      strategy: 'chronological' // Force chronological strategy
+                    })
                   }
                 }}
               />
             </div>
 
-            {/* Flowchart Toolbar - Run Forge + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
+            {/* Split Tab - Flowchart Toolbar & Tree */}
+            <>
+            {/* Flowchart Toolbar - Run Split + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
         <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg shrink-0 z-20 sticky top-0" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
-          {/* Left section: Run Forge button OR Branch generation progress */}
+          {/* Left section: Run Split button OR Branch generation progress */}
           <div className="flex items-center gap-3">
             {(() => {
               // If rolling optimization is running, show progress
@@ -1514,32 +1539,11 @@ export function ForgeTab({
                 )
               }
 
-              // Otherwise show Run Forge button
-              // Use rolling parameter ranges if strategy is rolling, otherwise use chronological ranges
-              const currentSplitConfig = activeBot?.splitConfig || { strategy: 'chronological' as const }
-              const isRollingStrategy = currentSplitConfig.strategy === 'rolling'
+              // Otherwise show Run Split button
+              // Split tab ALWAYS uses chronological parameter ranges
 
-              // Check if tree has Rolling node
-              const hasRollingNodeInTree = (node: FlowNode): boolean => {
-                if (node.kind === 'rolling') return true
-                if (node.children) {
-                  for (const slot in node.children) {
-                    const children = node.children[slot as SlotId]
-                    if (Array.isArray(children)) {
-                      for (const child of children) {
-                        if (child && hasRollingNodeInTree(child)) return true
-                      }
-                    }
-                  }
-                }
-                return false
-              }
-
-              // Use separate parameter ranges for rolling vs chronological
-              const rangesToUse = isRollingStrategy
-                ? (activeBot?.rollingParameterRanges || [])
-                : (activeBot?.parameterRanges || [])
-              const enabledRanges = rangesToUse.filter(r => r.enabled)
+              // Split tab uses chronological parameter ranges
+              const enabledRanges = (activeBot?.parameterRanges || []).filter(r => r.enabled)
 
               let branchCount = 1
               for (const range of enabledRanges) {
@@ -1553,10 +1557,8 @@ export function ForgeTab({
                 }
               }
 
-              // For rolling: enable if Rolling node exists AND has ranges, for chronological: enable if ranges exist
-              const hasRanges = isRollingStrategy
-                ? (hasRollingNodeInTree(current) && enabledRanges.length > 0)
-                : enabledRanges.length > 0
+              // For Split: enable if chronological ranges exist
+              const hasRanges = enabledRanges.length > 0
 
               const etaMinutes = Math.ceil(branchCount * 0.5 / 60) // Rough estimate: 0.5s per branch
 
@@ -1567,7 +1569,7 @@ export function ForgeTab({
                     disabled={!hasRanges}
                     onClick={handleGenerateBranches}
                   >
-                    Run Forge
+                    Run Split
                   </Button>
                   {hasRanges && (
                     <span className="text-xs text-muted-foreground">
@@ -1974,9 +1976,591 @@ export function ForgeTab({
           </div>
         )}
           </>
-        ) : forgeSubtab === 'Ticker Lists' ? (
-          <TickerListsPanel />
-        ) : (
+          </>
+        )}
+
+        {/* Walk Forward Tab Content */}
+        {forgeSubtab === 'Walk Forward' && (
+          <>
+            {/* Top Zone - Walk Forward Settings Panel */}
+            <div className="shrink-0 border-b border-border pb-4">
+              <WalkForwardSettingsPanel
+                requirements={activeBot?.rollingRequirements ?? []}
+                onRequirementsChange={(requirements) => {
+                  if (activeBot) {
+                    useBotStore.getState().setRollingRequirements(activeBot.id, requirements)
+                  }
+                }}
+                splitConfig={{
+                  ...activeBot?.splitConfig,
+                  enabled: activeBot?.splitConfig?.enabled ?? true,
+                  strategy: 'rolling'
+                }}
+                onSplitConfigChange={(config) => {
+                  if (activeBot) {
+                    // Sync rolling config changes to Rolling nodes in tree
+                    if (config.rollingWindowPeriod && config.rankBy) {
+                      const updateRollingNodes = (node: FlowNode): FlowNode => {
+                        if (node.kind === 'rolling') {
+                          return {
+                            ...node,
+                            rollingWindow: config.rollingWindowPeriod,
+                            rankBy: config.rankBy,
+                            children: Object.fromEntries(
+                              Object.entries(node.children).map(([slot, arr]) => [
+                                slot,
+                                arr?.map((c) => (c ? updateRollingNodes(c) : c))
+                              ])
+                            )
+                          }
+                        }
+                        // Recursively update children
+                        const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+                        Object.entries(node.children).forEach(([slot, arr]) => {
+                          children[slot as SlotId] = arr?.map((c) => (c ? updateRollingNodes(c) : c))
+                        })
+                        return { ...node, children }
+                      }
+
+                      const updatedTree = updateRollingNodes(current)
+                      treeStore.setRoot(updatedTree)
+                    }
+
+                    useBotStore.getState().setSplitConfig(activeBot.id, {
+                      ...config,
+                      strategy: 'rolling' // Force rolling strategy
+                    })
+                  }
+                }}
+              />
+            </div>
+
+            {/* Flowchart Toolbar - Run Walk Forward + Find/Replace + Undo/Redo - Floating above the flowchart zone */}
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2 border border-border rounded-lg shrink-0 z-20 sticky top-0" style={{ backgroundColor: 'color-mix(in srgb, var(--color-muted) 60%, var(--color-card))' }}>
+          {/* Left section: Run Walk Forward button OR Branch generation progress */}
+          <div className="flex items-center gap-3">
+            {(() => {
+              // If rolling optimization is running, show progress
+              if (rollingOptimizationRunning) {
+                const percentage = rollingProgress && rollingProgress.total > 0
+                  ? Math.round((rollingProgress.completed / rollingProgress.total) * 100)
+                  : 0
+
+                return (
+                  <>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center justify-between text-xs font-medium">
+                        <span>Rolling Optimization</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-5 overflow-hidden">
+                        <div
+                          className={`h-full bg-primary flex items-center justify-center text-xs font-medium text-primary-foreground transition-all duration-300 ${!rollingProgress ? 'animate-pulse' : ''}`}
+                          style={{ width: rollingProgress ? `${percentage}%` : '100%' }}
+                        >
+                          {rollingProgress ? `${percentage}%` : 'Starting...'}
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {rollingProgress
+                          ? `Period ${rollingProgress.currentPeriod} of ${rollingProgress.totalPeriods} • ${rollingProgress.completed} / ${rollingProgress.total} branches tested`
+                          : 'Initializing rolling optimization...'}
+                      </div>
+                    </div>
+                  </>
+                )
+              }
+
+              // If branch generation is running, show progress bar
+              if (batchJob && batchJob.status === 'running') {
+                const percentage = batchJob.progress.total > 0
+                  ? Math.round((batchJob.progress.completed / batchJob.progress.total) * 100)
+                  : 0
+
+                return (
+                  <>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center justify-between text-xs font-medium">
+                        <span>Branch Generation</span>
+                        <Button size="sm" variant="ghost" className="h-6 px-2" onClick={cancelJob}>
+                          Cancel
+                        </Button>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-5 overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-300 flex items-center justify-center text-xs font-medium text-primary-foreground"
+                          style={{ width: `${percentage}%` }}
+                        >
+                          {percentage}%
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Generating branches... {batchJob.progress.completed} / {batchJob.progress.total} completed
+                      </div>
+                    </div>
+                  </>
+                )
+              }
+
+              // Otherwise show Run Walk Forward button
+              // Walk Forward tab ALWAYS uses rolling parameter ranges
+
+              // Check if tree has Rolling node
+              const hasRollingNodeInTree = (node: FlowNode): boolean => {
+                if (node.kind === 'rolling') return true
+                if (node.children) {
+                  for (const slot in node.children) {
+                    const children = node.children[slot as SlotId]
+                    if (Array.isArray(children)) {
+                      for (const child of children) {
+                        if (child && hasRollingNodeInTree(child)) return true
+                      }
+                    }
+                  }
+                }
+                return false
+              }
+
+              // Walk Forward tab uses rolling parameter ranges
+              const enabledRanges = (activeBot?.rollingParameterRanges || []).filter(r => r.enabled)
+
+              let branchCount = 1
+              for (const range of enabledRanges) {
+                if (range.type === 'ticker_list') {
+                  // Ticker list: multiply by number of tickers
+                  branchCount *= (range.tickers?.length || 1)
+                } else {
+                  // Numeric range: multiply by number of steps
+                  const steps = Math.floor((range.max - range.min) / range.step) + 1
+                  branchCount *= steps
+                }
+              }
+
+              // For Walk Forward: enable if Rolling node exists AND has rolling ranges
+              const hasRanges = hasRollingNodeInTree(current) && enabledRanges.length > 0
+
+              const etaMinutes = Math.ceil(branchCount * 0.5 / 60) // Rough estimate: 0.5s per branch
+
+              return (
+                <>
+                  <Button
+                    size="sm"
+                    disabled={!hasRanges}
+                    onClick={handleGenerateBranches}
+                  >
+                    Run Walk Forward
+                  </Button>
+                  {hasRanges && (
+                    <span className="text-xs text-muted-foreground">
+                      {branchCount} {branchCount === 1 ? 'branch' : 'branches'} (~{etaMinutes} min)
+                    </span>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+          {/* Center section: Find/Replace Controls */}
+          <div className="flex items-center gap-2">
+            <datalist id={USED_TICKERS_DATALIST_ID}>
+              {collectUsedTickers(current, includeCallChains ? callChains : undefined).map(t => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Replace</span>
+              <button
+                className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
+                onClick={() => openTickerModal((ticker) => {
+                  setFindTicker(ticker)
+                  let instances = findTickerInstances(current, ticker, includePositions, includeIndicators)
+                  if (includeCallChains && callChains.length > 0) {
+                    callChains.forEach(chain => {
+                      try {
+                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                        const chainInstances = findTickerInstances(chainRoot, ticker, includePositions, includeIndicators, chain.id)
+                        instances = [...instances, ...chainInstances]
+                      } catch { /* ignore parse errors */ }
+                    })
+                  }
+                  setFoundInstances(instances)
+                  setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                  setHighlightedInstance(instances.length > 0 ? instances[0] : null)
+                }, collectUsedTickers(current, includeCallChains ? callChains : undefined))}
+              >
+                {findTicker || 'Ticker'}
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">With</span>
+              <button
+                className="h-7 w-24 px-2 border border-border rounded bg-card text-xs font-mono hover:bg-muted/50 text-left truncate"
+                onClick={() => openTickerModal((ticker) => setReplaceTicker(ticker))}
+              >
+                {replaceTicker || 'Ticker'}
+              </button>
+              {findTicker && foundInstances.length > 0 && (
+                <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                  {foundInstances.length} {foundInstances.length === 1 ? 'instance' : 'instances'}
+                </span>
+              )}
+            </div>
+            <label className="flex items-center gap-1 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includePositions}
+                onChange={(e) => {
+                  setIncludePositions(e.target.checked)
+                  let instances = findTickerInstances(current, findTicker, e.target.checked, includeIndicators)
+                  if (includeCallChains && callChains.length > 0) {
+                    callChains.forEach(chain => {
+                      try {
+                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                        instances = [...instances, ...findTickerInstances(chainRoot, findTicker, e.target.checked, includeIndicators, chain.id)]
+                      } catch { /* ignore */ }
+                    })
+                  }
+                  setFoundInstances(instances)
+                  setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                }}
+              />
+              Trade Tickers
+            </label>
+            <label className="flex items-center gap-1 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeIndicators}
+                onChange={(e) => {
+                  setIncludeIndicators(e.target.checked)
+                  let instances = findTickerInstances(current, findTicker, includePositions, e.target.checked)
+                  if (includeCallChains && callChains.length > 0) {
+                    callChains.forEach(chain => {
+                      try {
+                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                        instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, e.target.checked, chain.id)]
+                      } catch { /* ignore */ }
+                    })
+                  }
+                  setFoundInstances(instances)
+                  setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                }}
+              />
+              Indicator Tickers
+            </label>
+            <label className="flex items-center gap-1 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeCallChains}
+                onChange={(e) => {
+                  setIncludeCallChains(e.target.checked)
+                  if (e.target.checked && callChains.length > 0) {
+                    let instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
+                    callChains.forEach(chain => {
+                      try {
+                        const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                        instances = [...instances, ...findTickerInstances(chainRoot, findTicker, includePositions, includeIndicators, chain.id)]
+                      } catch { /* ignore */ }
+                    })
+                    setFoundInstances(instances)
+                    setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                  } else {
+                    const instances = findTickerInstances(current, findTicker, includePositions, includeIndicators)
+                    setFoundInstances(instances)
+                    setCurrentInstanceIndex(instances.length > 0 ? 0 : -1)
+                  }
+                }}
+              />
+              Call Chains
+            </label>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="active:bg-accent/30"
+              disabled={foundInstances.length === 0}
+              onClick={() => {
+                const newIdx = (currentInstanceIndex - 1 + foundInstances.length) % foundInstances.length
+                setCurrentInstanceIndex(newIdx)
+                const instance = foundInstances[newIdx]
+                setHighlightedInstance(instance)
+                const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
+                if (nodeEl) nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }}
+            >
+              ◀ Prev
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="active:bg-accent/30"
+              disabled={foundInstances.length === 0}
+              onClick={() => {
+                const newIdx = (currentInstanceIndex + 1) % foundInstances.length
+                setCurrentInstanceIndex(newIdx)
+                const instance = foundInstances[newIdx]
+                setHighlightedInstance(instance)
+                const nodeEl = document.querySelector(`[data-node-id="${instance.nodeId}"]`)
+                if (nodeEl) nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }}
+            >
+              Next ▶
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              className="active:bg-accent/50"
+              disabled={!findTicker || !replaceTicker || foundInstances.length === 0}
+              onClick={() => {
+                const nextRoot = replaceTickerInTree(current, findTicker, replaceTicker, includePositions, includeIndicators)
+                push(nextRoot)
+                if (includeCallChains && callChains.length > 0) {
+                  callChains.forEach(chain => {
+                    try {
+                      const chainRoot = typeof chain.root === 'string' ? JSON.parse(chain.root) : chain.root
+                      const updatedRoot = replaceTickerInTree(chainRoot, findTicker, replaceTicker, includePositions, includeIndicators)
+                      fetch(`/api/call-chains/${chain.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ root: JSON.stringify(updatedRoot) })
+                      }).then(() => { if (userId) loadCallChainsFromApi(userId).then(setCallChains) })
+                    } catch { /* ignore parse errors */ }
+                  })
+                }
+                setFindTicker('')
+                setReplaceTicker('')
+                setFoundInstances([])
+                setCurrentInstanceIndex(-1)
+                setHighlightedInstance(null)
+              }}
+            >
+              Replace{foundInstances.length > 0 ? ` (${foundInstances.length})` : ''}
+            </Button>
+          </div>
+          {/* Right section: Undo/Redo */}
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="secondary"
+              className="px-4 py-2 text-sm font-semibold active:bg-accent/30"
+              onClick={undo}
+              disabled={!activeBot || activeBot.historyIndex <= 0}
+            >
+              Undo
+            </Button>
+            <Button
+              variant="secondary"
+              className="px-4 py-2 text-sm font-semibold active:bg-accent/30"
+              onClick={redo}
+              disabled={!activeBot || activeBot.historyIndex >= activeBot.history.length - 1}
+            >
+              Redo
+            </Button>
+          </div>
+        </div>
+
+        {/* Bottom Row - Flow Tree Builder */}
+        <div className="flex gap-4 flex-1">
+          {/* Flow Tree Builder */}
+          <div className="w-full flex flex-col relative min-h-0 min-w-0 overflow-hidden">
+            {/* Flowchart Card */}
+            <div className="flex-1 border border-border rounded-lg bg-card min-h-0 relative" style={{ height: 'calc(100vh - 400px)', overflow: 'hidden' }}>
+              <div
+                ref={flowchartScrollRef}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  padding: '1rem',
+                  overflowY: 'auto',
+                  overflowX: 'auto',
+                }}
+                onScroll={(e) => {
+                  if (floatingScrollRef.current) {
+                    floatingScrollRef.current.scrollLeft = e.currentTarget.scrollLeft
+                  }
+                  // Update scroll dimensions in store for floating scrollbar
+                  const { setFlowchartScrollWidth, setFlowchartClientWidth } = useUIStore.getState()
+                  setFlowchartScrollWidth(e.currentTarget.scrollWidth)
+                  setFlowchartClientWidth(e.currentTarget.clientWidth)
+                }}
+              >
+                <NodeCard
+                  node={current}
+                  depth={0}
+                  parentId={null}
+                  parentSlot={null}
+                  myIndex={0}
+                  errorNodeIds={backtestErrorNodeIds}
+                  focusNodeId={backtestFocusNodeId}
+                  tickerOptions={tickerOptions}
+                  tickerLists={tickerLists}
+                  isForgeMode={true}
+                  onAdd={handleAdd}
+                  onAppend={handleAppend}
+                  onRemoveSlotEntry={handleRemoveSlotEntry}
+                  onDelete={handleDelete}
+                  onCopy={handleCopy}
+                  onPaste={handlePaste}
+                  onPasteCallRef={handlePasteCallRef}
+                  onRename={handleRename}
+                  onWeightChange={handleWeightChange}
+                  onUpdateCappedFallback={handleUpdateCappedFallback}
+                  onUpdateVolWindow={handleUpdateVolWindow}
+                  onColorChange={handleColorChange}
+                  onToggleCollapse={handleToggleCollapse}
+                  onNumberedQuantifier={handleNumberedQuantifier}
+                  onNumberedN={handleNumberedN}
+                  onAddNumberedItem={handleAddNumberedItem}
+                  onDeleteNumberedItem={handleDeleteNumberedItem}
+                  onAddCondition={handleAddCondition}
+                  onDeleteCondition={handleDeleteCondition}
+                  onFunctionWindow={handleFunctionWindow}
+                  onFunctionBottom={handleFunctionBottom}
+                  onFunctionMetric={handleFunctionMetric}
+                  onFunctionRank={handleFunctionRank}
+                  onUpdateCondition={(id, condId, updates, itemId) => {
+                    // Set tickerListId field when ticker is a list reference
+                    const enhancedUpdates = { ...updates }
+                    if (updates.ticker && typeof updates.ticker === 'string' && updates.ticker.startsWith('list:')) {
+                      const listId = updates.ticker.substring(5)
+                      const tickerList = tickerLists?.find(l => l.id === listId)
+                      enhancedUpdates.tickerListId = listId
+                      enhancedUpdates.tickerListName = tickerList?.name
+                    }
+                    if (updates.rightTicker && typeof updates.rightTicker === 'string' && updates.rightTicker.startsWith('list:')) {
+                      const listId = updates.rightTicker.substring(5)
+                      const tickerList = tickerLists?.find(l => l.id === listId)
+                      enhancedUpdates.rightTickerListId = listId
+                      enhancedUpdates.rightTickerListName = tickerList?.name
+                    }
+
+                    const next = updateConditionFields(current, id, condId, enhancedUpdates, itemId)
+                    push(next)
+
+                    // Auto-create parameter ranges for ticker list references
+                    if (activeBot && tickerLists) {
+                      const handleTickerListRange = (ticker: string | undefined, isRightTicker: boolean) => {
+                        if (!ticker) return
+
+                        // Create parameter range ID
+                        const paramId = isRightTicker
+                          ? `${id}-${condId}-rightTicker-list`
+                          : `${id}-${condId}-ticker-list`
+
+                        if (ticker.startsWith('list:')) {
+                          // Ticker list selected - create/update parameter range
+                          const listId = ticker.substring(5) // Remove 'list:' prefix
+                          const tickerList = tickerLists.find(l => l.id === listId)
+                          if (!tickerList) return
+
+                          const updatedRanges = [...(activeBot.parameterRanges || [])]
+                          const existingIndex = updatedRanges.findIndex(r => r.id === paramId)
+
+                          const parameterRange: ParameterRange = {
+                            id: paramId,
+                            type: 'ticker_list',
+                            nodeId: id,
+                            conditionId: condId,
+                            path: isRightTicker
+                              ? `${id}.conditions.${condId}.rightTicker`
+                              : `${id}.conditions.${condId}.ticker`,
+                            currentValue: 0, // Not used for ticker lists
+                            enabled: true,
+                            min: 0,
+                            max: 0,
+                            step: 1,
+                            tickerListId: tickerList.id,
+                            tickerListName: tickerList.name,
+                            tickers: tickerList.tickers
+                          }
+
+                          if (existingIndex !== -1) {
+                            updatedRanges[existingIndex] = parameterRange
+                          } else {
+                            updatedRanges.push(parameterRange)
+                          }
+
+                          botStore.setParameterRanges(activeBot.id, updatedRanges)
+                        } else {
+                          // Regular ticker selected - remove ticker list parameter range if it exists
+                          const updatedRanges = (activeBot.parameterRanges || []).filter(r => r.id !== paramId)
+                          if (updatedRanges.length !== (activeBot.parameterRanges || []).length) {
+                            botStore.setParameterRanges(activeBot.id, updatedRanges)
+                          }
+                        }
+                      }
+
+                      // Check both ticker and rightTicker
+                      if (updates.ticker !== undefined) {
+                        handleTickerListRange(updates.ticker as string, false)
+                      }
+                      if (updates.rightTicker !== undefined) {
+                        handleTickerListRange(updates.rightTicker as string, true)
+                      }
+                    }
+                  }}
+                  onAddPosition={handleAddPos}
+                  onRemovePosition={handleRemovePos}
+                  onChoosePosition={handleChoosePos}
+                  onUpdatePositionMode={handleUpdatePositionMode}
+                  openTickerModal={openTickerModal}
+                  clipboard={clipboard}
+                  copiedNodeId={copiedNodeId}
+                  copiedCallChainId={copiedCallChainId}
+                  callChains={callChains}
+                  onUpdateCallRef={handleUpdateCallRef}
+                  onAddEntryCondition={handleAddEntryCondition}
+                  onAddExitCondition={handleAddExitCondition}
+                  onDeleteEntryCondition={handleDeleteEntryCondition}
+                  onDeleteExitCondition={handleDeleteExitCondition}
+                  onUpdateEntryCondition={handleUpdateEntryCondition}
+                  onUpdateExitCondition={handleUpdateExitCondition}
+                  onUpdateScaling={handleUpdateScaling}
+                  onUpdateRolling={handleUpdateRolling}
+                  onExpandAllBelow={(id, currentlyCollapsed) => {
+                    const next = setCollapsedBelow(current, id, !currentlyCollapsed)
+                    push(next)
+                  }}
+                  highlightedInstance={highlightedInstance}
+                  enabledOverlays={enabledOverlays}
+                  onToggleOverlay={handleToggleOverlay}
+                  parameterRanges={parameterRanges}
+                  onUpdateRange={handleFlowchartRangeUpdate}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Horizontal scrollbar for flowchart - fixed at bottom, same width as flowchart */}
+        {flowchartRect.width > 0 && (
+          <div
+            ref={floatingScrollRef}
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: flowchartRect.left,
+              width: flowchartRect.width,
+              height: '16px',
+              overflowX: 'scroll',
+              overflowY: 'hidden',
+              backgroundColor: 'var(--color-card)',
+              borderTop: '1px solid var(--color-border)',
+              zIndex: 50,
+            }}
+            onScroll={(e) => {
+              const scrollContainer = flowchartScrollRef.current
+              if (scrollContainer) {
+                scrollContainer.scrollLeft = e.currentTarget.scrollLeft
+              }
+            }}
+          >
+            <div style={{ width: flowchartScrollWidth > 0 ? flowchartScrollWidth : 1, height: '1px' }} />
+          </div>
+        )}
+          </>
+        )}
+
+        {/* Ticker Lists Tab */}
+        {forgeSubtab === 'Ticker Lists' && <TickerListsPanel />}
+
+        {/* Results Tab */}
+        {forgeSubtab === 'Results' && (
           <>
             {/* Results Sub-Subtabs */}
             <div className="flex gap-2 shrink-0">

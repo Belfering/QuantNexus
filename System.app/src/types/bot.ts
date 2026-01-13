@@ -7,6 +7,7 @@ import type { BacktestMode, BotBacktestState } from './backtest'
 import type { ParameterRange } from '@/features/parameters/types'
 import type { ISOOSSplitConfig } from './split'
 import type { BranchGenerationJob } from './branch'
+import type { EligibilityRequirement } from './admin'
 
 export type SystemVisibility = 'private' | 'community'
 export type BotVisibility = SystemVisibility // Backwards compat alias
@@ -101,14 +102,18 @@ export type RollingOptimizationResult = {
 
 export type BotSession = {
   id: string
-  history: FlowNode[]
-  historyIndex: number
+  history: FlowNode[]  // DEPRECATED - kept for backward compatibility
+  historyIndex: number  // DEPRECATED - kept for backward compatibility
+  splitTree?: FlowNode  // Current tree for Split tab (chronological optimization)
+  walkForwardTree?: FlowNode  // Current tree for Walk Forward tab (rolling optimization)
   savedBotId?: string
   backtest: BotBacktestState
   callChains: CallChain[] // Per-bot call chains (stored with bot payload)
   customIndicators: CustomIndicator[] // Per-bot custom indicators (FRD-035)
   parameterRanges: ParameterRange[] // Chronological optimization ranges
   rollingParameterRanges?: ParameterRange[] // Rolling optimization ranges (separate from chronological)
+  chronologicalRequirements?: EligibilityRequirement[]  // Requirements for Split tab (chronological)
+  rollingRequirements?: EligibilityRequirement[]  // Requirements for Walk Forward tab (rolling)
   splitConfig?: ISOOSSplitConfig // IS/OOS split configuration for optimization
   branchGenerationJob?: BranchGenerationJob // Current branch generation job state
   rollingResult?: RollingOptimizationResult // Rolling optimization results

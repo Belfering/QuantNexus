@@ -7,10 +7,11 @@ import { type ISOOSSplitConfig, type SplitStrategy, type RollingWindowPeriod } f
 interface ISOOSSplitCardProps {
   splitConfig?: ISOOSSplitConfig
   onSplitConfigChange: (config: ISOOSSplitConfig) => void
+  lockStrategy?: SplitStrategy  // When provided, locks the strategy and hides selector
 }
 
-export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitCardProps) {
-  const strategy = splitConfig?.strategy ?? 'chronological'
+export function ISOOSSplitCard({ splitConfig, onSplitConfigChange, lockStrategy }: ISOOSSplitCardProps) {
+  const strategy = lockStrategy ?? splitConfig?.strategy ?? 'chronological'
   const chronologicalPercent = splitConfig?.chronologicalPercent ?? 50
   const rollingWindowPeriod = splitConfig?.rollingWindowPeriod ?? 'monthly'
   const minYears = splitConfig?.minYears ?? 5
@@ -99,21 +100,23 @@ export function ISOOSSplitCard({ splitConfig, onSplitConfigChange }: ISOOSSplitC
     <div className="grid grid-cols-2 gap-4">
       {/* Left Card - Strategy Selection */}
       <div className="space-y-3 p-3 rounded border border-border bg-muted/20">
-        {/* Strategy Dropdown */}
-        <div>
-          <label htmlFor="split-strategy" className="text-xs text-muted block mb-1">
-            Split Strategy
-          </label>
-          <select
-            id="split-strategy"
-            value={strategy}
-            onChange={(e) => handleStrategyChange(e.target.value as SplitStrategy)}
-            className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
-          >
-            <option value="chronological">Chronological</option>
-            <option value="rolling">Rolling</option>
-          </select>
-        </div>
+        {/* Strategy Dropdown - only show if not locked */}
+        {!lockStrategy && (
+          <div>
+            <label htmlFor="split-strategy" className="text-xs text-muted block mb-1">
+              Split Strategy
+            </label>
+            <select
+              id="split-strategy"
+              value={strategy}
+              onChange={(e) => handleStrategyChange(e.target.value as SplitStrategy)}
+              className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
+            >
+              <option value="chronological">Chronological</option>
+              <option value="rolling">Rolling</option>
+            </select>
+          </div>
+        )}
 
         {/* Chronological Percentage (50/50, 60/40, 70/30) */}
         {strategy === 'chronological' && (
