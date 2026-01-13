@@ -70,10 +70,14 @@ import {
 import { SettingsPanel } from '@/components/SettingsPanel'
 import { ChronologicalSettingsPanel } from '@/components/Forge/ChronologicalSettingsPanel'
 import { WalkForwardSettingsPanel } from '@/components/Forge/WalkForwardSettingsPanel'
+import { ShardsJobLoader } from '@/components/Forge/ShardsJobLoader'
+import { ShardsBranchFilter } from '@/components/Forge/ShardsBranchFilter'
+import { ShardsCombinedPreview } from '@/components/Forge/ShardsCombinedPreview'
 import { ParameterBoxPanel } from '@/features/parameters/components/ParameterBoxPanel'
 import type { ParameterField, ParameterRange } from '@/features/parameters/types'
 import { loadCallChainsFromApi } from '@/features/auth'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
+import { useShardStore } from '@/stores/useShardStore'
 import { useTreeSync, useTreeUndo, useTickerLists } from '@/hooks'
 // Updated: TIM/TIMAR metrics now included
 import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest'
@@ -150,6 +154,21 @@ export function ForgeTab({
 
   // Ticker lists for Forge optimization (Phase 3)
   const { tickerLists } = useTickerLists()
+
+  // Shards state
+  const shardLoadedJobType = useShardStore(s => s.loadedJobType)
+  const shardLoadedJobId = useShardStore(s => s.loadedJobId)
+  const shardAllBranches = useShardStore(s => s.allBranches)
+  const shardFilteredBranches = useShardStore(s => s.filteredBranches)
+  const shardFilterMetric = useShardStore(s => s.filterMetric)
+  const shardFilterTopX = useShardStore(s => s.filterTopX)
+  const shardCombinedTree = useShardStore(s => s.combinedTree)
+  const shardLoadChronologicalJob = useShardStore(s => s.loadChronologicalJob)
+  const shardLoadRollingJob = useShardStore(s => s.loadRollingJob)
+  const shardSetFilterMetric = useShardStore(s => s.setFilterMetric)
+  const shardSetFilterTopX = useShardStore(s => s.setFilterTopX)
+  const shardGenerateCombinedTree = useShardStore(s => s.generateCombinedTree)
+  const shardSaveToModel = useShardStore(s => s.saveToModel)
 
   // Manage separate trees for Split and Walk Forward tabs
   const prevSubtabRef = useRef<string | null>(null)
@@ -1441,6 +1460,12 @@ export function ForgeTab({
           >
             Results
           </Button>
+          <Button
+            variant={forgeSubtab === 'Shards' ? 'accent' : 'secondary'}
+            onClick={() => setForgeSubtab('Shards')}
+          >
+            Shards
+          </Button>
         </div>
 
         {/* Split Tab Content */}
@@ -2593,6 +2618,52 @@ export function ForgeTab({
               />
             )}
           </>
+        )}
+
+        {/* Shards Tab Content */}
+        {forgeSubtab === 'Shards' && (
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="p-6">
+              <div className="grid grid-cols-3 gap-4">
+                {/* Left Card: Job Loading */}
+                <ShardsJobLoader
+                  loadedJobType={shardLoadedJobType}
+                  loadedJobId={shardLoadedJobId}
+                  onLoadJob={async (type, jobId) => {
+                    if (type === 'chronological') {
+                      await shardLoadChronologicalJob(jobId)
+                    } else {
+                      await shardLoadRollingJob(jobId)
+                    }
+                  }}
+                />
+
+                {/* Middle Card: Branch Filtering */}
+                <ShardsBranchFilter
+                  loadedJobType={shardLoadedJobType}
+                  allBranches={shardAllBranches}
+                  filteredBranches={shardFilteredBranches}
+                  filterMetric={shardFilterMetric}
+                  filterTopX={shardFilterTopX}
+                  onFilterMetricChange={shardSetFilterMetric}
+                  onFilterTopXChange={shardSetFilterTopX}
+                />
+
+                {/* Right Card: Combined Preview */}
+                <ShardsCombinedPreview
+                  combinedTree={shardCombinedTree}
+                  filteredBranchesCount={shardFilteredBranches.length}
+                  onGenerate={shardGenerateCombinedTree}
+                  onSaveToModel={async () => {
+                    const botId = await shardSaveToModel()
+                    // Optionally switch to Model tab
+                    setForgeSubtab('Split') // Or navigate to Model tab
+                    console.log('[ForgeTab] Saved shard to Model tab:', botId)
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

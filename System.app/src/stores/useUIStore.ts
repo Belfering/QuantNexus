@@ -6,7 +6,7 @@ import type { TickerModalMode, BlockKind } from '@/shared/components'
 type MainTab = 'Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'
 type DashboardSubtab = 'Portfolio' | 'Partner Program' // Legacy - no longer used
 type AnalyzeSubtab = 'Systems' | 'Correlation Tool'
-type ForgeSubtab = 'Split' | 'Walk Forward' | 'Ticker Lists' | 'Results'
+type ForgeSubtab = 'Split' | 'Walk Forward' | 'Ticker Lists' | 'Results' | 'Shards'
 type HelpSubtab = 'Changelog' | 'Settings'
 
 interface UIState {
