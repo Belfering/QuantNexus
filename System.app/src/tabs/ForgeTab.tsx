@@ -157,7 +157,7 @@ export function ForgeTab({
 
   // Shards state
   const shardLoadedJobType = useShardStore(s => s.loadedJobType)
-  const shardLoadedJobId = useShardStore(s => s.loadedJobId)
+  const shardLoadedJobIds = useShardStore(s => s.loadedJobIds)
   const shardAllBranches = useShardStore(s => s.allBranches)
   const shardFilteredBranches = useShardStore(s => s.filteredBranches)
   const shardFilterMetric = useShardStore(s => s.filterMetric)
@@ -165,8 +165,14 @@ export function ForgeTab({
   const shardCombinedTree = useShardStore(s => s.combinedTree)
   const shardLoadChronologicalJob = useShardStore(s => s.loadChronologicalJob)
   const shardLoadRollingJob = useShardStore(s => s.loadRollingJob)
+  const shardUnloadJob = useShardStore(s => s.unloadJob)
+  const shardClearAllJobs = useShardStore(s => s.clearAllJobs)
+  const shardIsJobLoaded = useShardStore(s => s.isJobLoaded)
   const shardSetFilterMetric = useShardStore(s => s.setFilterMetric)
   const shardSetFilterTopX = useShardStore(s => s.setFilterTopX)
+  const shardApplyFilters = useShardStore(s => s.applyFilters)
+  const shardRemoveBranchFromFiltered = useShardStore(s => s.removeBranchFromFiltered)
+  const shardClearFilteredBranches = useShardStore(s => s.clearFilteredBranches)
   const shardGenerateCombinedTree = useShardStore(s => s.generateCombinedTree)
   const shardSaveToModel = useShardStore(s => s.saveToModel)
 
@@ -2628,7 +2634,8 @@ export function ForgeTab({
                 {/* Left Card: Job Loading */}
                 <ShardsJobLoader
                   loadedJobType={shardLoadedJobType}
-                  loadedJobId={shardLoadedJobId}
+                  loadedJobIds={shardLoadedJobIds}
+                  allBranches={shardAllBranches}
                   onLoadJob={async (type, jobId) => {
                     if (type === 'chronological') {
                       await shardLoadChronologicalJob(jobId)
@@ -2636,23 +2643,29 @@ export function ForgeTab({
                       await shardLoadRollingJob(jobId)
                     }
                   }}
+                  onUnloadJob={shardUnloadJob}
+                  onClearAllJobs={shardClearAllJobs}
+                  isJobLoaded={shardIsJobLoaded}
                 />
 
-                {/* Middle Card: Branch Filtering */}
+                {/* Middle Card: Filter Settings */}
                 <ShardsBranchFilter
                   loadedJobType={shardLoadedJobType}
                   allBranches={shardAllBranches}
-                  filteredBranches={shardFilteredBranches}
                   filterMetric={shardFilterMetric}
                   filterTopX={shardFilterTopX}
                   onFilterMetricChange={shardSetFilterMetric}
                   onFilterTopXChange={shardSetFilterTopX}
+                  onApplyFilter={shardApplyFilters}
                 />
 
-                {/* Right Card: Combined Preview */}
+                {/* Right Card: Filtered Results */}
                 <ShardsCombinedPreview
-                  combinedTree={shardCombinedTree}
-                  filteredBranchesCount={shardFilteredBranches.length}
+                  loadedJobType={shardLoadedJobType}
+                  filteredBranches={shardFilteredBranches}
+                  filterMetric={shardFilterMetric}
+                  onRemoveBranch={shardRemoveBranchFromFiltered}
+                  onClearFiltered={shardClearFilteredBranches}
                   onGenerate={shardGenerateCombinedTree}
                   onSaveToModel={async () => {
                     const botId = await shardSaveToModel()
