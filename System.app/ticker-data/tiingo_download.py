@@ -105,6 +105,20 @@ def _chunked(seq: list[str], size: int) -> list[list[str]]:
     return [seq[i : i + size] for i in range(0, len(seq), size)]
 
 
+def _get_last_date_from_parquet(path: Path) -> str | None:
+    """Read existing parquet file and return the last date as YYYY-MM-DD string, or None if not found."""
+    if not path.is_file():
+        return None
+    try:
+        df = pd.read_parquet(path, columns=["Date"])
+        if df.empty:
+            return None
+        last_date = pd.to_datetime(df["Date"]).max()
+        return last_date.strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
 @dataclass(frozen=True)
 class DownloadConfig:
     batch_size: int = 100  # yfinance supports batch downloads
@@ -359,6 +373,148 @@ def download_to_parquet_tiingo_only(
     return out_paths
 
 
+def download_incremental_tiingo(
+    tickers: Iterable[str],
+    *,
+    out_dir: str | Path,
+    cfg: DownloadConfig,
+    api_key: str,
+    progress_cb: Optional[Callable[[dict], None]] = None,
+) -> list[Path]:
+    """Incremental update: only fetch new days since the last date in each existing parquet file.
+
+    For each ticker:
+    - If parquet exists: read last date, fetch data from last_date+1 to today, append
+    - If parquet doesn't exist: fetch all data from cfg.start_date (full download)
+    """
+    from datetime import datetime, timedelta
+
+    out_root = ensure_dir(out_dir)
+    tickers_list = [t.upper().strip() for t in tickers if str(t).strip()]
+    out_paths: list[Path] = []
+    updated_count = 0
+    skipped_up_to_date = 0
+
+    if progress_cb:
+        progress_cb({"type": "start", "tickers": len(tickers_list), "mode": "incremental"})
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    for i, t in enumerate(tickers_list, start=1):
+        safe_ticker = _sanitize_ticker_for_filename(t)
+        out_path = out_root / f"{safe_ticker}.parquet"
+
+        try:
+            last_date_str = _get_last_date_from_parquet(out_path)
+
+            if last_date_str:
+                # Calculate next day after last date
+                last_date = datetime.strptime(last_date_str, "%Y-%m-%d")
+                next_date = last_date + timedelta(days=1)
+                start_date_str = next_date.strftime("%Y-%m-%d")
+
+                # Skip if already up to date (last date is today or yesterday for market close)
+                if start_date_str > today_str:
+                    if progress_cb:
+                        progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "up_to_date", "last_date": last_date_str})
+                    skipped_up_to_date += 1
+                    continue
+
+                is_incremental = True
+            else:
+                # No existing file - do full download
+                start_date_str = cfg.start_date
+                is_incremental = False
+
+            # Create a modified config with the appropriate start date
+            incremental_cfg = DownloadConfig(
+                batch_size=cfg.batch_size,
+                sleep_seconds=cfg.sleep_seconds,
+                max_retries=cfg.max_retries,
+                start_date=start_date_str,
+                period=cfg.period,
+            )
+
+            # Download from Tiingo
+            df = _download_ticker_tiingo(t, api_key, incremental_cfg)
+            if df is None or df.empty:
+                if is_incremental:
+                    # No new data - that's fine for incremental
+                    if progress_cb:
+                        progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "no_new_data", "last_date": last_date_str})
+                else:
+                    if progress_cb:
+                        progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "no_data"})
+                continue
+
+            new_data = _normalize_tiingo_df(df, t)
+            if new_data.empty:
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": t, "reason": "empty_frame"})
+                continue
+
+            # If incremental, merge with existing data
+            if is_incremental and out_path.is_file():
+                try:
+                    existing_df = pd.read_parquet(out_path)
+                    # Combine and dedupe by Date
+                    combined = pd.concat([existing_df, new_data], ignore_index=True)
+                    combined["Date"] = pd.to_datetime(combined["Date"])
+                    combined = combined.drop_duplicates(subset=["Date"], keep="last")
+                    combined = combined.sort_values("Date").reset_index(drop=True)
+                    final_df = combined
+                except Exception as e:
+                    if progress_cb:
+                        progress_cb({"type": "warning", "ticker": t, "message": f"Could not read existing file, overwriting: {e}"})
+                    final_df = new_data
+            else:
+                final_df = new_data
+
+            # Save to parquet
+            final_df.to_parquet(out_path, index=False)
+            out_paths.append(out_path)
+            updated_count += 1
+
+            new_rows = len(new_data)
+            total_rows = len(final_df)
+
+            save_event = {
+                "type": "ticker_saved",
+                "ticker": t,
+                "path": str(out_path),
+                "saved": updated_count,
+                "total": len(tickers_list),
+                "source": "tiingo",
+                "mode": "incremental" if is_incremental else "full",
+                "new_rows": new_rows,
+                "total_rows": total_rows,
+            }
+            if is_incremental:
+                save_event["from_date"] = start_date_str
+
+            if progress_cb:
+                progress_cb(save_event)
+
+        except Exception as e:
+            if progress_cb:
+                progress_cb({"type": "ticker_skipped", "ticker": t, "reason": str(e)[:200]})
+
+        # Sleep between API calls
+        if i < len(tickers_list):
+            time.sleep(cfg.sleep_seconds + random.uniform(0.0, 0.1))
+
+    if progress_cb:
+        progress_cb({
+            "type": "done",
+            "saved": len(out_paths),
+            "total": len(tickers_list),
+            "updated": updated_count,
+            "skipped_up_to_date": skipped_up_to_date,
+        })
+
+    return out_paths
+
+
 def download_to_parquet(
     tickers: Iterable[str],
     *,
@@ -517,6 +673,7 @@ def _cli() -> int:
     ap.add_argument("--skip-metadata-json", type=str, default=None, help="JSON file with tickers to skip metadata fetch for")
     ap.add_argument("--no-metadata", action="store_true", help="Skip ALL metadata fetches (fast bulk mode)")
     ap.add_argument("--tiingo-only", action="store_true", help="Download ALL tickers directly from Tiingo API (no yfinance batch)")
+    ap.add_argument("--incremental", action="store_true", help="Incremental update: only fetch new days since last date in existing parquet files (uses Tiingo)")
     args = ap.parse_args()
 
     # Load tickers from either txt or json
@@ -561,7 +718,17 @@ def _cli() -> int:
         print(json.dumps(ev), flush=True)
 
     try:
-        if args.tiingo_only:
+        if args.incremental:
+            # Incremental mode: only fetch new days since last date in existing parquet files
+            api_key = _get_api_key(args.api_key)
+            out = download_incremental_tiingo(
+                tickers,
+                out_dir=args.out_dir,
+                cfg=cfg,
+                api_key=api_key,
+                progress_cb=cb,
+            )
+        elif args.tiingo_only:
             # Tiingo-only mode: download ALL tickers directly from Tiingo API (slower but thorough)
             out = download_to_parquet_tiingo_only(
                 tickers,

@@ -85,3 +85,13 @@ System.app/AGENT-HANDOFF-*.md
 
 # Tiingo master data (API cache)
 System.app/ticker-data/_tiingo_master.json
+
+# Local secrets and files
+.ssh/
+hetzner-server.md
+hetzner-server-setup.md
+*.db
+
+# Strategy exports (don't commit user strategies)
+BWC*.json
+*.strategy.json

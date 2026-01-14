@@ -2,7 +2,13 @@
 
 **IMPORTANT: Always ask before pushing to GitHub.**
 
-**CRITICAL: Never merge `dev` to `master` or push to `master` without explicit user approval. Always confirm before any operation that affects the production branch. The `dev` branch is for testing - only `master` triggers Railway deployment.**
+**CRITICAL: Never merge `dev` to `master` or push to `master` without explicit user approval. Always confirm before any operation that affects the production branch.**
+
+## Deployment
+
+- **Production**: Hosted on Hetzner server (`quantnexus` via SSH)
+- **Auto-deploy**: Push to `dev` branch triggers GitHub Actions webhook → server pulls and restarts
+- **CI**: Push to `master` runs lint/test/build via `.github/workflows/ci.yml`
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -17,8 +23,8 @@ This is a flowchart-based trading algorithm builder called "System Block Chain".
   - **`src/App.tsx`**: Primary application logic (832 lines) - the actual implementation
   - **`src/main.tsx`**: React entry point
   - **`server/index.mjs`**: Express API server for ticker data management
-  - **`ticker-data/`**: Directory for market data storage
-    - `download.py`: Python script to download ticker data
+  - **`ticker-data/`**: Market data pipeline - see [ticker-data/README.md](System.app/ticker-data/README.md) for full documentation
+    - `tiingo_download.py`: Main download script (yfinance batch + Tiingo fallback + incremental updates)
     - `tickers.txt`: List of stock tickers
     - `data/ticker_data_parquet/`: Parquet files for each ticker
 
@@ -100,9 +106,17 @@ npm run api          # Start Express API server on port 8787
 **Note:** Run both `npm run dev` and `npm run api` concurrently for full stack development. The Vite dev server proxies `/api/*` requests to `http://localhost:8787`.
 
 ### Python Data Download
+
+See [ticker-data/README.md](System.app/ticker-data/README.md) for full documentation.
+
 ```bash
 cd System.app/ticker-data
-python download.py --tickers-file tickers.txt --out-dir data/ticker_data_parquet
+
+# Full download (yfinance batch + Tiingo fallback)
+python tiingo_download.py --tickers-file tickers.txt --out-dir data/ticker_data_parquet
+
+# Incremental update (daily - only fetches new days)
+python tiingo_download.py --tickers-file tickers.txt --out-dir data/ticker_data_parquet --incremental
 ```
 
 Or trigger via API: `POST /api/download`
@@ -115,6 +129,9 @@ Or trigger via API: `POST /api/download`
 - `PARQUET_DIR`: Override parquet data directory
 - `PYTHON`: Python executable (default: `python`)
 - `PORT`: API server port (default: 8787)
+
+**Ticker Data Pipeline:**
+- `TIINGO_API_KEY`: API key for Tiingo data service (required for downloads)
 
 ## Key Implementation Details
 

@@ -2,8 +2,7 @@
  * Indicator Performance Benchmark
  * Run with: node server/benchmark-indicators.mjs
  *
- * This measures the current JavaScript indicator performance
- * to establish a baseline before Rust implementation.
+ * This measures JavaScript indicator performance.
  */
 
 import path from 'path'
@@ -442,7 +441,7 @@ async function runBenchmarks() {
     console.log(`  Estimated with 5 tickers: ${(complex20k.mean * 5).toFixed(2)}ms`)
   }
 
-  console.log(`\nBaseline established. Run this again after Rust implementation to compare.`)
+  console.log(`\nBenchmark complete.`)
 
   // Save results to JSON for later comparison
   const outputPath = path.join(__dirname, 'benchmark-results.json')

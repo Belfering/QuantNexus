@@ -1,0 +1,29 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger deployment webhook
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "http://178.156.221.28:8787/api/deploy?secret=${{ secrets.DEPLOY_SECRET }}")
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+
+          echo "Response: $body"
+          echo "HTTP Code: $http_code"
+
+          if [ "$http_code" != "200" ]; then
+            echo "Deployment failed!"
+            exit 1
+          fi
+
+          echo "Deployment triggered successfully!"
