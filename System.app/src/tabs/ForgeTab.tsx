@@ -179,6 +179,8 @@ export function ForgeTab({
   const shardFilterHistory = useShardStore(s => s.filterHistory)
   const shardUndoFilter = useShardStore(s => s.undoFilter)
   const shardRemoveFilterGroup = useShardStore(s => s.removeFilterGroup)
+  const shardSelectedFilterGroupId = useShardStore(s => s.selectedFilterGroupId)
+  const shardSetSelectedFilterGroup = useShardStore(s => s.setSelectedFilterGroup)
 
   // Manage separate trees for Split and Walk Forward tabs
   const prevSubtabRef = useRef<string | null>(null)
@@ -2668,10 +2670,12 @@ export function ForgeTab({
                 filteredBranches={shardFilteredBranches}
                 filterMetric={shardFilterMetric}
                 filterGroups={shardFilterGroups}
+                selectedFilterGroupId={shardSelectedFilterGroupId}
                 canUndo={shardFilterHistory.length > 0}
                 onRemoveBranch={shardRemoveBranchFromFiltered}
                 onClearFiltered={shardClearFilteredBranches}
                 onRemoveGroup={shardRemoveFilterGroup}
+                onSelectFilterGroup={shardSetSelectedFilterGroup}
                 onUndo={shardUndoFilter}
                 onGenerate={shardGenerateCombinedTree}
                 onSaveToModel={async () => {

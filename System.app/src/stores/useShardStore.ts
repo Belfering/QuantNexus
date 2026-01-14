@@ -19,10 +19,12 @@ interface LoadedJobData {
 // Type for tracking filter groups (each Apply action creates a group)
 export interface FilterGroup {
   id: string
+  jobName: string                // From loaded job metadata (e.g., "RSI Optimization")
+  jobId: number                  // Source job ID (first loaded job)
   metric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
   topX: number
   addedAt: number
-  branchKeys: string[]  // jobId-branchId keys for branches in this group
+  branchKeys: string[]           // ALL branches selected (for reference counting)
 }
 
 // History snapshot for undo - stores both groups and branches
@@ -44,6 +46,7 @@ interface ShardState {
   filteredBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   filterGroups: FilterGroup[]      // Track each Apply action as a group
   filterHistory: FilterHistorySnapshot[]   // Stack for undo (stores both groups and branches)
+  selectedFilterGroupId: string | null  // null = "All Runs", or specific group ID for filtering view
 
   // Phase 3: Combined System
   combinedTree: FlowNode | null
@@ -63,6 +66,7 @@ interface ShardState {
   clearFilteredBranches: () => void
   undoFilter: () => void
   removeFilterGroup: (groupId: string) => void
+  setSelectedFilterGroup: (groupId: string | null) => void
 
   // Actions - Phase 3
   generateCombinedTree: () => void
@@ -82,6 +86,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
   filteredBranches: [],
   filterGroups: [],
   filterHistory: [],
+  selectedFilterGroupId: null,
 
   combinedTree: null,
 
@@ -274,10 +279,20 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
   // Phase 2: Apply filters to branches (ADDITIVE - appends to existing filtered branches)
   applyFilters: () => {
-    const { allBranches, filterMetric, filterTopX, loadedJobType, filteredBranches, filterGroups, filterHistory } = get()
+    const { allBranches, filterMetric, filterTopX, loadedJobType, filteredBranches, filterGroups, filterHistory, loadedJobs, loadedJobIds } = get()
 
     if (allBranches.length === 0) {
       return
+    }
+
+    // Get job name from loaded jobs
+    const getJobName = (): string => {
+      if (loadedJobIds.length === 0) return 'Unknown'
+      if (loadedJobIds.length === 1) {
+        const job = loadedJobs[loadedJobIds[0]]
+        return job?.metadata?.botName || job?.metadata?.name || `Job #${loadedJobIds[0]}`
+      }
+      return `${loadedJobIds.length} Jobs`
     }
 
     // Helper function to extract metric value
@@ -294,13 +309,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
     // Helper to get branch key
     const getBranchKey = (branch: any): string => {
-      if (loadedJobType === 'chronological') {
-        const b = branch as OptimizationResult
-        return `${b.jobId}-${b.branchId}`
-      } else {
-        const b = branch as RollingOptimizationResult['branches'][number]
-        return `${b.jobId}-${b.branchId}`
-      }
+      return `${branch.jobId}-${branch.branchId}`
     }
 
     // Sort by metric (descending - higher is better)
@@ -313,14 +322,12 @@ export const useShardStore = create<ShardState>((set, get) => ({
     // Take top X
     const topBranches = sorted.slice(0, filterTopX)
 
-    // De-duplicate: filter out branches already in filteredBranches
+    // Get ALL branch keys for reference counting (even if already in list)
+    const allSelectedKeys = topBranches.map(b => getBranchKey(b))
+
+    // De-duplicate: filter out branches already in filteredBranches (for display)
     const existingKeys = new Set(filteredBranches.map(b => getBranchKey(b)))
     const newBranches = topBranches.filter(b => !existingKeys.has(getBranchKey(b)))
-
-    if (newBranches.length === 0) {
-      console.log('[ShardStore] No new branches to add (all already filtered)')
-      return
-    }
 
     // Save current state for undo (both groups and branches)
     const previousSnapshot: FilterHistorySnapshot = {
@@ -328,17 +335,18 @@ export const useShardStore = create<ShardState>((set, get) => ({
       filteredBranches: [...filteredBranches] as typeof filteredBranches
     }
 
-    // Create new filter group
+    // Create new filter group with ALL selected keys (for reference counting)
     const newGroup: FilterGroup = {
       id: `group-${Date.now()}`,
+      jobName: getJobName(),
+      jobId: loadedJobIds[0] || 0,
       metric: filterMetric,
       topX: filterTopX,
       addedAt: Date.now(),
-      branchKeys: newBranches.map(b => getBranchKey(b))
+      branchKeys: allSelectedKeys  // ALL branches, not just new ones
     }
 
-    // Deep copy new branches so they persist independently of allBranches
-    // This allows filtered branches to survive job unloading
+    // Deep copy only NEW branches so they persist independently
     const copiedBranches = newBranches.map(b => JSON.parse(JSON.stringify(b)))
 
     // Append new branches to existing filtered branches
@@ -350,7 +358,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
       filterHistory: [...filterHistory, previousSnapshot]
     })
 
-    console.log(`[ShardStore] Added ${copiedBranches.length} branches (Top ${filterTopX} by ${filterMetric}). Total: ${updatedFiltered.length}`)
+    console.log(`[ShardStore] Added group "${newGroup.jobName} - Top ${filterTopX} ${filterMetric}": ${copiedBranches.length} new branches (${allSelectedKeys.length} total refs). Total displayed: ${updatedFiltered.length}`)
   },
 
   // Phase 2: Remove a specific branch from filtered results
@@ -404,9 +412,9 @@ export const useShardStore = create<ShardState>((set, get) => ({
     console.log(`[ShardStore] Undo: restored ${previousSnapshot.filterGroups.length} groups, ${previousSnapshot.filteredBranches.length} branches`)
   },
 
-  // Phase 2: Remove a specific filter group and its branches
+  // Phase 2: Remove a specific filter group (with reference counting)
   removeFilterGroup: (groupId: string) => {
-    const { filterGroups, filteredBranches, filterHistory } = get()
+    const { filterGroups, filteredBranches, filterHistory, selectedFilterGroupId } = get()
 
     const groupToRemove = filterGroups.find(g => g.id === groupId)
     if (!groupToRemove) {
@@ -420,22 +428,38 @@ export const useShardStore = create<ShardState>((set, get) => ({
       filteredBranches: [...filteredBranches] as typeof filteredBranches
     }
 
-    // Helper to get branch key from filtered branch (these are deep copies with jobId)
+    // Helper to get branch key from filtered branch
     const getBranchKey = (branch: any): string => {
       return `${branch.jobId}-${branch.branchId}`
     }
 
-    // Remove group and its branches
-    const keysToRemove = new Set(groupToRemove.branchKeys)
-    const newFiltered = filteredBranches.filter(b => !keysToRemove.has(getBranchKey(b))) as typeof filteredBranches
+    // Get remaining groups after removal
+    const remainingGroups = filterGroups.filter(g => g.id !== groupId)
+
+    // Build set of keys still referenced by other groups
+    const stillReferencedKeys = new Set(remainingGroups.flatMap(g => g.branchKeys))
+
+    // Only remove branches that have NO remaining references
+    const newFiltered = filteredBranches.filter(b =>
+      stillReferencedKeys.has(getBranchKey(b))
+    ) as typeof filteredBranches
+
+    const removedCount = filteredBranches.length - newFiltered.length
 
     set({
-      filterGroups: filterGroups.filter(g => g.id !== groupId),
+      filterGroups: remainingGroups,
       filteredBranches: newFiltered,
-      filterHistory: [...filterHistory, previousSnapshot]
+      filterHistory: [...filterHistory, previousSnapshot],
+      // Reset selection if removed group was selected
+      selectedFilterGroupId: selectedFilterGroupId === groupId ? null : selectedFilterGroupId
     })
 
-    console.log(`[ShardStore] Removed group "${groupToRemove.metric} top ${groupToRemove.topX}": ${groupToRemove.branchKeys.length} branches`)
+    console.log(`[ShardStore] Removed group "${groupToRemove.jobName} - Top ${groupToRemove.topX} ${groupToRemove.metric}": ${removedCount} branches removed (${groupToRemove.branchKeys.length} refs)`)
+  },
+
+  // Phase 2: Set selected filter group for dropdown view
+  setSelectedFilterGroup: (groupId: string | null) => {
+    set({ selectedFilterGroupId: groupId })
   },
 
   // Phase 3: Generate combined tree from filtered branches

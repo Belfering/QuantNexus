@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { X, Undo2 } from 'lucide-react'
+import { X, Undo2, ChevronDown, Trash2 } from 'lucide-react'
 import type { OptimizationResult } from '@/types/optimizationJob'
 import type { RollingOptimizationResult } from '@/types/bot'
 import type { FlowNode, ConditionLine } from '@/types/flowNode'
@@ -106,10 +106,12 @@ interface ShardsCombinedPreviewProps {
   filteredBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
   filterGroups: FilterGroup[]
+  selectedFilterGroupId: string | null
   canUndo: boolean
   onRemoveBranch: (jobId: number, branchId: string | number) => void
   onClearFiltered: () => void
   onRemoveGroup: (groupId: string) => void
+  onSelectFilterGroup: (groupId: string | null) => void
   onUndo: () => void
   onGenerate: () => void
   onSaveToModel: () => Promise<void>
@@ -120,16 +122,19 @@ export function ShardsCombinedPreview({
   filteredBranches,
   filterMetric,
   filterGroups,
+  selectedFilterGroupId,
   canUndo,
   onRemoveBranch,
   onClearFiltered,
   onRemoveGroup,
+  onSelectFilterGroup,
   onUndo,
   onGenerate,
   onSaveToModel
 }: ShardsCombinedPreviewProps) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
 
   const handleSave = async () => {
     setSaving(true)
@@ -176,45 +181,133 @@ export function ShardsCombinedPreview({
     return null
   }
 
+  // Helper to get branch key
+  const getBranchKey = (branch: any): string => {
+    return `${branch.jobId}-${branch.branchId}`
+  }
+
+  // Get the currently selected group (if any)
+  const selectedGroup = selectedFilterGroupId
+    ? filterGroups.find(g => g.id === selectedFilterGroupId)
+    : null
+
+  // Get display label for dropdown
+  const getDropdownLabel = (): string => {
+    if (selectedGroup) {
+      return `${selectedGroup.jobName} - Top ${selectedGroup.topX} ${selectedGroup.metric}`
+    }
+    return 'All Runs'
+  }
+
+  // Filter branches based on selection
+  const displayedBranches = selectedFilterGroupId === null
+    ? filteredBranches
+    : filteredBranches.filter(b => {
+        const key = getBranchKey(b)
+        return selectedGroup?.branchKeys.includes(key)
+      })
+
   return (
     <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full">
-      {/* Header with count and clear button */}
-      <div className="flex justify-between items-center mb-2">
-        <div className="text-sm font-medium">
-          Filtered Branches ({filteredBranches.length})
-        </div>
-        {filteredBranches.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClearFiltered}
-            className="h-6 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-500/10"
-          >
-            Clear All
-          </Button>
-        )}
+      {/* Header with count */}
+      <div className="text-sm font-medium mb-2">
+        Filtered Branches ({filteredBranches.length})
       </div>
 
-      {/* Filter Group Tags */}
+      {/* Dropdown and Clear/Delete button row */}
       {filterGroups.length > 0 && (
-        <div className="mb-2">
-          <div className="flex flex-wrap gap-1">
-            {filterGroups.map(group => (
-              <div
-                key={group.id}
-                className="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/50 rounded text-[10px] text-foreground"
-              >
-                <span>Top {group.topX} {group.metric}</span>
+        <div className="flex items-center gap-2 mb-2">
+          {/* Dropdown */}
+          <div className="relative flex-1">
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="w-full flex items-center justify-between px-3 py-1.5 bg-background border border-border rounded text-sm hover:bg-accent/50 transition-colors"
+            >
+              <span className="truncate">{getDropdownLabel()}</span>
+              <ChevronDown className={`h-4 w-4 ml-2 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown menu */}
+            {dropdownOpen && (
+              <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-background border border-border rounded shadow-lg max-h-64 overflow-y-auto">
+                {/* All Runs option */}
                 <button
-                  onClick={() => onRemoveGroup(group.id)}
-                  className="p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500"
-                  title="Remove this filter group"
+                  onClick={() => {
+                    onSelectFilterGroup(null)
+                    setDropdownOpen(false)
+                  }}
+                  className={`w-full flex items-center px-3 py-2 text-sm hover:bg-accent/50 ${
+                    selectedFilterGroupId === null ? 'bg-accent/30 font-medium' : ''
+                  }`}
                 >
-                  <X className="h-2.5 w-2.5" />
+                  All Runs
                 </button>
+
+                {/* Separator */}
+                {filterGroups.length > 0 && <div className="border-t border-border" />}
+
+                {/* Individual groups */}
+                {filterGroups.map(group => (
+                  <div
+                    key={group.id}
+                    className={`flex items-center justify-between px-3 py-2 hover:bg-accent/50 ${
+                      selectedFilterGroupId === group.id ? 'bg-accent/30' : ''
+                    }`}
+                  >
+                    <button
+                      onClick={() => {
+                        onSelectFilterGroup(group.id)
+                        setDropdownOpen(false)
+                      }}
+                      className={`flex-1 text-left text-sm truncate ${
+                        selectedFilterGroupId === group.id ? 'font-medium' : ''
+                      }`}
+                    >
+                      {group.jobName} - Top {group.topX} {group.metric}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onRemoveGroup(group.id)
+                      }}
+                      className="p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500 ml-2"
+                      title="Delete this filter group"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
+
+          {/* Clear All / Delete button */}
+          {selectedFilterGroupId === null ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearFiltered}
+              className="h-8 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-500/10 whitespace-nowrap"
+            >
+              Clear All
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onRemoveGroup(selectedFilterGroupId)}
+              className="h-8 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-500/10 whitespace-nowrap"
+            >
+              Delete
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Showing X of Y indicator when filtered */}
+      {selectedFilterGroupId !== null && (
+        <div className="text-xs text-muted-foreground mb-2">
+          Showing {displayedBranches.length} of {filteredBranches.length} branches
         </div>
       )}
 
@@ -239,8 +332,12 @@ export function ShardsCombinedPreview({
           <div className="text-xs text-muted-foreground text-center py-8">
             Apply filters to add branches here
           </div>
+        ) : displayedBranches.length === 0 ? (
+          <div className="text-xs text-muted-foreground text-center py-8">
+            No branches in this filter group
+          </div>
         ) : (
-          filteredBranches.map((branch, idx) => {
+          displayedBranches.map((branch, idx) => {
             // All filtered branches are deep copies with jobId attached
             const b = branch as any
             const jobId = b.jobId as number
