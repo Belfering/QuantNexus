@@ -311,21 +311,6 @@ export function ShardsCombinedPreview({
         </div>
       )}
 
-      {/* Undo Button */}
-      {canUndo && (
-        <div className="mb-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onUndo}
-            className="h-6 px-2 text-xs"
-          >
-            <Undo2 className="h-3 w-3 mr-1" />
-            Undo
-          </Button>
-        </div>
-      )}
-
       {/* Filtered Branches List */}
       <div className="flex-1 overflow-y-auto space-y-2 mb-3">
         {filteredBranches.length === 0 ? (
