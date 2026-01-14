@@ -175,6 +175,10 @@ export function ForgeTab({
   const shardClearFilteredBranches = useShardStore(s => s.clearFilteredBranches)
   const shardGenerateCombinedTree = useShardStore(s => s.generateCombinedTree)
   const shardSaveToModel = useShardStore(s => s.saveToModel)
+  const shardFilterGroups = useShardStore(s => s.filterGroups)
+  const shardFilterHistory = useShardStore(s => s.filterHistory)
+  const shardUndoFilter = useShardStore(s => s.undoFilter)
+  const shardRemoveFilterGroup = useShardStore(s => s.removeFilterGroup)
 
   // Manage separate trees for Split and Walk Forward tabs
   const prevSubtabRef = useRef<string | null>(null)
@@ -2628,52 +2632,73 @@ export function ForgeTab({
 
         {/* Shards Tab Content */}
         {forgeSubtab === 'Shards' && (
-          <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="p-6">
-              <div className="grid grid-cols-3 gap-4">
-                {/* Left Card: Job Loading */}
-                <ShardsJobLoader
-                  loadedJobType={shardLoadedJobType}
-                  loadedJobIds={shardLoadedJobIds}
-                  allBranches={shardAllBranches}
-                  onLoadJob={async (type, jobId) => {
-                    if (type === 'chronological') {
-                      await shardLoadChronologicalJob(jobId)
-                    } else {
-                      await shardLoadRollingJob(jobId)
-                    }
-                  }}
-                  onUnloadJob={shardUnloadJob}
-                  onClearAllJobs={shardClearAllJobs}
-                  isJobLoaded={shardIsJobLoaded}
-                />
+          <div className="flex-1 overflow-hidden flex flex-col p-6">
+            <div className="grid grid-cols-4 gap-4 flex-1 min-h-0">
+              {/* Card 1: Job Loading */}
+              <ShardsJobLoader
+                loadedJobType={shardLoadedJobType}
+                loadedJobIds={shardLoadedJobIds}
+                allBranches={shardAllBranches}
+                onLoadJob={async (type, jobId) => {
+                  if (type === 'chronological') {
+                    await shardLoadChronologicalJob(jobId)
+                  } else {
+                    await shardLoadRollingJob(jobId)
+                  }
+                }}
+                onUnloadJob={shardUnloadJob}
+                onClearAllJobs={shardClearAllJobs}
+                isJobLoaded={shardIsJobLoaded}
+              />
 
-                {/* Middle Card: Filter Settings */}
-                <ShardsBranchFilter
-                  loadedJobType={shardLoadedJobType}
-                  allBranches={shardAllBranches}
-                  filterMetric={shardFilterMetric}
-                  filterTopX={shardFilterTopX}
-                  onFilterMetricChange={shardSetFilterMetric}
-                  onFilterTopXChange={shardSetFilterTopX}
-                  onApplyFilter={shardApplyFilters}
-                />
+              {/* Card 2: Filter Settings */}
+              <ShardsBranchFilter
+                loadedJobType={shardLoadedJobType}
+                allBranches={shardAllBranches}
+                filterMetric={shardFilterMetric}
+                filterTopX={shardFilterTopX}
+                onFilterMetricChange={shardSetFilterMetric}
+                onFilterTopXChange={shardSetFilterTopX}
+                onApplyFilter={shardApplyFilters}
+              />
 
-                {/* Right Card: Filtered Results */}
-                <ShardsCombinedPreview
-                  loadedJobType={shardLoadedJobType}
-                  filteredBranches={shardFilteredBranches}
-                  filterMetric={shardFilterMetric}
-                  onRemoveBranch={shardRemoveBranchFromFiltered}
-                  onClearFiltered={shardClearFilteredBranches}
-                  onGenerate={shardGenerateCombinedTree}
-                  onSaveToModel={async () => {
-                    const botId = await shardSaveToModel()
-                    // Optionally switch to Model tab
-                    setForgeSubtab('Split') // Or navigate to Model tab
-                    console.log('[ForgeTab] Saved shard to Model tab:', botId)
-                  }}
-                />
+              {/* Card 3: Filtered Results */}
+              <ShardsCombinedPreview
+                loadedJobType={shardLoadedJobType}
+                filteredBranches={shardFilteredBranches}
+                filterMetric={shardFilterMetric}
+                filterGroups={shardFilterGroups}
+                canUndo={shardFilterHistory.length > 0}
+                onRemoveBranch={shardRemoveBranchFromFiltered}
+                onClearFiltered={shardClearFilteredBranches}
+                onRemoveGroup={shardRemoveFilterGroup}
+                onUndo={shardUndoFilter}
+                onGenerate={shardGenerateCombinedTree}
+                onSaveToModel={async () => {
+                  const botId = await shardSaveToModel()
+                  // Optionally switch to Model tab
+                  setForgeSubtab('Split') // Or navigate to Model tab
+                  console.log('[ForgeTab] Saved shard to Model tab:', botId)
+                }}
+              />
+
+              {/* Card 4: Combined Tree Preview */}
+              <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full">
+                <div className="text-sm font-medium mb-3">Combined Tree Preview</div>
+                <div className="flex-1 overflow-y-auto">
+                  {shardCombinedTree ? (
+                    <div className="text-xs text-muted-foreground">
+                      <div className="mb-2">Tree generated with {shardFilteredBranches.length} branches</div>
+                      <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto">
+                        {JSON.stringify(shardCombinedTree, null, 2).slice(0, 500)}...
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground text-center py-8">
+                      Generate a combined tree to see preview
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

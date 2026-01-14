@@ -225,9 +225,10 @@ export function ShardsBranchFilter({
           </div>
         ) : (
           allBranches.map((branch, idx) => {
+            // Rolling branches have jobId added at load time (augmented type)
             const jobId = loadedJobType === 'chronological'
               ? (branch as OptimizationResult).jobId
-              : (branch as RollingOptimizationResult['branches'][number]).jobId
+              : (branch as any).jobId as number
             const branchId = loadedJobType === 'chronological'
               ? (branch as OptimizationResult).branchId
               : (branch as RollingOptimizationResult['branches'][number]).branchId

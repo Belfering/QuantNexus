@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { X } from 'lucide-react'
+import { X, Undo2 } from 'lucide-react'
 import type { OptimizationResult } from '@/types/optimizationJob'
 import type { RollingOptimizationResult } from '@/types/bot'
 import type { FlowNode, ConditionLine } from '@/types/flowNode'
+import type { FilterGroup } from '@/stores/useShardStore'
 
 // Comparator display mapping
 const COMPARATOR_SYMBOLS: Record<string, string> = {
@@ -104,8 +105,12 @@ interface ShardsCombinedPreviewProps {
   loadedJobType: 'chronological' | 'rolling' | null
   filteredBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
-  onRemoveBranch: (jobId: number, branchId: string) => void
+  filterGroups: FilterGroup[]
+  canUndo: boolean
+  onRemoveBranch: (jobId: number, branchId: string | number) => void
   onClearFiltered: () => void
+  onRemoveGroup: (groupId: string) => void
+  onUndo: () => void
   onGenerate: () => void
   onSaveToModel: () => Promise<void>
 }
@@ -114,8 +119,12 @@ export function ShardsCombinedPreview({
   loadedJobType,
   filteredBranches,
   filterMetric,
+  filterGroups,
+  canUndo,
   onRemoveBranch,
   onClearFiltered,
+  onRemoveGroup,
+  onUndo,
   onGenerate,
   onSaveToModel
 }: ShardsCombinedPreviewProps) {
@@ -135,13 +144,16 @@ export function ShardsCombinedPreview({
   }
 
   // Helper to get metric value for display
+  // Detects branch type from data structure, not from loadedJobType (so it works after unloading)
   const getMetricValue = (branch: OptimizationResult | RollingOptimizationResult['branches'][number]): number | null => {
-    if (loadedJobType === 'chronological') {
-      const b = branch as OptimizationResult
-      return b.isMetrics?.[filterMetric] ?? null
-    } else if (loadedJobType === 'rolling') {
-      const b = branch as RollingOptimizationResult['branches'][number]
-      return b.isOosMetrics?.IS ?? null
+    const b = branch as any
+    // Chronological branches have isMetrics object
+    if (b.isMetrics && typeof b.isMetrics === 'object') {
+      return b.isMetrics[filterMetric] ?? null
+    }
+    // Rolling branches have isOosMetrics object
+    if (b.isOosMetrics && typeof b.isOosMetrics === 'object') {
+      return b.isOosMetrics.IS ?? null
     }
     return null
   }
@@ -153,18 +165,21 @@ export function ShardsCombinedPreview({
   }
 
   // Get display info from branch
+  // Detects branch type from data structure, not from loadedJobType (so it works after unloading)
   const getBranchDisplay = (branch: OptimizationResult | RollingOptimizationResult['branches'][number]): BranchDisplayInfo | null => {
-    if (loadedJobType === 'chronological') {
-      const b = branch as OptimizationResult
+    const b = branch as any
+    // Chronological branches have treeJson
+    if (b.treeJson) {
       return extractBranchDisplayInfo(b.treeJson)
     }
+    // Rolling branches don't have treeJson - could add support later
     return null
   }
 
   return (
     <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full">
       {/* Header with count and clear button */}
-      <div className="flex justify-between items-center mb-3">
+      <div className="flex justify-between items-center mb-2">
         <div className="text-sm font-medium">
           Filtered Branches ({filteredBranches.length})
         </div>
@@ -180,6 +195,44 @@ export function ShardsCombinedPreview({
         )}
       </div>
 
+      {/* Filter Group Tags */}
+      {filterGroups.length > 0 && (
+        <div className="mb-2">
+          <div className="flex flex-wrap gap-1">
+            {filterGroups.map(group => (
+              <div
+                key={group.id}
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/50 rounded text-[10px] text-foreground"
+              >
+                <span>Top {group.topX} {group.metric}</span>
+                <button
+                  onClick={() => onRemoveGroup(group.id)}
+                  className="p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500"
+                  title="Remove this filter group"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Undo Button */}
+      {canUndo && (
+        <div className="mb-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onUndo}
+            className="h-6 px-2 text-xs"
+          >
+            <Undo2 className="h-3 w-3 mr-1" />
+            Undo
+          </Button>
+        </div>
+      )}
+
       {/* Filtered Branches List */}
       <div className="flex-1 overflow-y-auto space-y-2 mb-3">
         {filteredBranches.length === 0 ? (
@@ -188,12 +241,10 @@ export function ShardsCombinedPreview({
           </div>
         ) : (
           filteredBranches.map((branch, idx) => {
-            const jobId = loadedJobType === 'chronological'
-              ? (branch as OptimizationResult).jobId
-              : (branch as RollingOptimizationResult['branches'][number]).jobId
-            const branchId = loadedJobType === 'chronological'
-              ? (branch as OptimizationResult).branchId
-              : (branch as RollingOptimizationResult['branches'][number]).branchId
+            // All filtered branches are deep copies with jobId attached
+            const b = branch as any
+            const jobId = b.jobId as number
+            const branchId = b.branchId as string | number
             const uniqueKey = `${jobId}-${branchId}-${idx}`
 
             const displayInfo = getBranchDisplay(branch)
@@ -245,34 +296,6 @@ export function ShardsCombinedPreview({
               </div>
             )
           })
-        )}
-      </div>
-
-      {/* Action Buttons */}
-      <div className="space-y-2">
-        <Button
-          onClick={onGenerate}
-          size="sm"
-          disabled={filteredBranches.length === 0}
-          className="w-full"
-        >
-          Generate Combined Tree
-        </Button>
-
-        <Button
-          onClick={handleSave}
-          size="sm"
-          variant="outline"
-          disabled={saving || filteredBranches.length === 0}
-          className="w-full"
-        >
-          {saving ? 'Saving...' : 'Save to Model Tab'}
-        </Button>
-
-        {saveError && (
-          <div className="text-xs text-red-500 p-2 bg-red-500/10 rounded">
-            {saveError}
-          </div>
         )}
       </div>
     </div>
