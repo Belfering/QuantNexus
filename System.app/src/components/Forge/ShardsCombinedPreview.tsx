@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { X, Undo2, ChevronDown, Trash2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { X, Undo2, ChevronDown, Trash2, Loader2 } from 'lucide-react'
 import type { OptimizationResult } from '@/types/optimizationJob'
 import type { RollingOptimizationResult } from '@/types/bot'
 import type { FlowNode, ConditionLine } from '@/types/flowNode'
@@ -115,6 +116,11 @@ interface ShardsCombinedPreviewProps {
   onUndo: () => void
   onGenerate: () => void
   onSaveToModel: () => Promise<void>
+
+  // Save shard functionality
+  canSave: boolean
+  isSavingShard: boolean
+  onSaveShard: (name: string) => Promise<string>
 }
 
 export function ShardsCombinedPreview({
@@ -130,11 +136,16 @@ export function ShardsCombinedPreview({
   onSelectFilterGroup,
   onUndo,
   onGenerate,
-  onSaveToModel
+  onSaveToModel,
+  canSave,
+  isSavingShard,
+  onSaveShard
 }: ShardsCombinedPreviewProps) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [saveShardName, setSaveShardName] = useState('')
+  const [shardSaveError, setShardSaveError] = useState<string | null>(null)
 
   const handleSave = async () => {
     setSaving(true)
@@ -145,6 +156,22 @@ export function ShardsCombinedPreview({
       setSaveError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Handle save shard
+  const handleSaveShard = async () => {
+    if (!saveShardName.trim()) {
+      setShardSaveError('Please enter a name')
+      return
+    }
+
+    setShardSaveError(null)
+    try {
+      await onSaveShard(saveShardName.trim())
+      setSaveShardName('')
+    } catch (err) {
+      setShardSaveError(err instanceof Error ? err.message : 'Failed to save')
     }
   }
 
@@ -300,6 +327,38 @@ export function ShardsCombinedPreview({
             >
               Delete
             </Button>
+          )}
+        </div>
+      )}
+
+      {/* Save As Shard section - only when "All Runs" selected */}
+      {selectedFilterGroupId === null && filteredBranches.length > 0 && (
+        <div className="mb-3 p-2 bg-background rounded border border-border">
+          <div className="text-xs text-muted-foreground mb-1.5">Save as Shard ({filteredBranches.length} branches)</div>
+          <div className="flex items-center gap-2">
+            <Input
+              value={saveShardName}
+              onChange={(e) => setSaveShardName(e.target.value)}
+              placeholder="Shard name..."
+              className="flex-1 h-7 text-sm"
+              disabled={!canSave || isSavingShard}
+              onKeyDown={(e) => e.key === 'Enter' && handleSaveShard()}
+            />
+            <Button
+              onClick={handleSaveShard}
+              size="sm"
+              disabled={!canSave || isSavingShard || !saveShardName.trim()}
+              className="h-7 px-3"
+            >
+              {isSavingShard ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                'Save'
+              )}
+            </Button>
+          </div>
+          {shardSaveError && (
+            <div className="text-xs text-red-500 mt-1">{shardSaveError}</div>
           )}
         </div>
       )}

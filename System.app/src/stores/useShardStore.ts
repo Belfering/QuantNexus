@@ -5,6 +5,7 @@ import type { OptimizationJob, OptimizationResult } from '@/types/optimizationJo
 import type { RollingOptimizationResult, SavedSystem } from '@/types/bot'
 import type { RollingJob } from '@/features/optimization/hooks/useRollingJobs'
 import type { FlowNode } from '@/types/flowNode'
+import type { ShardListItem, SavedShard } from '@/types/shard'
 import { buildShardTree } from '@/features/shards/treeBuilder'
 import { createBotInApi } from '@/features/bots/api'
 import { useAuthStore } from './useAuthStore'
@@ -51,6 +52,16 @@ interface ShardState {
   // Phase 3: Combined System
   combinedTree: FlowNode | null
 
+  // Phase 4: Saved Shards Library
+  savedShards: ShardListItem[]
+  selectedShardIds: string[]
+  loadedShardBranches: any[]  // Branches from selected shards (deduped)
+  shardBotName: string
+  shardWeighting: string  // 'equal' | 'inverse' | 'pro' | 'capped'
+  shardCappedPercent: number  // For capped weighting: 0-100
+  isSavingShard: boolean
+  isLoadingShards: boolean
+
   // Actions - Phase 1
   loadChronologicalJob: (jobId: number) => Promise<void>
   loadRollingJob: (jobId: number) => Promise<void>
@@ -72,6 +83,19 @@ interface ShardState {
   generateCombinedTree: () => void
   clearCombinedTree: () => void
   saveToModel: () => Promise<string>
+
+  // Actions - Phase 4: Saved Shards
+  fetchSavedShards: () => Promise<void>
+  saveShard: (name: string, description?: string) => Promise<string>
+  deleteShard: (shardId: string) => Promise<void>
+  selectShard: (shardId: string) => void
+  deselectShard: (shardId: string) => void
+  clearSelectedShards: () => void
+  loadSelectedShards: () => Promise<void>
+  setShardBotName: (name: string) => void
+  setShardWeighting: (weighting: string) => void
+  setShardCappedPercent: (percent: number) => void
+  generateBotFromShards: () => FlowNode | null
 }
 
 export const useShardStore = create<ShardState>((set, get) => ({
@@ -89,6 +113,16 @@ export const useShardStore = create<ShardState>((set, get) => ({
   selectedFilterGroupId: null,
 
   combinedTree: null,
+
+  // Phase 4: Saved Shards Library
+  savedShards: [],
+  selectedShardIds: [],
+  loadedShardBranches: [],
+  shardBotName: '',
+  shardWeighting: 'equal',
+  shardCappedPercent: 5,  // Default 5%
+  isSavingShard: false,
+  isLoadingShards: false,
 
   // Helper to combine branches from all loaded jobs
   _combineAllBranches: (): OptimizationResult[] | RollingOptimizationResult['branches'] => {
@@ -570,5 +604,295 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
     console.log('[ShardStore] Saved to Model tab:', botId)
     return botId
+  },
+
+  // Phase 4: Fetch saved shards for current user
+  fetchSavedShards: async () => {
+    const userId = useAuthStore.getState().userId
+    if (!userId) {
+      console.warn('[ShardStore] Cannot fetch shards: not logged in')
+      return
+    }
+
+    set({ isLoadingShards: true })
+
+    try {
+      const res = await fetch(`/api/shards?userId=${userId}`)
+      if (!res.ok) {
+        throw new Error('Failed to fetch shards')
+      }
+      const data = await res.json()
+      set({ savedShards: data.shards || [] })
+      console.log('[ShardStore] Fetched shards:', data.shards?.length || 0)
+    } catch (err) {
+      console.error('[ShardStore] Failed to fetch shards:', err)
+    } finally {
+      set({ isLoadingShards: false })
+    }
+  },
+
+  // Phase 4: Save current filtered branches as a shard
+  saveShard: async (name: string, description?: string) => {
+    const { filteredBranches, loadedJobIds, loadedJobType, filterGroups, filterMetric, filterTopX } = get()
+    const userId = useAuthStore.getState().userId
+
+    if (!userId) {
+      throw new Error('Not logged in')
+    }
+
+    if (filteredBranches.length === 0) {
+      throw new Error('No branches to save')
+    }
+
+    set({ isSavingShard: true })
+
+    try {
+      // Build filter summary from filter groups
+      const filterSummary = filterGroups.length > 0
+        ? filterGroups.map(g => `Top ${g.topX} ${g.metric}`).join(', ')
+        : `Top ${filterTopX} ${filterMetric}`
+
+      const res = await fetch('/api/shards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ownerId: userId,
+          name,
+          description,
+          sourceJobIds: loadedJobIds,
+          loadedJobType: loadedJobType || 'chronological',
+          branches: filteredBranches,
+          filterSummary
+        })
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || 'Failed to save shard')
+      }
+
+      const data = await res.json()
+      console.log('[ShardStore] Saved shard:', data.id)
+
+      // Refresh saved shards list
+      await get().fetchSavedShards()
+
+      return data.id
+    } finally {
+      set({ isSavingShard: false })
+    }
+  },
+
+  // Phase 4: Delete a saved shard
+  deleteShard: async (shardId: string) => {
+    const userId = useAuthStore.getState().userId
+    if (!userId) {
+      throw new Error('Not logged in')
+    }
+
+    const res = await fetch(`/api/shards/${shardId}?ownerId=${userId}`, {
+      method: 'DELETE'
+    })
+
+    if (!res.ok) {
+      const errorData = await res.json()
+      throw new Error(errorData.error || 'Failed to delete shard')
+    }
+
+    console.log('[ShardStore] Deleted shard:', shardId)
+
+    // Update local state
+    set(state => ({
+      savedShards: state.savedShards.filter(s => s.id !== shardId),
+      selectedShardIds: state.selectedShardIds.filter(id => id !== shardId)
+    }))
+  },
+
+  // Phase 4: Select a shard for combining
+  selectShard: (shardId: string) => {
+    set(state => ({
+      selectedShardIds: state.selectedShardIds.includes(shardId)
+        ? state.selectedShardIds
+        : [...state.selectedShardIds, shardId]
+    }))
+  },
+
+  // Phase 4: Deselect a shard
+  deselectShard: (shardId: string) => {
+    set(state => ({
+      selectedShardIds: state.selectedShardIds.filter(id => id !== shardId)
+    }))
+  },
+
+  // Phase 4: Clear shard selection
+  clearSelectedShards: () => {
+    set({ selectedShardIds: [], loadedShardBranches: [] })
+  },
+
+  // Phase 4: Load full branch data for selected shards and dedupe
+  loadSelectedShards: async () => {
+    const { selectedShardIds } = get()
+    const userId = useAuthStore.getState().userId
+
+    if (!userId) {
+      console.warn('[ShardStore] Cannot load shards: not logged in')
+      return
+    }
+
+    if (selectedShardIds.length === 0) {
+      set({ loadedShardBranches: [] })
+      return
+    }
+
+    set({ isLoadingShards: true })
+
+    try {
+      // Fetch full data for each selected shard
+      const allBranches: any[] = []
+      const seenKeys = new Set<string>()
+
+      for (const shardId of selectedShardIds) {
+        const res = await fetch(`/api/shards/${shardId}?userId=${userId}`)
+        if (!res.ok) {
+          console.warn(`[ShardStore] Failed to fetch shard ${shardId}`)
+          continue
+        }
+        const data: { shard: SavedShard } = await res.json()
+
+        // Add branches, deduplicating by jobId-branchId
+        for (const branch of data.shard.branches) {
+          const key = `${branch.jobId}-${branch.branchId}`
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key)
+            allBranches.push(branch)
+          }
+        }
+      }
+
+      set({ loadedShardBranches: allBranches })
+      console.log(`[ShardStore] Loaded ${allBranches.length} unique branches from ${selectedShardIds.length} shards`)
+    } catch (err) {
+      console.error('[ShardStore] Failed to load shard branches:', err)
+    } finally {
+      set({ isLoadingShards: false })
+    }
+  },
+
+  // Phase 4: Set bot name for generation
+  setShardBotName: (name: string) => {
+    set({ shardBotName: name })
+  },
+
+  // Phase 4: Set weighting mode for generation
+  setShardWeighting: (weighting: string) => {
+    set({ shardWeighting: weighting })
+  },
+
+  // Phase 4: Set capped percentage for capped weighting
+  setShardCappedPercent: (percent: number) => {
+    set({ shardCappedPercent: Math.max(0, Math.min(100, percent)) })
+  },
+
+  // Phase 4: Generate bot tree from selected shards with chosen weighting
+  generateBotFromShards: () => {
+    const { loadedShardBranches, shardBotName, shardWeighting, shardCappedPercent } = get()
+
+    if (loadedShardBranches.length === 0) {
+      console.warn('[ShardStore] No branches loaded to generate bot')
+      return null
+    }
+
+    const botName = shardBotName.trim() || 'Shard Bot'
+    const branchCount = loadedShardBranches.length
+
+    // Parse weighting mode: 'equal', 'inverse', 'pro', 'capped'
+    const weightMode = shardWeighting as 'equal' | 'inverse' | 'pro' | 'capped'
+
+    // Create root node with selected weighting
+    const root: FlowNode = {
+      id: `root-${Date.now()}`,
+      kind: 'basic',
+      title: botName,
+      weighting: weightMode,
+      // For inverse/pro volatility, set default vol window
+      ...(weightMode === 'inverse' || weightMode === 'pro' ? { volWindow: 20 } : {}),
+      // For capped weighting, set the fallback to 'Empty' (no remainder allocation)
+      ...(weightMode === 'capped' ? { cappedFallback: 'Empty' } : {}),
+      children: {
+        next: loadedShardBranches.map((branch, idx) => {
+          // If branch has full tree JSON, use it
+          if (branch.treeJson) {
+            try {
+              const tree = JSON.parse(branch.treeJson)
+              // Ensure unique IDs by prefixing
+              const prefixedTree = prefixNodeIds(tree, `b${idx}-`)
+              // For capped weighting, set the cap percentage on the child's window property
+              // QuantNexus uses child.window to determine cap % per branch
+              if (weightMode === 'capped') {
+                prefixedTree.window = shardCappedPercent
+              }
+              return prefixedTree
+            } catch {
+              // Fall back to basic node
+            }
+          }
+
+          // Create a meaningful fallback node from branch metadata
+          // Use parameterLabel as title (shows the branch parameters like "RSI(14) > 70")
+          // Use positionTicker if available for positions
+          const branchTitle = branch.parameterLabel || `Branch ${branch.branchId}`
+          const positions = branch.positionTicker ? [branch.positionTicker] : ['SPY']
+          const timestamp = Date.now()
+
+          // Create a basic wrapper node with position child
+          const fallbackNode: FlowNode = {
+            id: `branch-${idx}-${timestamp}`,
+            kind: 'basic' as const,
+            title: branchTitle,
+            weighting: 'equal' as const,
+            children: {
+              next: [{
+                id: `pos-${idx}-${timestamp}`,
+                kind: 'position' as const,
+                title: 'Positions',
+                positions,
+                weighting: 'equal' as const,
+                children: {}
+              }]
+            }
+          }
+          // For capped weighting, set cap % on the branch node
+          if (weightMode === 'capped') {
+            fallbackNode.window = shardCappedPercent
+          }
+          return fallbackNode
+        })
+      }
+    }
+
+    console.log('[ShardStore] Generated bot tree with', branchCount, 'branches, weighting:', weightMode,
+      weightMode === 'capped' ? `(${shardCappedPercent}% cap per branch)` : '')
+    return root
   }
 }))
+
+// Helper function to prefix all node IDs in a tree (for uniqueness when combining)
+function prefixNodeIds(node: FlowNode, prefix: string): FlowNode {
+  const newNode: FlowNode = {
+    ...node,
+    id: prefix + node.id,
+    children: {}
+  }
+
+  if (node.children) {
+    for (const [slot, children] of Object.entries(node.children)) {
+      if (Array.isArray(children)) {
+        newNode.children[slot as keyof typeof newNode.children] = children.map(child =>
+          child ? prefixNodeIds(child, prefix) : null
+        )
+      }
+    }
+  }
+
+  return newNode
+}

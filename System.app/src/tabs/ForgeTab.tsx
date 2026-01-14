@@ -73,6 +73,7 @@ import { WalkForwardSettingsPanel } from '@/components/Forge/WalkForwardSettings
 import { ShardsJobLoader } from '@/components/Forge/ShardsJobLoader'
 import { ShardsBranchFilter } from '@/components/Forge/ShardsBranchFilter'
 import { ShardsCombinedPreview } from '@/components/Forge/ShardsCombinedPreview'
+import { ShardsLibrary } from '@/components/Forge/ShardsLibrary'
 import { ParameterBoxPanel } from '@/features/parameters/components/ParameterBoxPanel'
 import type { ParameterField, ParameterRange } from '@/features/parameters/types'
 import { loadCallChainsFromApi } from '@/features/auth'
@@ -181,6 +182,26 @@ export function ForgeTab({
   const shardRemoveFilterGroup = useShardStore(s => s.removeFilterGroup)
   const shardSelectedFilterGroupId = useShardStore(s => s.selectedFilterGroupId)
   const shardSetSelectedFilterGroup = useShardStore(s => s.setSelectedFilterGroup)
+
+  // Shard Library state (Phase 4)
+  const shardSavedShards = useShardStore(s => s.savedShards)
+  const shardSelectedShardIds = useShardStore(s => s.selectedShardIds)
+  const shardLoadedShardBranches = useShardStore(s => s.loadedShardBranches)
+  const shardIsLoadingShards = useShardStore(s => s.isLoadingShards)
+  const shardIsSavingShard = useShardStore(s => s.isSavingShard)
+  const shardBotName = useShardStore(s => s.shardBotName)
+  const shardWeighting = useShardStore(s => s.shardWeighting)
+  const shardCappedPercent = useShardStore(s => s.shardCappedPercent)
+  const shardFetchSavedShards = useShardStore(s => s.fetchSavedShards)
+  const shardSaveShard = useShardStore(s => s.saveShard)
+  const shardDeleteShard = useShardStore(s => s.deleteShard)
+  const shardSelectShard = useShardStore(s => s.selectShard)
+  const shardDeselectShard = useShardStore(s => s.deselectShard)
+  const shardLoadSelectedShards = useShardStore(s => s.loadSelectedShards)
+  const shardSetShardBotName = useShardStore(s => s.setShardBotName)
+  const shardSetShardWeighting = useShardStore(s => s.setShardWeighting)
+  const shardSetShardCappedPercent = useShardStore(s => s.setShardCappedPercent)
+  const shardGenerateBotFromShards = useShardStore(s => s.generateBotFromShards)
 
   // Manage separate trees for Split and Walk Forward tabs
   const prevSubtabRef = useRef<string | null>(null)
@@ -2684,26 +2705,80 @@ export function ForgeTab({
                   setForgeSubtab('Split') // Or navigate to Model tab
                   console.log('[ForgeTab] Saved shard to Model tab:', botId)
                 }}
+                canSave={shardFilteredBranches.length > 0}
+                isSavingShard={shardIsSavingShard}
+                onSaveShard={shardSaveShard}
               />
 
-              {/* Card 4: Combined Tree Preview */}
-              <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full">
-                <div className="text-sm font-medium mb-3">Combined Tree Preview</div>
-                <div className="flex-1 overflow-y-auto">
-                  {shardCombinedTree ? (
-                    <div className="text-xs text-muted-foreground">
-                      <div className="mb-2">Tree generated with {shardFilteredBranches.length} branches</div>
-                      <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto">
-                        {JSON.stringify(shardCombinedTree, null, 2).slice(0, 500)}...
-                      </pre>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-muted-foreground text-center py-8">
-                      Generate a combined tree to see preview
-                    </div>
-                  )}
-                </div>
-              </div>
+              {/* Card 4: Shard Library */}
+              <ShardsLibrary
+                savedShards={shardSavedShards}
+                selectedShardIds={shardSelectedShardIds}
+                loadedShardBranches={shardLoadedShardBranches}
+                isLoadingShards={shardIsLoadingShards}
+                shardBotName={shardBotName}
+                shardWeighting={shardWeighting}
+                shardCappedPercent={shardCappedPercent}
+                onFetchShards={shardFetchSavedShards}
+                onDeleteShard={shardDeleteShard}
+                onSelectShard={shardSelectShard}
+                onDeselectShard={shardDeselectShard}
+                onLoadSelectedShards={shardLoadSelectedShards}
+                onSetShardBotName={shardSetShardBotName}
+                onSetShardWeighting={shardSetShardWeighting}
+                onSetShardCappedPercent={shardSetShardCappedPercent}
+                onGenerateBot={async () => {
+                  const tree = shardGenerateBotFromShards()
+                  if (!tree) return
+
+                  // Save to Model tab using similar logic as shardSaveToModel
+                  const userId = useAuthStore.getState().userId
+                  if (!userId) {
+                    console.error('[ForgeTab] Not logged in')
+                    return
+                  }
+
+                  const botId = `shard-${Date.now()}`
+                  const savedSystem = {
+                    id: botId,
+                    name: tree.title,
+                    builderId: userId,
+                    payload: tree,
+                    visibility: 'private' as const,
+                    createdAt: Date.now(),
+                    tags: ['Shard', 'Combined']
+                  }
+
+                  try {
+                    const { createBotInApi } = await import('@/features/bots/api')
+                    await createBotInApi(userId, savedSystem)
+
+                    // Add to bot store with the generated tree
+                    useBotStore.getState().addBot({
+                      id: botId,
+                      history: [tree],
+                      historyIndex: 0,
+                      backtest: {
+                        status: 'idle',
+                        result: null,
+                        errors: [],
+                        errorNodeIds: new Set(),
+                        focusNodeId: null,
+                        benchmarkMetrics: null
+                      },
+                      callChains: [],
+                      customIndicators: [],
+                      parameterRanges: [],
+                      tabContext: 'Model'
+                    })
+
+                    console.log('[ForgeTab] Generated shard bot:', botId)
+                    setForgeSubtab('Split')
+                  } catch (err) {
+                    console.error('[ForgeTab] Failed to save shard bot:', err)
+                  }
+                }}
+              />
             </div>
           </div>
         )}
