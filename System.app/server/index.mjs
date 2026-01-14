@@ -2150,10 +2150,12 @@ app.post('/api/deploy', async (req, res) => {
   const { exec } = await import('child_process')
   exec(`
     cd /home/deploy/quantnexus && \
-    git pull origin dev && \
+    git fetch origin dev && \
+    git reset --hard origin/dev && \
     cd System.app && \
     npm install && \
-    PATH="$PATH:./node_modules/.bin" npm run build && \
+    ./node_modules/.bin/tsc -b && \
+    ./node_modules/.bin/vite build && \
     pm2 restart quantnexus
   `, (error, stdout, stderr) => {
     if (error) {
