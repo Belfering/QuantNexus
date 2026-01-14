@@ -120,7 +120,8 @@
       "Bash(ping:*)",
       "Bash(lsof:*)",
       "Bash(Get-Process -Name node -ErrorAction SilentlyContinue)",
-      "Bash(Stop-Process -Force)"
+      "Bash(Stop-Process -Force)",
+      "Bash(git rev-parse:*)"
     ]
   }
 }
