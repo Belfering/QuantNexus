@@ -13,6 +13,7 @@ import { seedAdminUser } from './seed-admin.mjs'
 import * as scheduler from './scheduler.mjs'
 import { authenticate, requireAdmin, requireSuperAdmin, requireMainAdmin, isSuperAdmin, isMainAdmin, hasAdminAccess, hasEngineerAccess, canChangeUserRole } from './middleware/auth.mjs'
 import * as atlasDb from './db/atlas-db.mjs'
+import { sharedTickerCache, DISABLE_TICKER_CACHE as SHARED_CACHE_DISABLED, CACHE_TTL, getCachedTicker, setCachedTicker, clearCache as clearSharedCache } from './lib/ticker-cache.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -1160,14 +1161,14 @@ app.get('/api/candles/:ticker', async (req, res) => {
 })
 
 // Server-side memory cache for ticker data (much faster than re-querying parquet files)
-// Set DISABLE_TICKER_CACHE=1 to disable caching and save RAM
-const DISABLE_TICKER_CACHE = process.env.DISABLE_TICKER_CACHE === '1' || process.env.DISABLE_TICKER_CACHE === 'true'
-const serverTickerCache = new Map()  // ticker -> { data, timestamp }
-const SERVER_CACHE_TTL = 30 * 60 * 1000  // 30 minutes
+// Now uses shared cache from lib/ticker-cache.mjs so backtest.mjs can access it too
+const DISABLE_TICKER_CACHE = SHARED_CACHE_DISABLED
+const serverTickerCache = sharedTickerCache  // Alias to shared cache
+const SERVER_CACHE_TTL = CACHE_TTL
 
 // ============================================================================
 // BACKGROUND CACHE PRELOADING
-// Preloads all tickers into serverTickerCache for fast subsequent requests
+// Preloads all tickers into sharedTickerCache for fast subsequent requests
 // ============================================================================
 let preloadInProgress = false
 const PRELOAD_BATCH_SIZE = parseInt(process.env.PRELOAD_BATCH_SIZE || '50', 10)

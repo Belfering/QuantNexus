@@ -7,6 +7,7 @@ import duckdb from 'duckdb'
 import { compressTree } from './tree-compressor.mjs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { sharedTickerCache, DISABLE_TICKER_CACHE as SHARED_CACHE_DISABLED } from './lib/ticker-cache.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -211,11 +212,29 @@ async function fetchOhlcSeriesUncached(ticker, limit = 20000) {
 
 async function fetchOhlcSeries(ticker, limit = 20000) {
   // Skip cache entirely if disabled
-  if (DISABLE_TICKER_CACHE) {
+  if (DISABLE_TICKER_CACHE || SHARED_CACHE_DISABLED) {
     return fetchOhlcSeriesUncached(ticker, limit)
   }
 
-  // Check cache first (instant access for ANY previously loaded ticker)
+  // Check SHARED cache first (populated by index.mjs preload)
+  const sharedCached = sharedTickerCache.get(ticker)
+  if (sharedCached && sharedCached.data && sharedCached.limit >= limit) {
+    cacheStats.hits++
+    // Transform from server cache format { time, open, high, low, close, adjClose }
+    // to backtest format { time, open, high, low, close, adjClose, volume }
+    const bars = sharedCached.data.map(bar => ({
+      time: bar.time,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      adjClose: bar.adjClose,
+      volume: bar.volume ?? null
+    }))
+    return limit < bars.length ? bars.slice(-limit) : bars
+  }
+
+  // Check local backtest cache (for tickers loaded during this session)
   const cached = tickerDataCache.get(ticker)
   if (cached) {
     cacheStats.hits++
@@ -224,7 +243,7 @@ async function fetchOhlcSeries(ticker, limit = 20000) {
     return limit < cached.length ? cached.slice(-limit) : cached
   }
 
-  // Not in cache - fetch from parquet and CACHE IT for future requests
+  // Not in any cache - fetch from parquet and CACHE IT for future requests
   cacheStats.misses++
   const loadStart = Date.now()
   const bars = await fetchOhlcSeriesUncached(ticker, limit)
