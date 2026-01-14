@@ -2152,7 +2152,7 @@ app.post('/api/deploy', async (req, res) => {
     cd /home/deploy/quantnexus && \
     git pull origin dev && \
     cd System.app && \
-    npm ci && \
+    npm install && \
     npm run build && \
     pm2 restart quantnexus
   `, (error, stdout, stderr) => {
