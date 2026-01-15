@@ -236,8 +236,10 @@ export function ShardsCombinedPreview({
     return 'All Runs'
   }
 
-  // Determine which list to display based on activeListView
-  const activeBranches = activeListView === 'filter' ? filteredBranches : strategyBranches
+  // Determine which list to display based on activeListView (with fallbacks)
+  const activeBranches = activeListView === 'filter'
+    ? (filteredBranches || [])
+    : (strategyBranches || [])
   const activeCount = activeBranches.length
 
   // Filter branches based on selection (only for filter view)
@@ -376,7 +378,7 @@ export function ShardsCombinedPreview({
       )}
 
       {/* Clear All button for strategy view */}
-      {activeListView === 'strategy' && strategyBranches.length > 0 && (
+      {activeListView === 'strategy' && (strategyBranches || []).length > 0 && (
         <div className="flex justify-end mb-2">
           <Button
             variant="ghost"
@@ -390,9 +392,9 @@ export function ShardsCombinedPreview({
       )}
 
       {/* Save As Shard section - only for filter view when "All Runs" selected */}
-      {activeListView === 'filter' && selectedFilterGroupId === null && filteredBranches.length > 0 && (
+      {activeListView === 'filter' && selectedFilterGroupId === null && (filteredBranches || []).length > 0 && (
         <div className="mb-3 p-2 bg-background rounded border border-border">
-          <div className="text-sm text-muted-foreground mb-1.5">Save as Shard ({filteredBranches.length} branches)</div>
+          <div className="text-sm text-muted-foreground mb-1.5">Save as Shard ({(filteredBranches || []).length} branches)</div>
           <div className="flex items-center gap-2">
             <Input
               value={saveShardName}
@@ -424,7 +426,7 @@ export function ShardsCombinedPreview({
       {/* Showing X of Y indicator when filtered (filter view only) */}
       {activeListView === 'filter' && selectedFilterGroupId !== null && (
         <div className="text-sm text-muted-foreground mb-2">
-          Showing {displayedBranches.length} of {filteredBranches.length} branches
+          Showing {displayedBranches.length} of {(filteredBranches || []).length} branches
         </div>
       )}
 
