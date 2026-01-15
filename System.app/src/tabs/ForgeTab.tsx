@@ -163,6 +163,9 @@ export function ForgeTab({
   const shardFilteredBranches = useShardStore(s => s.filteredBranches)
   const shardFilterMetric = useShardStore(s => s.filterMetric)
   const shardFilterTopX = useShardStore(s => s.filterTopX)
+  const shardFilterMode = useShardStore(s => s.filterMode)
+  const shardPerRunTopX = useShardStore(s => s.perRunTopX)
+  const shardLoadedJobs = useShardStore(s => s.loadedJobs)
   const shardCombinedTree = useShardStore(s => s.combinedTree)
   const shardLoadChronologicalJob = useShardStore(s => s.loadChronologicalJob)
   const shardLoadRollingJob = useShardStore(s => s.loadRollingJob)
@@ -171,6 +174,8 @@ export function ForgeTab({
   const shardIsJobLoaded = useShardStore(s => s.isJobLoaded)
   const shardSetFilterMetric = useShardStore(s => s.setFilterMetric)
   const shardSetFilterTopX = useShardStore(s => s.setFilterTopX)
+  const shardSetFilterMode = useShardStore(s => s.setFilterMode)
+  const shardSetPerRunTopX = useShardStore(s => s.setPerRunTopX)
   const shardApplyFilters = useShardStore(s => s.applyFilters)
   const shardRemoveBranchFromFiltered = useShardStore(s => s.removeBranchFromFiltered)
   const shardClearFilteredBranches = useShardStore(s => s.clearFilteredBranches)
@@ -2646,8 +2651,14 @@ export function ForgeTab({
                 allBranches={shardAllBranches}
                 filterMetric={shardFilterMetric}
                 filterTopX={shardFilterTopX}
+                filterMode={shardFilterMode}
+                perRunTopX={shardPerRunTopX}
+                loadedJobIds={shardLoadedJobIds}
+                loadedJobs={shardLoadedJobs}
                 onFilterMetricChange={shardSetFilterMetric}
                 onFilterTopXChange={shardSetFilterTopX}
+                onFilterModeChange={shardSetFilterMode}
+                onPerRunTopXChange={shardSetPerRunTopX}
                 onApplyFilter={shardApplyFilters}
               />
 

@@ -26,6 +26,8 @@ export interface FilterGroup {
   topX: number
   addedAt: number
   branchKeys: string[]           // ALL branches selected (for reference counting)
+  mode: 'overall' | 'perRun'     // Filter mode: overall or per-run
+  perRunConfig?: Record<number, number>  // jobId -> topX mapping for per-run mode
 }
 
 // History snapshot for undo - stores both groups and branches
@@ -44,6 +46,8 @@ interface ShardState {
   // Phase 2: Filtering (additive with undo)
   filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
   filterTopX: number
+  filterMode: 'overall' | 'perRun'  // Filter mode: overall or per-run
+  perRunTopX: Record<number, number>  // jobId -> topX mapping for per-run mode
   filteredBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   filterGroups: FilterGroup[]      // Track each Apply action as a group
   filterHistory: FilterHistorySnapshot[]   // Stack for undo (stores both groups and branches)
@@ -72,6 +76,8 @@ interface ShardState {
   // Actions - Phase 2
   setFilterMetric: (metric: ShardState['filterMetric']) => void
   setFilterTopX: (count: number) => void
+  setFilterMode: (mode: 'overall' | 'perRun') => void
+  setPerRunTopX: (jobId: number, count: number) => void
   applyFilters: () => void
   removeBranchFromFiltered: (jobId: number, branchId: string | number) => void
   clearFilteredBranches: () => void
@@ -107,6 +113,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
   filterMetric: 'sharpe',
   filterTopX: 10,
+  filterMode: 'overall',
+  perRunTopX: {},
   filteredBranches: [],
   filterGroups: [],
   filterHistory: [],
@@ -316,9 +324,22 @@ export const useShardStore = create<ShardState>((set, get) => ({
     set({ filterTopX: Math.max(0, count) })
   },
 
+  // Phase 2: Set filter mode (overall or per-run)
+  setFilterMode: (mode) => {
+    set({ filterMode: mode })
+  },
+
+  // Phase 2: Set top X for a specific run (per-run mode)
+  setPerRunTopX: (jobId, count) => {
+    const { perRunTopX } = get()
+    set({
+      perRunTopX: { ...perRunTopX, [jobId]: Math.max(0, count) }
+    })
+  },
+
   // Phase 2: Apply filters to branches (ADDITIVE - appends to existing filtered branches)
   applyFilters: () => {
-    const { allBranches, filterMetric, filterTopX, loadedJobType, filteredBranches, filterGroups, filterHistory, loadedJobs, loadedJobIds } = get()
+    const { allBranches, filterMetric, filterTopX, loadedJobType, filteredBranches, filterGroups, filterHistory, loadedJobs, loadedJobIds, filterMode, perRunTopX } = get()
 
     if (allBranches.length === 0) {
       return
@@ -351,15 +372,48 @@ export const useShardStore = create<ShardState>((set, get) => ({
       return `${branch.jobId}-${branch.branchId}`
     }
 
-    // Sort by metric (descending - higher is better)
-    const sorted = [...allBranches].sort((a, b) => {
-      const aValue = getMetricValue(a)
-      const bValue = getMetricValue(b)
-      return (bValue || -Infinity) - (aValue || -Infinity)
-    })
+    let topBranches: any[]
+    let perRunConfigUsed: Record<number, number> | undefined
 
-    // Take top X
-    const topBranches = sorted.slice(0, filterTopX)
+    if (filterMode === 'overall') {
+      // EXISTING LOGIC: Sort all branches together, take top X
+      const sorted = [...allBranches].sort((a, b) => {
+        const aValue = getMetricValue(a)
+        const bValue = getMetricValue(b)
+        return (bValue || -Infinity) - (aValue || -Infinity)
+      })
+      topBranches = sorted.slice(0, filterTopX)
+    } else {
+      // NEW LOGIC: Per-run mode - group by jobId, take top X from each
+      // Group branches by jobId
+      const branchesByJob: Record<number, any[]> = {}
+      for (const branch of allBranches) {
+        const jobId = branch.jobId
+        if (!branchesByJob[jobId]) {
+          branchesByJob[jobId] = []
+        }
+        branchesByJob[jobId].push(branch)
+      }
+
+      // For each loaded job, take top X (using perRunTopX mapping)
+      topBranches = []
+      perRunConfigUsed = {}
+      for (const jobId of loadedJobIds) {
+        const jobBranches = branchesByJob[jobId] || []
+        const topXForJob = perRunTopX[jobId] || 0
+
+        if (topXForJob > 0) {
+          const sortedJobBranches = jobBranches.sort((a, b) => {
+            const aValue = getMetricValue(a)
+            const bValue = getMetricValue(b)
+            return (bValue || -Infinity) - (aValue || -Infinity)
+          })
+          const topFromJob = sortedJobBranches.slice(0, topXForJob)
+          topBranches.push(...topFromJob)
+          perRunConfigUsed[jobId] = topXForJob
+        }
+      }
+    }
 
     // Get ALL branch keys for reference counting (even if already in list)
     const allSelectedKeys = topBranches.map(b => getBranchKey(b))
@@ -382,7 +436,9 @@ export const useShardStore = create<ShardState>((set, get) => ({
       metric: filterMetric,
       topX: filterTopX,
       addedAt: Date.now(),
-      branchKeys: allSelectedKeys  // ALL branches, not just new ones
+      branchKeys: allSelectedKeys,  // ALL branches, not just new ones
+      mode: filterMode,              // NEW: filter mode
+      perRunConfig: perRunConfigUsed // NEW: per-run config if applicable
     }
 
     // Deep copy only NEW branches so they persist independently
@@ -397,7 +453,11 @@ export const useShardStore = create<ShardState>((set, get) => ({
       filterHistory: [...filterHistory, previousSnapshot]
     })
 
-    console.log(`[ShardStore] Added group "${newGroup.jobName} - Top ${filterTopX} ${filterMetric}": ${copiedBranches.length} new branches (${allSelectedKeys.length} total refs). Total displayed: ${updatedFiltered.length}`)
+    const modeDesc = filterMode === 'overall'
+      ? `Top ${filterTopX} ${filterMetric} (overall)`
+      : `Top ${filterMetric} per run (${Object.entries(perRunConfigUsed || {}).map(([jid, x]) => `Job#${jid}:${x}`).join(', ')})`
+
+    console.log(`[ShardStore] Added group "${newGroup.jobName} - ${modeDesc}": ${copiedBranches.length} new branches (${allSelectedKeys.length} total refs). Total displayed: ${updatedFiltered.length}`)
   },
 
   // Phase 2: Remove a specific branch from filtered results

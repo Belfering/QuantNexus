@@ -290,7 +290,9 @@ export function ShardsCombinedPreview({
                         selectedFilterGroupId === group.id ? 'font-medium' : ''
                       }`}
                     >
-                      {group.jobName} - Top {group.topX} {group.metric}
+                      {group.mode === 'perRun' && group.perRunConfig
+                        ? `${group.jobName} - Top ${group.metric} per run (${Object.entries(group.perRunConfig).map(([jid, x]) => `Job#${jid}:${x}`).join(', ')})`
+                        : `${group.jobName} - Top ${group.topX} ${group.metric}`}
                     </button>
                     <button
                       onClick={(e) => {

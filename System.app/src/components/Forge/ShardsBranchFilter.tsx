@@ -35,13 +35,24 @@ const SHORT_INDICATOR_NAMES: Record<string, string> = {
   'Stochastic %D': 'Stoch-D',
 }
 
+interface LoadedJobData {
+  metadata: any
+  branches: any[]
+}
+
 interface ShardsBranchFilterProps {
   loadedJobType: 'chronological' | 'rolling' | null
   allBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
   filterTopX: number
+  filterMode: 'overall' | 'perRun'
+  perRunTopX: Record<number, number>
+  loadedJobIds: number[]
+  loadedJobs: Record<number, LoadedJobData>
   onFilterMetricChange: (metric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar') => void
   onFilterTopXChange: (count: number) => void
+  onFilterModeChange: (mode: 'overall' | 'perRun') => void
+  onPerRunTopXChange: (jobId: number, count: number) => void
   onApplyFilter: () => void
 }
 
@@ -115,8 +126,14 @@ export function ShardsBranchFilter({
   allBranches,
   filterMetric,
   filterTopX,
+  filterMode,
+  perRunTopX,
+  loadedJobIds,
+  loadedJobs,
   onFilterMetricChange,
   onFilterTopXChange,
+  onFilterModeChange,
+  onPerRunTopXChange,
   onApplyFilter
 }: ShardsBranchFilterProps) {
   // Local state for the input to allow clearing while typing
@@ -158,9 +175,10 @@ export function ShardsBranchFilter({
     <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full">
       <div className="text-sm font-medium mb-3">Filter Settings</div>
 
-      {/* Filter Controls - Single Row */}
-      <div className="flex items-end gap-2 mb-3">
-        <div className="flex-1">
+      {/* Filter Controls */}
+      <div className="space-y-3 mb-3">
+        {/* Row 1: Metric selector */}
+        <div>
           <label className="text-xs text-muted-foreground block mb-1">Metric</label>
           <select
             value={filterMetric}
@@ -176,42 +194,111 @@ export function ShardsBranchFilter({
           </select>
         </div>
 
-        <div className="w-16">
-          <label className="text-xs text-muted-foreground block mb-1">Top</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={topXInput}
-            onChange={(e) => {
-              const val = e.target.value
-              // Only allow digits
-              if (val === '' || /^\d+$/.test(val)) {
-                setTopXInput(val)
-              }
-            }}
-            onBlur={() => {
-              // On blur, commit to store (default to 1 if empty)
-              const num = parseInt(topXInput, 10)
-              if (isNaN(num) || num < 1) {
-                setTopXInput('1')
-                onFilterTopXChange(1)
-              } else {
-                onFilterTopXChange(num)
-              }
-            }}
-            className="w-full px-2 py-1 rounded border border-border bg-background text-sm text-center"
-            disabled={allBranches.length === 0}
-          />
+        {/* Row 2: Mode toggle */}
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">Filter Mode</label>
+          <div className="flex items-center gap-2 p-2 bg-background rounded border border-border">
+            <button
+              onClick={() => onFilterModeChange('overall')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                filterMode === 'overall'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'bg-transparent text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              Overall
+            </button>
+            <button
+              onClick={() => onFilterModeChange('perRun')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                filterMode === 'perRun'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'bg-transparent text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              Per Run
+            </button>
+          </div>
         </div>
 
-        <Button
-          onClick={onApplyFilter}
-          size="sm"
-          disabled={allBranches.length === 0}
-        >
-          Apply
-        </Button>
+        {/* Row 3a: Overall mode - single Top X input */}
+        {filterMode === 'overall' && (
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="text-xs text-muted-foreground block mb-1">Top X</label>
+              <input
+                type="number"
+                min={0}
+                value={filterTopX}
+                onChange={(e) => onFilterTopXChange(parseInt(e.target.value, 10) || 0)}
+                className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
+                disabled={allBranches.length === 0}
+              />
+            </div>
+            <Button
+              onClick={onApplyFilter}
+              size="sm"
+              disabled={allBranches.length === 0}
+            >
+              Apply
+            </Button>
+          </div>
+        )}
+
+        {/* Row 3b: Per-run mode - Top X per job */}
+        {filterMode === 'perRun' && (
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground mb-1">Top X per Run</div>
+            {loadedJobIds.length === 0 ? (
+              <div className="text-xs text-muted-foreground text-center py-2">
+                Load jobs to configure per-run filtering
+              </div>
+            ) : (
+              <>
+                {loadedJobIds.map(jobId => {
+                  const job = loadedJobs[jobId]
+                  const jobName = job?.metadata?.botName || job?.metadata?.name || `Job #${jobId}`
+                  const jobBranchCount = allBranches.filter((b: any) => b.jobId === jobId).length
+                  const topXValue = perRunTopX[jobId] || 0
+
+                  return (
+                    <div key={jobId} className="flex items-center gap-2 p-2 bg-background rounded border border-border">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium truncate">{jobName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {jobBranchCount} branches available
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">Top</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={jobBranchCount}
+                          value={topXValue}
+                          onChange={(e) => onPerRunTopXChange(jobId, parseInt(e.target.value, 10) || 0)}
+                          className="w-16 px-2 py-1 rounded border border-border bg-background text-sm text-center"
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+                <div className="flex items-center justify-between pt-2 border-t border-border">
+                  <div className="text-xs text-muted-foreground">
+                    Total: {Object.values(perRunTopX).reduce((sum, val) => sum + (val || 0), 0)} branches
+                  </div>
+                  <Button
+                    onClick={onApplyFilter}
+                    size="sm"
+                    disabled={allBranches.length === 0 || Object.values(perRunTopX).every(v => !v)}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Available Branches List */}
