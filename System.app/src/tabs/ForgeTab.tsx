@@ -164,7 +164,8 @@ export function ForgeTab({
   const shardFilterMetric = useShardStore(s => s.filterMetric)
   const shardFilterTopX = useShardStore(s => s.filterTopX)
   const shardFilterMode = useShardStore(s => s.filterMode)
-  const shardPerRunTopX = useShardStore(s => s.perRunTopX)
+  const shardFilterTopXPerPattern = useShardStore(s => s.filterTopXPerPattern)
+  const shardDiscoveredPatterns = useShardStore(s => s.discoveredPatterns)
   const shardLoadedJobs = useShardStore(s => s.loadedJobs)
   const shardCombinedTree = useShardStore(s => s.combinedTree)
   const shardLoadChronologicalJob = useShardStore(s => s.loadChronologicalJob)
@@ -175,7 +176,7 @@ export function ForgeTab({
   const shardSetFilterMetric = useShardStore(s => s.setFilterMetric)
   const shardSetFilterTopX = useShardStore(s => s.setFilterTopX)
   const shardSetFilterMode = useShardStore(s => s.setFilterMode)
-  const shardSetPerRunTopX = useShardStore(s => s.setPerRunTopX)
+  const shardSetFilterTopXPerPattern = useShardStore(s => s.setFilterTopXPerPattern)
   const shardApplyFilters = useShardStore(s => s.applyFilters)
   const shardRemoveBranchFromFiltered = useShardStore(s => s.removeBranchFromFiltered)
   const shardClearFilteredBranches = useShardStore(s => s.clearFilteredBranches)
@@ -2652,13 +2653,12 @@ export function ForgeTab({
                 filterMetric={shardFilterMetric}
                 filterTopX={shardFilterTopX}
                 filterMode={shardFilterMode}
-                perRunTopX={shardPerRunTopX}
-                loadedJobIds={shardLoadedJobIds}
-                loadedJobs={shardLoadedJobs}
+                filterTopXPerPattern={shardFilterTopXPerPattern}
+                discoveredPatterns={shardDiscoveredPatterns}
                 onFilterMetricChange={shardSetFilterMetric}
                 onFilterTopXChange={shardSetFilterTopX}
                 onFilterModeChange={shardSetFilterMode}
-                onPerRunTopXChange={shardSetPerRunTopX}
+                onFilterTopXPerPatternChange={shardSetFilterTopXPerPattern}
                 onApplyFilter={shardApplyFilters}
               />
 

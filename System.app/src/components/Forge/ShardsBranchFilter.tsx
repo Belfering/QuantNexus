@@ -45,14 +45,13 @@ interface ShardsBranchFilterProps {
   allBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
   filterTopX: number
-  filterMode: 'overall' | 'perRun'
-  perRunTopX: Record<number, number>
-  loadedJobIds: number[]
-  loadedJobs: Record<number, LoadedJobData>
+  filterMode: 'overall' | 'perPattern'
+  filterTopXPerPattern: number
+  discoveredPatterns: Record<string, any>
   onFilterMetricChange: (metric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar') => void
   onFilterTopXChange: (count: number) => void
-  onFilterModeChange: (mode: 'overall' | 'perRun') => void
-  onPerRunTopXChange: (jobId: number, count: number) => void
+  onFilterModeChange: (mode: 'overall' | 'perPattern') => void
+  onFilterTopXPerPatternChange: (count: number) => void
   onApplyFilter: () => void
 }
 
@@ -127,13 +126,12 @@ export function ShardsBranchFilter({
   filterMetric,
   filterTopX,
   filterMode,
-  perRunTopX,
-  loadedJobIds,
-  loadedJobs,
+  filterTopXPerPattern,
+  discoveredPatterns,
   onFilterMetricChange,
   onFilterTopXChange,
   onFilterModeChange,
-  onPerRunTopXChange,
+  onFilterTopXPerPatternChange,
   onApplyFilter
 }: ShardsBranchFilterProps) {
   // Local state for the input to allow clearing while typing
@@ -209,14 +207,14 @@ export function ShardsBranchFilter({
               Overall
             </button>
             <button
-              onClick={() => onFilterModeChange('perRun')}
+              onClick={() => onFilterModeChange('perPattern')}
               className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                filterMode === 'perRun'
+                filterMode === 'perPattern'
                   ? 'bg-accent text-accent-foreground'
                   : 'bg-transparent text-muted-foreground hover:bg-muted'
               }`}
             >
-              Per Run
+              Per Pattern
             </button>
           </div>
         </div>
@@ -245,57 +243,58 @@ export function ShardsBranchFilter({
           </div>
         )}
 
-        {/* Row 3b: Per-run mode - Top X per job */}
-        {filterMode === 'perRun' && (
+        {/* Row 3b: Per-pattern mode - Top X per pattern + pattern discovery */}
+        {filterMode === 'perPattern' && (
           <div className="space-y-2">
-            <div className="text-xs text-muted-foreground mb-1">Top X per Run</div>
-            {loadedJobIds.length === 0 ? (
-              <div className="text-xs text-muted-foreground text-center py-2">
-                Load jobs to configure per-run filtering
+            {/* Pattern discovery summary */}
+            <div className="p-2 bg-accent/20 rounded border border-accent/30">
+              <div className="text-xs font-medium">
+                {Object.keys(discoveredPatterns).length} Unique Patterns Found
               </div>
-            ) : (
-              <>
-                {loadedJobIds.map(jobId => {
-                  const job = loadedJobs[jobId]
-                  const jobName = job?.metadata?.botName || job?.metadata?.name || `Job #${jobId}`
-                  const jobBranchCount = allBranches.filter((b: any) => b.jobId === jobId).length
-                  const topXValue = perRunTopX[jobId] || 0
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {allBranches.length} total branches across patterns
+              </div>
+            </div>
 
-                  return (
-                    <div key={jobId} className="flex items-center gap-2 p-2 bg-background rounded border border-border">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium truncate">{jobName}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {jobBranchCount} branches available
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">Top</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={jobBranchCount}
-                          value={topXValue}
-                          onChange={(e) => onPerRunTopXChange(jobId, parseInt(e.target.value, 10) || 0)}
-                          className="w-16 px-2 py-1 rounded border border-border bg-background text-sm text-center"
-                        />
-                      </div>
+            {/* Top X per pattern input */}
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="text-xs text-muted-foreground block mb-1">
+                  Top X from Each Pattern
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={filterTopXPerPattern}
+                  onChange={(e) => onFilterTopXPerPatternChange(parseInt(e.target.value, 10) || 1)}
+                  className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
+                  disabled={Object.keys(discoveredPatterns).length === 0}
+                />
+              </div>
+              <Button
+                onClick={onApplyFilter}
+                size="sm"
+                disabled={Object.keys(discoveredPatterns).length === 0}
+              >
+                Apply
+              </Button>
+            </div>
+
+            {/* Pattern list (shows what patterns exist) */}
+            {Object.keys(discoveredPatterns).length > 0 && (
+              <div className="max-h-48 overflow-y-auto space-y-1 p-2 bg-background rounded border border-border">
+                <div className="text-xs font-medium mb-1">Discovered Patterns:</div>
+                {Object.entries(discoveredPatterns).map(([sig, info]: [string, any]) => (
+                  <div key={sig} className="text-xs text-muted-foreground px-2 py-1 hover:bg-accent/10 rounded">
+                    <div className="font-mono text-[11px] truncate">
+                      {info.displayInfo?.conditions.join(', ') || sig.substring(0, 30)}
                     </div>
-                  )
-                })}
-                <div className="flex items-center justify-between pt-2 border-t border-border">
-                  <div className="text-xs text-muted-foreground">
-                    Total: {Object.values(perRunTopX).reduce((sum, val) => sum + (val || 0), 0)} branches
+                    <div className="text-[10px]">
+                      {info.count} branches • {info.displayInfo?.positions.join(', ') || 'N/A'}
+                    </div>
                   </div>
-                  <Button
-                    onClick={onApplyFilter}
-                    size="sm"
-                    disabled={allBranches.length === 0 || Object.values(perRunTopX).every(v => !v)}
-                  >
-                    Apply
-                  </Button>
-                </div>
-              </>
+                ))}
+              </div>
             )}
           </div>
         )}

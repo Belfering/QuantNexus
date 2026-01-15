@@ -11,6 +11,214 @@ import { createBotInApi } from '@/features/bots/api'
 import { useAuthStore } from './useAuthStore'
 import { useBotStore } from './useBotStore'
 
+// ============================================================================
+// Tree Signature Utilities (for pattern-based filtering)
+// ============================================================================
+
+// Normalized tree structure for signature generation (noise removed)
+interface NormalizedNode {
+  kind: string
+  weighting?: string
+  conditions?: Array<{
+    type: string
+    metric: string
+    window: number
+    ticker: string
+    comparator: string
+    rightMetric?: string
+    rightWindow?: number
+    rightTicker?: string
+  }>
+  positions?: string[]
+  children?: Record<string, NormalizedNode[]>
+  metric?: string
+  window?: number
+  bottom?: number
+  rank?: string
+  numbered?: {
+    quantifier: string
+    n: number
+    items: Array<{ conditions: any[] }>
+  }
+}
+
+// Normalize a tree by removing noise (IDs, titles, thresholds, forDays, dates)
+// Keep: structure, indicators, windows, tickers, comparators, positions, weighting
+function normalizeTreeForSignature(node: FlowNode): NormalizedNode {
+  const normalized: NormalizedNode = {
+    kind: node.kind,
+  }
+
+  // Include weighting if present
+  if (node.weighting) {
+    normalized.weighting = node.weighting
+  }
+
+  // Normalize conditions (strip threshold, forDays, dates, IDs)
+  if (node.conditions && node.conditions.length > 0) {
+    normalized.conditions = node.conditions.map(cond => ({
+      type: cond.type,
+      metric: cond.metric,
+      window: cond.window,
+      ticker: cond.ticker || '',
+      comparator: cond.comparator,
+      rightMetric: cond.rightMetric,
+      rightWindow: cond.rightWindow,
+      rightTicker: cond.rightTicker,
+    })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+  }
+
+  // Include positions (sorted for stability)
+  if (node.positions && node.positions.length > 0) {
+    normalized.positions = [...node.positions].filter(p => p && p !== 'Empty').sort()
+  }
+
+  // Normalize children recursively
+  if (node.children) {
+    normalized.children = {}
+    for (const [slot, children] of Object.entries(node.children)) {
+      if (Array.isArray(children) && children.length > 0) {
+        normalized.children[slot] = children
+          .filter(c => c !== null)
+          .map(c => normalizeTreeForSignature(c!))
+      }
+    }
+  }
+
+  // Function node fields
+  if (node.metric) normalized.metric = node.metric
+  if (node.window !== undefined) normalized.window = node.window
+  if (node.bottom !== undefined) normalized.bottom = node.bottom
+  if (node.rank) normalized.rank = node.rank
+
+  // Numbered node (simplified)
+  if (node.numbered) {
+    normalized.numbered = {
+      quantifier: node.numbered.quantifier,
+      n: node.numbered.n,
+      items: node.numbered.items.map(item => ({
+        conditions: item.conditions || []
+      }))
+    }
+  }
+
+  return normalized
+}
+
+// Hash a tree signature using simple djb2 algorithm
+function simpleHash(str: string): string {
+  let hash = 5381
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i)
+  }
+  return Math.abs(hash).toString(36)
+}
+
+// Get a signature for a tree (hash of normalized tree)
+function getTreeSignature(treeJson: string | undefined): string | null {
+  if (!treeJson) return null
+  try {
+    const tree: FlowNode = JSON.parse(treeJson)
+    const normalized = normalizeTreeForSignature(tree)
+    // Convert to stable JSON string (sorted keys for determinism)
+    const canonical = JSON.stringify(normalized, Object.keys(normalized).sort())
+    const hash = simpleHash(canonical)
+    return `sig-${hash}`
+  } catch (err) {
+    console.warn('[ShardStore] Failed to generate tree signature:', err)
+    return null
+  }
+}
+
+// Comparator display mapping
+const COMPARATOR_SYMBOLS: Record<string, string> = {
+  lt: '<',
+  gt: '>',
+  crossAbove: '↗',
+  crossBelow: '↘'
+}
+
+// Short indicator names for compact display
+const SHORT_INDICATOR_NAMES: Record<string, string> = {
+  'Relative Strength Index': 'RSI',
+  'Simple Moving Average': 'SMA',
+  'Exponential Moving Average': 'EMA',
+  'Weighted Moving Average': 'WMA',
+  'Hull Moving Average': 'Hull',
+  'MACD Histogram': 'MACD-H',
+  'MACD Line': 'MACD',
+  'MACD Signal': 'MACD-S',
+  'Bollinger Upper': 'BB-U',
+  'Bollinger Mid': 'BB-M',
+  'Bollinger Lower': 'BB-L',
+  'Average True Range': 'ATR',
+  'Average Directional Index': 'ADX',
+  'Current Price': 'Price',
+  'Stochastic %K': 'Stoch-K',
+  'Stochastic %D': 'Stoch-D',
+}
+
+// Extract meaningful display info from tree
+function extractBranchDisplayInfo(treeJson: string | undefined): BranchDisplayInfo | null {
+  if (!treeJson) return null
+
+  try {
+    const tree: FlowNode = JSON.parse(treeJson)
+    const info: BranchDisplayInfo = {
+      conditions: [],
+      positions: [],
+      weighting: tree.weighting || 'equal'
+    }
+
+    // Recursively extract info from tree
+    function traverse(node: FlowNode, context?: 'then' | 'else') {
+      if (node.kind === 'indicator' && node.conditions) {
+        for (const cond of node.conditions) {
+          const c = cond as any
+          const indicator = SHORT_INDICATOR_NAMES[c.metric] || c.metric
+          const comp = COMPARATOR_SYMBOLS[c.comparator] || c.comparator
+          const ticker = c.ticker || ''
+          const condStr = `${indicator}(${c.window}) ${ticker} ${comp} ${c.threshold}`
+          if (context) {
+            info.conditions.push(`[${context}] ${condStr}`)
+          } else {
+            info.conditions.push(condStr)
+          }
+        }
+      }
+
+      if (node.kind === 'position' && node.positions) {
+        for (const pos of node.positions) {
+          if (pos && pos !== 'Empty' && !info.positions.includes(pos)) {
+            info.positions.push(pos)
+          }
+        }
+      }
+
+      // Traverse children
+      if (node.children) {
+        for (const [slot, children] of Object.entries(node.children)) {
+          if (Array.isArray(children)) {
+            for (const child of children) {
+              if (child) {
+                const childContext = slot === 'then' ? 'then' : slot === 'else' ? 'else' : undefined
+                traverse(child, childContext)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    traverse(tree)
+    return info
+  } catch {
+    return null
+  }
+}
+
+// ============================================================================
+
 // Type for storing loaded job data
 interface LoadedJobData {
   metadata: OptimizationJob | RollingJob
@@ -26,8 +234,17 @@ export interface FilterGroup {
   topX: number
   addedAt: number
   branchKeys: string[]           // ALL branches selected (for reference counting)
-  mode: 'overall' | 'perRun'     // Filter mode: overall or per-run
-  perRunConfig?: Record<number, number>  // jobId -> topX mapping for per-run mode
+  mode: 'overall' | 'perPattern' // Filter mode: overall or per-pattern
+  perPatternConfig?: {           // Config for per-pattern mode
+    patternCount: number         // How many unique patterns found
+    topXPerPattern: number       // Top X from each pattern
+    patterns: Record<string, {   // signature -> metadata
+      signature: string
+      count: number              // Total branches with this pattern
+      selected: number           // How many were selected
+      example: string            // Display string (e.g., "RSI(14) SPY → SPY")
+    }>
+  }
 }
 
 // History snapshot for undo - stores both groups and branches
@@ -46,8 +263,14 @@ interface ShardState {
   // Phase 2: Filtering (additive with undo)
   filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
   filterTopX: number
-  filterMode: 'overall' | 'perRun'  // Filter mode: overall or per-run
-  perRunTopX: Record<number, number>  // jobId -> topX mapping for per-run mode
+  filterMode: 'overall' | 'perPattern'  // Filter mode: overall or per-pattern
+  filterTopXPerPattern: number  // How many to take from each pattern (in perPattern mode)
+  discoveredPatterns: Record<string, {  // Pattern discovery results
+    signature: string
+    count: number
+    branchKeys: string[]
+    displayInfo: BranchDisplayInfo | null
+  }>
   filteredBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   filterGroups: FilterGroup[]      // Track each Apply action as a group
   filterHistory: FilterHistorySnapshot[]   // Stack for undo (stores both groups and branches)
@@ -76,8 +299,9 @@ interface ShardState {
   // Actions - Phase 2
   setFilterMetric: (metric: ShardState['filterMetric']) => void
   setFilterTopX: (count: number) => void
-  setFilterMode: (mode: 'overall' | 'perRun') => void
-  setPerRunTopX: (jobId: number, count: number) => void
+  setFilterMode: (mode: 'overall' | 'perPattern') => void
+  setFilterTopXPerPattern: (count: number) => void
+  discoverPatterns: () => void
   applyFilters: () => void
   removeBranchFromFiltered: (jobId: number, branchId: string | number) => void
   clearFilteredBranches: () => void
@@ -114,7 +338,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
   filterMetric: 'sharpe',
   filterTopX: 10,
   filterMode: 'overall',
-  perRunTopX: {},
+  filterTopXPerPattern: 5,  // Default: top 5 from each pattern
+  discoveredPatterns: {},
   filteredBranches: [],
   filterGroups: [],
   filterHistory: [],
@@ -324,22 +549,63 @@ export const useShardStore = create<ShardState>((set, get) => ({
     set({ filterTopX: Math.max(0, count) })
   },
 
-  // Phase 2: Set filter mode (overall or per-run)
+  // Phase 2: Set filter mode (overall or per-pattern)
   setFilterMode: (mode) => {
     set({ filterMode: mode })
+    // Auto-discover patterns when switching to perPattern mode
+    if (mode === 'perPattern') {
+      get().discoverPatterns()
+    }
   },
 
-  // Phase 2: Set top X for a specific run (per-run mode)
-  setPerRunTopX: (jobId, count) => {
-    const { perRunTopX } = get()
-    set({
-      perRunTopX: { ...perRunTopX, [jobId]: Math.max(0, count) }
-    })
+  // Phase 2: Set top X per pattern (for perPattern mode)
+  setFilterTopXPerPattern: (count) => {
+    set({ filterTopXPerPattern: Math.max(1, count) })
+  },
+
+  // Phase 2: Discover unique patterns in loaded branches
+  discoverPatterns: () => {
+    const { allBranches, loadedJobType } = get()
+
+    const patterns: Record<string, {
+      signature: string
+      count: number
+      branchKeys: string[]
+      displayInfo: BranchDisplayInfo | null
+    }> = {}
+
+    for (const branch of allBranches) {
+      const b = branch as any
+      // Get tree signature
+      const treeJson = loadedJobType === 'chronological' ? b.treeJson : undefined
+      const signature = getTreeSignature(treeJson)
+
+      if (!signature) continue
+
+      const branchKey = `${b.jobId}-${b.branchId}`
+
+      if (!patterns[signature]) {
+        // Extract display info using existing helper (defined below)
+        const displayInfo = extractBranchDisplayInfo(treeJson)
+        patterns[signature] = {
+          signature,
+          count: 0,
+          branchKeys: [],
+          displayInfo
+        }
+      }
+
+      patterns[signature].count++
+      patterns[signature].branchKeys.push(branchKey)
+    }
+
+    set({ discoveredPatterns: patterns })
+    console.log(`[ShardStore] Discovered ${Object.keys(patterns).length} unique patterns from ${allBranches.length} branches`)
   },
 
   // Phase 2: Apply filters to branches (ADDITIVE - appends to existing filtered branches)
   applyFilters: () => {
-    const { allBranches, filterMetric, filterTopX, loadedJobType, filteredBranches, filterGroups, filterHistory, loadedJobs, loadedJobIds, filterMode, perRunTopX } = get()
+    const { allBranches, filterMetric, filterTopX, filterTopXPerPattern, filterMode, loadedJobType, filteredBranches, filterGroups, filterHistory, loadedJobs, loadedJobIds, discoveredPatterns } = get()
 
     if (allBranches.length === 0) {
       return
@@ -358,11 +624,9 @@ export const useShardStore = create<ShardState>((set, get) => ({
     // Helper function to extract metric value
     const getMetricValue = (branch: any): number | null => {
       if (loadedJobType === 'chronological') {
-        const b = branch as OptimizationResult
-        return b.isMetrics?.[filterMetric] ?? null
+        return branch.isMetrics?.[filterMetric] ?? null
       } else if (loadedJobType === 'rolling') {
-        const b = branch as RollingOptimizationResult['branches'][number]
-        return b.isOosMetrics?.IS ?? null
+        return branch.isOosMetrics?.IS ?? null
       }
       return null
     }
@@ -373,7 +637,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
     }
 
     let topBranches: any[]
-    let perRunConfigUsed: Record<number, number> | undefined
+    let perPatternConfigUsed: Record<string, { count: number; selected: number; example: string }> | undefined
 
     if (filterMode === 'overall') {
       // EXISTING LOGIC: Sort all branches together, take top X
@@ -384,33 +648,48 @@ export const useShardStore = create<ShardState>((set, get) => ({
       })
       topBranches = sorted.slice(0, filterTopX)
     } else {
-      // NEW LOGIC: Per-run mode - group by jobId, take top X from each
-      // Group branches by jobId
-      const branchesByJob: Record<number, any[]> = {}
+      // NEW LOGIC: Per-pattern mode - group by signature, take top X from each
+      // Group branches by signature
+      const branchesBySignature: Record<string, any[]> = {}
+
       for (const branch of allBranches) {
-        const jobId = branch.jobId
-        if (!branchesByJob[jobId]) {
-          branchesByJob[jobId] = []
+        const b = branch as any
+        const treeJson = loadedJobType === 'chronological' ? b.treeJson : undefined
+        const signature = getTreeSignature(treeJson)
+
+        if (!signature) continue
+
+        if (!branchesBySignature[signature]) {
+          branchesBySignature[signature] = []
         }
-        branchesByJob[jobId].push(branch)
+        branchesBySignature[signature].push(branch)
       }
 
-      // For each loaded job, take top X (using perRunTopX mapping)
+      // For each pattern, take top X by metric
       topBranches = []
-      perRunConfigUsed = {}
-      for (const jobId of loadedJobIds) {
-        const jobBranches = branchesByJob[jobId] || []
-        const topXForJob = perRunTopX[jobId] || 0
+      perPatternConfigUsed = {}
 
-        if (topXForJob > 0) {
-          const sortedJobBranches = jobBranches.sort((a, b) => {
-            const aValue = getMetricValue(a)
-            const bValue = getMetricValue(b)
-            return (bValue || -Infinity) - (aValue || -Infinity)
-          })
-          const topFromJob = sortedJobBranches.slice(0, topXForJob)
-          topBranches.push(...topFromJob)
-          perRunConfigUsed[jobId] = topXForJob
+      for (const [signature, branches] of Object.entries(branchesBySignature)) {
+        const sortedBranches = branches.sort((a, b) => {
+          const aValue = getMetricValue(a)
+          const bValue = getMetricValue(b)
+          return (bValue || -Infinity) - (aValue || -Infinity)
+        })
+
+        const topFromPattern = sortedBranches.slice(0, filterTopXPerPattern)
+        topBranches.push(...topFromPattern)
+
+        // Get display info for this pattern
+        const patternInfo = discoveredPatterns[signature]
+        const displayInfo = patternInfo?.displayInfo
+        const exampleStr = displayInfo
+          ? `${displayInfo.conditions.join(', ')} → ${displayInfo.positions.join(', ')}`
+          : signature.substring(0, 20)
+
+        perPatternConfigUsed[signature] = {
+          count: branches.length,
+          selected: topFromPattern.length,
+          example: exampleStr
         }
       }
     }
@@ -434,11 +713,15 @@ export const useShardStore = create<ShardState>((set, get) => ({
       jobName: getJobName(),
       jobId: loadedJobIds[0] || 0,
       metric: filterMetric,
-      topX: filterTopX,
+      topX: filterMode === 'overall' ? filterTopX : filterTopXPerPattern,
       addedAt: Date.now(),
       branchKeys: allSelectedKeys,  // ALL branches, not just new ones
-      mode: filterMode,              // NEW: filter mode
-      perRunConfig: perRunConfigUsed // NEW: per-run config if applicable
+      mode: filterMode,
+      perPatternConfig: perPatternConfigUsed ? {
+        patternCount: Object.keys(perPatternConfigUsed).length,
+        topXPerPattern: filterTopXPerPattern,
+        patterns: perPatternConfigUsed
+      } : undefined
     }
 
     // Deep copy only NEW branches so they persist independently
@@ -455,7 +738,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
     const modeDesc = filterMode === 'overall'
       ? `Top ${filterTopX} ${filterMetric} (overall)`
-      : `Top ${filterMetric} per run (${Object.entries(perRunConfigUsed || {}).map(([jid, x]) => `Job#${jid}:${x}`).join(', ')})`
+      : `Top ${filterTopXPerPattern} ${filterMetric} per pattern (${Object.keys(perPatternConfigUsed || {}).length} patterns)`
 
     console.log(`[ShardStore] Added group "${newGroup.jobName} - ${modeDesc}": ${copiedBranches.length} new branches (${allSelectedKeys.length} total refs). Total displayed: ${updatedFiltered.length}`)
   },
