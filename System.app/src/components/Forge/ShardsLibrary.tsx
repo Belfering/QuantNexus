@@ -22,7 +22,7 @@ interface ShardsLibraryProps {
   loadedShardBranches: any[]
   isLoadingShards: boolean
 
-  // Bot generation
+  // Strategy generation
   shardBotName: string
   shardWeighting: string  // 'equal' | 'inverse' | 'pro' | 'capped'
   shardCappedPercent: number  // For capped weighting: 0-100
@@ -110,11 +110,11 @@ export function ShardsLibrary({
     : '0'
 
   return (
-    <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full">
-      {/* Generate Bot Section - Always visible at top */}
+    <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full overflow-y-auto hide-horizontal-scrollbar">
+      {/* Create Strategy Section - Always visible at top */}
       <div className="mb-4">
-        <div className="text-xs font-medium mb-2">Generate Bot</div>
-        <div className="text-xs text-muted-foreground mb-2">
+        <div className="text-base font-semibold mb-2">Create Strategy</div>
+        <div className="text-sm text-muted-foreground mb-2">
           Selected: {selectedShardIds.length} shard{selectedShardIds.length !== 1 ? 's' : ''} ({loadedShardBranches.length} unique branches)
         </div>
 
@@ -123,7 +123,7 @@ export function ShardsLibrary({
             <Input
               value={shardBotName}
               onChange={(e) => onSetShardBotName(e.target.value)}
-              placeholder="Bot name..."
+              placeholder="Strategy name..."
               className="h-8 text-sm flex-1"
             />
             <Button
@@ -137,7 +137,7 @@ export function ShardsLibrary({
                   Loading...
                 </>
               ) : (
-                'Generate & Save to Model'
+                'Create & Save to Model'
               )}
             </Button>
           </div>
@@ -154,7 +154,7 @@ export function ShardsLibrary({
 
           {/* Show equal weight percentage info */}
           {shardWeighting === 'equal' && loadedShardBranches.length > 0 && (
-            <div className="text-xs text-muted-foreground px-1">
+            <div className="text-sm text-muted-foreground px-1">
               Each branch: {equalWeightPercent}% ({loadedShardBranches.length} branches)
             </div>
           )}
@@ -162,7 +162,7 @@ export function ShardsLibrary({
           {/* Capped percentage input - only show when Capped is selected */}
           {shardWeighting === 'capped' && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Cap %:</span>
+              <span className="text-sm text-muted-foreground">Cap %:</span>
               <Input
                 type="number"
                 min={0}
@@ -172,7 +172,7 @@ export function ShardsLibrary({
                 onChange={(e) => onSetShardCappedPercent(Number(e.target.value))}
                 className="h-8 text-sm w-20"
               />
-              <span className="text-xs text-muted-foreground">max per position</span>
+              <span className="text-sm text-muted-foreground">max per position</span>
             </div>
           )}
         </div>
@@ -180,18 +180,18 @@ export function ShardsLibrary({
 
       {/* Saved Shards List - Below, scrollable */}
       <div className="border-t border-border pt-3">
-        <div className="text-xs font-medium mb-2">
+        <div className="text-sm font-medium mb-2">
           Saved Shards ({savedShards.length})
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+      <div className="space-y-2">
         {isLoadingShards && savedShards.length === 0 ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin mr-2" />
             Loading...
           </div>
         ) : savedShards.length === 0 ? (
-          <div className="text-xs text-muted-foreground text-center py-8">
+          <div className="text-sm text-muted-foreground text-center py-8">
             No saved shards yet
           </div>
         ) : (
@@ -220,9 +220,9 @@ export function ShardsLibrary({
                         {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
                       </div>
                       <div className="font-medium text-sm truncate">{shard.name}</div>
-                      <div className="text-xs text-muted-foreground">({shard.branchCount})</div>
+                      <div className="text-sm text-muted-foreground">({shard.branchCount})</div>
                     </div>
-                    <div className="text-[11px] text-muted-foreground mt-1 ml-6">
+                    <div className="text-sm text-muted-foreground mt-1 ml-6">
                       {shard.filterSummary} • {formatDate(shard.createdAt)}
                     </div>
                   </div>
@@ -242,7 +242,7 @@ export function ShardsLibrary({
           })
         )}
         {deleteError && (
-          <div className="text-xs text-red-500 text-center">{deleteError}</div>
+          <div className="text-sm text-red-500 text-center">{deleteError}</div>
         )}
       </div>
     </div>

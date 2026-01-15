@@ -170,48 +170,78 @@ export function ShardsBranchFilter({
   }
 
   return (
-    <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full">
-      <div className="text-sm font-medium mb-3">Filter Settings</div>
+    <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full overflow-y-auto hide-horizontal-scrollbar">
+      <div className="text-base font-semibold mb-3">Filter Settings</div>
 
       {/* Filter Controls */}
       <div className="space-y-3 mb-3">
-        {/* Row 1: Metric selector */}
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">Metric</label>
-          <select
-            value={filterMetric}
-            onChange={(e) => onFilterMetricChange(e.target.value as any)}
-            className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
-            disabled={allBranches.length === 0}
+        {/* Row 1: Metric + Top X + Apply (inline) */}
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <label className="text-sm text-muted-foreground block mb-1">Metric</label>
+            <select
+              value={filterMetric}
+              onChange={(e) => onFilterMetricChange(e.target.value as any)}
+              className="w-full px-2 py-1 rounded border border-border bg-background text-sm h-8"
+              disabled={allBranches.length === 0}
+            >
+              <option value="sharpe">Sharpe</option>
+              <option value="cagr">CAGR</option>
+              <option value="tim">TIM</option>
+              <option value="timar">TIMAR</option>
+              <option value="calmar">Calmar</option>
+            </select>
+          </div>
+          <div className="w-20">
+            <label className="text-sm text-muted-foreground block mb-1">
+              {filterMode === 'overall' ? 'Top X' : 'Top/Pat'}
+            </label>
+            <input
+              type="number"
+              min={filterMode === 'overall' ? 0 : 1}
+              value={filterMode === 'overall' ? filterTopX : filterTopXPerPattern}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10) || (filterMode === 'overall' ? 0 : 1)
+                if (filterMode === 'overall') {
+                  onFilterTopXChange(val)
+                } else {
+                  onFilterTopXPerPatternChange(val)
+                }
+              }}
+              className="w-full px-2 py-1 rounded border border-border bg-background text-sm h-8"
+              disabled={filterMode === 'perPattern' ? Object.keys(discoveredPatterns).length === 0 : allBranches.length === 0}
+            />
+          </div>
+          <Button
+            onClick={onApplyFilter}
+            size="sm"
+            className="h-8"
+            disabled={filterMode === 'perPattern' ? Object.keys(discoveredPatterns).length === 0 : allBranches.length === 0}
           >
-            <option value="sharpe">Sharpe</option>
-            <option value="cagr">CAGR</option>
-            <option value="tim">TIM</option>
-            <option value="timar">TIMAR</option>
-            <option value="calmar">Calmar</option>
-          </select>
+            Apply
+          </Button>
         </div>
 
-        {/* Row 2: Mode toggle */}
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">Filter Mode</label>
-          <div className="flex items-center gap-2 p-2 bg-background rounded border border-border">
+        {/* Row 2: Mode toggle with theme colors */}
+        <div className="border-t border-border pt-3">
+          <label className="text-sm text-muted-foreground block mb-1">Filter Mode</label>
+          <div className="flex items-center gap-1 p-1 bg-muted/50 rounded">
             <button
               onClick={() => onFilterModeChange('overall')}
-              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
                 filterMode === 'overall'
-                  ? 'bg-accent text-accent-foreground'
-                  : 'bg-transparent text-muted-foreground hover:bg-muted'
+                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
+                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               Overall
             </button>
             <button
               onClick={() => onFilterModeChange('perPattern')}
-              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
                 filterMode === 'perPattern'
-                  ? 'bg-accent text-accent-foreground'
-                  : 'bg-transparent text-muted-foreground hover:bg-muted'
+                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
+                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               Per Pattern
@@ -219,77 +249,29 @@ export function ShardsBranchFilter({
           </div>
         </div>
 
-        {/* Row 3a: Overall mode - single Top X input */}
-        {filterMode === 'overall' && (
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <label className="text-xs text-muted-foreground block mb-1">Top X</label>
-              <input
-                type="number"
-                min={0}
-                value={filterTopX}
-                onChange={(e) => onFilterTopXChange(parseInt(e.target.value, 10) || 0)}
-                className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
-                disabled={allBranches.length === 0}
-              />
-            </div>
-            <Button
-              onClick={onApplyFilter}
-              size="sm"
-              disabled={allBranches.length === 0}
-            >
-              Apply
-            </Button>
-          </div>
-        )}
-
-        {/* Row 3b: Per-pattern mode - Top X per pattern + pattern discovery */}
+        {/* Row 3: Per-pattern info (only shown in perPattern mode) */}
         {filterMode === 'perPattern' && (
           <div className="space-y-2">
             {/* Pattern discovery summary */}
-            <div className="p-2 bg-accent/20 rounded border border-accent/30">
-              <div className="text-xs font-medium">
+            <div className="p-2 bg-accent/10 rounded border border-accent/30">
+              <div className="text-sm font-medium">
                 {Object.keys(discoveredPatterns).length} Unique Patterns Found
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">
+              <div className="text-sm text-muted-foreground mt-0.5">
                 {allBranches.length} total branches across patterns
               </div>
             </div>
 
-            {/* Top X per pattern input */}
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <label className="text-xs text-muted-foreground block mb-1">
-                  Top X from Each Pattern
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={filterTopXPerPattern}
-                  onChange={(e) => onFilterTopXPerPatternChange(parseInt(e.target.value, 10) || 1)}
-                  className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
-                  disabled={Object.keys(discoveredPatterns).length === 0}
-                />
-              </div>
-              <Button
-                onClick={onApplyFilter}
-                size="sm"
-                disabled={Object.keys(discoveredPatterns).length === 0}
-              >
-                Apply
-              </Button>
-            </div>
-
             {/* Pattern list (shows what patterns exist) */}
             {Object.keys(discoveredPatterns).length > 0 && (
-              <div className="max-h-48 overflow-y-auto space-y-1 p-2 bg-background rounded border border-border">
-                <div className="text-xs font-medium mb-1">Discovered Patterns:</div>
+              <div className="max-h-32 overflow-y-auto hide-horizontal-scrollbar space-y-1 p-2 bg-background rounded border border-border">
+                <div className="text-sm font-medium mb-1 sticky top-0 bg-background">Discovered Patterns:</div>
                 {Object.entries(discoveredPatterns).map(([sig, info]: [string, any]) => (
-                  <div key={sig} className="text-xs text-muted-foreground px-2 py-1 hover:bg-accent/10 rounded">
-                    <div className="font-mono text-[11px] truncate">
+                  <div key={sig} className="px-2 py-1 hover:bg-accent/10 rounded">
+                    <div className="font-mono text-sm truncate">
                       {info.displayInfo?.conditions.join(', ') || sig.substring(0, 30)}
                     </div>
-                    <div className="text-[10px]">
+                    <div className="text-sm text-muted-foreground">
                       {info.count} branches • {info.displayInfo?.positions.join(', ') || 'N/A'}
                     </div>
                   </div>
@@ -301,13 +283,13 @@ export function ShardsBranchFilter({
       </div>
 
       {/* Available Branches List */}
-      <div className="text-xs font-medium mb-2">
+      <div className="text-sm font-medium mb-2">
         Available Branches ({allBranches.length})
       </div>
-      <div className="flex-1 overflow-y-auto space-y-2">
+      <div className="space-y-2">
         {allBranches.length === 0 ? (
-          <div className="text-xs text-muted-foreground text-center py-8">
-            Load jobs to see branches
+          <div className="text-sm text-muted-foreground text-center py-8">
+            Load shards to see branches
           </div>
         ) : (
           allBranches.map((branch, idx) => {
@@ -323,14 +305,14 @@ export function ShardsBranchFilter({
             const metricValue = getMetricValue(branch)
 
             return (
-              <div key={uniqueKey} className="p-2 bg-background rounded text-xs border border-border">
+              <div key={uniqueKey} className="p-3 bg-background rounded border border-border">
                 {displayInfo ? (
                   <>
                     {/* Conditions */}
                     {displayInfo.conditions.length > 0 && (
                       <div className="space-y-0.5">
                         {displayInfo.conditions.map((cond, i) => (
-                          <div key={i} className="text-foreground font-mono text-[11px]">
+                          <div key={i} className="text-foreground font-mono text-sm">
                             {cond}
                           </div>
                         ))}
@@ -338,20 +320,20 @@ export function ShardsBranchFilter({
                     )}
                     {/* Positions */}
                     {displayInfo.positions.length > 0 && (
-                      <div className="mt-1 text-muted-foreground text-[11px]">
+                      <div className="mt-1 text-muted-foreground text-sm">
                         Positions: {displayInfo.positions.join(', ')}
                       </div>
                     )}
                     {/* Weighting */}
-                    <div className="text-muted-foreground text-[11px]">
+                    <div className="text-muted-foreground text-sm">
                       Weight: {displayInfo.weighting}
                     </div>
                   </>
                 ) : (
-                  <div className="text-muted-foreground text-[11px]">No tree data</div>
+                  <div className="text-muted-foreground text-sm">No tree data</div>
                 )}
                 {/* Metric */}
-                <div className="mt-1 pt-1 border-t border-border/50 text-muted-foreground">
+                <div className="mt-1 pt-1 border-t border-border/50 text-muted-foreground text-sm">
                   {filterMetric}: {formatMetricValue(metricValue)}
                 </div>
               </div>

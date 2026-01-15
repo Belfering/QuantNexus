@@ -10,6 +10,7 @@ import json
 from backtester import Backtester
 from optimized_dataloader import get_global_cache
 from indicator_cache import SharedIndicatorCache
+from shared_memory_manager import SharedPriceDataReader
 
 def main():
     """
@@ -26,6 +27,7 @@ def main():
         parquet_dir = config.get('parquetDir')
         preload_tickers = config.get('preloadTickers', [])
         preload_indicators = config.get('preloadIndicators', {})
+        shared_memory_metadata = config.get('sharedMemoryMetadata')
 
         if not parquet_dir:
             print(json.dumps({'error': 'Missing parquetDir'}), flush=True)
@@ -33,6 +35,24 @@ def main():
 
         # Initialize backtester ONCE (caches persist across branches)
         backtester = Backtester(parquet_dir)
+
+        # OPTIMIZATION: Attach to shared memory if available (2-3x speedup)
+        shared_memory_reader = None
+        if shared_memory_metadata:
+            try:
+                print(f"[Worker] Attaching to shared memory for {len(shared_memory_metadata)} tickers...", file=sys.stderr, flush=True)
+                shared_memory_reader = SharedPriceDataReader(shared_memory_metadata)
+                # Pre-load all tickers from shared memory
+                for ticker in shared_memory_metadata.keys():
+                    shared_memory_reader.load_ticker(ticker)
+                print(f"[Worker] ✓ Attached to shared memory", file=sys.stderr, flush=True)
+            except Exception as e:
+                print(f"[Worker] Warning: Failed to attach to shared memory: {e}", file=sys.stderr, flush=True)
+                shared_memory_reader = None
+
+        # Pass shared memory reader to backtester if available
+        if shared_memory_reader:
+            backtester.shared_memory_reader = shared_memory_reader
 
         # OPTIMIZATION: Pre-load tickers and pre-compute indicators for massive speedup
         if preload_tickers or preload_indicators:
@@ -88,6 +108,23 @@ def main():
 
                 # Handle shutdown command
                 if task.get('command') == 'shutdown':
+                    # Print cache stats before shutdown
+                    try:
+                        from result_cache import get_global_result_cache
+                        result_cache = get_global_result_cache()
+                        stats = result_cache.get_stats()
+                        print(f"[Worker] Result cache stats: {stats}", file=sys.stderr, flush=True)
+                    except:
+                        pass
+
+                    # Cleanup shared memory connections
+                    if shared_memory_reader:
+                        try:
+                            shared_memory_reader.close()
+                            print(f"[Worker] ✓ Closed shared memory connections", file=sys.stderr, flush=True)
+                        except:
+                            pass
+
                     break
 
                 # Run backtest

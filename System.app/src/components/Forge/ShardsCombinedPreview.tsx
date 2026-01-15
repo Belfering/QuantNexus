@@ -105,14 +105,19 @@ function extractBranchDisplayInfo(treeJson: string | undefined): BranchDisplayIn
 interface ShardsCombinedPreviewProps {
   loadedJobType: 'chronological' | 'rolling' | null
   filteredBranches: OptimizationResult[] | RollingOptimizationResult['branches']
+  strategyBranches: OptimizationResult[] | RollingOptimizationResult['branches']
+  activeListView: 'filter' | 'strategy'
   filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
   filterGroups: FilterGroup[]
   selectedFilterGroupId: string | null
   canUndo: boolean
   onRemoveBranch: (jobId: number, branchId: string | number) => void
+  onRemoveBranchFromStrategy: (jobId: number, branchId: string | number) => void
   onClearFiltered: () => void
+  onClearStrategy: () => void
   onRemoveGroup: (groupId: string) => void
   onSelectFilterGroup: (groupId: string | null) => void
+  onSetActiveListView: (view: 'filter' | 'strategy') => void
   onUndo: () => void
   onGenerate: () => void
   onSaveToModel: () => Promise<void>
@@ -126,14 +131,19 @@ interface ShardsCombinedPreviewProps {
 export function ShardsCombinedPreview({
   loadedJobType,
   filteredBranches,
+  strategyBranches,
+  activeListView,
   filterMetric,
   filterGroups,
   selectedFilterGroupId,
   canUndo,
   onRemoveBranch,
+  onRemoveBranchFromStrategy,
   onClearFiltered,
+  onClearStrategy,
   onRemoveGroup,
   onSelectFilterGroup,
+  onSetActiveListView,
   onUndo,
   onGenerate,
   onSaveToModel,
@@ -226,23 +236,55 @@ export function ShardsCombinedPreview({
     return 'All Runs'
   }
 
-  // Filter branches based on selection
-  const displayedBranches = selectedFilterGroupId === null
-    ? filteredBranches
-    : filteredBranches.filter(b => {
+  // Determine which list to display based on activeListView
+  const activeBranches = activeListView === 'filter' ? filteredBranches : strategyBranches
+  const activeCount = activeBranches.length
+
+  // Filter branches based on selection (only for filter view)
+  const displayedBranches = activeListView === 'filter' && selectedFilterGroupId !== null
+    ? activeBranches.filter(b => {
         const key = getBranchKey(b)
         return selectedGroup?.branchKeys.includes(key)
       })
+    : activeBranches
 
   return (
-    <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full">
-      {/* Header with count */}
-      <div className="text-sm font-medium mb-2">
-        Filtered Branches ({filteredBranches.length})
+    <div className="p-4 bg-muted/30 rounded-lg flex flex-col h-full overflow-y-auto hide-horizontal-scrollbar">
+      {/* Header with toggle buttons */}
+      <div className="mb-2">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-base font-semibold">
+            {activeListView === 'filter' ? 'Filter List' : 'Strategy List'} ({activeCount})
+          </div>
+        </div>
+
+        {/* Toggle buttons */}
+        <div className="flex items-center gap-1 p-1 bg-muted/50 rounded">
+          <button
+            onClick={() => onSetActiveListView('filter')}
+            className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
+              activeListView === 'filter'
+                ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
+                : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            Filter List
+          </button>
+          <button
+            onClick={() => onSetActiveListView('strategy')}
+            className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
+              activeListView === 'strategy'
+                ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
+                : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            Strategy List
+          </button>
+        </div>
       </div>
 
-      {/* Dropdown and Clear/Delete button row */}
-      {filterGroups.length > 0 && (
+      {/* Dropdown and Clear/Delete button row - only for filter view */}
+      {activeListView === 'filter' && filterGroups.length > 0 && (
         <div className="flex items-center gap-2 mb-2">
           {/* Dropdown */}
           <div className="relative flex-1">
@@ -316,7 +358,7 @@ export function ShardsCombinedPreview({
               variant="ghost"
               size="sm"
               onClick={onClearFiltered}
-              className="h-8 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-500/10 whitespace-nowrap"
+              className="h-8 px-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-500/10 whitespace-nowrap"
             >
               Clear All
             </Button>
@@ -325,7 +367,7 @@ export function ShardsCombinedPreview({
               variant="ghost"
               size="sm"
               onClick={() => onRemoveGroup(selectedFilterGroupId)}
-              className="h-8 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-500/10 whitespace-nowrap"
+              className="h-8 px-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-500/10 whitespace-nowrap"
             >
               Delete
             </Button>
@@ -333,10 +375,24 @@ export function ShardsCombinedPreview({
         </div>
       )}
 
-      {/* Save As Shard section - only when "All Runs" selected */}
-      {selectedFilterGroupId === null && filteredBranches.length > 0 && (
+      {/* Clear All button for strategy view */}
+      {activeListView === 'strategy' && strategyBranches.length > 0 && (
+        <div className="flex justify-end mb-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearStrategy}
+            className="h-8 px-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-500/10 whitespace-nowrap"
+          >
+            Clear All
+          </Button>
+        </div>
+      )}
+
+      {/* Save As Shard section - only for filter view when "All Runs" selected */}
+      {activeListView === 'filter' && selectedFilterGroupId === null && filteredBranches.length > 0 && (
         <div className="mb-3 p-2 bg-background rounded border border-border">
-          <div className="text-xs text-muted-foreground mb-1.5">Save as Shard ({filteredBranches.length} branches)</div>
+          <div className="text-sm text-muted-foreground mb-1.5">Save as Shard ({filteredBranches.length} branches)</div>
           <div className="flex items-center gap-2">
             <Input
               value={saveShardName}
@@ -360,26 +416,26 @@ export function ShardsCombinedPreview({
             </Button>
           </div>
           {shardSaveError && (
-            <div className="text-xs text-red-500 mt-1">{shardSaveError}</div>
+            <div className="text-sm text-red-500 mt-1">{shardSaveError}</div>
           )}
         </div>
       )}
 
-      {/* Showing X of Y indicator when filtered */}
-      {selectedFilterGroupId !== null && (
-        <div className="text-xs text-muted-foreground mb-2">
+      {/* Showing X of Y indicator when filtered (filter view only) */}
+      {activeListView === 'filter' && selectedFilterGroupId !== null && (
+        <div className="text-sm text-muted-foreground mb-2">
           Showing {displayedBranches.length} of {filteredBranches.length} branches
         </div>
       )}
 
-      {/* Filtered Branches List */}
-      <div className="flex-1 overflow-y-auto space-y-2 mb-3">
-        {filteredBranches.length === 0 ? (
-          <div className="text-xs text-muted-foreground text-center py-8">
-            Apply filters to add branches here
+      {/* Branch List */}
+      <div className="space-y-2 mb-3">
+        {activeCount === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-8">
+            {activeListView === 'filter' ? 'Apply filters to add branches here' : 'No branches in strategy yet'}
           </div>
         ) : displayedBranches.length === 0 ? (
-          <div className="text-xs text-muted-foreground text-center py-8">
+          <div className="text-sm text-muted-foreground text-center py-8">
             No branches in this filter group
           </div>
         ) : (
@@ -394,7 +450,7 @@ export function ShardsCombinedPreview({
             const metricValue = getMetricValue(branch)
 
             return (
-              <div key={uniqueKey} className="p-2 bg-background rounded text-xs border border-border">
+              <div key={uniqueKey} className="p-3 bg-background rounded border border-border">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     {displayInfo ? (
@@ -403,7 +459,7 @@ export function ShardsCombinedPreview({
                         {displayInfo.conditions.length > 0 && (
                           <div className="space-y-0.5">
                             {displayInfo.conditions.map((cond, i) => (
-                              <div key={i} className="text-foreground font-mono text-[11px]">
+                              <div key={i} className="text-foreground font-mono text-sm">
                                 {cond}
                               </div>
                             ))}
@@ -411,25 +467,25 @@ export function ShardsCombinedPreview({
                         )}
                         {/* Positions */}
                         {displayInfo.positions.length > 0 && (
-                          <div className="mt-1 text-muted-foreground text-[11px]">
+                          <div className="mt-1 text-muted-foreground text-sm">
                             Positions: {displayInfo.positions.join(', ')}
                           </div>
                         )}
                         {/* Weighting */}
-                        <div className="text-muted-foreground text-[11px]">
+                        <div className="text-muted-foreground text-sm">
                           Weight: {displayInfo.weighting}
                         </div>
                       </>
                     ) : (
-                      <div className="text-muted-foreground text-[11px]">No tree data</div>
+                      <div className="text-muted-foreground text-sm">No tree data</div>
                     )}
                     {/* Metric */}
-                    <div className="mt-1 pt-1 border-t border-border/50 text-muted-foreground">
+                    <div className="mt-1 pt-1 border-t border-border/50 text-muted-foreground text-sm">
                       {filterMetric}: {formatMetricValue(metricValue)}
                     </div>
                   </div>
                   <button
-                    onClick={() => onRemoveBranch(jobId, branchId)}
+                    onClick={() => activeListView === 'filter' ? onRemoveBranch(jobId, branchId) : onRemoveBranchFromStrategy(jobId, branchId)}
                     className="p-1 rounded hover:bg-red-500/20 text-red-500 hover:text-red-700 transition-colors flex-shrink-0"
                     title="Remove branch"
                   >

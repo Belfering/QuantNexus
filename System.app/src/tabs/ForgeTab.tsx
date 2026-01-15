@@ -189,6 +189,14 @@ export function ForgeTab({
   const shardSelectedFilterGroupId = useShardStore(s => s.selectedFilterGroupId)
   const shardSetSelectedFilterGroup = useShardStore(s => s.setSelectedFilterGroup)
 
+  // Strategy List state (Phase 2b)
+  const shardStrategyBranches = useShardStore(s => s.strategyBranches)
+  const shardActiveListView = useShardStore(s => s.activeListView)
+  const shardAddBranchesToStrategy = useShardStore(s => s.addBranchesToStrategy)
+  const shardRemoveBranchFromStrategy = useShardStore(s => s.removeBranchFromStrategy)
+  const shardClearStrategyBranches = useShardStore(s => s.clearStrategyBranches)
+  const shardSetActiveListView = useShardStore(s => s.setActiveListView)
+
   // Shard Library state (Phase 4)
   const shardSavedShards = useShardStore(s => s.savedShards)
   const shardSelectedShardIds = useShardStore(s => s.selectedShardIds)
@@ -1442,13 +1450,11 @@ export function ForgeTab({
         }
       }
 
-      // Filter out ticker_list parameter ranges for chronological optimization
-      // (ticker_list ranges are only used for rolling optimization)
-      const chronologicalRanges = parameterRanges.filter(r => r.type !== 'ticker_list')
-      console.log('[ForgeTab] Filtered parameter ranges for chronological:', chronologicalRanges.length, 'of', parameterRanges.length)
+      // Include all parameter ranges (including ticker_list) for chronological optimization
+      console.log('[ForgeTab] Using parameter ranges for chronological:', parameterRanges.length)
 
       // Use requirements from the tab-aware variable (already set to chronological at top)
-      await runBatchBacktest(current, chronologicalRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
+      await runBatchBacktest(current, parameterRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
     }
   }
 
@@ -2627,8 +2633,8 @@ export function ForgeTab({
 
         {/* Shards Tab Content */}
         {forgeSubtab === 'Shards' && (
-          <div className="flex-1 overflow-hidden flex flex-col p-6">
-            <div className="grid grid-cols-4 gap-4 flex-1 min-h-0">
+          <div className="flex-1 overflow-hidden flex flex-col p-6 max-h-[calc(100vh-160px)]">
+            <div className="grid grid-cols-4 gap-4 h-full min-h-0">
               {/* Card 1: Job Loading */}
               <ShardsJobLoader
                 loadedJobType={shardLoadedJobType}
@@ -2644,6 +2650,7 @@ export function ForgeTab({
                 onUnloadJob={shardUnloadJob}
                 onClearAllJobs={shardClearAllJobs}
                 isJobLoaded={shardIsJobLoaded}
+                onAddBranchesToStrategy={shardAddBranchesToStrategy}
               />
 
               {/* Card 2: Filter Settings */}
@@ -2666,14 +2673,19 @@ export function ForgeTab({
               <ShardsCombinedPreview
                 loadedJobType={shardLoadedJobType}
                 filteredBranches={shardFilteredBranches}
+                strategyBranches={shardStrategyBranches}
+                activeListView={shardActiveListView}
                 filterMetric={shardFilterMetric}
                 filterGroups={shardFilterGroups}
                 selectedFilterGroupId={shardSelectedFilterGroupId}
                 canUndo={shardFilterHistory.length > 0}
                 onRemoveBranch={shardRemoveBranchFromFiltered}
+                onRemoveBranchFromStrategy={shardRemoveBranchFromStrategy}
                 onClearFiltered={shardClearFilteredBranches}
+                onClearStrategy={shardClearStrategyBranches}
                 onRemoveGroup={shardRemoveFilterGroup}
                 onSelectFilterGroup={shardSetSelectedFilterGroup}
+                onSetActiveListView={shardSetActiveListView}
                 onUndo={shardUndoFilter}
                 onGenerate={shardGenerateCombinedTree}
                 onSaveToModel={async () => {

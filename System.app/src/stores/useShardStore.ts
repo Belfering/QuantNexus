@@ -54,18 +54,22 @@ function normalizeTreeForSignature(node: FlowNode): NormalizedNode {
     normalized.weighting = node.weighting
   }
 
-  // Normalize conditions (strip threshold, forDays, dates, IDs)
+  // Normalize conditions (strip threshold, forDays, dates, IDs, window)
+  // Pattern = Indicator + Ticker only (NO windows/periods)
   if (node.conditions && node.conditions.length > 0) {
-    normalized.conditions = node.conditions.map(cond => ({
-      type: cond.type,
-      metric: cond.metric,
-      window: cond.window,
-      ticker: cond.ticker || '',
-      comparator: cond.comparator,
-      rightMetric: cond.rightMetric,
-      rightWindow: cond.rightWindow,
-      rightTicker: cond.rightTicker,
-    })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+    normalized.conditions = node.conditions.map(cond => {
+      const c = cond as any // Cast to access all fields
+      return {
+        type: c.type,
+        metric: c.metric,
+        // window: REMOVED - normalized away (RSI(5) = RSI(18) = same pattern)
+        ticker: c.ticker || '',
+        comparator: c.comparator,
+        rightMetric: c.rightMetric,
+        // rightWindow: REMOVED - normalized away
+        rightTicker: c.rightTicker,
+      }
+    }).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
   }
 
   // Include positions (sorted for stability)
@@ -114,15 +118,32 @@ function simpleHash(str: string): string {
   return Math.abs(hash).toString(36)
 }
 
+// Helper to recursively sort object keys for deterministic JSON
+function sortKeysRecursive(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sortKeysRecursive)
+  }
+  const sorted: any = {}
+  Object.keys(obj).sort().forEach(key => {
+    sorted[key] = sortKeysRecursive(obj[key])
+  })
+  return sorted
+}
+
 // Get a signature for a tree (hash of normalized tree)
 function getTreeSignature(treeJson: string | undefined): string | null {
   if (!treeJson) return null
   try {
     const tree: FlowNode = JSON.parse(treeJson)
     const normalized = normalizeTreeForSignature(tree)
-    // Convert to stable JSON string (sorted keys for determinism)
-    const canonical = JSON.stringify(normalized, Object.keys(normalized).sort())
+    // Sort keys recursively for deterministic JSON (important for hashing)
+    const sorted = sortKeysRecursive(normalized)
+    const canonical = JSON.stringify(sorted)
     const hash = simpleHash(canonical)
+
     return `sig-${hash}`
   } catch (err) {
     console.warn('[ShardStore] Failed to generate tree signature:', err)
@@ -276,6 +297,10 @@ interface ShardState {
   filterHistory: FilterHistorySnapshot[]   // Stack for undo (stores both groups and branches)
   selectedFilterGroupId: string | null  // null = "All Runs", or specific group ID for filtering view
 
+  // Phase 2b: Strategy List (parallel to Filter List)
+  strategyBranches: OptimizationResult[] | RollingOptimizationResult['branches']  // Branches added directly to strategy (bypasses filtering)
+  activeListView: 'filter' | 'strategy'  // Toggle state for card 3
+
   // Phase 3: Combined System
   combinedTree: FlowNode | null
 
@@ -308,6 +333,12 @@ interface ShardState {
   undoFilter: () => void
   removeFilterGroup: (groupId: string) => void
   setSelectedFilterGroup: (groupId: string | null) => void
+
+  // Actions - Phase 2b: Strategy List
+  addBranchesToStrategy: (branches: any[]) => void  // Add branches directly to strategy list
+  removeBranchFromStrategy: (jobId: number, branchId: string | number) => void
+  clearStrategyBranches: () => void
+  setActiveListView: (view: 'filter' | 'strategy') => void
 
   // Actions - Phase 3
   generateCombinedTree: () => void
@@ -344,6 +375,9 @@ export const useShardStore = create<ShardState>((set, get) => ({
   filterGroups: [],
   filterHistory: [],
   selectedFilterGroupId: null,
+
+  strategyBranches: [],
+  activeListView: 'filter',
 
   combinedTree: null,
 
@@ -842,6 +876,55 @@ export const useShardStore = create<ShardState>((set, get) => ({
   // Phase 2: Set selected filter group for dropdown view
   setSelectedFilterGroup: (groupId: string | null) => {
     set({ selectedFilterGroupId: groupId })
+  },
+
+  // Phase 2b: Add branches directly to strategy list (skips filtering)
+  addBranchesToStrategy: (branches: any[]) => {
+    const { strategyBranches } = get()
+
+    // Helper to get branch key
+    const getBranchKey = (branch: any): string => {
+      return `${branch.jobId}-${branch.branchId}`
+    }
+
+    // De-duplicate - only add branches not already in strategy list
+    const existingKeys = new Set(strategyBranches.map(b => getBranchKey(b)))
+    const newBranches = branches.filter(b => !existingKeys.has(getBranchKey(b)))
+
+    // Deep copy new branches to avoid mutations
+    const copiedBranches = newBranches.map(b => JSON.parse(JSON.stringify(b)))
+
+    // Append to strategy branches
+    const updatedStrategy = [...strategyBranches, ...copiedBranches] as typeof strategyBranches
+
+    set({ strategyBranches: updatedStrategy })
+
+    console.log(`[ShardStore] Added ${copiedBranches.length} branches to strategy (total: ${updatedStrategy.length})`)
+  },
+
+  // Phase 2b: Remove a branch from strategy list
+  removeBranchFromStrategy: (jobId: number, branchId: string | number) => {
+    const { strategyBranches } = get()
+
+    const newStrategy = strategyBranches.filter((b: any) =>
+      !(b.jobId === jobId && b.branchId === branchId)
+    ) as typeof strategyBranches
+
+    set({ strategyBranches: newStrategy })
+
+    console.log(`[ShardStore] Removed branch ${jobId}-${branchId} from strategy (remaining: ${newStrategy.length})`)
+  },
+
+  // Phase 2b: Clear all strategy branches
+  clearStrategyBranches: () => {
+    set({ strategyBranches: [] })
+    console.log('[ShardStore] Cleared all strategy branches')
+  },
+
+  // Phase 2b: Set active list view (filter or strategy)
+  setActiveListView: (view: 'filter' | 'strategy') => {
+    set({ activeListView: view })
+    console.log(`[ShardStore] Switched to ${view} list view`)
   },
 
   // Phase 3: Generate combined tree from filtered branches

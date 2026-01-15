@@ -9,6 +9,7 @@ from typing import Dict, List, Set, Tuple, Optional
 from pathlib import Path
 from indicator_cache import SharedIndicatorCache
 from optimized_dataloader import get_global_cache
+from shared_memory_manager import SharedPriceData
 
 
 class BatchOptimizer:
@@ -27,6 +28,7 @@ class BatchOptimizer:
         self.unique_indicators: Dict[str, Set[int]] = {}  # {indicator_name: set(periods)}
         self.price_cache = None
         self.indicator_cache = None
+        self.shared_memory_manager = None
 
     def analyze_branches(self, branches: List[Dict]) -> Dict:
         """
@@ -145,6 +147,39 @@ class BatchOptimizer:
             print(f"[BatchOptimizer] Error pre-computing indicators: {e}", file=sys.stderr, flush=True)
             return False
 
+    def create_shared_memory(self) -> bool:
+        """
+        Create shared memory blocks for all tickers (zero-copy across workers)
+
+        Returns:
+            True if successful
+        """
+        if not self.unique_tickers or not self.price_cache:
+            print("[BatchOptimizer] Cannot create shared memory: no tickers loaded", file=sys.stderr, flush=True)
+            return False
+
+        try:
+            print(f"[BatchOptimizer] Creating shared memory for {len(self.unique_tickers)} tickers...", file=sys.stderr, flush=True)
+
+            # Create shared memory manager
+            self.shared_memory_manager = SharedPriceData()
+
+            # Load each ticker into shared memory
+            for ticker in self.unique_tickers:
+                try:
+                    df = self.price_cache.get_ticker_data(ticker, limit=20000)
+                    if len(df) > 0:
+                        self.shared_memory_manager.load_ticker_to_shared_memory(ticker, df)
+                except Exception as e:
+                    print(f"[BatchOptimizer] Warning: Failed to share {ticker}: {e}", file=sys.stderr, flush=True)
+
+            print(f"[BatchOptimizer] ✓ Created shared memory blocks", file=sys.stderr, flush=True)
+            return True
+
+        except Exception as e:
+            print(f"[BatchOptimizer] Error creating shared memory: {e}", file=sys.stderr, flush=True)
+            return False
+
     def optimize_batch(self, branches: List[Dict]) -> Dict:
         """
         Run complete batch optimization pipeline
@@ -164,10 +199,18 @@ class BatchOptimizer:
         # Pre-compute indicators
         indicators_computed = self.precompute_indicators()
 
+        # Create shared memory blocks (optional optimization)
+        shared_memory_created = self.create_shared_memory()
+        shared_memory_metadata = None
+        if shared_memory_created and self.shared_memory_manager:
+            shared_memory_metadata = self.shared_memory_manager.get_metadata()
+
         return {
             'analysis': analysis,
             'tickers_loaded': tickers_loaded,
             'indicators_computed': indicators_computed,
+            'shared_memory_created': shared_memory_created,
+            'shared_memory_metadata': shared_memory_metadata,
             'speedup_estimate': self._estimate_speedup(analysis)
         }
 
