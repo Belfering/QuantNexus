@@ -198,6 +198,11 @@ export function ForgeTab({
   const shardClearStrategyBranches = useShardStore(s => s.clearStrategyBranches)
   const shardSetActiveListView = useShardStore(s => s.setActiveListView)
 
+  // Strategy Job Loading state (Phase 1b - for Card 4)
+  const shardLoadedStrategyJobs = useShardStore(s => s.loadedStrategyJobs)
+  const shardLoadedStrategyJobIds = useShardStore(s => s.loadedStrategyJobIds)
+  const shardUnloadStrategyJob = useShardStore(s => s.unloadStrategyJob)
+
   // Shard Library state (Phase 4)
   const shardSavedShards = useShardStore(s => s.savedShards)
   const shardSelectedShardIds = useShardStore(s => s.selectedShardIds)
@@ -2706,6 +2711,8 @@ export function ForgeTab({
                 selectedShardIds={shardSelectedShardIds}
                 loadedShardBranches={shardLoadedShardBranches}
                 isLoadingShards={shardIsLoadingShards}
+                loadedStrategyJobs={shardLoadedStrategyJobs}
+                loadedStrategyJobIds={shardLoadedStrategyJobIds}
                 shardBotName={shardBotName}
                 shardWeighting={shardWeighting}
                 shardCappedPercent={shardCappedPercent}
@@ -2717,6 +2724,7 @@ export function ForgeTab({
                 onSetShardBotName={shardSetShardBotName}
                 onSetShardWeighting={shardSetShardWeighting}
                 onSetShardCappedPercent={shardSetShardCappedPercent}
+                onUnloadStrategyJob={shardUnloadStrategyJob}
                 onGenerateBot={async () => {
                   const tree = shardGenerateBotFromShards()
                   if (!tree) return

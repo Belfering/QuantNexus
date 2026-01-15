@@ -159,6 +159,13 @@ const COMPARATOR_SYMBOLS: Record<string, string> = {
   crossBelow: '↘'
 }
 
+// Display info extracted from tree
+interface BranchDisplayInfo {
+  conditions: string[]  // e.g., "RSI(14) < 70"
+  positions: string[]   // e.g., "SPY", "QQQ"
+  weighting: string     // e.g., "equal"
+}
+
 // Short indicator names for compact display
 const SHORT_INDICATOR_NAMES: Record<string, string> = {
   'Relative Strength Index': 'RSI',
@@ -281,6 +288,10 @@ interface ShardState {
   loadedJobs: Record<number, LoadedJobData>  // Map of jobId -> job data
   allBranches: OptimizationResult[] | RollingOptimizationResult['branches']  // Combined from all loaded jobs
 
+  // Phase 1b: Strategy Job Loading (separate from filter jobs - for Card 4)
+  loadedStrategyJobs: Record<number, LoadedJobData>  // Map of jobId -> job data for strategy shards
+  loadedStrategyJobIds: number[]  // Array of loaded strategy job IDs
+
   // Phase 2: Filtering (additive with undo)
   filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
   filterTopX: number
@@ -320,6 +331,11 @@ interface ShardState {
   unloadJob: (jobId: number) => void
   clearAllJobs: () => void
   isJobLoaded: (jobId: number) => boolean
+
+  // Actions - Phase 1b: Strategy Job Loading
+  loadJobAndAddToStrategy: (type: 'chronological' | 'rolling', jobId: number) => Promise<void>
+  unloadStrategyJob: (jobId: number) => void
+  isStrategyJobLoaded: (jobId: number) => boolean
 
   // Actions - Phase 2
   setFilterMetric: (metric: ShardState['filterMetric']) => void
@@ -365,6 +381,9 @@ export const useShardStore = create<ShardState>((set, get) => ({
   loadedJobIds: [],
   loadedJobs: {},
   allBranches: [],
+
+  loadedStrategyJobs: {},
+  loadedStrategyJobIds: [],
 
   filterMetric: 'sharpe',
   filterTopX: 10,
@@ -526,9 +545,9 @@ export const useShardStore = create<ShardState>((set, get) => ({
     }
   },
 
-  // Phase 1: Unload a specific job
+  // Phase 1: Unload a specific job (filter jobs only, not strategy jobs)
   unloadJob: (jobId: number) => {
-    const { loadedJobIds, loadedJobs, loadedJobType, strategyBranches } = get()
+    const { loadedJobIds, loadedJobs, loadedJobType } = get()
 
     // Remove from loaded jobs
     const newLoadedJobIds = loadedJobIds.filter(id => id !== jobId)
@@ -546,25 +565,18 @@ export const useShardStore = create<ShardState>((set, get) => ({
       }
     }
 
-    // Also remove branches from strategy list that belong to this job
-    const newStrategyBranches = strategyBranches.filter((b: any) => b.jobId !== jobId) as typeof strategyBranches
-    const removedStrategyCount = strategyBranches.length - newStrategyBranches.length
-
     set({
       loadedJobType: newJobType,
       loadedJobIds: newLoadedJobIds,
       loadedJobs: newLoadedJobs,
       allBranches: combined,
-      strategyBranches: newStrategyBranches,
       combinedTree: null // Reset combined tree when jobs change
     })
 
-    if (removedStrategyCount > 0) {
-      console.log(`[ShardStore] Unloaded job ${jobId} and removed ${removedStrategyCount} branches from strategy`)
-    }
+    console.log(`[ShardStore] Unloaded filter job ${jobId}`)
   },
 
-  // Phase 1: Clear all loaded jobs
+  // Phase 1: Clear all loaded jobs (filter jobs only, not strategy jobs)
   clearAllJobs: () => {
     set({
       loadedJobType: null,
@@ -572,39 +584,88 @@ export const useShardStore = create<ShardState>((set, get) => ({
       loadedJobs: {},
       allBranches: [],
       filteredBranches: [],
-      strategyBranches: [],  // Also clear strategy branches
       combinedTree: null
     })
   },
 
-  // Phase 1b: Load job (so it shows as loaded in Card 1) and add branches to strategy
+  // Phase 1b: Load job and add to strategy (shows in Card 4, NOT Card 1)
   loadJobAndAddToStrategy: async (type: 'chronological' | 'rolling', jobId: number) => {
+    const { loadedStrategyJobIds, loadedStrategyJobs, strategyBranches } = get()
+
+    // Skip if already loaded as strategy job
+    if (loadedStrategyJobIds.includes(jobId)) {
+      console.log('[ShardStore] Strategy job already loaded:', jobId)
+      return
+    }
+
     // Helper to get branch key
     const getBranchKey = (branch: any): string => {
       return `${branch.jobId}-${branch.branchId}`
     }
 
     try {
-      // First, load the job normally (this marks it as loaded in Card 1)
+      let metadata: any
+      let branches: any[]
+
       if (type === 'chronological') {
-        await get().loadChronologicalJob(jobId)
+        // Fetch chronological job
+        const res = await fetch(`/api/optimization/${jobId}/results?sortBy=is_sharpe&order=desc&limit=10000`)
+        if (!res.ok) {
+          throw new Error('Failed to fetch chronological job results')
+        }
+        const data = await res.json()
+        branches = data.branches
+
+        // Get metadata
+        const metaRes = await fetch(`/api/optimization/jobs`)
+        if (!metaRes.ok) {
+          throw new Error('Failed to fetch job metadata')
+        }
+        const allJobs: OptimizationJob[] = await metaRes.json()
+        metadata = allJobs.find(j => j.id === jobId)
+
+        if (!metadata) {
+          throw new Error(`Job ${jobId} not found in metadata`)
+        }
+
+        // Tag branches with jobId
+        branches = branches.map(b => ({ ...b, jobId }))
       } else {
-        await get().loadRollingJob(jobId)
+        // Fetch rolling job
+        const res = await fetch(`/api/optimization/rolling/jobs/${jobId}/results`)
+        if (!res.ok) {
+          throw new Error('Failed to fetch rolling job results')
+        }
+        const data: RollingOptimizationResult = await res.json()
+        branches = data.branches
+
+        // Get metadata
+        const metaRes = await fetch(`/api/optimization/rolling/jobs`)
+        if (!metaRes.ok) {
+          throw new Error('Failed to fetch rolling job metadata')
+        }
+        const allJobs: RollingJob[] = await metaRes.json()
+        metadata = allJobs.find(j => j.id === jobId)
+
+        if (!metadata) {
+          throw new Error(`Rolling job ${jobId} not found in metadata`)
+        }
+
+        // Tag branches with jobId
+        branches = branches.map(b => ({ ...b, jobId }))
       }
 
-      // Now get the loaded job's branches and add them to strategy
-      // Re-fetch state after loading to get updated loadedJobs
-      const { loadedJobs, strategyBranches } = get()
-      const jobData = loadedJobs[jobId]
+      console.log(`[ShardStore] Loaded strategy job ${jobId}: ${branches.length} branches`)
 
-      if (!jobData) {
-        throw new Error('Job data not found after loading')
+      // Add to loadedStrategyJobs
+      const updatedStrategyJobs = {
+        ...loadedStrategyJobs,
+        [jobId]: { metadata, branches }
       }
 
-      const branches = jobData.branches as any[]
-      console.log(`[ShardStore] Loaded job ${jobId} for strategy: ${branches.length} branches`)
+      const updatedStrategyJobIds = [...loadedStrategyJobIds, jobId]
 
-      // De-duplicate - only add branches not already in strategy list
+      // De-duplicate branches - only add branches not already in strategy list
       const existingKeys = new Set(strategyBranches.map(b => getBranchKey(b)))
       const newBranches = branches.filter(b => !existingKeys.has(getBranchKey(b)))
 
@@ -614,9 +675,14 @@ export const useShardStore = create<ShardState>((set, get) => ({
       // Append to strategy branches
       const updatedStrategy = [...strategyBranches, ...copiedBranches] as typeof strategyBranches
 
-      set({ strategyBranches: updatedStrategy })
+      set({
+        loadedStrategyJobs: updatedStrategyJobs,
+        loadedStrategyJobIds: updatedStrategyJobIds,
+        strategyBranches: updatedStrategy
+      })
 
       console.log(`[ShardStore] Added ${copiedBranches.length} branches to strategy (total: ${updatedStrategy.length})`)
+      console.log(`[ShardStore] Loaded strategy jobs: ${updatedStrategyJobIds.length}`)
     } catch (err) {
       console.error('[ShardStore] Failed to load job and add to strategy:', err)
       throw err
@@ -626,6 +692,59 @@ export const useShardStore = create<ShardState>((set, get) => ({
   // Phase 1: Check if a job is loaded
   isJobLoaded: (jobId: number) => {
     return get().loadedJobIds.includes(jobId)
+  },
+
+  // Phase 1b: Unload strategy job (removes from Card 4 and removes branches from strategy list)
+  unloadStrategyJob: (jobId: number) => {
+    const { loadedStrategyJobs, loadedStrategyJobIds, strategyBranches } = get()
+
+    // Check if job is loaded
+    if (!loadedStrategyJobIds.includes(jobId)) {
+      console.log('[ShardStore] Strategy job not loaded:', jobId)
+      return
+    }
+
+    // Helper to get branch key
+    const getBranchKey = (branch: any): string => {
+      return `${branch.jobId}-${branch.branchId}`
+    }
+
+    // Get branches from this job
+    const jobData = loadedStrategyJobs[jobId]
+    if (!jobData) {
+      console.warn('[ShardStore] Job data not found for strategy job:', jobId)
+      return
+    }
+
+    const jobBranchKeys = new Set(
+      jobData.branches.map((b: any) => getBranchKey(b))
+    )
+
+    // Remove branches from strategy list
+    const updatedStrategy = strategyBranches.filter(
+      b => !jobBranchKeys.has(getBranchKey(b))
+    )
+
+    // Remove from loaded strategy jobs
+    const updatedStrategyJobs = { ...loadedStrategyJobs }
+    delete updatedStrategyJobs[jobId]
+
+    const updatedStrategyJobIds = loadedStrategyJobIds.filter(id => id !== jobId)
+
+    set({
+      loadedStrategyJobs: updatedStrategyJobs,
+      loadedStrategyJobIds: updatedStrategyJobIds,
+      strategyBranches: updatedStrategy as typeof strategyBranches
+    })
+
+    console.log(`[ShardStore] Unloaded strategy job ${jobId}`)
+    console.log(`[ShardStore] Remaining strategy branches: ${updatedStrategy.length}`)
+    console.log(`[ShardStore] Remaining strategy jobs: ${updatedStrategyJobIds.length}`)
+  },
+
+  // Phase 1b: Check if a strategy job is loaded
+  isStrategyJobLoaded: (jobId: number) => {
+    return get().loadedStrategyJobIds.includes(jobId)
   },
 
   // Phase 2: Set filter metric (no auto-apply - user clicks button)

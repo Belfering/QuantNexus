@@ -22,6 +22,10 @@ interface ShardsLibraryProps {
   loadedShardBranches: any[]
   isLoadingShards: boolean
 
+  // Loaded strategy shards (from Card 1 "Add to Strategy")
+  loadedStrategyJobs: Record<number, any>
+  loadedStrategyJobIds: number[]
+
   // Strategy generation
   shardBotName: string
   shardWeighting: string  // 'equal' | 'inverse' | 'pro' | 'capped'
@@ -37,6 +41,7 @@ interface ShardsLibraryProps {
   onSetShardWeighting: (weighting: string) => void
   onSetShardCappedPercent: (percent: number) => void
   onGenerateBot: () => void
+  onUnloadStrategyJob: (jobId: number) => void
 }
 
 export function ShardsLibrary({
@@ -44,6 +49,8 @@ export function ShardsLibrary({
   selectedShardIds,
   loadedShardBranches,
   isLoadingShards,
+  loadedStrategyJobs,
+  loadedStrategyJobIds,
   shardBotName,
   shardWeighting,
   shardCappedPercent,
@@ -55,7 +62,8 @@ export function ShardsLibrary({
   onSetShardBotName,
   onSetShardWeighting,
   onSetShardCappedPercent,
-  onGenerateBot
+  onGenerateBot,
+  onUnloadStrategyJob
 }: ShardsLibraryProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
@@ -177,6 +185,50 @@ export function ShardsLibrary({
           )}
         </div>
       </div>
+
+      {/* Loaded Strategy Shards - Show jobs loaded from Card 1 "Add to Strategy" */}
+      {loadedStrategyJobIds.length > 0 && (
+        <div className="mb-4 border-t border-border pt-3">
+          <div className="text-sm font-medium mb-2">
+            Loaded Strategy Shards ({loadedStrategyJobIds.length})
+          </div>
+          <div className="space-y-2">
+            {loadedStrategyJobIds.map(jobId => {
+              const jobData = loadedStrategyJobs[jobId]
+              if (!jobData) return null
+
+              const jobName = jobData.metadata?.botName || jobData.metadata?.name || `Job #${jobId}`
+              const branchCount = jobData.branches?.length || 0
+
+              return (
+                <div
+                  key={jobId}
+                  className="p-2 bg-green-500/10 border border-green-500/30 rounded"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Check className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+                        <div className="text-sm font-medium truncate">{jobName}</div>
+                      </div>
+                      <div className="text-sm text-muted-foreground ml-6">
+                        {branchCount} branches loaded
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onUnloadStrategyJob(jobId)}
+                      className="p-1.5 rounded hover:bg-red-500/20 text-red-500 hover:text-red-700 transition-colors flex-shrink-0"
+                      title="Unload strategy shard"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Saved Shards List - Below, scrollable */}
       <div className="border-t border-border pt-3">
