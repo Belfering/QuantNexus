@@ -1,7 +1,7 @@
 // Shards Loader - Left card for loading chronological or rolling optimization shards
 // Supports multi-shard loading (additive) with visual indicators for loaded state
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Check, Trash2, Edit2 } from 'lucide-react'
 import type { OptimizationJob } from '@/types/optimizationJob'
@@ -42,6 +42,9 @@ export function ShardsJobLoader({
     jobId: null
   })
 
+  // Ref to track if we're opening the context menu (prevent immediate close)
+  const isOpeningContextMenu = useRef<boolean>(false)
+
   // Fetch shards on mount
   useEffect(() => {
     async function fetchJobs() {
@@ -70,6 +73,8 @@ export function ShardsJobLoader({
 
   // Handle clicking a job card to show context menu or unload
   const handleJobClick = (e: React.MouseEvent, jobId: number) => {
+    e.stopPropagation() // Prevent immediate close from click-outside handler
+
     // If already loaded, unload it
     if (isJobLoaded(jobId)) {
       onUnloadJob(jobId)
@@ -83,7 +88,11 @@ export function ShardsJobLoader({
       return
     }
 
+    // Mark that we're opening the context menu (prevent immediate close)
+    isOpeningContextMenu.current = true
+
     // Show context menu at cursor position
+    console.log('[ShardsJobLoader] Opening context menu at', e.clientX, e.clientY, 'for job', jobId)
     setContextMenu({
       visible: true,
       x: e.clientX,
@@ -91,6 +100,11 @@ export function ShardsJobLoader({
       jobId
     })
     setError(null)
+
+    // Reset flag after current event cycle completes
+    setTimeout(() => {
+      isOpeningContextMenu.current = false
+    }, 100)
   }
 
   // Handle "Add to Filter" - load job branches for filtering
@@ -148,15 +162,26 @@ export function ShardsJobLoader({
 
   // Close context menu when clicking outside
   useEffect(() => {
-    const handleClickOutside = () => {
-      if (contextMenu.visible) {
-        setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
+    if (!contextMenu.visible) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      // Don't close if we're still opening the menu
+      if (isOpeningContextMenu.current) {
+        console.log('[ShardsJobLoader] Ignoring click - context menu is opening')
+        return
       }
+      console.log('[ShardsJobLoader] Click outside detected, closing context menu')
+      setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
     }
 
-    if (contextMenu.visible) {
+    // Add listener on next tick to avoid closing immediately
+    const timeoutId = setTimeout(() => {
       window.addEventListener('click', handleClickOutside)
-      return () => window.removeEventListener('click', handleClickOutside)
+    }, 0)
+
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('click', handleClickOutside)
     }
   }, [contextMenu.visible])
 
