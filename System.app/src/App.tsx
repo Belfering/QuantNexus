@@ -1099,8 +1099,8 @@ function App() {
             <span className="text-xs text-muted">{userDisplayName || 'User'}</span>
             <span>Logout</span>
           </button>
-          {/* Row 2: Model/Forge sub-buttons (only when Model or Forge tab active) - flex container spans columns 1-8 */}
-          {(tab === 'Model' || tab === 'Forge') && (
+          {/* Row 2: Model sub-buttons (only when Model tab active) - flex container spans columns 1-8 */}
+          {tab === 'Model' && (
             <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 8', gridRow: '2 / 3' }}>
               <Button onClick={handleNewBot} className="flex-1 rounded-none border-r border-border h-10">New System</Button>
               <div className="relative flex-1">
@@ -1159,6 +1159,46 @@ function App() {
                 {isImporting ? 'Importing...' : 'Import'}
               </Button>
               <Button onClick={handleExport} className="flex-1 rounded-none h-10">Export</Button>
+            </div>
+          )}
+          {/* Row 2: Forge subtabs (only when Forge tab active) */}
+          {tab === 'Forge' && (
+            <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 8', gridRow: '2 / 3' }}>
+              <Button
+                onClick={() => useUIStore.getState().setForgeSubtab('Split')}
+                variant={forgeSubtab === 'Split' ? 'accent' : 'secondary'}
+                className="flex-1 rounded-none border-r border-border h-10"
+              >
+                Split
+              </Button>
+              <Button
+                onClick={() => useUIStore.getState().setForgeSubtab('Walk Forward')}
+                variant={forgeSubtab === 'Walk Forward' ? 'accent' : 'secondary'}
+                className="flex-1 rounded-none border-r border-border h-10"
+              >
+                Walk Forward
+              </Button>
+              <Button
+                onClick={() => useUIStore.getState().setForgeSubtab('Ticker Lists')}
+                variant={forgeSubtab === 'Ticker Lists' ? 'accent' : 'secondary'}
+                className="flex-1 rounded-none border-r border-border h-10"
+              >
+                Ticker Lists
+              </Button>
+              <Button
+                onClick={() => useUIStore.getState().setForgeSubtab('Results')}
+                variant={forgeSubtab === 'Results' ? 'accent' : 'secondary'}
+                className="flex-1 rounded-none border-r border-border h-10"
+              >
+                Results
+              </Button>
+              <Button
+                onClick={() => useUIStore.getState().setForgeSubtab('Shards')}
+                variant={forgeSubtab === 'Shards' ? 'accent' : 'secondary'}
+                className="flex-1 rounded-none h-10"
+              >
+                Shards
+              </Button>
             </div>
           )}
         </div>

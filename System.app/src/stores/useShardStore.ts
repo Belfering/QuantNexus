@@ -157,7 +157,12 @@ export const useShardStore = create<ShardState>((set, get) => ({
       if (!res.ok) {
         throw new Error('Failed to fetch chronological job results')
       }
-      const results: OptimizationResult[] = await res.json()
+      const allResults: OptimizationResult[] = await res.json()
+
+      // Filter to only include branches that passed requirements
+      const results = allResults.filter(branch => branch.passed === true)
+
+      console.log(`[ShardStore] Loaded job ${jobId}: ${results.length} passing branches out of ${allResults.length} total`)
 
       // Fetch job metadata
       const jobsRes = await fetch('/api/optimization/jobs')

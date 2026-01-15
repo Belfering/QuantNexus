@@ -1467,40 +1467,6 @@ export function ForgeTab({
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
       <CardContent className="flex-1 flex flex-col gap-4 p-4 pb-8 overflow-auto min-h-0">
-        {/* Subtab Navigation */}
-        <div className="flex gap-2 shrink-0">
-          <Button
-            variant={forgeSubtab === 'Split' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Split')}
-          >
-            Split
-          </Button>
-          <Button
-            variant={forgeSubtab === 'Walk Forward' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Walk Forward')}
-          >
-            Walk Forward
-          </Button>
-          <Button
-            variant={forgeSubtab === 'Ticker Lists' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Ticker Lists')}
-          >
-            Ticker Lists
-          </Button>
-          <Button
-            variant={forgeSubtab === 'Results' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Results')}
-          >
-            Results
-          </Button>
-          <Button
-            variant={forgeSubtab === 'Shards' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Shards')}
-          >
-            Shards
-          </Button>
-        </div>
-
         {/* Split Tab Content */}
         {forgeSubtab === 'Split' && (
           <>

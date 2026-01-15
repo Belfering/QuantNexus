@@ -185,7 +185,7 @@ export function ShardsJobLoader({
                         {new Date(job.createdAt).toLocaleString()}
                       </div>
                       <div className="text-muted-foreground">
-                        {'branchCount' in job ? job.branchCount : job.totalBranches} branches
+                        {'branchCount' in job ? job.branchCount : job.passingBranches} passing branches
                       </div>
                     </div>
                     {loaded && (

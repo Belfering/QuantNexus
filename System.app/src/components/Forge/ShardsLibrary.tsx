@@ -119,12 +119,28 @@ export function ShardsLibrary({
         </div>
 
         <div className="space-y-2">
-          <Input
-            value={shardBotName}
-            onChange={(e) => onSetShardBotName(e.target.value)}
-            placeholder="Bot name..."
-            className="h-8 text-sm"
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              value={shardBotName}
+              onChange={(e) => onSetShardBotName(e.target.value)}
+              placeholder="Bot name..."
+              className="h-8 text-sm flex-1"
+            />
+            <Button
+              onClick={onGenerateBot}
+              className="h-8 px-3 text-sm whitespace-nowrap"
+              disabled={loadedShardBranches.length === 0 || isLoadingShards}
+            >
+              {isLoadingShards ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Loading...
+                </>
+              ) : (
+                'Generate & Save to Model'
+              )}
+            </Button>
+          </div>
 
           <select
             className="w-full px-2 py-1 rounded border border-border bg-background text-sm h-8"
@@ -159,21 +175,6 @@ export function ShardsLibrary({
               <span className="text-xs text-muted-foreground">max per position</span>
             </div>
           )}
-
-          <Button
-            onClick={onGenerateBot}
-            className="w-full"
-            disabled={loadedShardBranches.length === 0 || isLoadingShards}
-          >
-            {isLoadingShards ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Loading...
-              </>
-            ) : (
-              'Generate & Save to Model'
-            )}
-          </Button>
         </div>
       </div>
 
