@@ -192,6 +192,7 @@ export function ForgeTab({
   // Strategy List state (Phase 2b)
   const shardStrategyBranches = useShardStore(s => s.strategyBranches)
   const shardActiveListView = useShardStore(s => s.activeListView)
+  const shardLoadJobAndAddToStrategy = useShardStore(s => s.loadJobAndAddToStrategy)
   const shardAddBranchesToStrategy = useShardStore(s => s.addBranchesToStrategy)
   const shardRemoveBranchFromStrategy = useShardStore(s => s.removeBranchFromStrategy)
   const shardClearStrategyBranches = useShardStore(s => s.clearStrategyBranches)
@@ -2650,7 +2651,7 @@ export function ForgeTab({
                 onUnloadJob={shardUnloadJob}
                 onClearAllJobs={shardClearAllJobs}
                 isJobLoaded={shardIsJobLoaded}
-                onAddBranchesToStrategy={shardAddBranchesToStrategy}
+                onLoadJobAndAddToStrategy={shardLoadJobAndAddToStrategy}
               />
 
               {/* Card 2: Filter Settings */}

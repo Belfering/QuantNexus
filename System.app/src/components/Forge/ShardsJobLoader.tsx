@@ -15,7 +15,7 @@ interface ShardsJobLoaderProps {
   onUnloadJob: (jobId: number) => void
   onClearAllJobs: () => void
   isJobLoaded: (jobId: number) => boolean
-  onAddBranchesToStrategy: (branches: any[]) => void
+  onLoadJobAndAddToStrategy: (type: 'chronological' | 'rolling', jobId: number) => Promise<void>
 }
 
 export function ShardsJobLoader({
@@ -26,7 +26,7 @@ export function ShardsJobLoader({
   onUnloadJob,
   onClearAllJobs,
   isJobLoaded,
-  onAddBranchesToStrategy
+  onLoadJobAndAddToStrategy
 }: ShardsJobLoaderProps) {
   const [jobType, setJobType] = useState<'chronological' | 'rolling'>('chronological')
   const [chronologicalJobs, setChronologicalJobs] = useState<OptimizationJob[]>([])
@@ -123,7 +123,7 @@ export function ShardsJobLoader({
     }
   }
 
-  // Handle "Add to Strategy" - load job then add branches to strategy list
+  // Handle "Add to Strategy" - load job and add branches to strategy list
   const handleAddToStrategy = async () => {
     if (!contextMenu.jobId) return
 
@@ -132,16 +132,8 @@ export function ShardsJobLoader({
       setError(null)
       setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
 
-      // Load the job using the same mechanism as "Add to Filter"
-      await onLoadJob(jobType, contextMenu.jobId)
-
-      // Get the branches that were just loaded (they're in allBranches)
-      // Filter to just the branches from this job
-      const jobBranches = allBranches.filter((b: any) => b.jobId === contextMenu.jobId)
-
-      // Add directly to strategy list
-      onAddBranchesToStrategy(jobBranches)
-      console.log(`[ShardsJobLoader] Added ${jobBranches.length} branches from job ${contextMenu.jobId} to strategy`)
+      // Use the atomic action that loads and adds to strategy in one operation
+      await onLoadJobAndAddToStrategy(jobType, contextMenu.jobId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add to strategy')
     } finally {

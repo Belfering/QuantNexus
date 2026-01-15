@@ -567,6 +567,74 @@ export const useShardStore = create<ShardState>((set, get) => ({
     })
   },
 
+  // Phase 1b: Load job and immediately add branches to strategy (bypasses filtering)
+  loadJobAndAddToStrategy: async (type: 'chronological' | 'rolling', jobId: number) => {
+    const { strategyBranches } = get()
+
+    // Helper to get branch key
+    const getBranchKey = (branch: any): string => {
+      return `${branch.jobId}-${branch.branchId}`
+    }
+
+    try {
+      // Load the job based on type
+      if (type === 'chronological') {
+        const res = await fetch(`/api/optimization/${jobId}/results?sortBy=is_sharpe&order=desc&limit=10000`)
+        if (!res.ok) {
+          throw new Error('Failed to fetch chronological job results')
+        }
+        const allResults: OptimizationResult[] = await res.json()
+
+        // Filter to only include branches that passed requirements
+        const results = allResults.filter(branch => branch.passed === true)
+
+        console.log(`[ShardStore] Loaded job ${jobId} for strategy: ${results.length} passing branches`)
+
+        // De-duplicate - only add branches not already in strategy list
+        const existingKeys = new Set(strategyBranches.map(b => getBranchKey(b)))
+        const newBranches = results.filter(b => !existingKeys.has(getBranchKey(b)))
+
+        // Deep copy new branches to avoid mutations
+        const copiedBranches = newBranches.map(b => JSON.parse(JSON.stringify(b)))
+
+        // Append to strategy branches
+        const updatedStrategy = [...strategyBranches, ...copiedBranches] as typeof strategyBranches
+
+        set({ strategyBranches: updatedStrategy })
+
+        console.log(`[ShardStore] Added ${copiedBranches.length} branches to strategy (total: ${updatedStrategy.length})`)
+      } else if (type === 'rolling') {
+        const res = await fetch(`/api/optimization/rolling/${jobId}`)
+        if (!res.ok) {
+          throw new Error('Failed to fetch rolling job results')
+        }
+        const data: RollingOptimizationResult = await res.json()
+
+        // Add jobId to each branch for identification
+        const branchesWithJobId = data.branches.map(b => ({ ...b, jobId }))
+
+        console.log(`[ShardStore] Loaded rolling job ${jobId} for strategy: ${branchesWithJobId.length} branches`)
+
+        // De-duplicate - only add branches not already in strategy list
+        const existingKeys = new Set(strategyBranches.map(b => getBranchKey(b)))
+        const newBranches = branchesWithJobId.filter(b => !existingKeys.has(getBranchKey(b)))
+
+        // Deep copy new branches to avoid mutations
+        const copiedBranches = newBranches.map(b => JSON.parse(JSON.stringify(b)))
+
+        // Append to strategy branches
+        const updatedStrategy = [...strategyBranches, ...copiedBranches] as typeof strategyBranches
+
+        set({ strategyBranches: updatedStrategy })
+
+        console.log(`[ShardStore] Added ${copiedBranches.length} branches to strategy (total: ${updatedStrategy.length})`)
+      }
+    } catch (err) {
+      console.error('[ShardStore] Failed to load job and add to strategy:', err)
+      throw err
+    }
+  },
+
   // Phase 1: Check if a job is loaded
   isJobLoaded: (jobId: number) => {
     return get().loadedJobIds.includes(jobId)
