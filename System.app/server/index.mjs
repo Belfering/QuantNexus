@@ -2153,7 +2153,7 @@ app.post('/api/deploy', async (req, res) => {
     git fetch origin dev && \
     git reset --hard origin/dev && \
     cd System.app && \
-    npm install && \
+    npm install --include=dev && \
     ./node_modules/.bin/tsc -b && \
     ./node_modules/.bin/vite build && \
     pm2 restart quantnexus
