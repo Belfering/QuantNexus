@@ -123,7 +123,7 @@ export function ShardsJobLoader({
     }
   }
 
-  // Handle "Add to Strategy" - directly add job branches to strategy list
+  // Handle "Add to Strategy" - load job then add branches to strategy list
   const handleAddToStrategy = async () => {
     if (!contextMenu.jobId) return
 
@@ -132,27 +132,16 @@ export function ShardsJobLoader({
       setError(null)
       setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
 
-      // Fetch job branches
-      const endpoint = jobType === 'chronological'
-        ? `/api/optimization/jobs/${contextMenu.jobId}`
-        : `/api/optimization/rolling/jobs/${contextMenu.jobId}`
+      // Load the job using the same mechanism as "Add to Filter"
+      await onLoadJob(jobType, contextMenu.jobId)
 
-      const response = await fetch(endpoint)
-      if (!response.ok) {
-        throw new Error('Failed to fetch job')
-      }
-
-      const jobData = await response.json()
-      const branches = jobType === 'chronological'
-        ? jobData.results || []
-        : jobData.branches || []
-
-      // Augment branches with jobId
-      const branchesWithJobId = branches.map((b: any) => ({ ...b, jobId: contextMenu.jobId }))
+      // Get the branches that were just loaded (they're in allBranches)
+      // Filter to just the branches from this job
+      const jobBranches = allBranches.filter((b: any) => b.jobId === contextMenu.jobId)
 
       // Add directly to strategy list
-      onAddBranchesToStrategy(branchesWithJobId)
-      console.log(`[ShardsJobLoader] Added ${branchesWithJobId.length} branches from job ${contextMenu.jobId} to strategy`)
+      onAddBranchesToStrategy(jobBranches)
+      console.log(`[ShardsJobLoader] Added ${jobBranches.length} branches from job ${contextMenu.jobId} to strategy`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add to strategy')
     } finally {
