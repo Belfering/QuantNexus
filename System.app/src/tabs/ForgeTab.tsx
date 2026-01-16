@@ -2713,27 +2713,22 @@ export function ForgeTab({
 
               {/* Card 4: Shard Library */}
               <ShardsLibrary
-                savedShards={shardSavedShards}
-                selectedShardIds={shardSelectedShardIds}
-                loadedShardBranches={shardLoadedShardBranches}
-                isLoadingShards={shardIsLoadingShards}
                 loadedStrategyJobs={shardLoadedStrategyJobs}
                 loadedStrategyJobIds={shardLoadedStrategyJobIds}
+                isLoadingShards={shardIsLoadingShards}
                 shardBotName={shardBotName}
                 shardWeighting={shardWeighting}
                 shardCappedPercent={shardCappedPercent}
-                onFetchShards={shardFetchSavedShards}
-                onDeleteShard={shardDeleteShard}
-                onSelectShard={shardSelectShard}
-                onDeselectShard={shardDeselectShard}
-                onLoadSelectedShards={shardLoadSelectedShards}
                 onSetShardBotName={shardSetShardBotName}
                 onSetShardWeighting={shardSetShardWeighting}
                 onSetShardCappedPercent={shardSetShardCappedPercent}
                 onUnloadStrategyJob={shardUnloadStrategyJob}
                 onGenerateBot={async () => {
                   const tree = shardGenerateBotFromShards()
-                  if (!tree) return
+                  if (!tree) {
+                    console.error('[ForgeTab] No tree generated from strategy shards')
+                    return
+                  }
 
                   // Save to Model tab using similar logic as shardSaveToModel
                   const userId = useAuthStore.getState().userId
@@ -2750,7 +2745,7 @@ export function ForgeTab({
                     payload: tree,
                     visibility: 'private' as const,
                     createdAt: Date.now(),
-                    tags: ['Shard', 'Combined']
+                    tags: ['Shard', 'Strategy']
                   }
 
                   try {
@@ -2776,10 +2771,15 @@ export function ForgeTab({
                       tabContext: 'Model'
                     })
 
-                    console.log('[ForgeTab] Generated shard bot:', botId)
-                    setForgeSubtab('Split')
+                    console.log('[ForgeTab] Generated strategy bot:', botId, 'with', shardStrategyBranches.length, 'branches')
+
+                    // Navigate to Model tab
+                    useUIStore.getState().setTab('Model')
+
+                    // Set this bot as active in Model tab
+                    useBotStore.getState().setActiveModelBotId(botId)
                   } catch (err) {
-                    console.error('[ForgeTab] Failed to save shard bot:', err)
+                    console.error('[ForgeTab] Failed to save strategy bot:', err)
                   }
                 }}
               />

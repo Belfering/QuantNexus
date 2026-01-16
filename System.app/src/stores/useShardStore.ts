@@ -732,9 +732,12 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
     try {
       // Fetch saved shard
+      console.log('[ShardStore] Fetching saved shard:', shardId, 'userId:', userId)
       const res = await fetch(`/api/shards/${shardId}?userId=${userId}`)
       if (!res.ok) {
-        throw new Error('Failed to fetch saved shard')
+        const errorText = await res.text()
+        console.error('[ShardStore] Server error fetching shard:', res.status, errorText)
+        throw new Error(`Failed to fetch saved shard: ${res.status} ${errorText}`)
       }
       const data: { shard: SavedShard } = await res.json()
 
@@ -807,9 +810,12 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
     try {
       // Fetch saved shard
+      console.log('[ShardStore] Fetching saved shard:', shardId, 'userId:', userId)
       const res = await fetch(`/api/shards/${shardId}?userId=${userId}`)
       if (!res.ok) {
-        throw new Error('Failed to fetch saved shard')
+        const errorText = await res.text()
+        console.error('[ShardStore] Server error fetching shard:', res.status, errorText)
+        throw new Error(`Failed to fetch saved shard: ${res.status} ${errorText}`)
       }
       const data: { shard: SavedShard } = await res.json()
 
@@ -1593,15 +1599,15 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
   // Phase 4: Generate bot tree from selected shards with chosen weighting
   generateBotFromShards: () => {
-    const { loadedShardBranches, shardBotName, shardWeighting, shardCappedPercent } = get()
+    const { strategyBranches, shardBotName, shardWeighting, shardCappedPercent } = get()
 
-    if (loadedShardBranches.length === 0) {
-      console.warn('[ShardStore] No branches loaded to generate bot')
+    if (strategyBranches.length === 0) {
+      console.warn('[ShardStore] No strategy branches to generate bot')
       return null
     }
 
-    const botName = shardBotName.trim() || 'Shard Bot'
-    const branchCount = loadedShardBranches.length
+    const botName = shardBotName.trim() || 'Strategy Bot'
+    const branchCount = strategyBranches.length
 
     // Parse weighting mode: 'equal', 'inverse', 'pro', 'capped'
     const weightMode = shardWeighting as 'equal' | 'inverse' | 'pro' | 'capped'
@@ -1617,13 +1623,15 @@ export const useShardStore = create<ShardState>((set, get) => ({
       // For capped weighting, set the fallback to 'Empty' (no remainder allocation)
       ...(weightMode === 'capped' ? { cappedFallback: 'Empty' } : {}),
       children: {
-        next: loadedShardBranches.map((branch, idx) => {
+        next: strategyBranches.map((branch, idx) => {
           // If branch has full tree JSON, use it
           if (branch.treeJson) {
             try {
               const tree = JSON.parse(branch.treeJson)
+              // Unwrap: skip the root "% Forge System" wrapper and take its first child (the actual branch logic)
+              const actualBranch = tree.children?.next?.[0] || tree
               // Ensure unique IDs by prefixing
-              const prefixedTree = prefixNodeIds(tree, `b${idx}-`)
+              const prefixedTree = prefixNodeIds(actualBranch, `b${idx}-`)
               // For capped weighting, set the cap percentage on the child's window property
               // QuantNexus uses child.window to determine cap % per branch
               if (weightMode === 'capped') {
