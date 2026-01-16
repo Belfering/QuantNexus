@@ -5,40 +5,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import type { OptimizationResult } from '@/types/optimizationJob'
 import type { RollingOptimizationResult } from '@/types/bot'
-import type { FlowNode, ConditionLine } from '@/types/flowNode'
-
-// Comparator display mapping
-const COMPARATOR_SYMBOLS: Record<string, string> = {
-  lt: '<',
-  gt: '>',
-  crossAbove: '↗',
-  crossBelow: '↘'
-}
-
-// Short indicator names for compact display
-const SHORT_INDICATOR_NAMES: Record<string, string> = {
-  'Relative Strength Index': 'RSI',
-  'Simple Moving Average': 'SMA',
-  'Exponential Moving Average': 'EMA',
-  'Weighted Moving Average': 'WMA',
-  'Hull Moving Average': 'Hull',
-  'MACD Histogram': 'MACD-H',
-  'MACD Line': 'MACD',
-  'MACD Signal': 'MACD-S',
-  'Bollinger Upper': 'BB-U',
-  'Bollinger Mid': 'BB-M',
-  'Bollinger Lower': 'BB-L',
-  'Average True Range': 'ATR',
-  'Average Directional Index': 'ADX',
-  'Current Price': 'Price',
-  'Stochastic %K': 'Stoch-K',
-  'Stochastic %D': 'Stoch-D',
-}
-
-interface LoadedJobData {
-  metadata: any
-  branches: any[]
-}
+import { extractBranchDisplayInfo, type BranchDisplayInfo } from '@/features/shards/utils/conditionDisplay'
 
 interface ShardsBranchFilterProps {
   loadedJobType: 'chronological' | 'rolling' | null
@@ -53,71 +20,6 @@ interface ShardsBranchFilterProps {
   onFilterModeChange: (mode: 'overall' | 'perPattern') => void
   onFilterTopXPerPatternChange: (count: number) => void
   onApplyFilter: () => void
-}
-
-// Extract meaningful display info from tree
-interface BranchDisplayInfo {
-  conditions: string[]  // e.g., "RSI(14) < 70"
-  positions: string[]   // e.g., "SPY", "QQQ"
-  weighting: string     // e.g., "equal"
-}
-
-function extractBranchDisplayInfo(treeJson: string | undefined): BranchDisplayInfo | null {
-  if (!treeJson) return null
-
-  try {
-    const tree: FlowNode = JSON.parse(treeJson)
-    const info: BranchDisplayInfo = {
-      conditions: [],
-      positions: [],
-      weighting: tree.weighting || 'equal'
-    }
-
-    // Recursively extract info from tree
-    function traverse(node: FlowNode, context?: 'then' | 'else') {
-      if (node.kind === 'indicator' && node.conditions) {
-        for (const cond of node.conditions) {
-          const c = cond as ConditionLine
-          const indicator = SHORT_INDICATOR_NAMES[c.metric] || c.metric
-          const comp = COMPARATOR_SYMBOLS[c.comparator] || c.comparator
-          const ticker = c.ticker || ''
-          const condStr = `${indicator}(${c.window}) ${ticker} ${comp} ${c.threshold}`
-          if (context) {
-            info.conditions.push(`[${context}] ${condStr}`)
-          } else {
-            info.conditions.push(condStr)
-          }
-        }
-      }
-
-      if (node.kind === 'position' && node.positions) {
-        for (const pos of node.positions) {
-          if (pos && pos !== 'Empty' && !info.positions.includes(pos)) {
-            info.positions.push(pos)
-          }
-        }
-      }
-
-      // Traverse children
-      if (node.children) {
-        for (const [slot, children] of Object.entries(node.children)) {
-          if (Array.isArray(children)) {
-            for (const child of children) {
-              if (child) {
-                const childContext = slot === 'then' ? 'then' : slot === 'else' ? 'else' : undefined
-                traverse(child, childContext)
-              }
-            }
-          }
-        }
-      }
-    }
-
-    traverse(tree)
-    return info
-  } catch {
-    return null
-  }
 }
 
 export function ShardsBranchFilter({

@@ -10,6 +10,7 @@ import { buildShardTree } from '@/features/shards/treeBuilder'
 import { createBotInApi } from '@/features/bots/api'
 import { useAuthStore } from './useAuthStore'
 import { useBotStore } from './useBotStore'
+import { extractBranchDisplayInfo, type BranchDisplayInfo } from '@/features/shards/utils/conditionDisplay'
 
 // ============================================================================
 // Tree Signature Utilities (for pattern-based filtering)
@@ -147,100 +148,6 @@ function getTreeSignature(treeJson: string | undefined): string | null {
     return `sig-${hash}`
   } catch (err) {
     console.warn('[ShardStore] Failed to generate tree signature:', err)
-    return null
-  }
-}
-
-// Comparator display mapping
-const COMPARATOR_SYMBOLS: Record<string, string> = {
-  lt: '<',
-  gt: '>',
-  crossAbove: '↗',
-  crossBelow: '↘'
-}
-
-// Display info extracted from tree
-interface BranchDisplayInfo {
-  conditions: string[]  // e.g., "RSI(14) < 70"
-  positions: string[]   // e.g., "SPY", "QQQ"
-  weighting: string     // e.g., "equal"
-}
-
-// Short indicator names for compact display
-const SHORT_INDICATOR_NAMES: Record<string, string> = {
-  'Relative Strength Index': 'RSI',
-  'Simple Moving Average': 'SMA',
-  'Exponential Moving Average': 'EMA',
-  'Weighted Moving Average': 'WMA',
-  'Hull Moving Average': 'Hull',
-  'MACD Histogram': 'MACD-H',
-  'MACD Line': 'MACD',
-  'MACD Signal': 'MACD-S',
-  'Bollinger Upper': 'BB-U',
-  'Bollinger Mid': 'BB-M',
-  'Bollinger Lower': 'BB-L',
-  'Average True Range': 'ATR',
-  'Average Directional Index': 'ADX',
-  'Current Price': 'Price',
-  'Stochastic %K': 'Stoch-K',
-  'Stochastic %D': 'Stoch-D',
-}
-
-// Extract meaningful display info from tree
-function extractBranchDisplayInfo(treeJson: string | undefined): BranchDisplayInfo | null {
-  if (!treeJson) return null
-
-  try {
-    const tree: FlowNode = JSON.parse(treeJson)
-    const info: BranchDisplayInfo = {
-      conditions: [],
-      positions: [],
-      weighting: tree.weighting || 'equal'
-    }
-
-    // Recursively extract info from tree
-    function traverse(node: FlowNode, context?: 'then' | 'else') {
-      if (node.kind === 'indicator' && node.conditions) {
-        for (const cond of node.conditions) {
-          const c = cond as any
-          const indicator = SHORT_INDICATOR_NAMES[c.metric] || c.metric
-          const comp = COMPARATOR_SYMBOLS[c.comparator] || c.comparator
-          const ticker = c.ticker || ''
-          const condStr = `${indicator}(${c.window}) ${ticker} ${comp} ${c.threshold}`
-          if (context) {
-            info.conditions.push(`[${context}] ${condStr}`)
-          } else {
-            info.conditions.push(condStr)
-          }
-        }
-      }
-
-      if (node.kind === 'position' && node.positions) {
-        for (const pos of node.positions) {
-          if (pos && pos !== 'Empty' && !info.positions.includes(pos)) {
-            info.positions.push(pos)
-          }
-        }
-      }
-
-      // Traverse children
-      if (node.children) {
-        for (const [slot, children] of Object.entries(node.children)) {
-          if (Array.isArray(children)) {
-            for (const child of children) {
-              if (child) {
-                const childContext = slot === 'then' ? 'then' : slot === 'else' ? 'else' : undefined
-                traverse(child, childContext)
-              }
-            }
-          }
-        }
-      }
-    }
-
-    traverse(tree)
-    return info
-  } catch {
     return null
   }
 }
