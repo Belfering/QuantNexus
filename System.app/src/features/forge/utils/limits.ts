@@ -12,7 +12,7 @@ import { countNodesInTree } from '@/features/backtest/utils/compression'
 export const LIMITS = {
   FORGE_MAX_NODES: 6,           // Max indicator/function/basic nodes in Forge tab
   MAX_BRANCHES: 100_000_000,    // Max branches per optimization job (100 million)
-  STRATEGY_MAX_NODES: 5000      // Max total nodes in strategy
+  STRATEGY_MAX_NODES: 4000      // Max total nodes in strategy
 } as const
 
 /**

@@ -24,6 +24,11 @@ interface ShardsLibraryProps {
   shardWeighting: string  // 'equal' | 'inverse' | 'pro' | 'capped'
   shardCappedPercent: number  // For capped weighting: 0-100
 
+  // Validation
+  strategyNodeCount: number
+  strategyNodeLimitExceeded: boolean
+  strategyNodeErrorMessage?: string
+
   // Actions
   onSetShardBotName: (name: string) => void
   onSetShardWeighting: (weighting: string) => void
@@ -39,6 +44,9 @@ export function ShardsLibrary({
   shardBotName,
   shardWeighting,
   shardCappedPercent,
+  strategyNodeCount,
+  strategyNodeLimitExceeded,
+  strategyNodeErrorMessage,
   onSetShardBotName,
   onSetShardWeighting,
   onSetShardCappedPercent,
@@ -62,7 +70,7 @@ export function ShardsLibrary({
       <div className="mb-4">
         <div className="text-base font-semibold mb-2">Create Strategy</div>
         <div className="text-sm text-muted-foreground mb-2">
-          Loaded: {loadedStrategyJobIds.length} shard{loadedStrategyJobIds.length !== 1 ? 's' : ''} ({totalStrategyBranches} branches)
+          Loaded: {loadedStrategyJobIds.length} shard{loadedStrategyJobIds.length !== 1 ? 's' : ''} ({totalStrategyBranches} branches{strategyNodeCount > 0 ? `, ${strategyNodeCount.toLocaleString()} nodes` : ''})
         </div>
 
         <div className="space-y-2">
@@ -76,7 +84,7 @@ export function ShardsLibrary({
             <Button
               onClick={onGenerateBot}
               className="h-8 px-3 text-sm whitespace-nowrap"
-              disabled={totalStrategyBranches === 0 || isLoadingShards}
+              disabled={totalStrategyBranches === 0 || isLoadingShards || strategyNodeLimitExceeded}
             >
               {isLoadingShards ? (
                 <>
@@ -88,6 +96,12 @@ export function ShardsLibrary({
               )}
             </Button>
           </div>
+
+          {strategyNodeLimitExceeded && strategyNodeErrorMessage && (
+            <div className="text-xs text-red-500 p-2 bg-red-500/10 border border-red-500/30 rounded">
+              {strategyNodeErrorMessage}
+            </div>
+          )}
 
           <select
             className="w-full px-2 py-1 rounded border border-border bg-background text-sm h-8"

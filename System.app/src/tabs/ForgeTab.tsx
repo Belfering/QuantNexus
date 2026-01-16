@@ -85,7 +85,7 @@ import { useTreeSync, useTreeUndo, useTickerLists } from '@/hooks'
 import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest'
 import { applyBranchToTree } from '@/features/optimization/services/branchGenerator'
 import type { EligibilityRequirement } from '@/types/admin'
-import { countForgeNodes, LIMITS, validateBranchCount } from '@/features/forge/utils/limits'
+import { countForgeNodes, LIMITS, validateBranchCount, validateStrategyComposition } from '@/features/forge/utils/limits'
 
 // Development mode flag - controls visibility of experimental features
 const IS_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
@@ -230,6 +230,14 @@ export function ForgeTab({
   const shardSetShardWeighting = useShardStore(s => s.setShardWeighting)
   const shardSetShardCappedPercent = useShardStore(s => s.setShardCappedPercent)
   const shardGenerateBotFromShards = useShardStore(s => s.generateBotFromShards)
+
+  // Calculate node count for strategy validation
+  const strategyNodeValidation = useMemo(() => {
+    if (shardStrategyBranches.length === 0) {
+      return { valid: true, nodeCount: 0 }
+    }
+    return validateStrategyComposition(shardStrategyBranches)
+  }, [shardStrategyBranches])
 
   // Manage separate trees for Split and Walk Forward tabs
   const prevSubtabRef = useRef<string | null>(null)
@@ -2750,7 +2758,17 @@ export function ForgeTab({
                 onSetShardWeighting={shardSetShardWeighting}
                 onSetShardCappedPercent={shardSetShardCappedPercent}
                 onUnloadStrategyJob={shardUnloadStrategyJob}
+                strategyNodeCount={strategyNodeValidation.nodeCount}
+                strategyNodeLimitExceeded={!strategyNodeValidation.valid}
+                strategyNodeErrorMessage={strategyNodeValidation.errorMessage}
                 onGenerateBot={async () => {
+                  // Validate node count BEFORE generating tree
+                  if (!strategyNodeValidation.valid) {
+                    console.error('[ForgeTab] Strategy exceeds node limit:', strategyNodeValidation)
+                    // Error already shown in UI via ShardsLibrary props
+                    return
+                  }
+
                   const tree = shardGenerateBotFromShards()
                   if (!tree) {
                     console.error('[ForgeTab] No tree generated from strategy shards')
