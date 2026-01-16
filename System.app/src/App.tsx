@@ -88,6 +88,9 @@ import { useTreeSync, useBacktestRunner, useAnalyzeRunner, useDashboardHandlers,
 
 // Normalization functions imported from @/features/backtest
 
+// Development mode flag - controls visibility of experimental features
+const IS_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
+
 const loadDeviceThemeMode = (): ThemeMode => {
   try {
     return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light'
@@ -1171,13 +1174,15 @@ function App() {
               >
                 Split
               </Button>
-              <Button
-                onClick={() => useUIStore.getState().setForgeSubtab('Walk Forward')}
-                variant={forgeSubtab === 'Walk Forward' ? 'accent' : 'secondary'}
-                className="flex-1 rounded-none border-r border-border h-10"
-              >
-                Walk Forward
-              </Button>
+              {IS_DEV_MODE && (
+                <Button
+                  onClick={() => useUIStore.getState().setForgeSubtab('Walk Forward')}
+                  variant={forgeSubtab === 'Walk Forward' ? 'accent' : 'secondary'}
+                  className="flex-1 rounded-none border-r border-border h-10"
+                >
+                  Walk Forward
+                </Button>
+              )}
               <Button
                 onClick={() => useUIStore.getState().setForgeSubtab('Ticker Lists')}
                 variant={forgeSubtab === 'Ticker Lists' ? 'accent' : 'secondary'}

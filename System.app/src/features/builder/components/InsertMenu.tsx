@@ -5,6 +5,9 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { BlockKind, SlotId, FlowNode } from '../../../types'
 
+// Development mode flag - controls visibility of experimental features
+const IS_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
+
 export interface InsertMenuProps {
   parentId: string
   parentSlot: SlotId
@@ -134,7 +137,9 @@ export const InsertMenu = ({
           )}
           <button onClick={() => handleAdd('altExit')}>Enter/Exit</button>
           <button onClick={() => handleAdd('scaling')}>Mixed</button>
-          <button onClick={() => handleAdd('rolling')}>Rolling</button>
+          {IS_DEV_MODE && (
+            <button onClick={() => handleAdd('rolling')}>Rolling</button>
+          )}
           {clipboard && <button onClick={handlePaste}>Paste</button>}
         </div>,
         document.body
