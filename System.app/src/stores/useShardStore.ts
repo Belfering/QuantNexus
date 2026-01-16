@@ -328,12 +328,14 @@ interface ShardState {
   // Actions - Phase 1
   loadChronologicalJob: (jobId: number) => Promise<void>
   loadRollingJob: (jobId: number) => Promise<void>
+  loadSavedShard: (shardId: string) => Promise<void>
   unloadJob: (jobId: number) => void
   clearAllJobs: () => void
   isJobLoaded: (jobId: number) => boolean
 
   // Actions - Phase 1b: Strategy Job Loading
   loadJobAndAddToStrategy: (type: 'chronological' | 'rolling', jobId: number) => Promise<void>
+  loadSavedShardAndAddToStrategy: (shardId: string) => Promise<void>
   unloadStrategyJob: (jobId: number) => void
   isStrategyJobLoaded: (jobId: number) => boolean
 
@@ -699,6 +701,156 @@ export const useShardStore = create<ShardState>((set, get) => ({
       console.log(`[ShardStore] Loaded strategy jobs: ${updatedStrategyJobIds.length}`)
     } catch (err) {
       console.error('[ShardStore] Failed to load job and add to strategy:', err)
+      throw err
+    }
+  },
+
+  // Phase 1: Load saved shard for filtering (shows in Card 2)
+  loadSavedShard: async (shardId: string) => {
+    const { loadedJobType, loadedJobIds, loadedJobs } = get()
+    const userId = useAuthStore.getState().userId
+
+    if (!userId) {
+      throw new Error('Not logged in')
+    }
+
+    // Extract numeric ID from shard ID format (e.g., "shard-123" -> 123)
+    const numericId = parseInt(shardId.split('-')[1] || shardId, 10)
+
+    // Skip if already loaded
+    if (loadedJobIds.includes(numericId)) {
+      console.log('[ShardStore] Saved shard already loaded:', shardId)
+      return
+    }
+
+    // Check type consistency
+    if (loadedJobType !== null && loadedJobType !== 'chronological') {
+      throw new Error('Cannot mix shard types. Clear loaded shards first.')
+    }
+
+    try {
+      // Fetch saved shard
+      const res = await fetch(`/api/shards/${shardId}?userId=${userId}`)
+      if (!res.ok) {
+        throw new Error('Failed to fetch saved shard')
+      }
+      const data: { shard: SavedShard } = await res.json()
+
+      const branches = data.shard.branches || []
+
+      // Tag branches with jobId
+      const taggedBranches = branches.map(b => ({ ...b, jobId: numericId }))
+
+      // Add to loaded jobs
+      const newLoadedJobs = {
+        ...loadedJobs,
+        [numericId]: {
+          metadata: {
+            id: numericId,
+            botName: data.shard.name,
+            createdAt: data.shard.createdAt
+          },
+          branches: taggedBranches
+        }
+      }
+
+      const newLoadedJobIds = [...loadedJobIds, numericId]
+
+      // Combine all branches
+      const combined: any[] = []
+      for (const id of newLoadedJobIds) {
+        const jobData = newLoadedJobs[id]
+        if (jobData) {
+          combined.push(...(jobData.branches as typeof combined))
+        }
+      }
+
+      set({
+        loadedJobType: 'chronological',
+        loadedJobIds: newLoadedJobIds,
+        loadedJobs: newLoadedJobs as Record<number, LoadedJobData>,
+        allBranches: combined,
+        combinedTree: null
+      })
+
+      console.log(`[ShardStore] Loaded saved shard ${shardId} (${taggedBranches.length} branches)`)
+    } catch (err) {
+      console.error('[ShardStore] Failed to load saved shard:', err)
+      throw err
+    }
+  },
+
+  // Phase 1b: Load saved shard and add to strategy (shows in Card 4)
+  loadSavedShardAndAddToStrategy: async (shardId: string) => {
+    const { loadedStrategyJobIds, loadedStrategyJobs, strategyBranches } = get()
+    const userId = useAuthStore.getState().userId
+
+    if (!userId) {
+      throw new Error('Not logged in')
+    }
+
+    // Extract numeric ID from shard ID format
+    const numericId = parseInt(shardId.split('-')[1] || shardId, 10)
+
+    // Skip if already loaded as strategy job
+    if (loadedStrategyJobIds.includes(numericId)) {
+      console.log('[ShardStore] Saved shard already loaded as strategy:', shardId)
+      return
+    }
+
+    // Helper to get branch key
+    const getBranchKey = (branch: any): string => {
+      return `${branch.jobId}-${branch.branchId}`
+    }
+
+    try {
+      // Fetch saved shard
+      const res = await fetch(`/api/shards/${shardId}?userId=${userId}`)
+      if (!res.ok) {
+        throw new Error('Failed to fetch saved shard')
+      }
+      const data: { shard: SavedShard } = await res.json()
+
+      const branches = data.shard.branches || []
+
+      // Tag branches with jobId
+      const taggedBranches = branches.map(b => ({ ...b, jobId: numericId }))
+
+      // Add to loaded strategy jobs
+      const updatedStrategyJobs = {
+        ...loadedStrategyJobs,
+        [numericId]: {
+          metadata: {
+            id: numericId,
+            botName: data.shard.name,
+            createdAt: data.shard.createdAt
+          },
+          branches: taggedBranches
+        }
+      }
+
+      const updatedStrategyJobIds = [...loadedStrategyJobIds, numericId]
+
+      // Deep copy branches to avoid reference sharing
+      const copiedBranches = taggedBranches.map(b => JSON.parse(JSON.stringify(b)))
+
+      // Filter out duplicates from strategy branches
+      const existingKeys = new Set(strategyBranches.map(b => getBranchKey(b)))
+      const newBranches = copiedBranches.filter(b => !existingKeys.has(getBranchKey(b)))
+
+      // Append to strategy branches
+      const updatedStrategy = [...strategyBranches, ...newBranches] as typeof strategyBranches
+
+      set({
+        loadedStrategyJobs: updatedStrategyJobs,
+        loadedStrategyJobIds: updatedStrategyJobIds,
+        strategyBranches: updatedStrategy
+      })
+
+      console.log(`[ShardStore] Added saved shard ${shardId} to strategy (${newBranches.length} new branches, total: ${updatedStrategy.length})`)
+      console.log(`[ShardStore] Loaded strategy jobs: ${updatedStrategyJobIds.length}`)
+    } catch (err) {
+      console.error('[ShardStore] Failed to load saved shard and add to strategy:', err)
       throw err
     }
   },

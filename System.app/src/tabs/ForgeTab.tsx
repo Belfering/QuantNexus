@@ -170,6 +170,7 @@ export function ForgeTab({
   const shardCombinedTree = useShardStore(s => s.combinedTree)
   const shardLoadChronologicalJob = useShardStore(s => s.loadChronologicalJob)
   const shardLoadRollingJob = useShardStore(s => s.loadRollingJob)
+  const shardLoadSavedShard = useShardStore(s => s.loadSavedShard)
   const shardUnloadJob = useShardStore(s => s.unloadJob)
   const shardClearAllJobs = useShardStore(s => s.clearAllJobs)
   const shardIsJobLoaded = useShardStore(s => s.isJobLoaded)
@@ -193,6 +194,7 @@ export function ForgeTab({
   const shardStrategyBranches = useShardStore(s => s.strategyBranches)
   const shardActiveListView = useShardStore(s => s.activeListView)
   const shardLoadJobAndAddToStrategy = useShardStore(s => s.loadJobAndAddToStrategy)
+  const shardLoadSavedShardAndAddToStrategy = useShardStore(s => s.loadSavedShardAndAddToStrategy)
   const shardAddBranchesToStrategy = useShardStore(s => s.addBranchesToStrategy)
   const shardRemoveBranchFromStrategy = useShardStore(s => s.removeBranchFromStrategy)
   const shardClearStrategyBranches = useShardStore(s => s.clearStrategyBranches)
@@ -2653,10 +2655,12 @@ export function ForgeTab({
                     await shardLoadRollingJob(jobId)
                   }
                 }}
+                onLoadSavedShard={shardLoadSavedShard}
                 onUnloadJob={shardUnloadJob}
                 onClearAllJobs={shardClearAllJobs}
                 isJobLoaded={shardIsJobLoaded}
                 onLoadJobAndAddToStrategy={shardLoadJobAndAddToStrategy}
+                onLoadSavedShardAndAddToStrategy={shardLoadSavedShardAndAddToStrategy}
               />
 
               {/* Card 2: Filter Settings */}

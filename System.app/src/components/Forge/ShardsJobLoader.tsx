@@ -12,10 +12,12 @@ interface ShardsJobLoaderProps {
   loadedJobIds: number[]
   allBranches: any[]
   onLoadJob: (type: 'chronological' | 'rolling', jobId: number) => Promise<void>
+  onLoadSavedShard: (shardId: string) => Promise<void>
   onUnloadJob: (jobId: number) => void
   onClearAllJobs: () => void
   isJobLoaded: (jobId: number) => boolean
   onLoadJobAndAddToStrategy: (type: 'chronological' | 'rolling', jobId: number) => Promise<void>
+  onLoadSavedShardAndAddToStrategy: (shardId: string) => Promise<void>
 }
 
 export function ShardsJobLoader({
@@ -23,19 +25,22 @@ export function ShardsJobLoader({
   loadedJobIds,
   allBranches,
   onLoadJob,
+  onLoadSavedShard,
   onUnloadJob,
   onClearAllJobs,
   isJobLoaded,
-  onLoadJobAndAddToStrategy
+  onLoadJobAndAddToStrategy,
+  onLoadSavedShardAndAddToStrategy
 }: ShardsJobLoaderProps) {
-  const [jobType, setJobType] = useState<'chronological' | 'rolling'>('chronological')
+  const [jobType, setJobType] = useState<'chronological' | 'rolling' | 'saved'>('chronological')
   const [chronologicalJobs, setChronologicalJobs] = useState<OptimizationJob[]>([])
   const [rollingJobs, setRollingJobs] = useState<RollingJob[]>([])
+  const [savedShards, setSavedShards] = useState<any[]>([]) // Saved shards from API
   const [loadingJobId, setLoadingJobId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [renamingJobId, setRenamingJobId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState<string>('')
-  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; jobId: number | null }>({
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; jobId: number | string | null }>({
     visible: false,
     x: 0,
     y: 0,
@@ -62,6 +67,25 @@ export function ShardsJobLoader({
           const rollingData: RollingJob[] = await rollingRes.json()
           setRollingJobs(rollingData)
         }
+
+        // Fetch saved shards (need userId from localStorage)
+        const authData = localStorage.getItem('auth-storage')
+        if (authData) {
+          try {
+            const parsed = JSON.parse(authData)
+            const userId = parsed?.state?.userId
+            if (userId) {
+              const shardsRes = await fetch(`/api/shards?userId=${userId}`)
+              if (shardsRes.ok) {
+                const shardsData = await shardsRes.json()
+                setSavedShards(shardsData.shards || [])
+                console.log('[ShardsJobLoader] Loaded saved shards:', shardsData.shards?.length || 0)
+              }
+            }
+          } catch (parseErr) {
+            console.warn('[ShardsJobLoader] Could not get userId from localStorage')
+          }
+        }
       } catch (err) {
         console.error('[ShardsJobLoader] Failed to fetch jobs:', err)
         setError(err instanceof Error ? err.message : 'Failed to fetch jobs')
@@ -72,12 +96,15 @@ export function ShardsJobLoader({
   }, [])
 
   // Handle clicking a job card to show context menu or unload
-  const handleJobClick = (e: React.MouseEvent, jobId: number) => {
+  const handleJobClick = (e: React.MouseEvent, jobId: number | string) => {
     e.stopPropagation() // Prevent immediate close from click-outside handler
 
+    // For saved shards, convert string ID to number for checking
+    const numericId = typeof jobId === 'string' ? parseInt(jobId.split('-')[1] || jobId, 10) : jobId
+
     // If already loaded, unload it
-    if (isJobLoaded(jobId)) {
-      onUnloadJob(jobId)
+    if (isJobLoaded(numericId)) {
+      onUnloadJob(numericId)
       setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
       return
     }
@@ -91,7 +118,7 @@ export function ShardsJobLoader({
     // Mark that we're opening the context menu (prevent immediate close)
     isOpeningContextMenu.current = true
 
-    // Show context menu at cursor position
+    // Show context menu at cursor position (keep original jobId format)
     console.log('[ShardsJobLoader] Opening context menu at', e.clientX, e.clientY, 'for job', jobId)
     setContextMenu({
       visible: true,
@@ -112,10 +139,20 @@ export function ShardsJobLoader({
     if (!contextMenu.jobId) return
 
     try {
-      setLoadingJobId(contextMenu.jobId)
+      const numericId = typeof contextMenu.jobId === 'string'
+        ? parseInt(contextMenu.jobId.split('-')[1] || contextMenu.jobId, 10)
+        : contextMenu.jobId
+
+      setLoadingJobId(numericId)
       setError(null)
       setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
-      await onLoadJob(jobType, contextMenu.jobId)
+
+      // Call appropriate method based on job type
+      if (jobType === 'saved' && typeof contextMenu.jobId === 'string') {
+        await onLoadSavedShard(contextMenu.jobId)
+      } else if (typeof contextMenu.jobId === 'number') {
+        await onLoadJob(jobType as 'chronological' | 'rolling', contextMenu.jobId)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load job')
     } finally {
@@ -128,12 +165,20 @@ export function ShardsJobLoader({
     if (!contextMenu.jobId) return
 
     try {
-      setLoadingJobId(contextMenu.jobId)
+      const numericId = typeof contextMenu.jobId === 'string'
+        ? parseInt(contextMenu.jobId.split('-')[1] || contextMenu.jobId, 10)
+        : contextMenu.jobId
+
+      setLoadingJobId(numericId)
       setError(null)
       setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
 
-      // Use the atomic action that loads and adds to strategy in one operation
-      await onLoadJobAndAddToStrategy(jobType, contextMenu.jobId)
+      // Call appropriate method based on job type
+      if (jobType === 'saved' && typeof contextMenu.jobId === 'string') {
+        await onLoadSavedShardAndAddToStrategy(contextMenu.jobId)
+      } else if (typeof contextMenu.jobId === 'number') {
+        await onLoadJobAndAddToStrategy(jobType as 'chronological' | 'rolling', contextMenu.jobId)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add to strategy')
     } finally {
@@ -167,49 +212,69 @@ export function ShardsJobLoader({
   }, [contextMenu.visible])
 
   // Handle delete job
-  const handleDeleteJob = async (e: React.MouseEvent, jobId: number) => {
+  const handleDeleteJob = async (e: React.MouseEvent, jobId: number | string) => {
     e.stopPropagation()
 
-    if (!confirm('Permanently delete this optimization shard? This cannot be undone.')) {
+    const confirmMsg = jobType === 'saved'
+      ? 'Permanently delete this saved shard? This cannot be undone.'
+      : 'Permanently delete this optimization shard? This cannot be undone.'
+
+    if (!confirm(confirmMsg)) {
       return
     }
 
     try {
-      const endpoint = jobType === 'chronological'
-        ? `/api/optimization/jobs/${jobId}`
-        : `/api/optimization/rolling/jobs/${jobId}`
+      let endpoint: string
+      const userId = JSON.parse(localStorage.getItem('auth-storage') || '{}')?.state?.userId
+
+      if (jobType === 'saved' && typeof jobId === 'string') {
+        endpoint = `/api/shards/${jobId}?ownerId=${userId}`
+      } else if (jobType === 'chronological') {
+        endpoint = `/api/optimization/jobs/${jobId}`
+      } else {
+        endpoint = `/api/optimization/rolling/jobs/${jobId}`
+      }
 
       const response = await fetch(endpoint, { method: 'DELETE' })
 
       if (!response.ok) {
-        throw new Error('Failed to delete job')
+        throw new Error('Failed to delete shard')
       }
 
       // Remove from state
-      if (jobType === 'chronological') {
+      if (jobType === 'saved' && typeof jobId === 'string') {
+        setSavedShards(prev => prev.filter(s => s.id !== jobId))
+      } else if (jobType === 'chronological') {
         setChronologicalJobs(prev => prev.filter(j => j.id !== jobId))
       } else {
         setRollingJobs(prev => prev.filter(j => j.id !== jobId))
       }
 
       // Unload if currently loaded
-      if (isJobLoaded(jobId)) {
-        onUnloadJob(jobId)
+      const numericId = typeof jobId === 'string'
+        ? parseInt(jobId.split('-')[1] || jobId, 10)
+        : jobId
+
+      if (isJobLoaded(numericId)) {
+        onUnloadJob(numericId)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete job')
+      setError(err instanceof Error ? err.message : 'Failed to delete shard')
     }
   }
 
   // Handle rename job - start renaming
-  const handleStartRename = (e: React.MouseEvent, jobId: number, currentName: string) => {
+  const handleStartRename = (e: React.MouseEvent, jobId: number | string, currentName: string) => {
     e.stopPropagation()
-    setRenamingJobId(jobId)
+    const numericId = typeof jobId === 'string'
+      ? parseInt(jobId.split('-')[1] || jobId, 10)
+      : jobId
+    setRenamingJobId(numericId)
     setRenameValue(currentName)
   }
 
   // Handle rename job - confirm
-  const handleConfirmRename = async (e: React.MouseEvent, jobId: number) => {
+  const handleConfirmRename = async (e: React.MouseEvent, jobId: number | string) => {
     e.stopPropagation()
 
     if (!renameValue.trim()) {
@@ -218,35 +283,60 @@ export function ShardsJobLoader({
     }
 
     try {
-      const endpoint = jobType === 'chronological'
-        ? `/api/optimization/jobs/${jobId}`
-        : `/api/optimization/rolling/jobs/${jobId}`
+      let endpoint: string
+      const userId = JSON.parse(localStorage.getItem('auth-storage') || '{}')?.state?.userId
 
-      const response = await fetch(endpoint, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botName: renameValue.trim() })
-      })
+      if (jobType === 'saved' && typeof jobId === 'string') {
+        endpoint = `/api/shards/${jobId}`
+        // For saved shards, we use different body format
+        const response = await fetch(endpoint, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ownerId: userId,
+            name: renameValue.trim()
+          })
+        })
 
-      if (!response.ok) {
-        throw new Error('Failed to rename job')
-      }
+        if (!response.ok) {
+          throw new Error('Failed to rename shard')
+        }
 
-      // Update in state
-      if (jobType === 'chronological') {
-        setChronologicalJobs(prev => prev.map(j =>
-          j.id === jobId ? { ...j, botName: renameValue.trim() } : j
+        // Update in state
+        setSavedShards(prev => prev.map(s =>
+          s.id === jobId ? { ...s, name: renameValue.trim() } : s
         ))
       } else {
-        setRollingJobs(prev => prev.map(j =>
-          j.id === jobId ? { ...j, botName: renameValue.trim() } : j
-        ))
+        endpoint = jobType === 'chronological'
+          ? `/api/optimization/jobs/${jobId}`
+          : `/api/optimization/rolling/jobs/${jobId}`
+
+        const response = await fetch(endpoint, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ botName: renameValue.trim() })
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to rename job')
+        }
+
+        // Update in state
+        if (jobType === 'chronological') {
+          setChronologicalJobs(prev => prev.map(j =>
+            j.id === jobId ? { ...j, botName: renameValue.trim() } : j
+          ))
+        } else {
+          setRollingJobs(prev => prev.map(j =>
+            j.id === jobId ? { ...j, botName: renameValue.trim() } : j
+          ))
+        }
       }
 
       setRenamingJobId(null)
       setRenameValue('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename job')
+      setError(err instanceof Error ? err.message : 'Failed to rename shard')
     }
   }
 
@@ -258,7 +348,7 @@ export function ShardsJobLoader({
   }
 
   // Handle job type change
-  const handleJobTypeChange = (newType: 'chronological' | 'rolling') => {
+  const handleJobTypeChange = (newType: 'chronological' | 'rolling' | 'saved') => {
     if (loadedJobIds.length > 0 && loadedJobType !== newType) {
       // Clear jobs when switching types
       onClearAllJobs()
@@ -267,7 +357,7 @@ export function ShardsJobLoader({
     setError(null)
   }
 
-  const currentJobs = jobType === 'chronological' ? chronologicalJobs : rollingJobs
+  const currentJobs = jobType === 'chronological' ? chronologicalJobs : jobType === 'rolling' ? rollingJobs : savedShards
   const loadedCount = loadedJobIds.length
   const totalBranches = allBranches.length
 
@@ -280,11 +370,12 @@ export function ShardsJobLoader({
         <label className="text-xs text-muted-foreground block mb-1">Shard Type</label>
         <select
           value={jobType}
-          onChange={(e) => handleJobTypeChange(e.target.value as 'chronological' | 'rolling')}
+          onChange={(e) => handleJobTypeChange(e.target.value as 'chronological' | 'rolling' | 'saved')}
           className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
         >
           <option value="chronological">Chronological (Split)</option>
           <option value="rolling">Rolling (Walk Forward)</option>
+          <option value="saved">Saved Shards</option>
         </select>
       </div>
 
@@ -327,13 +418,22 @@ export function ShardsJobLoader({
         <div className="space-y-2">
           {currentJobs.length === 0 ? (
             <div className="text-sm text-muted-foreground text-center py-4">
-              No {jobType === 'chronological' ? 'Split' : 'Walk Forward'} shards found
+              No {jobType === 'chronological' ? 'Split' : jobType === 'rolling' ? 'Walk Forward' : 'Saved'} shards found
             </div>
           ) : (
             currentJobs.map(job => {
-              const loaded = isJobLoaded(job.id)
-              const isLoading = loadingJobId === job.id
-              const isRenaming = renamingJobId === job.id
+              // For saved shards, keep string ID; for optimization jobs, use numeric ID
+              const originalId = job.id // Keep original ID format for handlers
+              const numericId = jobType === 'saved'
+                ? parseInt(job.id.split('-')[1] || job.id, 10)
+                : job.id
+
+              const loaded = isJobLoaded(numericId)
+              const isLoading = loadingJobId === numericId
+              const isRenaming = renamingJobId === numericId
+
+              // Get the display name (saved shards use 'name', optimization jobs use 'botName')
+              const displayName = jobType === 'saved' ? (job as any).name : job.botName
 
               return (
                 <div
@@ -343,7 +443,7 @@ export function ShardsJobLoader({
                       ? 'border-green-500/50 bg-green-500/10 cursor-pointer'
                       : 'border-border bg-background hover:border-accent/50 cursor-pointer'
                   } ${isLoading ? 'opacity-50' : ''}`}
-                  onClick={(e) => !isLoading && !isRenaming && handleJobClick(e, job.id)}
+                  onClick={(e) => !isLoading && !isRenaming && handleJobClick(e, originalId)}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -358,14 +458,14 @@ export function ShardsJobLoader({
                             autoFocus
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                handleConfirmRename(e as any, job.id)
+                                handleConfirmRename(e as any, originalId)
                               } else if (e.key === 'Escape') {
                                 handleCancelRename(e as any)
                               }
                             }}
                           />
                           <button
-                            onClick={(e) => handleConfirmRename(e, job.id)}
+                            onClick={(e) => handleConfirmRename(e, originalId)}
                             className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
                           >
                             ✓
@@ -383,7 +483,7 @@ export function ShardsJobLoader({
                             {loaded && (
                               <Check className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
                             )}
-                            <span className="font-semibold truncate">{job.botName}</span>
+                            <span className="font-semibold truncate">{displayName}</span>
                           </div>
                           <div className="text-muted-foreground text-sm mt-1">
                             {new Date(job.createdAt).toLocaleString()}
@@ -397,14 +497,14 @@ export function ShardsJobLoader({
                     {!isRenaming && (
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button
-                          onClick={(e) => handleStartRename(e, job.id, job.botName)}
+                          onClick={(e) => handleStartRename(e, originalId, displayName)}
                           className="p-1.5 rounded hover:bg-blue-500/20 text-blue-600 hover:text-blue-700 transition-colors"
                           title="Rename shard"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={(e) => handleDeleteJob(e, job.id)}
+                          onClick={(e) => handleDeleteJob(e, originalId)}
                           className="p-1.5 rounded hover:bg-red-500/20 text-red-500 hover:text-red-700 transition-colors"
                           title="Delete shard permanently"
                         >
