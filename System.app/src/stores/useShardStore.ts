@@ -614,7 +614,14 @@ export const useShardStore = create<ShardState>((set, get) => ({
           throw new Error('Failed to fetch chronological job results')
         }
         const data = await res.json()
-        branches = data.branches
+
+        // Handle both response formats: {branches: [...]} or just [...]
+        branches = data.branches || data
+
+        if (!Array.isArray(branches)) {
+          console.error('[ShardStore] Unexpected response format:', data)
+          throw new Error('Invalid response format - expected array of branches')
+        }
 
         // Get metadata
         const metaRes = await fetch(`/api/optimization/jobs`)
@@ -636,8 +643,15 @@ export const useShardStore = create<ShardState>((set, get) => ({
         if (!res.ok) {
           throw new Error('Failed to fetch rolling job results')
         }
-        const data: RollingOptimizationResult = await res.json()
-        branches = data.branches
+        const data: any = await res.json()
+
+        // Handle both response formats: {branches: [...]} or just [...]
+        branches = data.branches || data
+
+        if (!Array.isArray(branches)) {
+          console.error('[ShardStore] Unexpected rolling response format:', data)
+          throw new Error('Invalid response format - expected array of branches')
+        }
 
         // Get metadata
         const metaRes = await fetch(`/api/optimization/rolling/jobs`)
