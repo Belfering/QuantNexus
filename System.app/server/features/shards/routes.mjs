@@ -85,19 +85,32 @@ const createShardSchema = {
 router.post('/', validate(createShardSchema), asyncHandler(async (req, res) => {
   const { ownerId, name, description, sourceJobIds, loadedJobType, branches, filterSummary } = req.body
 
-  const id = await database.createShard({
-    ownerId,
-    name,
-    description,
-    sourceJobIds,
-    loadedJobType,
-    branches,
-    branchCount: branches.length,
-    filterSummary,
-  })
+  try {
+    const id = await database.createShard({
+      ownerId,
+      name,
+      description,
+      sourceJobIds,
+      loadedJobType,
+      branches,
+      branchCount: branches.length,
+      filterSummary,
+    })
 
-  logger.info('Shard created', { id, ownerId, name, branchCount: branches.length })
-  res.json({ id })
+    logger.info('Shard created', { id, ownerId, name, branchCount: branches.length })
+    res.json({ id })
+  } catch (err) {
+    // Handle foreign key constraint errors (user doesn't exist)
+    if (err.message && err.message.includes('FOREIGN KEY constraint failed')) {
+      logger.error('Foreign key constraint failed when creating shard', { ownerId, name })
+      return res.status(400).json({
+        error: 'User account not found. Please log in again.',
+        code: 'USER_NOT_FOUND'
+      })
+    }
+    // Re-throw other errors to be handled by global error handler
+    throw err
+  }
 }))
 
 const updateShardSchema = {

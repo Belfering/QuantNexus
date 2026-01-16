@@ -1256,8 +1256,10 @@ export const useShardStore = create<ShardState>((set, get) => ({
     const { filteredBranches, loadedJobIds, loadedJobType, filterGroups, filterMetric, filterTopX } = get()
     const userId = useAuthStore.getState().userId
 
+    console.log('[ShardStore] Attempting to save shard with userId:', userId)
+
     if (!userId) {
-      throw new Error('Not logged in')
+      throw new Error('Not logged in - please log in to save shards')
     }
 
     if (filteredBranches.length === 0) {
