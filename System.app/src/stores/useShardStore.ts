@@ -1471,10 +1471,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
       const data = await res.json()
       console.log('[ShardStore] Saved shard:', data.id)
 
-      // Refresh saved shards list
-      await get().fetchSavedShards()
-
-      // Trigger refresh in Card 1 (ShardsJobLoader)
+      // Trigger refresh in Card 1 (ShardsJobLoader) only
+      // Card 4 (ShardsLibrary) will refresh on its own when needed
       set({ savedShardsRefreshTrigger: Date.now() })
 
       return data.id

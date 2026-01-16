@@ -42,11 +42,18 @@ export function ShardsJobLoader({
   const [error, setError] = useState<string | null>(null)
   const [renamingJobId, setRenamingJobId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState<string>('')
-  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; jobId: number | string | null }>({
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean
+    x: number
+    y: number
+    jobId: number | string | null
+    jobType: 'chronological' | 'rolling' | 'saved' | null
+  }>({
     visible: false,
     x: 0,
     y: 0,
-    jobId: null
+    jobId: null,
+    jobType: null
   })
 
   // Ref to track if we're opening the context menu (prevent immediate close)
@@ -110,7 +117,7 @@ export function ShardsJobLoader({
   }, [refreshTrigger])
 
   // Handle clicking a job card to show context menu or unload
-  const handleJobClick = (e: React.MouseEvent, jobId: number | string) => {
+  const handleJobClick = (e: React.MouseEvent, jobId: number | string, jobType: 'chronological' | 'rolling' | 'saved') => {
     e.stopPropagation() // Prevent immediate close from click-outside handler
 
     // For saved shards, convert string ID to number for checking
@@ -119,7 +126,7 @@ export function ShardsJobLoader({
     // If already loaded, unload it
     if (isJobLoaded(numericId)) {
       onUnloadJob(numericId)
-      setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
+      setContextMenu({ visible: false, x: 0, y: 0, jobId: null, jobType: null })
       return
     }
 
@@ -138,7 +145,8 @@ export function ShardsJobLoader({
       visible: true,
       x: e.clientX,
       y: e.clientY,
-      jobId
+      jobId,
+      jobType
     })
     setError(null)
 
@@ -150,7 +158,7 @@ export function ShardsJobLoader({
 
   // Handle "Add to Filter" - load job branches for filtering
   const handleAddToFilter = async () => {
-    if (!contextMenu.jobId) return
+    if (!contextMenu.jobId || !contextMenu.jobType) return
 
     try {
       const numericId = typeof contextMenu.jobId === 'string'
@@ -159,13 +167,13 @@ export function ShardsJobLoader({
 
       setLoadingJobId(numericId)
       setError(null)
-      setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
+      setContextMenu({ visible: false, x: 0, y: 0, jobId: null, jobType: null })
 
       // Call appropriate method based on job type
-      if (jobType === 'saved' && typeof contextMenu.jobId === 'string') {
+      if (contextMenu.jobType === 'saved' && typeof contextMenu.jobId === 'string') {
         await onLoadSavedShard(contextMenu.jobId)
       } else if (typeof contextMenu.jobId === 'number') {
-        await onLoadJob(jobType as 'chronological' | 'rolling', contextMenu.jobId)
+        await onLoadJob(contextMenu.jobType as 'chronological' | 'rolling', contextMenu.jobId)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load job')
@@ -176,7 +184,7 @@ export function ShardsJobLoader({
 
   // Handle "Add to Strategy" - load job and add branches to strategy list
   const handleAddToStrategy = async () => {
-    if (!contextMenu.jobId) return
+    if (!contextMenu.jobId || !contextMenu.jobType) return
 
     try {
       const numericId = typeof contextMenu.jobId === 'string'
@@ -185,13 +193,13 @@ export function ShardsJobLoader({
 
       setLoadingJobId(numericId)
       setError(null)
-      setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
+      setContextMenu({ visible: false, x: 0, y: 0, jobId: null, jobType: null })
 
       // Call appropriate method based on job type
-      if (jobType === 'saved' && typeof contextMenu.jobId === 'string') {
+      if (contextMenu.jobType === 'saved' && typeof contextMenu.jobId === 'string') {
         await onLoadSavedShardAndAddToStrategy(contextMenu.jobId)
       } else if (typeof contextMenu.jobId === 'number') {
-        await onLoadJobAndAddToStrategy(jobType as 'chronological' | 'rolling', contextMenu.jobId)
+        await onLoadJobAndAddToStrategy(contextMenu.jobType as 'chronological' | 'rolling', contextMenu.jobId)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add to strategy')
@@ -204,14 +212,14 @@ export function ShardsJobLoader({
   useEffect(() => {
     if (!contextMenu.visible) return
 
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = () => {
       // Don't close if we're still opening the menu
       if (isOpeningContextMenu.current) {
         console.log('[ShardsJobLoader] Ignoring click - context menu is opening')
         return
       }
       console.log('[ShardsJobLoader] Click outside detected, closing context menu')
-      setContextMenu({ visible: false, x: 0, y: 0, jobId: null })
+      setContextMenu({ visible: false, x: 0, y: 0, jobId: null, jobType: null })
     }
 
     // Add listener on next tick to avoid closing immediately
@@ -226,7 +234,7 @@ export function ShardsJobLoader({
   }, [contextMenu.visible])
 
   // Handle delete job
-  const handleDeleteJob = async (e: React.MouseEvent, jobId: number | string) => {
+  const handleDeleteJob = async (e: React.MouseEvent, jobId: number | string, jobType: 'chronological' | 'rolling' | 'saved') => {
     e.stopPropagation()
 
     const confirmMsg = jobType === 'saved'
@@ -288,7 +296,7 @@ export function ShardsJobLoader({
   }
 
   // Handle rename job - confirm
-  const handleConfirmRename = async (e: React.MouseEvent, jobId: number | string) => {
+  const handleConfirmRename = async (e: React.MouseEvent, jobId: number | string, jobType: 'chronological' | 'rolling' | 'saved') => {
     e.stopPropagation()
 
     if (!renameValue.trim()) {
@@ -364,14 +372,24 @@ export function ShardsJobLoader({
   // Handle job type change
   const handleJobTypeChange = (newType: 'chronological' | 'rolling' | 'saved') => {
     if (loadedJobIds.length > 0 && loadedJobType !== newType) {
-      // Clear jobs when switching types
       onClearAllJobs()
     }
     setJobType(newType)
     setError(null)
   }
 
-  const currentJobs = jobType === 'chronological' ? chronologicalJobs : jobType === 'rolling' ? rollingJobs : savedShards
+  // Filter jobs based on selected type
+  const currentJobs = jobType === 'chronological'
+    ? chronologicalJobs.map(j => ({ ...j, type: 'chronological' as const }))
+    : jobType === 'rolling'
+    ? rollingJobs.map(j => ({ ...j, type: 'rolling' as const }))
+    : savedShards.map(s => ({ ...s, type: 'saved' as const }))
+
+  // Sort by creation date (newest first)
+  const sortedJobs = [...currentJobs].sort((a, b) =>
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
+
   const loadedCount = loadedJobIds.length
   const totalBranches = allBranches.length
 
@@ -406,7 +424,11 @@ export function ShardsJobLoader({
           <div className="flex justify-between items-center">
             <div>
               <div className="text-xs font-bold text-green-700 dark:text-green-400">
-                Loaded: {loadedCount} {loadedJobType === 'chronological' ? 'Split' : 'Walk Forward'} Shard{loadedCount !== 1 ? 's' : ''}
+                Loaded: {loadedCount} {
+                  loadedJobType === 'chronological' ? 'Split' :
+                  loadedJobType === 'rolling' ? 'Walk Forward' :
+                  'Saved'
+                } Shard{loadedCount !== 1 ? 's' : ''}
               </div>
               <div className="text-xs text-green-600 dark:text-green-500">
                 {totalBranches} total branches
@@ -427,18 +449,18 @@ export function ShardsJobLoader({
       {/* Shards List */}
       <div className="flex-1 min-h-0">
         <div className="text-sm font-medium mb-2">
-          Available Shards ({currentJobs.length})
+          Available Shards ({sortedJobs.length})
         </div>
         <div className="space-y-2">
-          {currentJobs.length === 0 ? (
+          {sortedJobs.length === 0 ? (
             <div className="text-sm text-muted-foreground text-center py-4">
               No {jobType === 'chronological' ? 'Split' : jobType === 'rolling' ? 'Walk Forward' : 'Saved'} shards found
             </div>
           ) : (
-            currentJobs.map(job => {
+            sortedJobs.map(job => {
               // For saved shards, keep string ID; for optimization jobs, use numeric ID
               const originalId = job.id // Keep original ID format for handlers
-              const numericId = jobType === 'saved'
+              const numericId = job.type === 'saved'
                 ? parseInt(job.id.split('-')[1] || job.id, 10)
                 : job.id
 
@@ -447,7 +469,7 @@ export function ShardsJobLoader({
               const isRenaming = renamingJobId === numericId
 
               // Get the display name (saved shards use 'name', optimization jobs use 'botName')
-              const displayName = jobType === 'saved' ? (job as any).name : job.botName
+              const displayName = job.type === 'saved' ? (job as any).name : job.botName
 
               return (
                 <div
@@ -457,7 +479,7 @@ export function ShardsJobLoader({
                       ? 'border-green-500/50 bg-green-500/10 cursor-pointer'
                       : 'border-border bg-background hover:border-accent/50 cursor-pointer'
                   } ${isLoading ? 'opacity-50' : ''}`}
-                  onClick={(e) => !isLoading && !isRenaming && handleJobClick(e, originalId)}
+                  onClick={(e) => !isLoading && !isRenaming && handleJobClick(e, originalId, job.type)}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -472,14 +494,14 @@ export function ShardsJobLoader({
                             autoFocus
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                handleConfirmRename(e as any, originalId)
+                                handleConfirmRename(e as any, originalId, job.type)
                               } else if (e.key === 'Escape') {
                                 handleCancelRename(e as any)
                               }
                             }}
                           />
                           <button
-                            onClick={(e) => handleConfirmRename(e, originalId)}
+                            onClick={(e) => handleConfirmRename(e, originalId, job.type)}
                             className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
                           >
                             ✓
@@ -518,7 +540,7 @@ export function ShardsJobLoader({
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={(e) => handleDeleteJob(e, originalId)}
+                          onClick={(e) => handleDeleteJob(e, originalId, job.type)}
                           className="p-1.5 rounded hover:bg-red-500/20 text-red-500 hover:text-red-700 transition-colors"
                           title="Delete shard permanently"
                         >
