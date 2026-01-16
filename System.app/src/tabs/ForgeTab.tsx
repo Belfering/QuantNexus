@@ -209,6 +209,7 @@ export function ForgeTab({
   const shardSavedShards = useShardStore(s => s.savedShards)
   const shardSelectedShardIds = useShardStore(s => s.selectedShardIds)
   const shardLoadedShardBranches = useShardStore(s => s.loadedShardBranches)
+  const shardSavedShardsRefreshTrigger = useShardStore(s => s.savedShardsRefreshTrigger)
   const shardIsLoadingShards = useShardStore(s => s.isLoadingShards)
   const shardIsSavingShard = useShardStore(s => s.isSavingShard)
   const shardBotName = useShardStore(s => s.shardBotName)
@@ -2661,6 +2662,7 @@ export function ForgeTab({
                 isJobLoaded={shardIsJobLoaded}
                 onLoadJobAndAddToStrategy={shardLoadJobAndAddToStrategy}
                 onLoadSavedShardAndAddToStrategy={shardLoadSavedShardAndAddToStrategy}
+                refreshTrigger={shardSavedShardsRefreshTrigger}
               />
 
               {/* Card 2: Filter Settings */}

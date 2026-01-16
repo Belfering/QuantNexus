@@ -18,6 +18,7 @@ interface ShardsJobLoaderProps {
   isJobLoaded: (jobId: number) => boolean
   onLoadJobAndAddToStrategy: (type: 'chronological' | 'rolling', jobId: number) => Promise<void>
   onLoadSavedShardAndAddToStrategy: (shardId: string) => Promise<void>
+  refreshTrigger?: number // Timestamp trigger to refresh saved shards
 }
 
 export function ShardsJobLoader({
@@ -30,7 +31,8 @@ export function ShardsJobLoader({
   onClearAllJobs,
   isJobLoaded,
   onLoadJobAndAddToStrategy,
-  onLoadSavedShardAndAddToStrategy
+  onLoadSavedShardAndAddToStrategy,
+  refreshTrigger
 }: ShardsJobLoaderProps) {
   const [jobType, setJobType] = useState<'chronological' | 'rolling' | 'saved'>('chronological')
   const [chronologicalJobs, setChronologicalJobs] = useState<OptimizationJob[]>([])
@@ -50,6 +52,27 @@ export function ShardsJobLoader({
   // Ref to track if we're opening the context menu (prevent immediate close)
   const isOpeningContextMenu = useRef<boolean>(false)
 
+  // Helper function to fetch saved shards
+  const fetchSavedShards = async () => {
+    try {
+      const authData = localStorage.getItem('auth-storage')
+      if (authData) {
+        const parsed = JSON.parse(authData)
+        const userId = parsed?.state?.userId
+        if (userId) {
+          const shardsRes = await fetch(`/api/shards?userId=${userId}`)
+          if (shardsRes.ok) {
+            const shardsData = await shardsRes.json()
+            setSavedShards(shardsData.shards || [])
+            console.log('[ShardsJobLoader] Loaded saved shards:', shardsData.shards?.length || 0)
+          }
+        }
+      }
+    } catch (parseErr) {
+      console.warn('[ShardsJobLoader] Could not get userId from localStorage')
+    }
+  }
+
   // Fetch shards on mount
   useEffect(() => {
     async function fetchJobs() {
@@ -68,24 +91,8 @@ export function ShardsJobLoader({
           setRollingJobs(rollingData)
         }
 
-        // Fetch saved shards (need userId from localStorage)
-        const authData = localStorage.getItem('auth-storage')
-        if (authData) {
-          try {
-            const parsed = JSON.parse(authData)
-            const userId = parsed?.state?.userId
-            if (userId) {
-              const shardsRes = await fetch(`/api/shards?userId=${userId}`)
-              if (shardsRes.ok) {
-                const shardsData = await shardsRes.json()
-                setSavedShards(shardsData.shards || [])
-                console.log('[ShardsJobLoader] Loaded saved shards:', shardsData.shards?.length || 0)
-              }
-            }
-          } catch (parseErr) {
-            console.warn('[ShardsJobLoader] Could not get userId from localStorage')
-          }
-        }
+        // Fetch saved shards
+        await fetchSavedShards()
       } catch (err) {
         console.error('[ShardsJobLoader] Failed to fetch jobs:', err)
         setError(err instanceof Error ? err.message : 'Failed to fetch jobs')
@@ -94,6 +101,13 @@ export function ShardsJobLoader({
 
     fetchJobs()
   }, [])
+
+  // Refresh saved shards when refreshTrigger changes
+  useEffect(() => {
+    if (refreshTrigger) {
+      fetchSavedShards()
+    }
+  }, [refreshTrigger])
 
   // Handle clicking a job card to show context menu or unload
   const handleJobClick = (e: React.MouseEvent, jobId: number | string) => {

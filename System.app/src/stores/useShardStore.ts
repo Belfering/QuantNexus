@@ -324,6 +324,7 @@ interface ShardState {
   shardCappedPercent: number  // For capped weighting: 0-100
   isSavingShard: boolean
   isLoadingShards: boolean
+  savedShardsRefreshTrigger: number  // Timestamp to trigger refresh of saved shards in Card 1
 
   // Actions - Phase 1
   loadChronologicalJob: (jobId: number) => Promise<void>
@@ -411,6 +412,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
   shardCappedPercent: 5,  // Default 5%
   isSavingShard: false,
   isLoadingShards: false,
+  savedShardsRefreshTrigger: 0,
 
   // Helper to combine branches from all loaded jobs
   _combineAllBranches: (): OptimizationResult[] | RollingOptimizationResult['branches'] => {
@@ -1471,6 +1473,9 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
       // Refresh saved shards list
       await get().fetchSavedShards()
+
+      // Trigger refresh in Card 1 (ShardsJobLoader)
+      set({ savedShardsRefreshTrigger: Date.now() })
 
       return data.id
     } finally {
