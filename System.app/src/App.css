@@ -436,7 +436,7 @@ h1 {
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
-  z-index: 20;
+  z-index: 1000;
   min-width: 340px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -802,6 +802,7 @@ h1 {
   width: max(1000px, fit-content);
   min-width: 1000px;
   flex: 1;
+  overflow: visible;
 }
 
 .dark .node-card {
@@ -903,7 +904,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(5, 24px);
   gap: 6px;
-  z-index: 15;
+  z-index: 1000;
 }
 
 .dark .color-menu {
@@ -932,6 +933,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow: visible;
 }
 
 .line {
@@ -939,6 +941,7 @@ h1 {
   align-items: center;
   gap: 8px;
   position: relative;
+  overflow: visible;
 }
 
 .indent {
@@ -1031,7 +1034,7 @@ h1 {
   flex-direction: column;
   gap: 4px;
   min-width: 180px;
-  z-index: 200;
+  z-index: 1000;
 }
 
 .dark .menu {
@@ -1059,6 +1062,11 @@ h1 {
   position: relative;
   z-index: 2;
   margin-left: 50px;
+  overflow: visible;
+}
+
+.slot-block {
+  overflow: visible;
 }
 
 /* Vertical tree line on left side of slot-body, runs full height */
@@ -1218,21 +1226,19 @@ h1 {
   z-index: -10;
 }
 
-/* Insert menu dropdown */
-.insert-menu {
-  position: absolute;
-  top: 0;
-  left: calc(100% + 4px);
+/* Insert menu dropdown portal (rendered at body level with position: fixed) */
+.insert-menu-portal {
+  position: fixed;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 100;
+  z-index: 9999;
   min-width: 150px;
   padding: 4px 0;
 }
 
-.insert-menu button {
+.insert-menu-portal button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1246,11 +1252,11 @@ h1 {
   text-align: left;
 }
 
-.insert-menu button:hover {
+.insert-menu-portal button:hover {
   background: var(--color-surface-2);
 }
 
-.dark .insert-menu {
+.dark .insert-menu-portal {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 

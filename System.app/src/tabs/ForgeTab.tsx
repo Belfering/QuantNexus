@@ -1,7 +1,7 @@
 // src/tabs/ForgeTab.tsx
 // Forge tab component - lazy loadable wrapper for flowchart builder
 
-import { type RefObject, useState, useEffect, useRef } from 'react'
+import { type RefObject, useState, useEffect, useRef, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { USED_TICKERS_DATALIST_ID } from '@/constants'
@@ -84,6 +84,7 @@ import { useTreeSync, useTreeUndo, useTickerLists } from '@/hooks'
 import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest'
 import { applyBranchToTree } from '@/features/optimization/services/branchGenerator'
 import type { EligibilityRequirement } from '@/types/admin'
+import { countForgeNodes, LIMITS } from '@/features/forge/utils/limits'
 
 export interface ForgeTabProps {
   // Backtest panel props (from App.tsx - derived or callback)
@@ -291,6 +292,14 @@ export function ForgeTab({
       isLoadingTreeRef.current = false
     })
   }, [forgeSubtab, activeBot?.id])
+
+  // Forge node limit tracking (only for Split and Walk Forward tabs)
+  const forgeNodeCount = useMemo(() => {
+    if (forgeSubtab === 'Shards') return 0
+    return countForgeNodes(current)
+  }, [current, forgeSubtab])
+
+  const forgeNodeLimitReached = forgeNodeCount >= LIMITS.FORGE_MAX_NODES
 
   // Tree operation handlers from store
   const handleAdd = (parentId: string, slot: SlotId, index: number, kind: BlockKind) => {
@@ -1827,6 +1836,11 @@ export function ForgeTab({
           <div className="w-full flex flex-col relative min-h-0 min-w-0 overflow-hidden">
             {/* Flowchart Card */}
             <div className="flex-1 border border-border rounded-lg bg-card min-h-0 relative" style={{ height: 'calc(100vh - 400px)', overflow: 'hidden' }}>
+              {forgeNodeLimitReached && (
+                <div className="m-2 mb-0 px-3 py-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded text-sm text-red-600 dark:text-red-400">
+                  Node limit reached: {forgeNodeCount}/{LIMITS.FORGE_MAX_NODES}. Remove nodes to add more.
+                </div>
+              )}
               <div
                 ref={flowchartScrollRef}
                 style={{
@@ -1857,6 +1871,8 @@ export function ForgeTab({
                   tickerOptions={tickerOptions}
                   tickerLists={tickerLists}
                   isForgeMode={true}
+                  forgeNodeLimitReached={forgeNodeLimitReached}
+                  forgeNodeCount={forgeNodeCount}
                   onAdd={handleAdd}
                   onAppend={handleAppend}
                   onRemoveSlotEntry={handleRemoveSlotEntry}
@@ -2405,6 +2421,11 @@ export function ForgeTab({
           <div className="w-full flex flex-col relative min-h-0 min-w-0 overflow-hidden">
             {/* Flowchart Card */}
             <div className="flex-1 border border-border rounded-lg bg-card min-h-0 relative" style={{ height: 'calc(100vh - 400px)', overflow: 'hidden' }}>
+              {forgeNodeLimitReached && (
+                <div className="m-2 mb-0 px-3 py-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded text-sm text-red-600 dark:text-red-400">
+                  Node limit reached: {forgeNodeCount}/{LIMITS.FORGE_MAX_NODES}. Remove nodes to add more.
+                </div>
+              )}
               <div
                 ref={flowchartScrollRef}
                 style={{
@@ -2435,6 +2456,8 @@ export function ForgeTab({
                   tickerOptions={tickerOptions}
                   tickerLists={tickerLists}
                   isForgeMode={true}
+                  forgeNodeLimitReached={forgeNodeLimitReached}
+                  forgeNodeCount={forgeNodeCount}
                   onAdd={handleAdd}
                   onAppend={handleAppend}
                   onRemoveSlotEntry={handleRemoveSlotEntry}

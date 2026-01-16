@@ -1,7 +1,7 @@
 // src/features/builder/components/NodeCard/NodeCard.tsx
 // Main NodeCard component for rendering flow tree nodes
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { InsertMenu } from '../InsertMenu'
 import { NodeHeader } from './NodeHeader'
@@ -16,6 +16,7 @@ import { DefaultBody } from './DefaultBody'
 import { buildLines } from './buildLines'
 import type { FlowNode, SlotId } from '../../../../types'
 import type { CardProps } from './types'
+import { LIMITS } from '@/features/forge/utils/limits'
 
 // Color palette for node backgrounds
 const PALETTE = [
@@ -43,6 +44,8 @@ export const NodeCard = ({
   tickerLists,
   isForgeMode,
   underRollingNode,
+  forgeNodeLimitReached,
+  forgeNodeCount,
   onAdd,
   onAppend,
   onRemoveSlotEntry,
@@ -93,7 +96,6 @@ export const NodeCard = ({
   onUpdateRange,
 }: CardProps) => {
   // Local state
-  const [addRowOpen, setAddRowOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(node.title)
   const [positionDrafts, setPositionDrafts] = useState<Record<string, string>>({})
@@ -139,36 +141,26 @@ export const NodeCard = ({
 
     // Empty slot
     if (childCount === 0) {
-      const key = `${slot}-empty`
       const indentWidth = depthPx * 1 + 14 + (slot === 'then' || slot === 'else' ? 14 : 0)
       return (
         <div className="slot-block" key={`${node.id}-${slot}`}>
           <div className="line insert-empty-line">
             <div className="indent with-line insert-line-anchor" style={{ width: indentWidth }}>
               <div className="insert-empty-container" style={{ left: indentWidth }}>
-                <button
-                  className="insert-btn"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setAddRowOpen((v) => (v === key ? null : key))
-                  }}
-                  title="Insert node"
-                >
-                  +
-                </button>
-                {addRowOpen === key && (
-                  <InsertMenu
-                    parentId={node.id}
-                    parentSlot={slot}
-                    index={0}
-                    onAdd={onAdd}
-                    onPaste={onPaste}
-                    onPasteCallRef={onPasteCallRef}
-                    clipboard={clipboard}
-                    copiedCallChainId={copiedCallChainId}
-                    onClose={() => setAddRowOpen(null)}
-                  />
-                )}
+                <InsertMenu
+                  parentId={node.id}
+                  parentSlot={slot}
+                  index={0}
+                  onAdd={onAdd}
+                  onPaste={onPaste}
+                  onPasteCallRef={onPasteCallRef}
+                  clipboard={clipboard}
+                  copiedCallChainId={copiedCallChainId}
+                  disabled={isForgeMode && forgeNodeLimitReached}
+                  title={isForgeMode && forgeNodeLimitReached
+                    ? `Node limit reached (${forgeNodeCount}/${LIMITS.FORGE_MAX_NODES})`
+                    : "Insert node"}
+                />
               </div>
             </div>
           </div>
@@ -195,30 +187,20 @@ export const NodeCard = ({
                   style={{ width: fixedIndentWidth }}
                 >
                   <div className="insert-above-container" style={{ left: fixedIndentWidth }}>
-                    <button
-                      className="insert-btn"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const key = `${slot}-above-${originalIndex}`
-                        setAddRowOpen((v) => (v === key ? null : key))
-                      }}
-                      title="Insert node above"
-                    >
-                      +
-                    </button>
-                    {addRowOpen === `${slot}-above-${originalIndex}` && (
-                      <InsertMenu
-                        parentId={node.id}
-                        parentSlot={slot}
-                        index={originalIndex}
-                        onAdd={onAdd}
-                        onPaste={onPaste}
-                        onPasteCallRef={onPasteCallRef}
-                        clipboard={clipboard}
-                        copiedCallChainId={copiedCallChainId}
-                        onClose={() => setAddRowOpen(null)}
-                      />
-                    )}
+                    <InsertMenu
+                      parentId={node.id}
+                      parentSlot={slot}
+                      index={originalIndex}
+                      onAdd={onAdd}
+                      onPaste={onPaste}
+                      onPasteCallRef={onPasteCallRef}
+                      clipboard={clipboard}
+                      copiedCallChainId={copiedCallChainId}
+                      disabled={isForgeMode && forgeNodeLimitReached}
+                      title={isForgeMode && forgeNodeLimitReached
+                        ? `Node limit reached (${forgeNodeCount}/${LIMITS.FORGE_MAX_NODES})`
+                        : "Insert node above"}
+                    />
                   </div>
                 </div>
                 <div className="slot-body">
@@ -311,30 +293,20 @@ export const NodeCard = ({
                     style={{ width: fixedIndentWidth }}
                   >
                     <div className="insert-below-container" style={{ left: fixedIndentWidth }}>
-                      <button
-                        className="insert-btn"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          const key = `${slot}-below-${originalIndex}`
-                          setAddRowOpen((v) => (v === key ? null : key))
-                        }}
-                        title="Insert node below"
-                      >
-                        +
-                      </button>
-                      {addRowOpen === `${slot}-below-${originalIndex}` && (
-                        <InsertMenu
-                          parentId={node.id}
-                          parentSlot={slot}
-                          index={originalIndex + 1}
-                          onAdd={onAdd}
-                          onPaste={onPaste}
-                          onPasteCallRef={onPasteCallRef}
-                          clipboard={clipboard}
-                          copiedCallChainId={copiedCallChainId}
-                          onClose={() => setAddRowOpen(null)}
-                        />
-                      )}
+                      <InsertMenu
+                        parentId={node.id}
+                        parentSlot={slot}
+                        index={originalIndex + 1}
+                        onAdd={onAdd}
+                        onPaste={onPaste}
+                        onPasteCallRef={onPasteCallRef}
+                        clipboard={clipboard}
+                        copiedCallChainId={copiedCallChainId}
+                        disabled={isForgeMode && forgeNodeLimitReached}
+                        title={isForgeMode && forgeNodeLimitReached
+                          ? `Node limit reached (${forgeNodeCount}/${LIMITS.FORGE_MAX_NODES})`
+                          : "Insert node below"}
+                      />
                     </div>
                   </div>
                 </div>

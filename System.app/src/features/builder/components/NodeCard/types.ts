@@ -84,6 +84,8 @@ export interface CardProps {
   tickerLists?: TickerList[] // Forge-only: ticker lists for optimization
   isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
   underRollingNode?: boolean // Whether this node is a descendant of a Rolling node
+  forgeNodeLimitReached?: boolean // Whether the 5-node limit has been reached in Forge
+  forgeNodeCount?: number // Current count of nodes in Forge tree
 
   // Tree manipulation
   onAdd: (parentId: string, slot: SlotId, index: number, kind: BlockKind) => void
