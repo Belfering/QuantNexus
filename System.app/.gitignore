@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Database files - never commit production data
+server/data/*.db
+server/data/*.db-shm
+server/data/*.db-wal

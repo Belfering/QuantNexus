@@ -2150,8 +2150,13 @@ app.post('/api/deploy', async (req, res) => {
   const { exec } = await import('child_process')
   exec(`
     cd /home/deploy/quantnexus && \
+    # Preserve server data directory (databases)
+    cp -r System.app/server/data /tmp/quantnexus-data-backup && \
     git fetch origin dev && \
     git reset --hard origin/dev && \
+    # Restore server data directory
+    rm -rf System.app/server/data && \
+    mv /tmp/quantnexus-data-backup System.app/server/data && \
     cd System.app && \
     npm install --include=dev && \
     ./node_modules/.bin/tsc -b && \
