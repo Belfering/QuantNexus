@@ -2,7 +2,7 @@
 
 **IMPORTANT: Always ask before pushing to GitHub.**
 
-**CRITICAL: Never merge `dev` to `master` or push to `master` without explicit user approval. Always confirm before any operation that affects the production branch. The `dev` branch is for testing - only `master` triggers Railway deployment.**
+**CRITICAL: Never merge `dev` to `main` or push to `main` without explicit user approval. Always confirm before any operation that affects the production branch. The `dev` branch is for testing - only `main` triggers Railway deployment.**
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 

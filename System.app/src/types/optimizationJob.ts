@@ -39,6 +39,7 @@ export interface OptimizationResult {
   parameterLabel: string // Human-readable label (e.g., "window=14, threshold=70")
   parameterValues: Record<string, number> // Map of parameter ID to value
   tickerSubstitutions?: Record<string, string> // Map of ticker list ID to selected ticker
+  treeJson?: string // JSON string of the FlowNode tree with applied parameters
   isMetrics: OptimizationResultMetrics // In-sample metrics
   oosMetrics: OptimizationResultMetrics // Out-of-sample metrics
   passed: boolean

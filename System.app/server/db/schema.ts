@@ -174,6 +174,32 @@ export const metricVariables = sqliteTable('metric_variables', {
 })
 
 // ============================================
+// SAVED SHARDS (Filtered Branch Collections)
+// ============================================
+export const savedShards = sqliteTable('saved_shards', {
+  id: text('id').primaryKey(), // e.g., "shard-1234567890"
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+
+  // Source tracking
+  sourceJobIds: text('source_job_ids').notNull(), // JSON array of job IDs
+  loadedJobType: text('loaded_job_type').notNull(), // 'chronological' | 'rolling'
+
+  // Filtered data (deep copies of branches)
+  branches: text('branches').notNull(), // JSON array of branch objects
+  branchCount: integer('branch_count').notNull(),
+
+  // Filter metadata (for display)
+  filterSummary: text('filter_summary'), // e.g., "Top 10 by Sharpe from RSI Opt"
+
+  // Timestamps
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  deletedAt: integer('deleted_at', { mode: 'timestamp' }),
+})
+
+// ============================================
 // RELATIONS
 // ============================================
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -181,6 +207,11 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   watchlists: many(watchlists),
   portfolio: one(portfolios),
   preferences: one(userPreferences),
+  savedShards: many(savedShards),
+}))
+
+export const savedShardsRelations = relations(savedShards, ({ one }) => ({
+  owner: one(users, { fields: [savedShards.ownerId], references: [users.id] }),
 }))
 
 export const botsRelations = relations(bots, ({ one, many }) => ({
@@ -224,3 +255,5 @@ export type Portfolio = typeof portfolios.$inferSelect
 export type PortfolioPosition = typeof portfolioPositions.$inferSelect
 export type MetricVariable = typeof metricVariables.$inferSelect
 export type NewMetricVariable = typeof metricVariables.$inferInsert
+export type SavedShard = typeof savedShards.$inferSelect
+export type NewSavedShard = typeof savedShards.$inferInsert

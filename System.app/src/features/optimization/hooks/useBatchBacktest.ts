@@ -306,6 +306,7 @@ export function useBatchBacktest(): UseBatchBacktestResult {
           let branchResult: BranchResult = {
             branchId: combination.id,
             combination,
+            tree: modifiedTree,  // Store the tree for database persistence
             status: 'running',
             passed: false,
             failedRequirements: []

@@ -73,6 +73,7 @@ import { WalkForwardSettingsPanel } from '@/components/Forge/WalkForwardSettings
 import { ShardsJobLoader } from '@/components/Forge/ShardsJobLoader'
 import { ShardsBranchFilter } from '@/components/Forge/ShardsBranchFilter'
 import { ShardsCombinedPreview } from '@/components/Forge/ShardsCombinedPreview'
+import { ShardsLibrary } from '@/components/Forge/ShardsLibrary'
 import { ParameterBoxPanel } from '@/features/parameters/components/ParameterBoxPanel'
 import type { ParameterField, ParameterRange } from '@/features/parameters/types'
 import { loadCallChainsFromApi } from '@/features/auth'
@@ -157,18 +158,73 @@ export function ForgeTab({
 
   // Shards state
   const shardLoadedJobType = useShardStore(s => s.loadedJobType)
-  const shardLoadedJobId = useShardStore(s => s.loadedJobId)
+  const shardLoadedJobIds = useShardStore(s => s.loadedJobIds)
   const shardAllBranches = useShardStore(s => s.allBranches)
   const shardFilteredBranches = useShardStore(s => s.filteredBranches)
   const shardFilterMetric = useShardStore(s => s.filterMetric)
   const shardFilterTopX = useShardStore(s => s.filterTopX)
+  const shardFilterMode = useShardStore(s => s.filterMode)
+  const shardFilterTopXPerPattern = useShardStore(s => s.filterTopXPerPattern)
+  const shardDiscoveredPatterns = useShardStore(s => s.discoveredPatterns)
+  const shardLoadedJobs = useShardStore(s => s.loadedJobs)
   const shardCombinedTree = useShardStore(s => s.combinedTree)
   const shardLoadChronologicalJob = useShardStore(s => s.loadChronologicalJob)
   const shardLoadRollingJob = useShardStore(s => s.loadRollingJob)
+  const shardLoadSavedShard = useShardStore(s => s.loadSavedShard)
+  const shardUnloadJob = useShardStore(s => s.unloadJob)
+  const shardClearAllJobs = useShardStore(s => s.clearAllJobs)
+  const shardIsJobLoaded = useShardStore(s => s.isJobLoaded)
   const shardSetFilterMetric = useShardStore(s => s.setFilterMetric)
   const shardSetFilterTopX = useShardStore(s => s.setFilterTopX)
+  const shardSetFilterMode = useShardStore(s => s.setFilterMode)
+  const shardSetFilterTopXPerPattern = useShardStore(s => s.setFilterTopXPerPattern)
+  const shardApplyFilters = useShardStore(s => s.applyFilters)
+  const shardRemoveBranchFromFiltered = useShardStore(s => s.removeBranchFromFiltered)
+  const shardClearFilteredBranches = useShardStore(s => s.clearFilteredBranches)
   const shardGenerateCombinedTree = useShardStore(s => s.generateCombinedTree)
   const shardSaveToModel = useShardStore(s => s.saveToModel)
+  const shardFilterGroups = useShardStore(s => s.filterGroups)
+  const shardFilterHistory = useShardStore(s => s.filterHistory)
+  const shardUndoFilter = useShardStore(s => s.undoFilter)
+  const shardRemoveFilterGroup = useShardStore(s => s.removeFilterGroup)
+  const shardSelectedFilterGroupId = useShardStore(s => s.selectedFilterGroupId)
+  const shardSetSelectedFilterGroup = useShardStore(s => s.setSelectedFilterGroup)
+
+  // Strategy List state (Phase 2b)
+  const shardStrategyBranches = useShardStore(s => s.strategyBranches)
+  const shardActiveListView = useShardStore(s => s.activeListView)
+  const shardLoadJobAndAddToStrategy = useShardStore(s => s.loadJobAndAddToStrategy)
+  const shardLoadSavedShardAndAddToStrategy = useShardStore(s => s.loadSavedShardAndAddToStrategy)
+  const shardAddBranchesToStrategy = useShardStore(s => s.addBranchesToStrategy)
+  const shardRemoveBranchFromStrategy = useShardStore(s => s.removeBranchFromStrategy)
+  const shardClearStrategyBranches = useShardStore(s => s.clearStrategyBranches)
+  const shardSetActiveListView = useShardStore(s => s.setActiveListView)
+
+  // Strategy Job Loading state (Phase 1b - for Card 4)
+  const shardLoadedStrategyJobs = useShardStore(s => s.loadedStrategyJobs)
+  const shardLoadedStrategyJobIds = useShardStore(s => s.loadedStrategyJobIds)
+  const shardUnloadStrategyJob = useShardStore(s => s.unloadStrategyJob)
+
+  // Shard Library state (Phase 4)
+  const shardSavedShards = useShardStore(s => s.savedShards)
+  const shardSelectedShardIds = useShardStore(s => s.selectedShardIds)
+  const shardLoadedShardBranches = useShardStore(s => s.loadedShardBranches)
+  const shardSavedShardsRefreshTrigger = useShardStore(s => s.savedShardsRefreshTrigger)
+  const shardIsLoadingShards = useShardStore(s => s.isLoadingShards)
+  const shardIsSavingShard = useShardStore(s => s.isSavingShard)
+  const shardBotName = useShardStore(s => s.shardBotName)
+  const shardWeighting = useShardStore(s => s.shardWeighting)
+  const shardCappedPercent = useShardStore(s => s.shardCappedPercent)
+  const shardFetchSavedShards = useShardStore(s => s.fetchSavedShards)
+  const shardSaveShard = useShardStore(s => s.saveShard)
+  const shardDeleteShard = useShardStore(s => s.deleteShard)
+  const shardSelectShard = useShardStore(s => s.selectShard)
+  const shardDeselectShard = useShardStore(s => s.deselectShard)
+  const shardLoadSelectedShards = useShardStore(s => s.loadSelectedShards)
+  const shardSetShardBotName = useShardStore(s => s.setShardBotName)
+  const shardSetShardWeighting = useShardStore(s => s.setShardWeighting)
+  const shardSetShardCappedPercent = useShardStore(s => s.setShardCappedPercent)
+  const shardGenerateBotFromShards = useShardStore(s => s.generateBotFromShards)
 
   // Manage separate trees for Split and Walk Forward tabs
   const prevSubtabRef = useRef<string | null>(null)
@@ -1403,13 +1459,11 @@ export function ForgeTab({
         }
       }
 
-      // Filter out ticker_list parameter ranges for chronological optimization
-      // (ticker_list ranges are only used for rolling optimization)
-      const chronologicalRanges = parameterRanges.filter(r => r.type !== 'ticker_list')
-      console.log('[ForgeTab] Filtered parameter ranges for chronological:', chronologicalRanges.length, 'of', parameterRanges.length)
+      // Include all parameter ranges (including ticker_list) for chronological optimization
+      console.log('[ForgeTab] Using parameter ranges for chronological:', parameterRanges.length)
 
       // Use requirements from the tab-aware variable (already set to chronological at top)
-      await runBatchBacktest(current, chronologicalRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
+      await runBatchBacktest(current, parameterRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
     }
   }
 
@@ -1434,40 +1488,6 @@ export function ForgeTab({
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
       <CardContent className="flex-1 flex flex-col gap-4 p-4 pb-8 overflow-auto min-h-0">
-        {/* Subtab Navigation */}
-        <div className="flex gap-2 shrink-0">
-          <Button
-            variant={forgeSubtab === 'Split' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Split')}
-          >
-            Split
-          </Button>
-          <Button
-            variant={forgeSubtab === 'Walk Forward' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Walk Forward')}
-          >
-            Walk Forward
-          </Button>
-          <Button
-            variant={forgeSubtab === 'Ticker Lists' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Ticker Lists')}
-          >
-            Ticker Lists
-          </Button>
-          <Button
-            variant={forgeSubtab === 'Results' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Results')}
-          >
-            Results
-          </Button>
-          <Button
-            variant={forgeSubtab === 'Shards' ? 'accent' : 'secondary'}
-            onClick={() => setForgeSubtab('Shards')}
-          >
-            Shards
-          </Button>
-        </div>
-
         {/* Split Tab Content */}
         {forgeSubtab === 'Split' && (
           <>
@@ -2622,46 +2642,147 @@ export function ForgeTab({
 
         {/* Shards Tab Content */}
         {forgeSubtab === 'Shards' && (
-          <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="p-6">
-              <div className="grid grid-cols-3 gap-4">
-                {/* Left Card: Job Loading */}
-                <ShardsJobLoader
-                  loadedJobType={shardLoadedJobType}
-                  loadedJobId={shardLoadedJobId}
-                  onLoadJob={async (type, jobId) => {
-                    if (type === 'chronological') {
-                      await shardLoadChronologicalJob(jobId)
-                    } else {
-                      await shardLoadRollingJob(jobId)
-                    }
-                  }}
-                />
+          <div className="flex-1 overflow-hidden flex flex-col p-6 max-h-[calc(100vh-160px)]">
+            <div className="grid grid-cols-4 gap-4 h-full min-h-0">
+              {/* Card 1: Job Loading */}
+              <ShardsJobLoader
+                loadedJobType={shardLoadedJobType}
+                loadedJobIds={shardLoadedJobIds}
+                allBranches={shardAllBranches}
+                onLoadJob={async (type, jobId) => {
+                  if (type === 'chronological') {
+                    await shardLoadChronologicalJob(jobId)
+                  } else {
+                    await shardLoadRollingJob(jobId)
+                  }
+                }}
+                onLoadSavedShard={shardLoadSavedShard}
+                onUnloadJob={shardUnloadJob}
+                onClearAllJobs={shardClearAllJobs}
+                isJobLoaded={shardIsJobLoaded}
+                onLoadJobAndAddToStrategy={shardLoadJobAndAddToStrategy}
+                onLoadSavedShardAndAddToStrategy={shardLoadSavedShardAndAddToStrategy}
+                refreshTrigger={shardSavedShardsRefreshTrigger}
+              />
 
-                {/* Middle Card: Branch Filtering */}
-                <ShardsBranchFilter
-                  loadedJobType={shardLoadedJobType}
-                  allBranches={shardAllBranches}
-                  filteredBranches={shardFilteredBranches}
-                  filterMetric={shardFilterMetric}
-                  filterTopX={shardFilterTopX}
-                  onFilterMetricChange={shardSetFilterMetric}
-                  onFilterTopXChange={shardSetFilterTopX}
-                />
+              {/* Card 2: Filter Settings */}
+              <ShardsBranchFilter
+                loadedJobType={shardLoadedJobType}
+                allBranches={shardAllBranches}
+                filterMetric={shardFilterMetric}
+                filterTopX={shardFilterTopX}
+                filterMode={shardFilterMode}
+                filterTopXPerPattern={shardFilterTopXPerPattern}
+                discoveredPatterns={shardDiscoveredPatterns}
+                onFilterMetricChange={shardSetFilterMetric}
+                onFilterTopXChange={shardSetFilterTopX}
+                onFilterModeChange={shardSetFilterMode}
+                onFilterTopXPerPatternChange={shardSetFilterTopXPerPattern}
+                onApplyFilter={shardApplyFilters}
+              />
 
-                {/* Right Card: Combined Preview */}
-                <ShardsCombinedPreview
-                  combinedTree={shardCombinedTree}
-                  filteredBranchesCount={shardFilteredBranches.length}
-                  onGenerate={shardGenerateCombinedTree}
-                  onSaveToModel={async () => {
-                    const botId = await shardSaveToModel()
-                    // Optionally switch to Model tab
-                    setForgeSubtab('Split') // Or navigate to Model tab
-                    console.log('[ForgeTab] Saved shard to Model tab:', botId)
-                  }}
-                />
-              </div>
+              {/* Card 3: Filtered Results */}
+              <ShardsCombinedPreview
+                loadedJobType={shardLoadedJobType}
+                filteredBranches={shardFilteredBranches}
+                strategyBranches={shardStrategyBranches}
+                activeListView={shardActiveListView}
+                filterMetric={shardFilterMetric}
+                filterGroups={shardFilterGroups}
+                selectedFilterGroupId={shardSelectedFilterGroupId}
+                canUndo={shardFilterHistory.length > 0}
+                onRemoveBranch={shardRemoveBranchFromFiltered}
+                onRemoveBranchFromStrategy={shardRemoveBranchFromStrategy}
+                onClearFiltered={shardClearFilteredBranches}
+                onClearStrategy={shardClearStrategyBranches}
+                onRemoveGroup={shardRemoveFilterGroup}
+                onSelectFilterGroup={shardSetSelectedFilterGroup}
+                onSetActiveListView={shardSetActiveListView}
+                onUndo={shardUndoFilter}
+                onGenerate={shardGenerateCombinedTree}
+                onSaveToModel={async () => {
+                  const botId = await shardSaveToModel()
+                  // Optionally switch to Model tab
+                  setForgeSubtab('Split') // Or navigate to Model tab
+                  console.log('[ForgeTab] Saved shard to Model tab:', botId)
+                }}
+                canSave={shardFilteredBranches.length > 0}
+                isSavingShard={shardIsSavingShard}
+                onSaveShard={shardSaveShard}
+              />
+
+              {/* Card 4: Shard Library */}
+              <ShardsLibrary
+                loadedStrategyJobs={shardLoadedStrategyJobs}
+                loadedStrategyJobIds={shardLoadedStrategyJobIds}
+                isLoadingShards={shardIsLoadingShards}
+                shardBotName={shardBotName}
+                shardWeighting={shardWeighting}
+                shardCappedPercent={shardCappedPercent}
+                onSetShardBotName={shardSetShardBotName}
+                onSetShardWeighting={shardSetShardWeighting}
+                onSetShardCappedPercent={shardSetShardCappedPercent}
+                onUnloadStrategyJob={shardUnloadStrategyJob}
+                onGenerateBot={async () => {
+                  const tree = shardGenerateBotFromShards()
+                  if (!tree) {
+                    console.error('[ForgeTab] No tree generated from strategy shards')
+                    return
+                  }
+
+                  // Save to Model tab using similar logic as shardSaveToModel
+                  const userId = useAuthStore.getState().userId
+                  if (!userId) {
+                    console.error('[ForgeTab] Not logged in')
+                    return
+                  }
+
+                  const botId = `shard-${Date.now()}`
+                  const savedSystem = {
+                    id: botId,
+                    name: tree.title,
+                    builderId: userId,
+                    payload: tree,
+                    visibility: 'private' as const,
+                    createdAt: Date.now(),
+                    tags: ['Shard', 'Strategy']
+                  }
+
+                  try {
+                    const { createBotInApi } = await import('@/features/bots/api')
+                    await createBotInApi(userId, savedSystem)
+
+                    // Add to bot store with the generated tree
+                    useBotStore.getState().addBot({
+                      id: botId,
+                      history: [tree],
+                      historyIndex: 0,
+                      backtest: {
+                        status: 'idle',
+                        result: null,
+                        errors: [],
+                        errorNodeIds: new Set(),
+                        focusNodeId: null,
+                        benchmarkMetrics: null
+                      },
+                      callChains: [],
+                      customIndicators: [],
+                      parameterRanges: [],
+                      tabContext: 'Model'
+                    })
+
+                    console.log('[ForgeTab] Generated strategy bot:', botId, 'with', shardStrategyBranches.length, 'branches')
+
+                    // Navigate to Model tab
+                    useUIStore.getState().setTab('Model')
+
+                    // Set this bot as active in Model tab
+                    useBotStore.getState().setActiveModelBotId(botId)
+                  } catch (err) {
+                    console.error('[ForgeTab] Failed to save strategy bot:', err)
+                  }
+                }}
+              />
             </div>
           </div>
         )}

@@ -399,6 +399,22 @@ export function initializeDatabase() {
       updated_at INTEGER NOT NULL
     );
 
+    -- Saved Shards (Filtered Branch Collections)
+    CREATE TABLE IF NOT EXISTS saved_shards (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      source_job_ids TEXT NOT NULL,
+      loaded_job_type TEXT NOT NULL,
+      branches TEXT NOT NULL,
+      branch_count INTEGER NOT NULL,
+      filter_summary TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      deleted_at INTEGER
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_id);
     CREATE INDEX IF NOT EXISTS idx_bots_visibility ON bots(visibility);
@@ -421,6 +437,8 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_accounts(user_id);
     CREATE INDEX IF NOT EXISTS idx_ticker_lists_user ON ticker_lists(user_id);
     CREATE INDEX IF NOT EXISTS idx_ticker_lists_name ON ticker_lists(user_id, name);
+    CREATE INDEX IF NOT EXISTS idx_saved_shards_owner ON saved_shards(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_saved_shards_created ON saved_shards(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_oauth_provider ON oauth_accounts(provider, provider_account_id);
     CREATE INDEX IF NOT EXISTS idx_opt_jobs_bot ON optimization_jobs(bot_id);
     CREATE INDEX IF NOT EXISTS idx_opt_jobs_status ON optimization_jobs(status);
@@ -1701,6 +1719,170 @@ export async function updateTickerList(id, userId, data) {
  */
 export async function deleteTickerList(id, userId) {
   const result = sqlite.prepare('DELETE FROM ticker_lists WHERE id = ? AND user_id = ?').run(id, userId)
+  return result.changes > 0
+}
+
+// ============================================
+// SAVED SHARDS CRUD
+// ============================================
+
+/**
+ * Get all saved shards for a user (list view - excludes full branch data)
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} Array of shard list items
+ */
+export async function getShardsByUser(userId) {
+  const shards = sqlite.prepare(`
+    SELECT id, name, description, source_job_ids, loaded_job_type, branch_count, filter_summary, created_at, updated_at
+    FROM saved_shards
+    WHERE owner_id = ? AND deleted_at IS NULL
+    ORDER BY created_at DESC
+  `).all(userId)
+
+  return shards.map(shard => ({
+    id: shard.id,
+    name: shard.name,
+    description: shard.description,
+    sourceJobIds: JSON.parse(shard.source_job_ids || '[]'),
+    loadedJobType: shard.loaded_job_type,
+    branchCount: shard.branch_count,
+    filterSummary: shard.filter_summary,
+    createdAt: shard.created_at,
+    updatedAt: shard.updated_at
+  }))
+}
+
+/**
+ * Get all saved shards (admin view - for admin dashboard)
+ * @returns {Promise<Array>} Array of all shards with owner info
+ */
+export async function getAllShards() {
+  const shards = sqlite.prepare(`
+    SELECT s.*, u.username as owner_username, u.display_name as owner_display_name
+    FROM saved_shards s
+    LEFT JOIN users u ON s.owner_id = u.id
+    WHERE s.deleted_at IS NULL
+    ORDER BY s.created_at DESC
+  `).all()
+
+  return shards.map(shard => ({
+    id: shard.id,
+    ownerId: shard.owner_id,
+    ownerUsername: shard.owner_username,
+    ownerDisplayName: shard.owner_display_name,
+    name: shard.name,
+    description: shard.description,
+    sourceJobIds: JSON.parse(shard.source_job_ids || '[]'),
+    loadedJobType: shard.loaded_job_type,
+    branchCount: shard.branch_count,
+    filterSummary: shard.filter_summary,
+    createdAt: shard.created_at,
+    updatedAt: shard.updated_at
+  }))
+}
+
+/**
+ * Get a single shard by ID (includes full branch data)
+ * @param {string} id - Shard ID
+ * @param {string} userId - User ID (for ownership verification, pass null for admin)
+ * @returns {Promise<Object|null>} Shard object or null if not found
+ */
+export async function getShardById(id, userId = null) {
+  const query = userId
+    ? 'SELECT * FROM saved_shards WHERE id = ? AND owner_id = ? AND deleted_at IS NULL'
+    : 'SELECT * FROM saved_shards WHERE id = ? AND deleted_at IS NULL'
+
+  const params = userId ? [id, userId] : [id]
+  const shard = sqlite.prepare(query).get(...params)
+
+  if (!shard) return null
+
+  return {
+    id: shard.id,
+    ownerId: shard.owner_id,
+    name: shard.name,
+    description: shard.description,
+    sourceJobIds: JSON.parse(shard.source_job_ids || '[]'),
+    loadedJobType: shard.loaded_job_type,
+    branches: JSON.parse(shard.branches || '[]'),
+    branchCount: shard.branch_count,
+    filterSummary: shard.filter_summary,
+    createdAt: shard.created_at,
+    updatedAt: shard.updated_at
+  }
+}
+
+/**
+ * Create a new saved shard
+ * @param {Object} data - Shard data
+ * @returns {Promise<string>} Created shard ID
+ */
+export async function createShard(data) {
+  const id = data.id || `shard-${Date.now()}`
+  const now = Date.now()
+
+  sqlite.prepare(`
+    INSERT INTO saved_shards (id, owner_id, name, description, source_job_ids, loaded_job_type, branches, branch_count, filter_summary, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    data.ownerId,
+    data.name,
+    data.description || null,
+    JSON.stringify(data.sourceJobIds || []),
+    data.loadedJobType,
+    JSON.stringify(data.branches || []),
+    data.branchCount || data.branches?.length || 0,
+    data.filterSummary || null,
+    now,
+    now
+  )
+
+  return id
+}
+
+/**
+ * Update an existing shard
+ * @param {string} id - Shard ID
+ * @param {string} userId - User ID (for ownership verification)
+ * @param {Object} data - Updated data
+ * @returns {Promise<string|null>} Shard ID or null if not found
+ */
+export async function updateShard(id, userId, data) {
+  // Verify ownership
+  const existing = sqlite.prepare('SELECT id FROM saved_shards WHERE id = ? AND owner_id = ? AND deleted_at IS NULL').get(id, userId)
+  if (!existing) return null
+
+  const now = Date.now()
+  const updates = []
+  const values = []
+
+  if (data.name !== undefined) {
+    updates.push('name = ?')
+    values.push(data.name)
+  }
+  if (data.description !== undefined) {
+    updates.push('description = ?')
+    values.push(data.description)
+  }
+
+  updates.push('updated_at = ?')
+  values.push(now)
+  values.push(id)
+
+  sqlite.prepare(`UPDATE saved_shards SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+  return id
+}
+
+/**
+ * Delete a shard (soft delete)
+ * @param {string} id - Shard ID
+ * @param {string} userId - User ID (for ownership verification)
+ * @returns {Promise<boolean>} True if deleted, false if not found
+ */
+export async function deleteShard(id, userId) {
+  const now = Date.now()
+  const result = sqlite.prepare('UPDATE saved_shards SET deleted_at = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL').run(now, id, userId)
   return result.changes > 0
 }
 

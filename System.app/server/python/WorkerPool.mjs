@@ -124,11 +124,12 @@ export class WorkerPool {
 
     this.workers.push(worker)
 
-    // Send initialization config (with optional pre-load metadata)
+    // Send initialization config (with optional pre-load metadata and shared memory)
     const config = {
       parquetDir: this.parquetDir,
       preloadTickers: this.preloadTickers || [],
-      preloadIndicators: this.preloadIndicators || {}
+      preloadIndicators: this.preloadIndicators || {},
+      sharedMemoryMetadata: this.sharedMemoryMetadata || null
     }
     python.stdin.write(JSON.stringify(config) + '\n')
   }
@@ -460,6 +461,12 @@ export class WorkerPool {
                 // Store pre-load metadata for workers
                 this.preloadTickers = result.analysis?.tickers || []
                 this.preloadIndicators = result.analysis?.indicators || {}
+
+                // Store shared memory metadata if available
+                if (result.shared_memory_created && result.shared_memory_metadata) {
+                  console.log(`[WorkerPool] ✓ Shared memory created for ${Object.keys(result.shared_memory_metadata).length} tickers`)
+                  this.sharedMemoryMetadata = result.shared_memory_metadata
+                }
               }
             }
           } catch (error) {

@@ -247,29 +247,36 @@ body {
 
 /* Hide horizontal scrollbar for elements using floating scrollbar */
 .hide-horizontal-scrollbar {
-  scrollbar-gutter: stable;
+  /* Firefox support */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.5) rgba(0, 0, 0, 0.1);
+  overflow-y: scroll !important;
 }
 
-.hide-horizontal-scrollbar::-webkit-scrollbar:vertical {
-  width: 8px;
+.hide-horizontal-scrollbar::-webkit-scrollbar {
+  width: 12px !important;
+  height: 0px;
 }
 
-.hide-horizontal-scrollbar::-webkit-scrollbar:horizontal {
-  height: 0 !important;
-  display: none !important;
+.hide-horizontal-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  margin: 2px 0;
 }
 
-.hide-horizontal-scrollbar::-webkit-scrollbar-track:vertical {
+.hide-horizontal-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.5);
+  border-radius: 8px;
+  border: 3px solid rgba(0, 0, 0, 0.05);
+  min-height: 40px;
+}
+
+.hide-horizontal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.7);
+}
+
+.hide-horizontal-scrollbar::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-.hide-horizontal-scrollbar::-webkit-scrollbar-thumb:vertical {
-  background: var(--color-border);
-  border-radius: 4px;
-}
-
-.hide-horizontal-scrollbar::-webkit-scrollbar-thumb:vertical:hover {
-  background: var(--color-muted);
 }
 
 /* Hide all scrollbars - for use with floating scrollbar replacement */
