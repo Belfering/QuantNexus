@@ -85,7 +85,7 @@ import { useTreeSync, useTreeUndo, useTickerLists } from '@/hooks'
 import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest'
 import { applyBranchToTree } from '@/features/optimization/services/branchGenerator'
 import type { EligibilityRequirement } from '@/types/admin'
-import { countForgeNodes, LIMITS } from '@/features/forge/utils/limits'
+import { countForgeNodes, LIMITS, validateBranchCount } from '@/features/forge/utils/limits'
 
 // Development mode flag - controls visibility of experimental features
 const IS_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
@@ -1620,21 +1620,29 @@ export function ForgeTab({
               // For Split: enable if chronological ranges exist
               const hasRanges = enabledRanges.length > 0
 
-              const etaMinutes = Math.ceil(branchCount * 0.5 / 60) // Rough estimate: 0.5s per branch
+              // Validate branch count against MAX_BRANCHES limit
+              const validation = validateBranchCount(branchCount)
 
               return (
                 <>
                   <Button
                     size="sm"
-                    disabled={!hasRanges}
+                    disabled={!hasRanges || !validation.valid}
                     onClick={handleGenerateBranches}
                   >
                     Run Split
                   </Button>
                   {hasRanges && (
-                    <span className="text-xs text-muted-foreground">
-                      {branchCount} {branchCount === 1 ? 'branch' : 'branches'} (~{etaMinutes} min)
-                    </span>
+                    <div className="flex flex-col items-start gap-1">
+                      <span className={`text-xs ${validation.valid ? 'text-muted-foreground' : 'text-red-500'}`}>
+                        {validation.displayText}
+                      </span>
+                      {!validation.valid && validation.errorMessage && (
+                        <span className="text-xs text-red-500">
+                          {validation.errorMessage}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </>
               )
@@ -2205,21 +2213,29 @@ export function ForgeTab({
               // For Walk Forward: enable if Rolling node exists AND has rolling ranges
               const hasRanges = hasRollingNodeInTree(current) && enabledRanges.length > 0
 
-              const etaMinutes = Math.ceil(branchCount * 0.5 / 60) // Rough estimate: 0.5s per branch
+              // Validate branch count against MAX_BRANCHES limit
+              const validation = validateBranchCount(branchCount)
 
               return (
                 <>
                   <Button
                     size="sm"
-                    disabled={!hasRanges}
+                    disabled={!hasRanges || !validation.valid}
                     onClick={handleGenerateBranches}
                   >
                     Run Walk Forward
                   </Button>
                   {hasRanges && (
-                    <span className="text-xs text-muted-foreground">
-                      {branchCount} {branchCount === 1 ? 'branch' : 'branches'} (~{etaMinutes} min)
-                    </span>
+                    <div className="flex flex-col items-start gap-1">
+                      <span className={`text-xs ${validation.valid ? 'text-muted-foreground' : 'text-red-500'}`}>
+                        {validation.displayText}
+                      </span>
+                      {!validation.valid && validation.errorMessage && (
+                        <span className="text-xs text-red-500">
+                          {validation.errorMessage}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </>
               )
