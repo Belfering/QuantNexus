@@ -74,6 +74,7 @@ import { ShardsJobLoader } from '@/components/Forge/ShardsJobLoader'
 import { ShardsBranchFilter } from '@/components/Forge/ShardsBranchFilter'
 import { ShardsCombinedPreview } from '@/components/Forge/ShardsCombinedPreview'
 import { ShardsLibrary } from '@/components/Forge/ShardsLibrary'
+import { ForgeModelTab } from '@/components/Forge/ForgeModelTab'
 import { ParameterBoxPanel } from '@/features/parameters/components/ParameterBoxPanel'
 import type { ParameterField, ParameterRange } from '@/features/parameters/types'
 import { loadCallChainsFromApi } from '@/features/auth'
@@ -85,6 +86,9 @@ import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest
 import { applyBranchToTree } from '@/features/optimization/services/branchGenerator'
 import type { EligibilityRequirement } from '@/types/admin'
 import { countForgeNodes, LIMITS } from '@/features/forge/utils/limits'
+
+// Development mode flag - controls visibility of experimental features
+const IS_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
 
 export interface ForgeTabProps {
   // Backtest panel props (from App.tsx - derived or callback)
@@ -269,7 +273,7 @@ export function ForgeTab({
         useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: newTree })
         console.log('[ForgeTab] Initialized Walk Forward tab with new rolling node')
       }
-    } else if (forgeSubtab === 'Split') {
+    } else if (forgeSubtab === 'Shaping') {
       if (activeBot.splitTree) {
         // Load existing Split tree
         treeStore.setRoot(activeBot.splitTree)
@@ -1139,6 +1143,7 @@ export function ForgeTab({
   const [rollingOptimizationRunning, setRollingOptimizationRunning] = useState(false)
   const [rollingProgress, setRollingProgress] = useState<{completed: number, total: number, currentPeriod: number, totalPeriods: number} | null>(null)
   const [resultsSubtab, setResultsSubtab] = useState<'Chronological' | 'Rolling'>('Chronological')
+  const [shardsSubtab, setShardsSubtab] = useState<'shards' | 'results'>('shards')
 
   // Clear old batch job when switching to Forge tab
   useEffect(() => {
@@ -1417,12 +1422,13 @@ export function ForgeTab({
                 // Store results
                 useBotStore.getState().setRollingResult(activeBot.id, results)
 
-                // Switch to Results tab and Rolling subtab
-                setForgeSubtab('Results')
+                // Switch to Shards tab > Run Results sub-subtab > Rolling
+                setForgeSubtab('Shards')
+                setShardsSubtab('results')
                 setResultsSubtab('Rolling')
 
                 // Show success notification
-                alert(`Rolling optimization complete!\nJob ID: ${data.jobId}\nValid tickers: ${results.job.validTickers.length}\nBranches tested: ${results.job.branchCount}\nYears: ${results.branches[0]?.isStartYear || '?'} - present\n\nResults are now available in the Results tab.`)
+                alert(`Rolling optimization complete!\nJob ID: ${data.jobId}\nValid tickers: ${results.job.validTickers.length}\nBranches tested: ${results.job.branchCount}\nYears: ${results.branches[0]?.isStartYear || '?'} - present\n\nResults are now available in the Shards > Run Results tab.`)
               })
               .catch(error => {
                 console.error('[ForgeTab] Failed to fetch rolling results:', error)
@@ -1497,8 +1503,8 @@ export function ForgeTab({
   return (
     <Card className="h-full flex flex-col overflow-hidden mx-2 my-4">
       <CardContent className="flex-1 flex flex-col gap-4 p-4 pb-8 overflow-auto min-h-0">
-        {/* Split Tab Content */}
-        {forgeSubtab === 'Split' && (
+        {/* Shaping Tab Content */}
+        {forgeSubtab === 'Shaping' && (
           <>
             {/* Top Zone - Chronological Settings Panel */}
             <div className="shrink-0 border-b border-border pb-4">
@@ -2624,47 +2630,30 @@ export function ForgeTab({
           </>
         )}
 
-        {/* Ticker Lists Tab */}
-        {forgeSubtab === 'Ticker Lists' && <TickerListsPanel />}
-
-        {/* Results Tab */}
-        {forgeSubtab === 'Results' && (
-          <>
-            {/* Results Sub-Subtabs */}
-            <div className="flex gap-2 shrink-0">
-              <Button
-                variant={resultsSubtab === 'Chronological' ? 'accent' : 'secondary'}
-                onClick={() => setResultsSubtab('Chronological')}
-              >
-                Chronological
-              </Button>
-              <Button
-                variant={resultsSubtab === 'Rolling' ? 'accent' : 'secondary'}
-                onClick={() => setResultsSubtab('Rolling')}
-              >
-                Rolling
-              </Button>
-            </div>
-
-            {/* Results Content */}
-            {resultsSubtab === 'Chronological' ? (
-              <OptimizationResultsPanel />
-            ) : (
-              <RollingResultsSection
-                result={activeBot?.rollingResult ?? null}
-                onClose={() => {
-                  // Clear the rolling result when closed
-                  if (activeBot) {
-                    useBotStore.getState().setRollingResult(activeBot.id, undefined)
-                  }
-                }}
-              />
-            )}
-          </>
-        )}
+        {/* Data Tab */}
+        {forgeSubtab === 'Data' && <TickerListsPanel />}
 
         {/* Shards Tab Content */}
         {forgeSubtab === 'Shards' && (
+          <>
+            {/* Shards Sub-Subtabs */}
+            <div className="flex gap-2 shrink-0 mb-4 px-6 pt-6">
+              <Button
+                variant={shardsSubtab === 'shards' ? 'accent' : 'secondary'}
+                onClick={() => setShardsSubtab('shards')}
+              >
+                Shards
+              </Button>
+              <Button
+                variant={shardsSubtab === 'results' ? 'accent' : 'secondary'}
+                onClick={() => setShardsSubtab('results')}
+              >
+                Run Results
+              </Button>
+            </div>
+
+            {/* Shards Content */}
+            {shardsSubtab === 'shards' ? (
           <div className="flex-1 overflow-hidden flex flex-col p-6 max-h-[calc(100vh-160px)]">
             <div className="grid grid-cols-4 gap-4 h-full min-h-0">
               {/* Card 1: Job Loading */}
@@ -2725,8 +2714,7 @@ export function ForgeTab({
                 onGenerate={shardGenerateCombinedTree}
                 onSaveToModel={async () => {
                   const botId = await shardSaveToModel()
-                  // Optionally switch to Model tab
-                  setForgeSubtab('Split') // Or navigate to Model tab
+                  // Stay on Shards tab after saving
                   console.log('[ForgeTab] Saved shard to Model tab:', botId)
                 }}
                 canSave={shardFilteredBranches.length > 0}
@@ -2791,16 +2779,16 @@ export function ForgeTab({
                       callChains: [],
                       customIndicators: [],
                       parameterRanges: [],
-                      tabContext: 'Model'
+                      tabContext: 'Forge'
                     })
 
                     console.log('[ForgeTab] Generated strategy bot:', botId, 'with', shardStrategyBranches.length, 'branches')
 
-                    // Navigate to Model tab
-                    useUIStore.getState().setTab('Model')
+                    // Navigate to Forge subtab
+                    useUIStore.getState().setForgeSubtab('Forge')
 
-                    // Set this bot as active in Model tab
-                    useBotStore.getState().setActiveModelBotId(botId)
+                    // Set this bot as active in Forge tab
+                    useBotStore.getState().setActiveForgeBotId(botId)
                   } catch (err) {
                     console.error('[ForgeTab] Failed to save strategy bot:', err)
                   }
@@ -2808,6 +2796,71 @@ export function ForgeTab({
               />
             </div>
           </div>
+            ) : (
+              /* Run Results Content */
+              <>
+                {/* Results Sub-Subtabs */}
+                <div className="flex gap-2 shrink-0 px-6">
+                  <Button
+                    variant={resultsSubtab === 'Chronological' ? 'accent' : 'secondary'}
+                    onClick={() => setResultsSubtab('Chronological')}
+                  >
+                    Chronological
+                  </Button>
+                  {IS_DEV_MODE && (
+                    <Button
+                      variant={resultsSubtab === 'Rolling' ? 'accent' : 'secondary'}
+                      onClick={() => setResultsSubtab('Rolling')}
+                    >
+                      Rolling
+                    </Button>
+                  )}
+                </div>
+
+                {/* Results Content */}
+                {resultsSubtab === 'Chronological' ? (
+                  <OptimizationResultsPanel />
+                ) : (
+                  <RollingResultsSection
+                    result={activeBot?.rollingResult ?? null}
+                    onClose={() => {
+                      // Clear the rolling result when closed
+                      if (activeBot) {
+                        useBotStore.getState().setRollingResult(activeBot.id, undefined)
+                      }
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* Forge Subtab - Independent copy of Model tab */}
+        {forgeSubtab === 'Forge' && (
+          <ForgeModelTab
+            tickerOptions={tickerOptions}
+            backtestStatus={backtestStatus}
+            backtestResult={backtestResult}
+            backtestErrors={backtestErrors}
+            handleRunBacktest={handleRunBacktest}
+            handleJumpToBacktestError={handleJumpToBacktestError}
+            theme={theme}
+            fetchBenchmarkMetrics={fetchBenchmarkMetrics}
+            runModelRobustness={runModelRobustness}
+            activeBot={activeBot}
+            callChains={callChains}
+            setCallChains={setCallChains}
+            handleAddCallChain={handleAddCallChain}
+            handleRenameCallChain={handleRenameCallChain}
+            handleToggleCallChainCollapse={handleToggleCallChainCollapse}
+            handleDeleteCallChain={handleDeleteCallChain}
+            pushCallChain={pushCallChain}
+            backtestErrorNodeIds={backtestErrorNodeIds}
+            backtestFocusNodeId={backtestFocusNodeId}
+            flowchartScrollRef={flowchartScrollRef}
+            floatingScrollRef={floatingScrollRef}
+          />
         )}
       </CardContent>
     </Card>

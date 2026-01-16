@@ -7,6 +7,9 @@ import { Check, Trash2, Edit2 } from 'lucide-react'
 import type { OptimizationJob } from '@/types/optimizationJob'
 import type { RollingJob } from '@/features/optimization/hooks/useRollingJobs'
 
+// Development mode flag - controls visibility of experimental features
+const IS_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
+
 interface ShardsJobLoaderProps {
   loadedJobType: 'chronological' | 'rolling' | null
   loadedJobIds: number[]
@@ -406,7 +409,7 @@ export function ShardsJobLoader({
           className="w-full px-2 py-1 rounded border border-border bg-background text-sm"
         >
           <option value="chronological">Chronological (Split)</option>
-          <option value="rolling">Rolling (Walk Forward)</option>
+          {IS_DEV_MODE && <option value="rolling">Rolling (Walk Forward)</option>}
           <option value="saved">Saved Shards</option>
         </select>
       </div>

@@ -1168,11 +1168,18 @@ function App() {
           {tab === 'Forge' && (
             <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 8', gridRow: '2 / 3' }}>
               <Button
-                onClick={() => useUIStore.getState().setForgeSubtab('Split')}
-                variant={forgeSubtab === 'Split' ? 'accent' : 'secondary'}
+                onClick={() => useUIStore.getState().setForgeSubtab('Data')}
+                variant={forgeSubtab === 'Data' ? 'accent' : 'secondary'}
                 className="flex-1 rounded-none border-r border-border h-10"
               >
-                Split
+                Data
+              </Button>
+              <Button
+                onClick={() => useUIStore.getState().setForgeSubtab('Shaping')}
+                variant={forgeSubtab === 'Shaping' ? 'accent' : 'secondary'}
+                className="flex-1 rounded-none border-r border-border h-10"
+              >
+                Shaping
               </Button>
               {IS_DEV_MODE && (
                 <Button
@@ -1184,25 +1191,18 @@ function App() {
                 </Button>
               )}
               <Button
-                onClick={() => useUIStore.getState().setForgeSubtab('Ticker Lists')}
-                variant={forgeSubtab === 'Ticker Lists' ? 'accent' : 'secondary'}
-                className="flex-1 rounded-none border-r border-border h-10"
-              >
-                Ticker Lists
-              </Button>
-              <Button
-                onClick={() => useUIStore.getState().setForgeSubtab('Results')}
-                variant={forgeSubtab === 'Results' ? 'accent' : 'secondary'}
-                className="flex-1 rounded-none border-r border-border h-10"
-              >
-                Results
-              </Button>
-              <Button
                 onClick={() => useUIStore.getState().setForgeSubtab('Shards')}
                 variant={forgeSubtab === 'Shards' ? 'accent' : 'secondary'}
-                className="flex-1 rounded-none h-10"
+                className="flex-1 rounded-none border-r border-border h-10"
               >
                 Shards
+              </Button>
+              <Button
+                onClick={() => useUIStore.getState().setForgeSubtab('Forge')}
+                variant={forgeSubtab === 'Forge' ? 'accent' : 'secondary'}
+                className="flex-1 rounded-none h-10"
+              >
+                Forge
               </Button>
             </div>
           )}

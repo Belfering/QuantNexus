@@ -6,7 +6,7 @@ import type { TickerModalMode, BlockKind } from '@/shared/components'
 type MainTab = 'Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'
 type DashboardSubtab = 'Portfolio' | 'Partner Program' // Legacy - no longer used
 type AnalyzeSubtab = 'Systems' | 'Correlation Tool'
-type ForgeSubtab = 'Split' | 'Walk Forward' | 'Ticker Lists' | 'Results' | 'Shards'
+type ForgeSubtab = 'Data' | 'Shaping' | 'Walk Forward' | 'Shards' | 'Forge'
 type HelpSubtab = 'Changelog' | 'Settings'
 
 interface UIState {
@@ -103,7 +103,7 @@ export const useUIStore = create<UIState>()((set) => ({
   tab: 'Model',
   dashboardSubtab: 'Portfolio',
   analyzeSubtab: 'Systems',
-  forgeSubtab: 'Split',
+  forgeSubtab: 'Data',
   adminTab: 'Atlas Overview',
   databasesTab: 'Systems',
   helpTab: 'Changelog',
