@@ -1272,23 +1272,44 @@ export const useShardStore = create<ShardState>((set, get) => ({
         ? filterGroups.map(g => `Top ${g.topX} ${g.metric}`).join(', ')
         : `Top ${filterTopX} ${filterMetric}`
 
+      const payload = {
+        ownerId: userId,
+        name,
+        description,
+        sourceJobIds: loadedJobIds,
+        loadedJobType: loadedJobType || 'chronological',
+        branches: filteredBranches,
+        filterSummary
+      }
+
+      console.log('[ShardStore] Saving shard:', {
+        name,
+        branchCount: filteredBranches.length,
+        sourceJobIds: loadedJobIds,
+        payloadSize: JSON.stringify(payload).length
+      })
+
       const res = await fetch('/api/shards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ownerId: userId,
-          name,
-          description,
-          sourceJobIds: loadedJobIds,
-          loadedJobType: loadedJobType || 'chronological',
-          branches: filteredBranches,
-          filterSummary
-        })
+        body: JSON.stringify(payload)
       })
 
       if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error(errorData.error || 'Failed to save shard')
+        // Read response body once
+        const responseText = await res.text()
+        let errorMessage = 'Failed to save shard'
+
+        try {
+          // Try to parse as JSON
+          const errorData = JSON.parse(responseText)
+          errorMessage = errorData.error || errorMessage
+        } catch (parseError) {
+          // If JSON parse fails, log the raw text response
+          console.error('[ShardStore] Non-JSON error response:', responseText.substring(0, 300))
+          errorMessage = `Server returned non-JSON response (status ${res.status}). Check console for details.`
+        }
+        throw new Error(errorMessage)
       }
 
       const data = await res.json()
