@@ -172,10 +172,31 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
         avgHoldings: serverResult.metrics?.avgHoldings ?? 0,
       }
 
+      // Helper to calculate turnover between two allocations
+      const calculateTurnover = (prevAlloc: BacktestAllocationRow | undefined, currAlloc: BacktestAllocationRow | undefined): number => {
+        if (!prevAlloc || !currAlloc) return 0
+
+        const allTickers = new Set<string>()
+        prevAlloc.entries.forEach(e => allTickers.add(e.ticker))
+        currAlloc.entries.forEach(e => allTickers.add(e.ticker))
+
+        let changed = 0
+        for (const ticker of allTickers) {
+          const prevWeight = prevAlloc.entries.find(e => e.ticker === ticker)?.weight ?? 0
+          const currWeight = currAlloc.entries.find(e => e.ticker === ticker)?.weight ?? 0
+          changed += Math.abs(currWeight - prevWeight)
+        }
+
+        return changed / 2
+      }
+
       // Build minimal days array for monthly returns calculation
       const days: BacktestDayRow[] = points.slice(1).map((p, i) => {
         const prevEquity = i > 0 ? points[i].value : 1
         const netReturn = prevEquity > 0 ? p.value / prevEquity - 1 : 0
+        const turnover = calculateTurnover(allocations[i - 1], allocations[i])
+        const cost = (backtestCostBps / 10000) * turnover
+
         return {
           time: p.time,
           date: new Date(Number(p.time) * 1000).toISOString().split('T')[0],
@@ -183,8 +204,8 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
           drawdown: drawdownPoints[i + 1]?.value ?? 0,
           grossReturn: netReturn,
           netReturn,
-          turnover: 0,
-          cost: 0,
+          turnover,
+          cost,
           holdings: allocations[i]?.entries || [],
           endNodes: [],
         }

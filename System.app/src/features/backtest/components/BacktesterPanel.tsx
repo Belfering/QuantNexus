@@ -266,7 +266,12 @@ export function BacktesterPanel({
     if (days.length === 0) return []
     const totals = new Map<string, number>()
     for (const d of days) {
-      for (const h of d.holdings) totals.set(h.ticker, (totals.get(h.ticker) || 0) + h.weight)
+      for (const h of d.holdings) {
+        // Skip cash-like positions (Empty, BIL, Cash)
+        const normalized = h.ticker.toUpperCase().trim()
+        if (normalized === 'EMPTY' || normalized === 'CASH') continue
+        totals.set(h.ticker, (totals.get(h.ticker) || 0) + h.weight)
+      }
     }
     const ranked = Array.from(totals.entries())
       .sort((a, b) => b[1] - a[1])
