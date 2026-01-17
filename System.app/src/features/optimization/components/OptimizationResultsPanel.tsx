@@ -26,6 +26,35 @@ export function OptimizationResultsPanel() {
   const [newName, setNewName] = useState('')
   const [showPassingOnly, setShowPassingOnly] = useState(true)
 
+  // Helper to compute metrics
+  const computeTIMARMaxDD = (metrics: any): number | null => {
+    const timar = (metrics as any).timar ?? metrics.timar ?? null
+    const maxDD = metrics.maxDrawdown ?? null
+    if (timar !== null && maxDD !== null && maxDD !== 0) {
+      return timar / Math.abs(maxDD)
+    }
+    return null
+  }
+
+  const computeTIMARTIMARMaxDD = (metrics: any): number | null => {
+    const timar = (metrics as any).timar ?? metrics.timar ?? null
+    const maxDD = metrics.maxDrawdown ?? null
+    if (timar !== null && maxDD !== null && maxDD !== 0) {
+      const ratio = timar / Math.abs(maxDD)
+      return (timar * 100) * ratio  // Convert TIMAR to percentage for readability
+    }
+    return null
+  }
+
+  const computeCAGRCALMAR = (metrics: any): number | null => {
+    const cagr = metrics.cagr ?? null
+    const calmar = metrics.calmar ?? null
+    if (cagr !== null && calmar !== null) {
+      return (cagr * 100) * calmar  // Convert CAGR to percentage for readability
+    }
+    return null
+  }
+
   // Get rolling result from active bot
   const rollingResult = activeBot?.rollingResult || null
 
@@ -331,6 +360,9 @@ export function OptimizationResultsPanel() {
                   <option value="is_max_drawdown">IS MaxDD</option>
                   <option value="is_tim">IS TIM</option>
                   <option value="is_timar">IS TIMAR</option>
+                  <option value="is_timar_maxdd">IS TIMAR/MaxDD</option>
+                  <option value="is_timar_timar_maxdd">IS TIMAR×(TIMAR/MaxDD)</option>
+                  <option value="is_cagr_calmar">IS CAGR×CALMAR</option>
                   <option value="oos_cagr">OOS CAGR</option>
                   <option value="oos_sharpe">OOS Sharpe</option>
                   <option value="oos_calmar">OOS Calmar</option>
@@ -342,6 +374,9 @@ export function OptimizationResultsPanel() {
                   <option value="oos_max_drawdown">OOS MaxDD</option>
                   <option value="oos_tim">OOS TIM</option>
                   <option value="oos_timar">OOS TIMAR</option>
+                  <option value="oos_timar_maxdd">OOS TIMAR/MaxDD</option>
+                  <option value="oos_timar_timar_maxdd">OOS TIMAR×(TIMAR/MaxDD)</option>
+                  <option value="oos_cagr_calmar">OOS CAGR×CALMAR</option>
                 </select>
                 <select
                   value={sortOrder}
@@ -384,6 +419,9 @@ export function OptimizationResultsPanel() {
                       <th className="px-3 py-2 text-right">IS MaxDD</th>
                       <th className="px-3 py-2 text-right">IS TIM</th>
                       <th className="px-3 py-2 text-right">IS TIMAR</th>
+                      <th className="px-3 py-2 text-right" title="TIMAR divided by Max Drawdown">IS TIMAR/MaxDD</th>
+                      <th className="px-3 py-2 text-right" title="TIMAR multiplied by (TIMAR/MaxDD)">IS TIMAR×(TIMAR/MaxDD)</th>
+                      <th className="px-3 py-2 text-right" title="CAGR multiplied by Calmar Ratio">IS CAGR×CALMAR</th>
                       <th className="px-3 py-2 text-right">IS Win%</th>
                       <th className="px-3 py-2 text-left">OOS Start</th>
                       <th className="px-3 py-2 text-right">OOS CAGR</th>
@@ -396,6 +434,9 @@ export function OptimizationResultsPanel() {
                       <th className="px-3 py-2 text-right">OOS MaxDD</th>
                       <th className="px-3 py-2 text-right">OOS TIM</th>
                       <th className="px-3 py-2 text-right">OOS TIMAR</th>
+                      <th className="px-3 py-2 text-right" title="TIMAR divided by Max Drawdown">OOS TIMAR/MaxDD</th>
+                      <th className="px-3 py-2 text-right" title="TIMAR multiplied by (TIMAR/MaxDD)">OOS TIMAR×(TIMAR/MaxDD)</th>
+                      <th className="px-3 py-2 text-right" title="CAGR multiplied by Calmar Ratio">OOS CAGR×CALMAR</th>
                       <th className="px-3 py-2 text-right">OOS Win%</th>
                       <th className="px-3 py-2 text-center">Pass</th>
                       <th className="px-3 py-2 text-center">Actions</th>
@@ -431,6 +472,9 @@ export function OptimizationResultsPanel() {
                         <td className="px-3 py-2 text-right">{result.isMetrics?.maxDrawdown != null ? (result.isMetrics.maxDrawdown * 100).toFixed(2) + '%' : '-'}</td>
                         <td className="px-3 py-2 text-right">{result.isMetrics?.tim != null ? (result.isMetrics.tim * 100).toFixed(1) + '%' : '-'}</td>
                         <td className="px-3 py-2 text-right">{result.isMetrics?.timar != null ? (result.isMetrics.timar * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics ? (computeTIMARMaxDD(result.isMetrics)?.toFixed(4) ?? '-') : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics ? (computeTIMARTIMARMaxDD(result.isMetrics)?.toFixed(4) ?? '-') : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.isMetrics ? (computeCAGRCALMAR(result.isMetrics)?.toFixed(4) ?? '-') : '-'}</td>
                         <td className="px-3 py-2 text-right">{result.isMetrics?.winRate != null ? (result.isMetrics.winRate * 100).toFixed(1) + '%' : '-'}</td>
                         <td className="px-3 py-2 text-xs">{result.oosMetrics?.startDate || '-'}</td>
                         <td className="px-3 py-2 text-right">{result.oosMetrics?.cagr != null ? (result.oosMetrics.cagr * 100).toFixed(2) + '%' : '-'}</td>
@@ -443,6 +487,9 @@ export function OptimizationResultsPanel() {
                         <td className="px-3 py-2 text-right">{result.oosMetrics?.maxDrawdown != null ? (result.oosMetrics.maxDrawdown * 100).toFixed(2) + '%' : '-'}</td>
                         <td className="px-3 py-2 text-right">{result.oosMetrics?.tim != null ? (result.oosMetrics.tim * 100).toFixed(1) + '%' : '-'}</td>
                         <td className="px-3 py-2 text-right">{result.oosMetrics?.timar != null ? (result.oosMetrics.timar * 100).toFixed(2) + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics ? (computeTIMARMaxDD(result.oosMetrics)?.toFixed(4) ?? '-') : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics ? (computeTIMARTIMARMaxDD(result.oosMetrics)?.toFixed(4) ?? '-') : '-'}</td>
+                        <td className="px-3 py-2 text-right">{result.oosMetrics ? (computeCAGRCALMAR(result.oosMetrics)?.toFixed(4) ?? '-') : '-'}</td>
                         <td className="px-3 py-2 text-right">{result.oosMetrics?.winRate != null ? (result.oosMetrics.winRate * 100).toFixed(1) + '%' : '-'}</td>
                         <td className="px-3 py-2 text-center">
                           {result.passed ? (

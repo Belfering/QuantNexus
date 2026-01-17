@@ -6,11 +6,13 @@ import type { RollingOptimizationResult, SavedSystem } from '@/types/bot'
 import type { RollingJob } from '@/features/optimization/hooks/useRollingJobs'
 import type { FlowNode } from '@/types/flowNode'
 import type { ShardListItem, SavedShard } from '@/types/shard'
+import type { EligibilityRequirement } from '@/types/admin'
 import { buildShardTree } from '@/features/shards/treeBuilder'
 import { createBotInApi } from '@/features/bots/api'
 import { useAuthStore } from './useAuthStore'
 import { useBotStore } from './useBotStore'
 import { extractBranchDisplayInfo, type BranchDisplayInfo } from '@/features/shards/utils/conditionDisplay'
+import { evaluateRequirements } from '@/features/optimization/services/requirementsEvaluator'
 
 // ============================================================================
 // Tree Signature Utilities (for pattern-based filtering)
@@ -165,7 +167,7 @@ export interface FilterGroup {
   id: string
   jobName: string                // From loaded job metadata (e.g., "RSI Optimization")
   jobId: number                  // Source job ID (first loaded job)
-  metric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
+  metric: 'sharpe' | 'sortino' | 'treynor' | 'cagr' | 'calmar' | 'tim' | 'timar' | 'maxDrawdown' | 'vol' | 'beta' | 'winRate' | 'avgTurnover' | 'avgHoldings' | 'timarMaxDDRatio' | 'timarTimarMaxDD' | 'cagrCalmar'
   topX: number
   addedAt: number
   branchKeys: string[]           // ALL branches selected (for reference counting)
@@ -200,10 +202,11 @@ interface ShardState {
   loadedStrategyJobIds: number[]  // Array of loaded strategy job IDs
 
   // Phase 2: Filtering (additive with undo)
-  filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
+  filterMetric: 'sharpe' | 'sortino' | 'treynor' | 'cagr' | 'calmar' | 'tim' | 'timar' | 'maxDrawdown' | 'vol' | 'beta' | 'winRate' | 'avgTurnover' | 'avgHoldings' | 'timarMaxDDRatio' | 'timarTimarMaxDD' | 'cagrCalmar'
   filterTopX: number
   filterMode: 'overall' | 'perPattern'  // Filter mode: overall or per-pattern
   filterTopXPerPattern: number  // How many to take from each pattern (in perPattern mode)
+  metricRequirements: EligibilityRequirement[]  // Metric-based requirements (applied before Top X)
   discoveredPatterns: Record<string, {  // Pattern discovery results
     signature: string
     count: number
@@ -252,6 +255,7 @@ interface ShardState {
   setFilterTopX: (count: number) => void
   setFilterMode: (mode: 'overall' | 'perPattern') => void
   setFilterTopXPerPattern: (count: number) => void
+  setMetricRequirements: (requirements: EligibilityRequirement[]) => void
   discoverPatterns: () => void
   applyFilters: () => void
   removeBranchFromFiltered: (jobId: number, branchId: string | number) => void
@@ -299,6 +303,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
   filterTopX: 10,
   filterMode: 'overall',
   filterTopXPerPattern: 5,  // Default: top 5 from each pattern
+  metricRequirements: [],
   discoveredPatterns: {},
   filteredBranches: [],
   filterGroups: [],
@@ -495,6 +500,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
       loadedJobs: {},
       allBranches: [],
       filteredBranches: [],
+      metricRequirements: [],
       combinedTree: null
     })
   },
@@ -858,6 +864,11 @@ export const useShardStore = create<ShardState>((set, get) => ({
     set({ filterTopXPerPattern: Math.max(1, count) })
   },
 
+  // Phase 2: Set metric requirements
+  setMetricRequirements: (requirements) => {
+    set({ metricRequirements: requirements })
+  },
+
   // Phase 2: Discover unique patterns in loaded branches
   discoverPatterns: () => {
     const { allBranches, loadedJobType } = get()
@@ -900,10 +911,23 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
   // Phase 2: Apply filters to branches (ADDITIVE - appends to existing filtered branches)
   applyFilters: () => {
-    const { allBranches, filterMetric, filterTopX, filterTopXPerPattern, filterMode, loadedJobType, filteredBranches, filterGroups, filterHistory, loadedJobs, loadedJobIds, discoveredPatterns } = get()
+    const { allBranches, filterMetric, filterTopX, filterTopXPerPattern, filterMode, metricRequirements, loadedJobType, filteredBranches, filterGroups, filterHistory, loadedJobs, loadedJobIds, discoveredPatterns } = get()
 
     if (allBranches.length === 0) {
       return
+    }
+
+    // STEP 1: Apply metric requirements FIRST (filter eligible branches)
+    let eligibleBranches = allBranches
+    if (metricRequirements.length > 0) {
+      eligibleBranches = allBranches.filter(branch => {
+        const isMetrics = loadedJobType === 'chronological'
+          ? (branch as OptimizationResult).isMetrics
+          : (branch as RollingOptimizationResult['branches'][number]).isOosMetrics?.IS
+
+        const evaluation = evaluateRequirements(isMetrics, metricRequirements)
+        return evaluation.passed
+      })
     }
 
     // Get job name from loaded jobs
@@ -918,12 +942,42 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
     // Helper function to extract metric value
     const getMetricValue = (branch: any): number | null => {
+      let metrics
       if (loadedJobType === 'chronological') {
-        return branch.isMetrics?.[filterMetric] ?? null
+        metrics = branch.isMetrics
       } else if (loadedJobType === 'rolling') {
-        return branch.isOosMetrics?.IS ?? null
+        metrics = branch.isOosMetrics?.IS
       }
-      return null
+
+      if (!metrics) return null
+
+      // Handle computed metrics
+      if (filterMetric === 'timarMaxDDRatio') {
+        const timar = (metrics as any).timar ?? metrics.timar ?? null
+        const maxDD = metrics.maxDrawdown ?? null
+        if (timar !== null && maxDD !== null && maxDD !== 0) {
+          return timar / Math.abs(maxDD)
+        }
+        return null
+      } else if (filterMetric === 'timarTimarMaxDD') {
+        const timar = (metrics as any).timar ?? metrics.timar ?? null
+        const maxDD = metrics.maxDrawdown ?? null
+        if (timar !== null && maxDD !== null && maxDD !== 0) {
+          const ratio = timar / Math.abs(maxDD)
+          return (timar * 100) * ratio  // Convert TIMAR to percentage for readability
+        }
+        return null
+      } else if (filterMetric === 'cagrCalmar') {
+        const cagr = metrics.cagr ?? null
+        const calmar = metrics.calmar ?? null
+        if (cagr !== null && calmar !== null) {
+          return (cagr * 100) * calmar  // Convert CAGR to percentage for readability
+        }
+        return null
+      }
+
+      // Handle standard metrics
+      return metrics[filterMetric] ?? null
     }
 
     // Helper to get branch key
@@ -935,8 +989,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
     let perPatternConfigUsed: Record<string, { count: number; selected: number; example: string }> | undefined
 
     if (filterMode === 'overall') {
-      // EXISTING LOGIC: Sort all branches together, take top X
-      const sorted = [...allBranches].sort((a, b) => {
+      // EXISTING LOGIC: Sort eligible branches together, take top X
+      const sorted = [...eligibleBranches].sort((a, b) => {
         const aValue = getMetricValue(a)
         const bValue = getMetricValue(b)
         return (bValue || -Infinity) - (aValue || -Infinity)
@@ -947,7 +1001,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
       // Group branches by signature
       const branchesBySignature: Record<string, any[]> = {}
 
-      for (const branch of allBranches) {
+      for (const branch of eligibleBranches) {
         const b = branch as any
         const treeJson = loadedJobType === 'chronological' ? b.treeJson : undefined
         const signature = getTreeSignature(treeJson)

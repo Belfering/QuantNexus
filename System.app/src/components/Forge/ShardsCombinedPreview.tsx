@@ -14,7 +14,7 @@ interface ShardsCombinedPreviewProps {
   filteredBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   strategyBranches: OptimizationResult[] | RollingOptimizationResult['branches']
   activeListView: 'filter' | 'strategy'
-  filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
+  filterMetric: 'sharpe' | 'sortino' | 'treynor' | 'cagr' | 'calmar' | 'tim' | 'timar' | 'maxDrawdown' | 'vol' | 'beta' | 'winRate' | 'avgTurnover' | 'avgHoldings' | 'timarMaxDDRatio' | 'timarTimarMaxDD' | 'cagrCalmar'
   filterGroups: FilterGroup[]
   selectedFilterGroupId: string | null
   canUndo: boolean
@@ -96,15 +96,46 @@ export function ShardsCombinedPreview({
   // Detects branch type from data structure, not from loadedJobType (so it works after unloading)
   const getMetricValue = (branch: OptimizationResult | RollingOptimizationResult['branches'][number]): number | null => {
     const b = branch as any
+    let metrics
+
     // Chronological branches have isMetrics object
     if (b.isMetrics && typeof b.isMetrics === 'object') {
-      return b.isMetrics[filterMetric] ?? null
+      metrics = b.isMetrics
     }
     // Rolling branches have isOosMetrics object
-    if (b.isOosMetrics && typeof b.isOosMetrics === 'object') {
-      return b.isOosMetrics.IS ?? null
+    else if (b.isOosMetrics && typeof b.isOosMetrics === 'object') {
+      metrics = b.isOosMetrics.IS
     }
-    return null
+
+    if (!metrics) return null
+
+    // Handle computed metrics
+    if (filterMetric === 'timarMaxDDRatio') {
+      const timar = (metrics as any).timar ?? metrics.timar ?? null
+      const maxDD = metrics.maxDrawdown ?? null
+      if (timar !== null && maxDD !== null && maxDD !== 0) {
+        return timar / Math.abs(maxDD)
+      }
+      return null
+    } else if (filterMetric === 'timarTimarMaxDD') {
+      const timar = (metrics as any).timar ?? metrics.timar ?? null
+      const maxDD = metrics.maxDrawdown ?? null
+      if (timar !== null && maxDD !== null && maxDD !== 0) {
+        const ratio = timar / Math.abs(maxDD)
+        return (timar * 100) * ratio  // Convert TIMAR to percentage for readability
+      }
+      return null
+    } else if (filterMetric === 'cagrCalmar') {
+      const cagr = metrics.cagr ?? null
+      const calmar = metrics.calmar ?? null
+      if (cagr !== null && calmar !== null) {
+        return (cagr * 100) * calmar  // Convert CAGR to percentage for readability
+      }
+      return null
+    }
+
+    // Handle standard metrics
+    return metrics[filterMetric] ?? null
   }
 
   // Helper to format metric value

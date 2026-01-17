@@ -6,19 +6,24 @@ import { Button } from '@/components/ui/button'
 import type { OptimizationResult } from '@/types/optimizationJob'
 import type { RollingOptimizationResult } from '@/types/bot'
 import { extractBranchDisplayInfo, type BranchDisplayInfo } from '@/features/shards/utils/conditionDisplay'
+import { type EligibilityRequirement, METRIC_LABELS, type EligibilityMetric } from '@/types/admin'
+import { MetricDropdown } from './MetricDropdown'
+import { FilterMetricDropdown } from './FilterMetricDropdown'
 
 interface ShardsBranchFilterProps {
   loadedJobType: 'chronological' | 'rolling' | null
   allBranches: OptimizationResult[] | RollingOptimizationResult['branches']
-  filterMetric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar'
+  filterMetric: 'sharpe' | 'sortino' | 'treynor' | 'cagr' | 'calmar' | 'tim' | 'timar' | 'maxDrawdown' | 'vol' | 'beta' | 'winRate' | 'avgTurnover' | 'avgHoldings' | 'timarMaxDDRatio' | 'timarTimarMaxDD' | 'cagrCalmar'
   filterTopX: number
   filterMode: 'overall' | 'perPattern'
   filterTopXPerPattern: number
   discoveredPatterns: Record<string, any>
-  onFilterMetricChange: (metric: 'sharpe' | 'cagr' | 'tim' | 'timar' | 'calmar') => void
+  metricRequirements: EligibilityRequirement[]
+  onFilterMetricChange: (metric: 'sharpe' | 'sortino' | 'treynor' | 'cagr' | 'calmar' | 'tim' | 'timar' | 'maxDrawdown' | 'vol' | 'beta' | 'winRate' | 'avgTurnover' | 'avgHoldings' | 'timarMaxDDRatio' | 'timarTimarMaxDD' | 'cagrCalmar') => void
   onFilterTopXChange: (count: number) => void
   onFilterModeChange: (mode: 'overall' | 'perPattern') => void
   onFilterTopXPerPatternChange: (count: number) => void
+  onMetricRequirementsChange: (requirements: EligibilityRequirement[]) => void
   onApplyFilter: () => void
 }
 
@@ -30,10 +35,12 @@ export function ShardsBranchFilter({
   filterMode,
   filterTopXPerPattern,
   discoveredPatterns,
+  metricRequirements,
   onFilterMetricChange,
   onFilterTopXChange,
   onFilterModeChange,
   onFilterTopXPerPatternChange,
+  onMetricRequirementsChange,
   onApplyFilter
 }: ShardsBranchFilterProps) {
   // Local state for the input to allow clearing while typing
@@ -43,6 +50,41 @@ export function ShardsBranchFilter({
   useEffect(() => {
     setTopXInput(filterTopX === 0 ? '' : String(filterTopX))
   }, [filterTopX])
+
+  // Collapsible section state
+  const [showRequirements, setShowRequirements] = useState(false)
+
+  // New requirement inputs
+  const [newMetric, setNewMetric] = useState<EligibilityMetric>('sharpe')
+  const [newComparison, setNewComparison] = useState<'at_least' | 'at_most'>('at_least')
+  const [newMetricValue, setNewMetricValue] = useState(0)
+
+  // Auto-expand when first requirement added
+  useEffect(() => {
+    if (metricRequirements.length > 0 && !showRequirements) {
+      setShowRequirements(true)
+    }
+  }, [metricRequirements.length])
+
+  // Add requirement handler
+  const handleAddRequirement = () => {
+    // Max Drawdown is stored as POSITIVE in backend (0.155 = 15.5% drawdown)
+    // User enters positive values and comparison works normally (no reversal needed)
+    const newReq: EligibilityRequirement = {
+      id: `metric-${Date.now()}`,
+      type: 'metric',
+      metric: newMetric,
+      comparison: newComparison,
+      value: newMetricValue
+    }
+    onMetricRequirementsChange([...metricRequirements, newReq])
+  }
+
+  // Format requirement value with percentage or decimal
+  const formatRequirementValue = (req: EligibilityRequirement): string => {
+    const isPercentage = ['cagr', 'maxDrawdown', 'tim', 'timar', 'winRate', 'vol', 'avgTurnover', 'timarTimarMaxDD', 'cagrCalmar'].includes(req.metric || '')
+    return isPercentage ? `${req.value.toFixed(2)}%` : req.value.toFixed(4)
+  }
 
   // Helper to get metric value for display
   const getMetricValue = (branch: OptimizationResult | RollingOptimizationResult['branches'][number]): number | null => {
@@ -77,22 +119,126 @@ export function ShardsBranchFilter({
 
       {/* Filter Controls */}
       <div className="space-y-3 mb-3">
-        {/* Row 1: Metric + Top X + Apply (inline) */}
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <label className="text-sm text-muted-foreground block mb-1">Metric</label>
-            <select
-              value={filterMetric}
-              onChange={(e) => onFilterMetricChange(e.target.value as any)}
-              className="w-full px-2 py-1 rounded border border-border bg-background text-sm h-8"
-              disabled={allBranches.length === 0}
+        {/* Row 1: Mode toggle with theme colors */}
+        <div>
+          <label className="text-sm text-muted-foreground block mb-1">Filter Mode</label>
+          <div className="flex items-center gap-1 p-1 bg-muted/50 rounded">
+            <button
+              onClick={() => onFilterModeChange('overall')}
+              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
+                filterMode === 'overall'
+                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
+                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
             >
-              <option value="sharpe">Sharpe</option>
-              <option value="cagr">CAGR</option>
-              <option value="tim">TIM</option>
-              <option value="timar">TIMAR</option>
-              <option value="calmar">Calmar</option>
-            </select>
+              All
+            </button>
+            <button
+              onClick={() => onFilterModeChange('perPattern')}
+              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
+                filterMode === 'perPattern'
+                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
+                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
+            >
+              Per Pattern
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Metric Requirements Section */}
+        <div className="border-t border-border pt-3">
+          <button
+            onClick={() => setShowRequirements(!showRequirements)}
+            className="flex items-center justify-between w-full text-sm font-medium mb-2 hover:text-foreground transition-colors"
+          >
+            <span>Metric Requirements ({metricRequirements.length})</span>
+            <span className="text-muted-foreground text-xs">{showRequirements ? '▼' : '▶'}</span>
+          </button>
+
+          {showRequirements && (
+            <div className="space-y-3 p-3 bg-background rounded border border-border">
+              {/* Add New Requirement Row */}
+              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-end">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">
+                    Metric
+                  </label>
+                  <MetricDropdown
+                    value={newMetric}
+                    onChange={setNewMetric}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Comparison</label>
+                  <select
+                    value={newComparison}
+                    onChange={(e) => setNewComparison(e.target.value as 'at_least' | 'at_most')}
+                    className="w-full px-2 py-1 rounded border border-border bg-background text-sm h-8"
+                  >
+                    <option value="at_least">at least</option>
+                    <option value="at_most">at most</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Value</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newMetricValue}
+                    onChange={(e) => setNewMetricValue(Number(e.target.value))}
+                    className="w-20 px-2 py-1 rounded border border-border bg-background text-sm h-8"
+                  />
+                </div>
+
+                <Button onClick={handleAddRequirement} size="sm" className="h-8">
+                  Add
+                </Button>
+              </div>
+
+              {/* Current Requirements List */}
+              {metricRequirements.length > 0 && (
+                <div className="space-y-2 border-t border-border pt-2 mt-2">
+                  {metricRequirements.map(req => {
+                    const displayComparison = req.comparison === 'at_least' ? '≥' : '≤'
+
+                    return (
+                      <div key={req.id} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                        <span className="text-sm">
+                          {METRIC_LABELS[req.metric!]} {displayComparison} {formatRequirementValue(req)}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onMetricRequirementsChange(metricRequirements.filter(r => r.id !== req.id))}
+                          className="h-6 w-6 p-0"
+                        >
+                          X
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Row 2: Metric + Top X + Apply (inline) */}
+        <div className="flex items-end gap-2 border-t border-border pt-3">
+          <div className="flex-1">
+            <label className="text-sm text-muted-foreground block mb-1">
+              Metric
+            </label>
+            <FilterMetricDropdown
+              value={filterMetric}
+              onChange={onFilterMetricChange}
+              disabled={allBranches.length === 0}
+              className="w-full"
+            />
           </div>
           <div className="w-20">
             <label className="text-sm text-muted-foreground block mb-1">
@@ -122,33 +268,6 @@ export function ShardsBranchFilter({
           >
             Apply
           </Button>
-        </div>
-
-        {/* Row 2: Mode toggle with theme colors */}
-        <div className="border-t border-border pt-3">
-          <label className="text-sm text-muted-foreground block mb-1">Filter Mode</label>
-          <div className="flex items-center gap-1 p-1 bg-muted/50 rounded">
-            <button
-              onClick={() => onFilterModeChange('overall')}
-              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
-                filterMode === 'overall'
-                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
-                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-            >
-              Overall
-            </button>
-            <button
-              onClick={() => onFilterModeChange('perPattern')}
-              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
-                filterMode === 'perPattern'
-                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
-                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-            >
-              Per Pattern
-            </button>
-          </div>
         </div>
 
         {/* Row 3: Per-pattern info (only shown in perPattern mode) */}

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { ISOOSSplitCard } from './ISOOSSplitCard'
 import { METRIC_LABELS, type EligibilityMetric, type EligibilityRequirement } from '@/types/admin'
 import type { ISOOSSplitConfig } from '@/types/split'
+import { MetricDropdown } from './MetricDropdown'
 
 interface ChronologicalSettingsPanelProps {
   requirements: EligibilityRequirement[]
@@ -27,7 +28,7 @@ export function ChronologicalSettingsPanel({
 
   // Helper to determine if a metric should display as percentage
   const isPercentageMetric = (metric: EligibilityMetric): boolean => {
-    return ['cagr', 'maxDrawdown', 'tim', 'timar', 'winRate', 'vol'].includes(metric)
+    return ['cagr', 'maxDrawdown', 'tim', 'timar', 'winRate', 'vol', 'avgTurnover', 'timarTimarMaxDD', 'cagrCalmar'].includes(metric)
   }
 
   // Format metric value for display
@@ -69,18 +70,16 @@ export function ChronologicalSettingsPanel({
 
         {/* Middle Column - Add Metric Requirement */}
         <div className="p-4 bg-muted/30 rounded-lg flex flex-col">
-          <div className="text-sm font-medium mb-3">Add Metric Requirement</div>
+          <div className="text-sm font-medium mb-3">
+            Add Metric Requirement
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm whitespace-nowrap">Must have</span>
-            <select
+            <MetricDropdown
               value={newMetric}
-              onChange={(e) => setNewMetric(e.target.value as EligibilityMetric)}
-              className="px-2 py-1 rounded border border-border bg-background text-sm min-w-[140px]"
-            >
-              {(Object.keys(METRIC_LABELS) as EligibilityMetric[]).map(m => (
-                <option key={m} value={m}>{METRIC_LABELS[m]}</option>
-              ))}
-            </select>
+              onChange={setNewMetric}
+              className="min-w-[140px]"
+            />
             <span className="text-sm whitespace-nowrap">of</span>
             <select
               value={newComparison}

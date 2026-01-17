@@ -36,6 +36,37 @@ export function evaluateRequirements(
       const comparison = req.comparison!
       const threshold = req.value
 
+      // Helper to compute TIMAR/MaxDD
+      const computeTIMARMaxDD = (): number | undefined => {
+        const timar = (isMetrics as any).timar
+        const maxDD = isMetrics.maxDrawdown
+        if (timar != null && maxDD != null && maxDD !== 0) {
+          return timar / Math.abs(maxDD)
+        }
+        return undefined
+      }
+
+      // Helper to compute TIMAR × (TIMAR/MaxDD)
+      const computeTIMARTIMARMaxDD = (): number | undefined => {
+        const timar = (isMetrics as any).timar
+        const maxDD = isMetrics.maxDrawdown
+        if (timar != null && maxDD != null && maxDD !== 0) {
+          const ratio = timar / Math.abs(maxDD)
+          return (timar * 100) * ratio  // Convert TIMAR to percentage for readability
+        }
+        return undefined
+      }
+
+      // Helper to compute CAGR × CALMAR
+      const computeCAGRCALMAR = (): number | undefined => {
+        const cagr = isMetrics.cagr
+        const calmar = isMetrics.calmar
+        if (cagr != null && calmar != null) {
+          return (cagr * 100) * calmar  // Convert CAGR to percentage for readability
+        }
+        return undefined
+      }
+
       // Map requirement metric names to BacktestMetrics fields
       const metricValueMap: Record<string, number | undefined> = {
         cagr: isMetrics.cagr * 100, // Convert to percentage
@@ -45,15 +76,29 @@ export function evaluateRequirements(
         sortino: isMetrics.sortino,
         treynor: isMetrics.treynor,
         beta: isMetrics.beta,
-        volatility: isMetrics.vol * 100, // Convert to percentage
+        vol: isMetrics.vol * 100, // Convert to percentage (FIXED: was 'volatility')
         winRate: isMetrics.winRate * 100, // Convert to percentage
         avgTurnover: isMetrics.avgTurnover * 100, // Convert to percentage
         avgHoldings: isMetrics.avgHoldings,
-        tim: isMetrics.tim != null ? isMetrics.tim * 100 : undefined, // Time in Market (percentage)
-        timar: isMetrics.timar != null ? isMetrics.timar * 100 : undefined, // TIM Adjusted Returns (percentage)
+        tim: (isMetrics as any).tim != null ? (isMetrics as any).tim * 100 : undefined, // Time in Market (percentage)
+        timar: (isMetrics as any).timar != null ? (isMetrics as any).timar * 100 : undefined, // TIM Adjusted Returns (percentage)
+        timarMaxDDRatio: computeTIMARMaxDD(),
+        timarTimarMaxDD: computeTIMARTIMARMaxDD(),
+        cagrCalmar: computeCAGRCALMAR()
       }
 
       const metricValue = metricValueMap[metric]
+
+      // Debug logging for maxDrawdown
+      if (metric === 'maxDrawdown') {
+        console.log('[RequirementsEvaluator] MaxDrawdown Debug:', {
+          rawMaxDD: isMetrics.maxDrawdown,
+          metricValue,
+          threshold,
+          comparison,
+          willPass: comparison === 'at_least' ? (metricValue >= threshold) : (metricValue <= threshold)
+        })
+      }
 
       if (metricValue === undefined) {
         failedRequirements.push(`Metric ${metric} not found`)

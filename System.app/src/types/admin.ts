@@ -17,7 +17,7 @@ export type AdminCandlesResponse = {
 }
 
 // Admin types for Atlas Overview
-export type EligibilityMetric = 'cagr' | 'maxDrawdown' | 'calmar' | 'sharpe' | 'sortino' | 'treynor' | 'beta' | 'vol' | 'winRate' | 'avgTurnover' | 'avgHoldings' | 'tim' | 'timar'
+export type EligibilityMetric = 'cagr' | 'maxDrawdown' | 'calmar' | 'sharpe' | 'sortino' | 'treynor' | 'beta' | 'vol' | 'winRate' | 'avgTurnover' | 'avgHoldings' | 'tim' | 'timar' | 'timarMaxDDRatio' | 'timarTimarMaxDD' | 'cagrCalmar'
 
 export type EligibilityRequirement = {
   id: string
@@ -87,5 +87,8 @@ export const METRIC_LABELS: Record<EligibilityMetric, string> = {
   avgTurnover: 'Avg Turnover',
   avgHoldings: 'Avg Holdings',
   tim: 'Time in Market',
-  timar: 'TIM Adjusted Returns'
+  timar: 'TIM Adjusted Returns',
+  timarMaxDDRatio: 'TIMAR/MaxDD',
+  timarTimarMaxDD: 'TIMAR x (TIMAR/MaxDD)',
+  cagrCalmar: 'CAGR x CALMAR'
 }

@@ -18,7 +18,7 @@ export function RequirementsEditor({ requirements, onRequirementsChange, label }
 
   // Helper to determine if a metric should display as percentage
   const isPercentageMetric = (metric: EligibilityMetric): boolean => {
-    return ['cagr', 'maxDrawdown', 'tim', 'timar', 'winRate', 'vol'].includes(metric)
+    return ['cagr', 'maxDrawdown', 'tim', 'timar', 'winRate', 'vol', 'avgTurnover', 'timarTimarMaxDD', 'cagrCalmar'].includes(metric)
   }
 
   // Format metric value for display

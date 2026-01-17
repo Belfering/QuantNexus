@@ -10,7 +10,7 @@ interface BranchResultsTableProps {
   onSelectBranch: (branchId: string) => void
 }
 
-type SortKey = 'branchId' | 'isCAGR' | 'isSharpe' | 'isCalmar' | 'oosCAGR' | 'oosSharpe' | 'oosCalmar'
+type SortKey = 'branchId' | 'isCAGR' | 'isSharpe' | 'isCalmar' | 'isTIM' | 'isTIMAR' | 'isTIMARMaxDD' | 'isTIMARTIMARMaxDD' | 'isCAGRCALMAR' | 'oosCAGR' | 'oosSharpe' | 'oosCalmar' | 'oosTIM' | 'oosTIMAR' | 'oosTIMARMaxDD' | 'oosTIMARTIMARMaxDD' | 'oosCAGRCALMAR'
 type FilterType = 'all' | 'passed' | 'failed'
 
 export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTableProps) {
@@ -24,6 +24,35 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
     if (filterType === 'passed') return results.filter(r => r.passed)
     return results.filter(r => !r.passed)
   }, [results, filterType])
+
+  // Helper to compute metrics
+  const computeTIMARMaxDD = (metrics: any): number | null => {
+    const timar = (metrics as any).timar ?? metrics.timar ?? null
+    const maxDD = metrics.maxDrawdown ?? null
+    if (timar !== null && maxDD !== null && maxDD !== 0) {
+      return timar / Math.abs(maxDD)
+    }
+    return null
+  }
+
+  const computeTIMARTIMARMaxDD = (metrics: any): number | null => {
+    const timar = (metrics as any).timar ?? metrics.timar ?? null
+    const maxDD = metrics.maxDrawdown ?? null
+    if (timar !== null && maxDD !== null && maxDD !== 0) {
+      const ratio = timar / Math.abs(maxDD)
+      return (timar * 100) * ratio  // Convert TIMAR to percentage for readability
+    }
+    return null
+  }
+
+  const computeCAGRCALMAR = (metrics: any): number | null => {
+    const cagr = metrics.cagr ?? null
+    const calmar = metrics.calmar ?? null
+    if (cagr !== null && calmar !== null) {
+      return (cagr * 100) * calmar  // Convert CAGR to percentage for readability
+    }
+    return null
+  }
 
   // Sort results
   const sortedResults = useMemo(() => {
@@ -44,6 +73,21 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
       } else if (sortKey === 'isCalmar') {
         aVal = a.isMetrics?.calmar ?? -Infinity
         bVal = b.isMetrics?.calmar ?? -Infinity
+      } else if (sortKey === 'isTIM') {
+        aVal = (a.isMetrics as any)?.tim ?? -Infinity
+        bVal = (b.isMetrics as any)?.tim ?? -Infinity
+      } else if (sortKey === 'isTIMAR') {
+        aVal = (a.isMetrics as any)?.timar ?? -Infinity
+        bVal = (b.isMetrics as any)?.timar ?? -Infinity
+      } else if (sortKey === 'isTIMARMaxDD') {
+        aVal = a.isMetrics ? (computeTIMARMaxDD(a.isMetrics) ?? -Infinity) : -Infinity
+        bVal = b.isMetrics ? (computeTIMARMaxDD(b.isMetrics) ?? -Infinity) : -Infinity
+      } else if (sortKey === 'isTIMARTIMARMaxDD') {
+        aVal = a.isMetrics ? (computeTIMARTIMARMaxDD(a.isMetrics) ?? -Infinity) : -Infinity
+        bVal = b.isMetrics ? (computeTIMARTIMARMaxDD(b.isMetrics) ?? -Infinity) : -Infinity
+      } else if (sortKey === 'isCAGRCALMAR') {
+        aVal = a.isMetrics ? (computeCAGRCALMAR(a.isMetrics) ?? -Infinity) : -Infinity
+        bVal = b.isMetrics ? (computeCAGRCALMAR(b.isMetrics) ?? -Infinity) : -Infinity
       } else if (sortKey === 'oosCAGR') {
         aVal = a.oosMetrics?.cagr ?? -Infinity
         bVal = b.oosMetrics?.cagr ?? -Infinity
@@ -53,6 +97,21 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
       } else if (sortKey === 'oosCalmar') {
         aVal = a.oosMetrics?.calmar ?? -Infinity
         bVal = b.oosMetrics?.calmar ?? -Infinity
+      } else if (sortKey === 'oosTIM') {
+        aVal = (a.oosMetrics as any)?.tim ?? -Infinity
+        bVal = (b.oosMetrics as any)?.tim ?? -Infinity
+      } else if (sortKey === 'oosTIMAR') {
+        aVal = (a.oosMetrics as any)?.timar ?? -Infinity
+        bVal = (b.oosMetrics as any)?.timar ?? -Infinity
+      } else if (sortKey === 'oosTIMARMaxDD') {
+        aVal = a.oosMetrics ? (computeTIMARMaxDD(a.oosMetrics) ?? -Infinity) : -Infinity
+        bVal = b.oosMetrics ? (computeTIMARMaxDD(b.oosMetrics) ?? -Infinity) : -Infinity
+      } else if (sortKey === 'oosTIMARTIMARMaxDD') {
+        aVal = a.oosMetrics ? (computeTIMARTIMARMaxDD(a.oosMetrics) ?? -Infinity) : -Infinity
+        bVal = b.oosMetrics ? (computeTIMARTIMARMaxDD(b.oosMetrics) ?? -Infinity) : -Infinity
+      } else if (sortKey === 'oosCAGRCALMAR') {
+        aVal = a.oosMetrics ? (computeCAGRCALMAR(a.oosMetrics) ?? -Infinity) : -Infinity
+        bVal = b.oosMetrics ? (computeCAGRCALMAR(b.oosMetrics) ?? -Infinity) : -Infinity
       }
 
       if (sortAsc) {
@@ -128,6 +187,39 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
               </th>
               <th
                 className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('isTIM')}
+              >
+                IS TIM{getSortIndicator('isTIM')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('isTIMAR')}
+              >
+                IS TIMAR{getSortIndicator('isTIMAR')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('isTIMARMaxDD')}
+                title="TIMAR divided by Max Drawdown"
+              >
+                IS TIMAR/MaxDD{getSortIndicator('isTIMARMaxDD')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('isTIMARTIMARMaxDD')}
+                title="TIMAR multiplied by (TIMAR/MaxDD)"
+              >
+                IS TIMAR×(TIMAR/MaxDD){getSortIndicator('isTIMARTIMARMaxDD')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('isCAGRCALMAR')}
+                title="CAGR multiplied by Calmar Ratio"
+              >
+                IS CAGR×CALMAR{getSortIndicator('isCAGRCALMAR')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
                 onClick={() => handleSort('oosCAGR')}
               >
                 OOS CAGR{getSortIndicator('oosCAGR')}
@@ -143,6 +235,39 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
                 onClick={() => handleSort('oosCalmar')}
               >
                 OOS Calmar{getSortIndicator('oosCalmar')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('oosTIM')}
+              >
+                OOS TIM{getSortIndicator('oosTIM')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('oosTIMAR')}
+              >
+                OOS TIMAR{getSortIndicator('oosTIMAR')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('oosTIMARMaxDD')}
+                title="TIMAR divided by Max Drawdown"
+              >
+                OOS TIMAR/MaxDD{getSortIndicator('oosTIMARMaxDD')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('oosTIMARTIMARMaxDD')}
+                title="TIMAR multiplied by (TIMAR/MaxDD)"
+              >
+                OOS TIMAR×(TIMAR/MaxDD){getSortIndicator('oosTIMARTIMARMaxDD')}
+              </th>
+              <th
+                className="px-3 py-2 text-right cursor-pointer hover:bg-muted"
+                onClick={() => handleSort('oosCAGRCALMAR')}
+                title="CAGR multiplied by Calmar Ratio"
+              >
+                OOS CAGR×CALMAR{getSortIndicator('oosCAGRCALMAR')}
               </th>
               <th className="px-3 py-2 text-center">Pass/Fail</th>
               <th className="px-3 py-2 text-center">Actions</th>
@@ -168,6 +293,21 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
                   {result.isMetrics ? result.isMetrics.calmar.toFixed(2) : '-'}
                 </td>
                 <td className="px-3 py-2 text-right">
+                  {result.isMetrics && (result.isMetrics as any).tim != null ? `${((result.isMetrics as any).tim * 100).toFixed(2)}%` : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.isMetrics && (result.isMetrics as any).timar != null ? ((result.isMetrics as any).timar * 100).toFixed(2) : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.isMetrics ? (computeTIMARMaxDD(result.isMetrics)?.toFixed(4) ?? '-') : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.isMetrics ? (computeTIMARTIMARMaxDD(result.isMetrics)?.toFixed(4) ?? '-') : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.isMetrics ? (computeCAGRCALMAR(result.isMetrics)?.toFixed(4) ?? '-') : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
                   {result.oosMetrics ? `${(result.oosMetrics.cagr * 100).toFixed(2)}%` : '-'}
                 </td>
                 <td className="px-3 py-2 text-right">
@@ -175,6 +315,21 @@ export function BranchResultsTable({ results, onSelectBranch }: BranchResultsTab
                 </td>
                 <td className="px-3 py-2 text-right">
                   {result.oosMetrics ? result.oosMetrics.calmar.toFixed(2) : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.oosMetrics && (result.oosMetrics as any).tim != null ? `${((result.oosMetrics as any).tim * 100).toFixed(2)}%` : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.oosMetrics && (result.oosMetrics as any).timar != null ? ((result.oosMetrics as any).timar * 100).toFixed(2) : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.oosMetrics ? (computeTIMARMaxDD(result.oosMetrics)?.toFixed(4) ?? '-') : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.oosMetrics ? (computeTIMARTIMARMaxDD(result.oosMetrics)?.toFixed(4) ?? '-') : '-'}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {result.oosMetrics ? (computeCAGRCALMAR(result.oosMetrics)?.toFixed(4) ?? '-') : '-'}
                 </td>
                 <td className="px-3 py-2 text-center">
                   {result.status === 'success' ? (
