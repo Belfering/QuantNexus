@@ -124,7 +124,9 @@
       "Bash(git rev-parse:*)",
       "Bash(git pull:*)",
       "Bash(npm run db:query:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(head:*)",
+      "Bash(wc:*)"
     ]
   }
 }

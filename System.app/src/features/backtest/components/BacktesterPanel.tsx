@@ -292,7 +292,13 @@ export function BacktesterPanel({
       name: 'Cash',
       color: '#94a3b8',
       points: days.map((d) => {
-        const invested = d.holdings.reduce((a, b) => a + b.weight, 0)
+        // Only count real positions when calculating invested amount (exclude Cash/Empty)
+        const invested = d.holdings
+          .filter(h => {
+            const normalized = h.ticker.toUpperCase().trim()
+            return normalized !== 'EMPTY' && normalized !== 'CASH'
+          })
+          .reduce((a, b) => a + b.weight, 0)
         return { time: d.time, value: Math.max(0, 1 - invested) }
       }) as EquityPoint[],
     })
