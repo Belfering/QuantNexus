@@ -136,9 +136,9 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
       })
 
       // Convert allocations from server format
-      const allocations: BacktestAllocationRow[] = (serverResult.allocations || []).map((a: { date: string; holdings: Record<string, number> }) => ({
+      const allocations: BacktestAllocationRow[] = (serverResult.allocations || []).map((a: { date: string; alloc: Record<string, number> }) => ({
         date: a.date,
-        entries: Object.entries(a.holdings || {})
+        entries: Object.entries(a.alloc || {})
           .filter(([_, w]) => (w as number) > 0)
           .map(([ticker, weight]) => ({ ticker, weight: weight as number }))
           .sort((x, y) => y.weight - x.weight),

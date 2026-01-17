@@ -107,7 +107,6 @@ export const NodeCard = ({
   // Close dropdowns on outside click
   useEffect(() => {
     const close = () => {
-      setAddRowOpen(null)
       setColorOpen(false)
     }
     window.addEventListener('click', close)
