@@ -54,6 +54,7 @@ export function BacktesterPanel({
   modelSanityReport,
   onFetchRobustness,
   openTickerModal,
+  tabContext,
 }: BacktesterPanelProps) {
   const [tab, setTab] = useState<'Overview' | 'In Depth' | 'Benchmarks' | 'Robustness'>('Overview')
   const [selectedRange, setSelectedRange] = useState<VisibleRange | null>(null)
@@ -290,7 +291,7 @@ export function BacktesterPanel({
 
     series.push({
       name: 'Cash',
-      color: '#94a3b8',
+      color: tabContext === 'Forge' ? 'transparent' : '#94a3b8',
       points: days.map((d) => {
         // Only count real positions when calculating invested amount (exclude Cash/Empty)
         const invested = d.holdings
@@ -304,7 +305,7 @@ export function BacktesterPanel({
     })
 
     return series
-  }, [result])
+  }, [result, tabContext])
 
   const groupedWarnings = useMemo(() => {
     const out = new Map<string, { message: string; count: number; first?: BacktestWarning; last?: BacktestWarning }>()

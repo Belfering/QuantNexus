@@ -130,6 +130,8 @@ export interface BacktesterPanelProps {
   canRedo?: boolean
   // Ticker modal
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  // Tab context for conditional styling
+  tabContext?: 'Forge' | 'Model'
 }
 
 /**

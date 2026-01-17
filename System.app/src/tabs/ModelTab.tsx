@@ -461,6 +461,7 @@ export function ModelTab({
             canUndo={activeBot ? activeBot.historyIndex > 0 : false}
             canRedo={activeBot ? activeBot.historyIndex < activeBot.history.length - 1 : false}
             openTickerModal={openTickerModal}
+            tabContext="Model"
           />
         </div>
 

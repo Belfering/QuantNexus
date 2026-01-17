@@ -462,6 +462,7 @@ export function ForgeModelTab({
             canUndo={activeBot ? activeBot.historyIndex > 0 : false}
             canRedo={activeBot ? activeBot.historyIndex < activeBot.history.length - 1 : false}
             openTickerModal={openTickerModal}
+            tabContext="Forge"
           />
         </div>
 
