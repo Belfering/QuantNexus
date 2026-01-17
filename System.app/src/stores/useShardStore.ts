@@ -527,12 +527,17 @@ export const useShardStore = create<ShardState>((set, get) => ({
         const data = await res.json()
 
         // Handle both response formats: {branches: [...]} or just [...]
-        branches = data.branches || data
+        const allBranches = data.branches || data
 
-        if (!Array.isArray(branches)) {
+        if (!Array.isArray(allBranches)) {
           console.error('[ShardStore] Unexpected response format:', data)
           throw new Error('Invalid response format - expected array of branches')
         }
+
+        // Filter to only include branches that passed requirements
+        branches = allBranches.filter((branch: any) => branch.passed === true)
+
+        console.log(`[ShardStore] Loaded job ${jobId} for strategy: ${branches.length} passing branches out of ${allBranches.length} total`)
 
         // Get metadata
         const metaRes = await fetch(`/api/optimization/jobs`)
@@ -1539,6 +1544,10 @@ export const useShardStore = create<ShardState>((set, get) => ({
               const actualBranch = tree.children?.next?.[0] || tree
               // Ensure unique IDs by prefixing
               const prefixedTree = prefixNodeIds(actualBranch, `b${idx}-`)
+              // Fix Auto mode positions: convert to fixed positions using branch.positionTicker
+              if (branch.positionTicker) {
+                fixAutoModePositions(prefixedTree, branch.positionTicker)
+              }
               // For capped weighting, set the cap percentage on the child's window property
               // QuantNexus uses child.window to determine cap % per branch
               if (weightMode === 'capped') {
@@ -1608,4 +1617,35 @@ function prefixNodeIds(node: FlowNode, prefix: string): FlowNode {
   }
 
   return newNode
+}
+
+// Helper function to fix Auto mode positions in a tree
+// Converts position nodes with positionMode='match_indicator' to fixed positions
+function fixAutoModePositions(node: FlowNode, positionTicker: string): void {
+  if (!node) return
+
+  // If this is a position node in Auto mode, convert it to a fixed position
+  if (node.kind === 'position') {
+    const nodeAny = node as any
+    if (nodeAny.positionMode === 'match_indicator') {
+      // Remove positionMode property
+      nodeAny.positionMode = undefined
+      // Set positions array to the actual ticker from the branch
+      nodeAny.positions = [positionTicker]
+      console.log(`[ShardStore] Converted Auto mode position to fixed position: ${positionTicker}`)
+    }
+  }
+
+  // Recursively fix children
+  if (node.children) {
+    for (const slot of Object.values(node.children)) {
+      if (Array.isArray(slot)) {
+        for (const child of slot) {
+          if (child) {
+            fixAutoModePositions(child, positionTicker)
+          }
+        }
+      }
+    }
+  }
 }
