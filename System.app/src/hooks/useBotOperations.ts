@@ -178,22 +178,26 @@ export function useBotOperations({
 
   /**
    * Run backtest for current tree
-   * NOTE: Captures activeBotId at start to prevent results going to wrong bot
-   * if user switches bots during the async backtest operation
+   * NOTE: Uses tab-specific active bot to ensure we backtest the correct tree
    */
   const handleRunBacktest = useCallback(async () => {
-    // Capture bot ID at start - results should go to this bot even if user switches
-    const targetBotId = activeBotId
-    const capturedBot = activeBot // Capture for auto-robustness
+    // Get the tab-specific active bot (Forge bot on Forge tab, Model bot on Model tab)
+    const capturedBot = getActiveBot()
+    if (!capturedBot) return
+
+    const targetBotId = capturedBot.id
+    const currentTree = capturedBot.history[capturedBot.historyIndex]
+    if (!currentTree) return
+
     updateBotBacktest(targetBotId, { status: 'running', focusNodeId: null, result: null, errors: [] })
     try {
-      const { result } = await runBacktestForNode(current)
+      const { result } = await runBacktestForNode(currentTree)
       updateBotBacktest(targetBotId, { result, status: 'done' })
 
       // Auto-run robustness analysis after successful backtest (fire and forget)
-      const savedBotId = capturedBot?.savedBotId
+      const savedBotId = capturedBot.savedBotId
       setModelSanityReport({ status: 'loading' })
-      const payload = JSON.stringify(ensureSlots(cloneNode(current)))
+      const payload = JSON.stringify(ensureSlots(cloneNode(currentTree)))
       const robustnessUrl = savedBotId
         ? `${API_BASE}/bots/${savedBotId}/sanity-report`
         : `${API_BASE}/sanity-report`
@@ -214,10 +218,10 @@ export function useBotOperations({
       } else {
         const msg = String((e as Error)?.message || e)
         const friendly = msg.includes('Failed to fetch') ? `${msg}. Is the backend running? (npm run api)` : msg
-        updateBotBacktest(targetBotId, { errors: [{ nodeId: current.id, field: 'backtest', message: friendly }], status: 'error' })
+        updateBotBacktest(targetBotId, { errors: [{ nodeId: currentTree.id, field: 'backtest', message: friendly }], status: 'error' })
       }
     }
-  }, [activeBotId, activeBot, current, runBacktestForNode, updateBotBacktest, backtestMode, backtestCostBps, setModelSanityReport])
+  }, [getActiveBot, runBacktestForNode, updateBotBacktest, backtestMode, backtestCostBps, setModelSanityReport])
 
   /**
    * Create a new bot
