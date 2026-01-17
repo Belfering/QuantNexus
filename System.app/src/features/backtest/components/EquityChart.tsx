@@ -34,6 +34,7 @@ export interface EquityChartProps {
   points: EquityPoint[]
   benchmarkPoints?: EquityPoint[]
   markers: EquityMarker[]
+  oosStartDate?: string // OOS start date in YYYY-MM-DD format
   visibleRange?: VisibleRange
   onVisibleRangeChange?: (range: VisibleRange) => void
   logScale?: boolean
@@ -47,6 +48,7 @@ export function EquityChart({
   points,
   benchmarkPoints,
   markers,
+  oosStartDate,
   visibleRange,
   onVisibleRangeChange,
   logScale,
@@ -389,15 +391,35 @@ export function EquityChart({
         existing.applyOptions({ price: base })
       }
     }
-    markersRef.current?.setMarkers(
-      (markers || []).slice(0, 80).map((m) => ({
-        time: m.time,
-        position: 'aboveBar',
-        color: '#b91c1c',
-        shape: 'circle',
-        text: m.text,
-      })) as SeriesMarker<Time>[],
-    )
+    // Build markers array including trade markers and OOS marker
+    const allMarkers: SeriesMarker<Time>[] = []
+
+    // Add trade markers (limit to 80 for performance)
+    allMarkers.push(...(markers || []).slice(0, 80).map((m) => ({
+      time: m.time,
+      position: 'aboveBar' as const,
+      color: '#b91c1c',
+      shape: 'circle' as const,
+      text: m.text,
+    })))
+
+    // Add OOS marker if present (black circular marker)
+    if (oosStartDate) {
+      const oosTime = toUtcSeconds(oosStartDate)
+      if (oosTime) {
+        allMarkers.push({
+          time: oosTime,
+          position: 'aboveBar' as const,
+          color: '#000000',
+          shape: 'circle' as const,
+          text: 'OOS',
+        })
+      }
+    }
+
+    // Sort by time and apply
+    allMarkers.sort((a, b) => Number(a.time) - Number(b.time))
+    markersRef.current?.setMarkers(allMarkers as SeriesMarker<Time>[])
     if (benchRef.current) {
       if (benchmarkPoints && benchmarkPoints.length > 0) {
         benchRef.current.setData(sanitizeSeriesPoints(benchmarkPoints))
@@ -416,7 +438,7 @@ export function EquityChart({
       return
     }
     chart.timeScale().fitContent()
-  }, [points, benchmarkPoints, markers, visibleRange, logScale])
+  }, [points, benchmarkPoints, markers, oosStartDate, visibleRange, logScale])
 
   useEffect(() => {
     if (!showCursorStats) return

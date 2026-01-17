@@ -31,7 +31,7 @@ import {
   createBotInApi,
   deleteBotFromApi,
 } from '@/features/bots'
-import { useBotStore, useTreeStore, useBacktestStore } from '@/stores'
+import { useBotStore, useTreeStore, useBacktestStore, useShardStore } from '@/stores'
 
 interface UseBotOperationsOptions {
   userId: UserId | null
@@ -48,7 +48,7 @@ interface UseBotOperationsOptions {
   setSavedBots: React.Dispatch<React.SetStateAction<SavedBot[]>>
   setWatchlists: React.Dispatch<React.SetStateAction<import('@/types').Watchlist[]>>
   createBotSession: (name: string, tabContext: 'Forge' | 'Model') => BotSession
-  runBacktestForNode: (node: FlowNode) => Promise<{ result: import('@/types').BacktestResult }>
+  runBacktestForNode: (node: FlowNode, splitConfig?: import('@/types').ISOOSSplitConfig, shardOosDate?: string) => Promise<{ result: import('@/types').BacktestResult }>
   tab: 'Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases'
   setTab: (tab: 'Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases') => void
   setIsImporting: (v: boolean) => void
@@ -86,6 +86,9 @@ export function useBotOperations({
   const backtestMode = useBacktestStore((s) => s.backtestMode)
   const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
   const setModelSanityReport = useBacktestStore((s) => s.setModelSanityReport)
+
+  // Shard Store - for combined strategy OOS date
+  const shardOosDate = useShardStore((s) => s.combinedTreeOosDate)
 
   // Get active bot based on current tab context
   const getActiveBot = useCallback(() => {
@@ -189,9 +192,19 @@ export function useBotOperations({
     const currentTree = capturedBot.history[capturedBot.historyIndex]
     if (!currentTree) return
 
+    // Pass splitConfig to backend ONLY on Forge tab when explicitly enabled (for IS/OOS split visualization)
+    const splitConfigToPass = tab === 'Forge' && capturedBot.splitConfig?.enabled
+      ? capturedBot.splitConfig
+      : undefined
+
+    console.log('[OOS Debug] Current tab:', tab)
+    console.log('[OOS Debug] Bot splitConfig:', capturedBot.splitConfig)
+    console.log('[OOS Debug] splitConfigToPass:', splitConfigToPass)
+    console.log('[OOS Debug] shardOosDate from store:', shardOosDate)
+
     updateBotBacktest(targetBotId, { status: 'running', focusNodeId: null, result: null, errors: [] })
     try {
-      const { result } = await runBacktestForNode(currentTree)
+      const { result } = await runBacktestForNode(currentTree, splitConfigToPass, shardOosDate || undefined)
       updateBotBacktest(targetBotId, { result, status: 'done' })
 
       // Auto-run robustness analysis after successful backtest (fire and forget)
@@ -221,7 +234,7 @@ export function useBotOperations({
         updateBotBacktest(targetBotId, { errors: [{ nodeId: currentTree.id, field: 'backtest', message: friendly }], status: 'error' })
       }
     }
-  }, [getActiveBot, runBacktestForNode, updateBotBacktest, backtestMode, backtestCostBps, setModelSanityReport])
+  }, [getActiveBot, runBacktestForNode, updateBotBacktest, backtestMode, backtestCostBps, setModelSanityReport, tab])
 
   /**
    * Create a new bot

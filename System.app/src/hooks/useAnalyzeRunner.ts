@@ -36,7 +36,7 @@ import type { BacktestRunResult } from './useBacktestRunner'
  * Options for the useAnalyzeRunner hook
  */
 interface UseAnalyzeRunnerOptions {
-  runBacktestForNode: (node: FlowNode) => Promise<BacktestRunResult>
+  runBacktestForNode: (node: FlowNode, splitConfig?: import('@/types').ISOOSSplitConfig, shardOosDate?: string) => Promise<BacktestRunResult>
   savedBots: SavedBot[]
   setSavedBots: (dataOrFn: SavedBot[] | ((prev: SavedBot[]) => SavedBot[])) => void
   userId: UserId | null

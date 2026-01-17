@@ -675,6 +675,7 @@ export function BacktesterPanel({
                 points={rebasedPoints}
                 benchmarkPoints={showBenchmark ? rebasedBenchmarkPoints : undefined}
                 markers={result.markers}
+                oosStartDate={result.oosStartDate}
                 visibleRange={visibleRange}
                 logScale={logScale}
                 indicatorOverlays={indicatorOverlays}
@@ -689,6 +690,7 @@ export function BacktesterPanel({
               </div>
               <DrawdownChart
                 points={result.drawdownPoints}
+                oosStartDate={result.oosStartDate}
                 visibleRange={visibleRange}
                 theme={theme}
               />

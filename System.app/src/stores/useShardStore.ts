@@ -13,6 +13,7 @@ import { useAuthStore } from './useAuthStore'
 import { useBotStore } from './useBotStore'
 import { extractBranchDisplayInfo, type BranchDisplayInfo } from '@/features/shards/utils/conditionDisplay'
 import { evaluateRequirements } from '@/features/optimization/services/requirementsEvaluator'
+import { calculateMaxOosDate } from '@/features/shards/utils/oosCalculator'
 
 // ============================================================================
 // Tree Signature Utilities (for pattern-based filtering)
@@ -224,6 +225,7 @@ interface ShardState {
 
   // Phase 3: Combined System
   combinedTree: FlowNode | null
+  combinedTreeOosDate: string | null  // Latest OOS start date across combined branches
 
   // Phase 4: Saved Shards Library
   savedShards: ShardListItem[]
@@ -314,6 +316,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
   activeListView: 'filter',
 
   combinedTree: null,
+  combinedTreeOosDate: null,
 
   // Phase 4: Saved Shards Library
   savedShards: [],
@@ -399,7 +402,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
         loadedJobIds: newLoadedJobIds,
         loadedJobs: newLoadedJobs,
         allBranches: combined,
-        combinedTree: null // Reset combined tree when jobs change
+        combinedTree: null, // Reset combined tree when jobs change
+        combinedTreeOosDate: null
       })
     } catch (err) {
       console.error('[ShardStore] Failed to load chronological job:', err)
@@ -453,7 +457,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
         loadedJobIds: newLoadedJobIds,
         loadedJobs: newLoadedJobs as Record<number, LoadedJobData>,
         allBranches: combined,
-        combinedTree: null // Reset combined tree when jobs change
+        combinedTree: null, // Reset combined tree when jobs change
+        combinedTreeOosDate: null
       })
     } catch (err) {
       console.error('[ShardStore] Failed to load rolling job:', err)
@@ -486,7 +491,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
       loadedJobIds: newLoadedJobIds,
       loadedJobs: newLoadedJobs,
       allBranches: combined,
-      combinedTree: null // Reset combined tree when jobs change
+      combinedTree: null, // Reset combined tree when jobs change
+      combinedTreeOosDate: null
     })
 
     console.log(`[ShardStore] Unloaded filter job ${jobId}`)
@@ -501,7 +507,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
       allBranches: [],
       filteredBranches: [],
       metricRequirements: [],
-      combinedTree: null
+      combinedTree: null,
+      combinedTreeOosDate: null
     })
   },
 
@@ -693,7 +700,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
         loadedJobIds: newLoadedJobIds,
         loadedJobs: newLoadedJobs as Record<number, LoadedJobData>,
         allBranches: combined,
-        combinedTree: null
+        combinedTree: null,
+        combinedTreeOosDate: null
       })
 
       console.log(`[ShardStore] Loaded saved shard ${shardId} (${taggedBranches.length} branches)`)
@@ -1270,8 +1278,8 @@ export const useShardStore = create<ShardState>((set, get) => ({
       ? jobNames[0]
       : `${jobNames.length} Jobs`
 
-    // Build the combined tree
-    const tree = buildShardTree(
+    // Build the combined tree and calculate OOS date
+    const { tree, oosStartDate } = buildShardTree(
       filteredBranches,
       loadedJobType,
       jobName,
@@ -1279,13 +1287,20 @@ export const useShardStore = create<ShardState>((set, get) => ({
       filterTopX
     )
 
-    set({ combinedTree: tree })
+    set({
+      combinedTree: tree,
+      combinedTreeOosDate: oosStartDate
+    })
     console.log('[ShardStore] Generated combined tree:', tree)
+    console.log('[ShardStore] Calculated OOS start date:', oosStartDate)
   },
 
   // Phase 3: Clear combined tree
   clearCombinedTree: () => {
-    set({ combinedTree: null })
+    set({
+      combinedTree: null,
+      combinedTreeOosDate: null
+    })
   },
 
   // Phase 3: Save combined tree to Model tab as a new bot
@@ -1565,7 +1580,7 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
   // Phase 4: Generate bot tree from selected shards with chosen weighting
   generateBotFromShards: () => {
-    const { strategyBranches, shardBotName, shardWeighting, shardCappedPercent } = get()
+    const { strategyBranches, shardBotName, shardWeighting, shardCappedPercent, loadedStrategyJobs } = get()
 
     if (strategyBranches.length === 0) {
       console.warn('[ShardStore] No strategy branches to generate bot')
@@ -1574,6 +1589,10 @@ export const useShardStore = create<ShardState>((set, get) => ({
 
     const botName = shardBotName.trim() || 'Strategy Bot'
     const branchCount = strategyBranches.length
+
+    // Determine job type from loaded strategy jobs
+    const firstJobId = Object.keys(loadedStrategyJobs)[0]
+    const jobType = loadedStrategyJobs[firstJobId]?.type || 'chronological'
 
     // Parse weighting mode: 'equal', 'inverse', 'pro', 'capped'
     const weightMode = shardWeighting as 'equal' | 'inverse' | 'pro' | 'capped'
@@ -1646,8 +1665,13 @@ export const useShardStore = create<ShardState>((set, get) => ({
       }
     }
 
+    // Calculate OOS start date from strategy branches
+    const oosStartDate = calculateMaxOosDate(strategyBranches as any, jobType)
+    set({ combinedTreeOosDate: oosStartDate })
+
     console.log('[ShardStore] Generated bot tree with', branchCount, 'branches, weighting:', weightMode,
       weightMode === 'capped' ? `(${shardCappedPercent}% cap per branch)` : '')
+    console.log('[ShardStore] Calculated OOS start date for strategy:', oosStartDate)
     return root
   }
 }))

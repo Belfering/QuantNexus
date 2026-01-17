@@ -4,6 +4,12 @@ import { createNode, ensureSlots } from '@/features/builder'
 import type { FlowNode } from '@/types/flowNode'
 import type { OptimizationResult } from '@/types/optimizationJob'
 import type { RollingOptimizationResult } from '@/types/bot'
+import { calculateMaxOosDate } from './utils/oosCalculator'
+
+export interface ShardTreeResult {
+  tree: FlowNode
+  oosStartDate: string | null
+}
 
 /**
  * Build a combined tree from filtered branches.
@@ -11,6 +17,8 @@ import type { RollingOptimizationResult } from '@/types/bot'
  *
  * For chronological branches: Uses the full tree JSON if available
  * For rolling branches: Creates placeholder basic nodes with parameter info
+ *
+ * @returns Object containing the tree and the calculated OOS start date (latest across all branches)
  */
 export function buildShardTree(
   branches: (OptimizationResult | RollingOptimizationResult['branches'][number])[],
@@ -18,7 +26,7 @@ export function buildShardTree(
   jobName: string,
   filterMetric: string,
   filterTopX: number
-): FlowNode {
+): ShardTreeResult {
   // Create root numbered node
   const root = createNode('numbered')
   root.title = `Shard: ${jobName} - Top ${filterTopX} by ${filterMetric}`
@@ -85,7 +93,13 @@ export function buildShardTree(
   // Attach all branch trees to root's 'next' slot
   root.children = { next: children }
 
-  return ensureSlots(root)
+  // Calculate the latest OOS start date across all branches
+  const oosStartDate = calculateMaxOosDate(branches, jobType)
+
+  return {
+    tree: ensureSlots(root),
+    oosStartDate
+  }
 }
 
 /**

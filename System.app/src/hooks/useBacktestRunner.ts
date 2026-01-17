@@ -43,7 +43,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
   const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
 
   const runBacktestForNode = useCallback(
-    async (node: FlowNode): Promise<BacktestRunResult> => {
+    async (node: FlowNode, splitConfig?: import('@/types').ISOOSSplitConfig, shardOosDate?: string): Promise<BacktestRunResult> => {
       // ========================================================================
       // SERVER-SIDE BACKTEST - All backtests are now routed through the server
       // for IP protection and consistent results across all environments.
@@ -83,7 +83,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
       console.log('[PAYLOAD DUMP] ========== END ==========')
 
       // Call server API for backtest
-      console.log(`[Backtest] Calling server API with mode=${backtestMode}, costBps=${backtestCostBps}, customIndicators=${customIndicators.length}...`)
+      console.log(`[Backtest] Calling server API with mode=${backtestMode}, costBps=${backtestCostBps}, customIndicators=${customIndicators.length}, splitConfig=${splitConfig?.enabled ? 'enabled' : 'disabled'}...`)
       const response = await fetch(`${API_BASE}/backtest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -92,6 +92,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
           mode: backtestMode,
           costBps: backtestCostBps,
           customIndicators,
+          splitConfig, // Pass splitConfig to backend for IS/OOS split calculation
         }),
       })
 
@@ -172,6 +173,23 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
         avgHoldings: serverResult.metrics?.avgHoldings ?? 0,
       }
 
+      // Extract OOS start date if available (for IS/OOS split visualization)
+      console.log('[OOS Debug] splitConfig passed to backend:', splitConfig)
+      console.log('[OOS Debug] shardOosDate passed:', shardOosDate)
+      console.log('[OOS Debug] serverResult.oosMetrics:', serverResult.oosMetrics)
+      let oosStartDate: string | undefined
+
+      // Priority: 1. Server-calculated OOS date, 2. Shard OOS date (for combined strategies)
+      if (serverResult.oosMetrics?.startDate) {
+        oosStartDate = serverResult.oosMetrics.startDate
+        console.log('[OOS Debug] Using server OOS start date:', oosStartDate)
+      } else if (shardOosDate) {
+        oosStartDate = shardOosDate
+        console.log('[OOS Debug] Using shard OOS start date:', oosStartDate)
+      } else {
+        console.log('[OOS Debug] No OOS start date available')
+      }
+
       // Helper to calculate turnover between two allocations
       const calculateTurnover = (prevAlloc: BacktestAllocationRow | undefined, currAlloc: BacktestAllocationRow | undefined): number => {
         if (!prevAlloc || !currAlloc) return 0
@@ -220,6 +238,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
           drawdownPoints,
           markers: [],
           metrics,
+          oosStartDate,
           days,
           allocations,
           warnings: [],

@@ -6,8 +6,11 @@ import {
   AreaSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
   type Time,
   type TimeRangeChangeEventHandler,
 } from 'lightweight-charts'
@@ -20,6 +23,7 @@ import {
 
 export interface DrawdownChartProps {
   points: EquityPoint[]
+  oosStartDate?: string // OOS start date in YYYY-MM-DD format
   visibleRange?: VisibleRange
   onVisibleRangeChange?: (range: VisibleRange) => void
   theme?: 'dark' | 'light'
@@ -27,6 +31,7 @@ export interface DrawdownChartProps {
 
 export function DrawdownChart({
   points,
+  oosStartDate,
   visibleRange,
   onVisibleRangeChange,
   theme = 'light',
@@ -34,6 +39,7 @@ export function DrawdownChart({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Area'> | null>(null)
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const visibleRangeRef = useRef<VisibleRange | undefined>(visibleRange)
   const onVisibleRangeChangeRef = useRef(onVisibleRangeChange)
   const lastEmittedRangeKeyRef = useRef<string>('')
@@ -95,6 +101,9 @@ export function DrawdownChart({
     chartRef.current = chart
     seriesRef.current = series
 
+    // Initialize markers plugin for OOS indicator
+    markersRef.current = createSeriesMarkers(series, [])
+
     const handleVisibleRangeChange: TimeRangeChangeEventHandler<Time> = (r) => {
       const cb = onVisibleRangeChangeRef.current
       if (!cb || !r) return
@@ -126,9 +135,15 @@ export function DrawdownChart({
     return () => {
       ro.disconnect()
       chart.timeScale().unsubscribeVisibleTimeRangeChange(handleVisibleRangeChange)
+      try {
+        markersRef.current?.detach()
+      } catch {
+        // ignore
+      }
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      markersRef.current = null
     }
   }, [])
 
@@ -153,6 +168,23 @@ export function DrawdownChart({
     if (!seriesRef.current) return
     const dd = sanitizeSeriesPoints(points, { clampMin: -0.9999, clampMax: 0 })
     seriesRef.current.setData(dd)
+
+    // Update markers with OOS indicator (black circular marker)
+    if (oosStartDate) {
+      const oosTime = toUtcSeconds(oosStartDate)
+      if (oosTime) {
+        markersRef.current?.setMarkers([{
+          time: oosTime,
+          position: 'aboveBar' as const,
+          color: '#000000',
+          shape: 'circle' as const,
+          text: 'OOS',
+        }] as SeriesMarker<Time>[])
+      }
+    } else {
+      markersRef.current?.setMarkers([])
+    }
+
     const chart = chartRef.current
     if (!chart) return
     if (visibleRange && visibleRange.from && visibleRange.to) {
@@ -164,7 +196,7 @@ export function DrawdownChart({
       return
     }
     chart.timeScale().fitContent()
-  }, [points, visibleRange])
+  }, [points, oosStartDate, visibleRange])
 
   return (
     <div

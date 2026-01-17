@@ -107,6 +107,7 @@ export type BacktestResult = {
   metrics: BacktestMetrics
   isMetrics?: BacktestMetrics // In-sample metrics (only if IS/OOS split enabled)
   oosMetrics?: BacktestMetrics // Out-of-sample metrics (only if IS/OOS split enabled)
+  oosStartDate?: string // OOS start date in YYYY-MM-DD format (for vertical line indicator)
   days: BacktestDayRow[]
   allocations: BacktestAllocationRow[]
   warnings: BacktestWarning[]
