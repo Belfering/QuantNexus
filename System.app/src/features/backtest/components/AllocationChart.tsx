@@ -151,8 +151,8 @@ export function AllocationChart({
       const baseColor = reversedSeries[i].color
       stackedData.push({
         color: baseColor,
-        topColor: baseColor + '80', // 50% opacity
-        bottomColor: baseColor + '20', // 12% opacity
+        topColor: 'transparent', // No fill
+        bottomColor: 'transparent', // No fill
         points,
       })
     }
