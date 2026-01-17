@@ -87,8 +87,24 @@ export function useBotOperations({
   const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
   const setModelSanityReport = useBacktestStore((s) => s.setModelSanityReport)
 
-  // Get active bot
-  const activeBot = bots.find((b) => b.id === activeBotId) ?? bots[0]
+  // Get active bot based on current tab context
+  const getActiveBot = useCallback(() => {
+    const currentBotId = tab === 'Forge' ? activeForgeBotId : tab === 'Model' ? activeModelBotId : activeBotId
+    return bots.find((b) => b.id === currentBotId) ?? bots[0]
+  }, [tab, activeForgeBotId, activeModelBotId, activeBotId, bots])
+
+  const activeBot = getActiveBot()
+
+  // Helper to set active bot ID based on current tab
+  const setActiveBot = useCallback((id: string, tabContext?: 'Forge' | 'Model') => {
+    const targetTab = tabContext || tab
+    setActiveBotId(id) // Legacy global ID
+    if (targetTab === 'Forge') {
+      setActiveForgeBotId(id)
+    } else if (targetTab === 'Model') {
+      setActiveModelBotId(id)
+    }
+  }, [tab, setActiveBotId, setActiveForgeBotId, setActiveModelBotId])
 
   /**
    * Update tree in store
@@ -108,21 +124,23 @@ export function useBotOperations({
       setBots((prev) => {
         const filtered = prev.filter((b) => b.id !== botId)
         if (filtered.length === 0) {
-          const nb = createBotSession('Algo Name Here')
-          setActiveBotId(nb.id)
+          const nb = createBotSession('Algo Name Here', tab)
+          setActiveBot(nb.id)
           setClipboard(null)
           setCopiedNodeId(null)
           return [nb]
         }
-        if (botId === activeBotId) {
-          setActiveBotId(filtered[0].id)
+        // Check if we're closing the active bot for the current tab
+        const currentBotId = tab === 'Forge' ? activeForgeBotId : tab === 'Model' ? activeModelBotId : activeBotId
+        if (botId === currentBotId) {
+          setActiveBot(filtered[0].id)
           setClipboard(null)
           setCopiedNodeId(null)
         }
         return filtered
       })
     },
-    [activeBotId, createBotSession, setActiveBotId, setBots, setClipboard, setCopiedNodeId],
+    [tab, activeBotId, activeForgeBotId, activeModelBotId, createBotSession, setActiveBot, setBots, setClipboard, setCopiedNodeId],
   )
 
   /**
@@ -211,16 +229,10 @@ export function useBotOperations({
     setBots((prev) => [...prev, bot])
 
     // Update the correct active bot ID based on context
-    if (tabContext === 'Forge') {
-      setActiveForgeBotId(bot.id)
-    } else {
-      setActiveModelBotId(bot.id)
-    }
-
-    setActiveBotId(bot.id) // Also update legacy activeBotId
+    setActiveBot(bot.id, tabContext)
     setClipboard(null)
     setCopiedNodeId(null)
-  }, [tab, createBotSession, setActiveBotId, setActiveForgeBotId, setActiveModelBotId, setBots, setClipboard, setCopiedNodeId])
+  }, [tab, createBotSession, setActiveBot, setBots, setClipboard, setCopiedNodeId])
 
   /**
    * Duplicate an existing bot
@@ -245,16 +257,10 @@ export function useBotOperations({
     setBots((prev) => [...prev, newBot])
 
     // Update the correct active bot ID based on context
-    if (newBot.tabContext === 'Forge') {
-      setActiveForgeBotId(newBot.id)
-    } else {
-      setActiveModelBotId(newBot.id)
-    }
-
-    setActiveBotId(newBot.id) // Also update legacy activeBotId
+    setActiveBot(newBot.id, newBot.tabContext)
     setClipboard(null)
     setCopiedNodeId(null)
-  }, [bots, setActiveBotId, setActiveForgeBotId, setActiveModelBotId, setBots, setClipboard, setCopiedNodeId])
+  }, [bots, setActiveBot, setBots, setClipboard, setCopiedNodeId])
 
   /**
    * Export current tree as JSON
@@ -312,9 +318,12 @@ export function useBotOperations({
       const loadedCallChains: CallChain[] = typeof bot.callChains === 'string'
         ? JSON.parse(bot.callChains)
         : (bot.callChains || [])
+
+      // Get the current Model tab bot (since handleOpenBot always opens in Model tab)
+      const currentModelBotId = activeModelBotId
       setBots((prev) =>
         prev.map((b) => {
-          if (b.id !== activeBotId) return b
+          if (b.id !== currentModelBotId) return b
           const trimmed = b.history.slice(0, b.historyIndex + 1)
           trimmed.push(ensureSlots(payload))
           return {
@@ -331,7 +340,7 @@ export function useBotOperations({
       console.error('Open failed:', e)
       alert('Failed to open bot: ' + String((e as Error)?.message || e))
     }
-  }, [userId, activeBotId, setBots, setTab])
+  }, [userId, activeModelBotId, setBots, setTab])
 
   /**
    * Copy saved bot payload to clipboard
@@ -441,10 +450,10 @@ export function useBotOperations({
         tabContext: 'Model',
       }
       setBots((prev) => [...prev, session])
-      setActiveBotId(session.id)
+      setActiveBot(session.id, 'Model')
       setTab('Model')
     },
-    [userId, setBots, setActiveBotId, setTab],
+    [userId, setBots, setActiveBot, setTab],
   )
 
   /**
