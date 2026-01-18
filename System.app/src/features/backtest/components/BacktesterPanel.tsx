@@ -580,82 +580,183 @@ export function BacktesterPanel({
 
         {result && tab === 'Overview' ? (
           <>
-            {/* Metrics Row */}
-            <div className="flex gap-1.5 w-full">
-              <Card
-                ref={rangePickerRef}
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  if (!rangePickerOpen && visibleRange) {
-                    setRangeStart(isoFromUtcSeconds(visibleRange.from))
-                    setRangeEnd(isoFromUtcSeconds(visibleRange.to))
-                  }
-                  setRangePopoverPos(computeRangePopoverPos())
-                  setRangePickerOpen((v) => !v)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return
-                  e.preventDefault()
-                  if (!rangePickerOpen && visibleRange) {
-                    setRangeStart(isoFromUtcSeconds(visibleRange.from))
-                    setRangeEnd(isoFromUtcSeconds(visibleRange.to))
-                  }
-                  setRangePopoverPos(computeRangePopoverPos())
-                  setRangePickerOpen((v) => !v)
-                }}
-                className="cursor-pointer relative p-1.5 text-center flex-1 min-w-0"
-                title="Click to set a custom date range"
-              >
-                <div className="text-[9px] font-bold text-muted whitespace-nowrap">Date range</div>
-                <div className="text-xs font-black whitespace-nowrap">{rangeLabel.start} {'\u2192'} {rangeLabel.end}</div>
-                <div className="text-[9px] text-muted">{tradingDaysInRange} days</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Compound Annual Growth Rate">
-                <div className="text-[9px] font-bold text-muted">CAGR</div>
-                <div className="text-xs font-black">{formatPct(result.metrics.cagr)}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Maximum Drawdown">
-                <div className="text-[9px] font-bold text-muted">Max DD</div>
-                <div className="text-xs font-black">{formatPct(result.metrics.maxDrawdown)}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Calmar Ratio: CAGR / Max DD">
-                <div className="text-[9px] font-bold text-muted">Calmar</div>
-                <div className="text-xs font-black">{Number.isFinite(result.metrics.calmar) ? result.metrics.calmar.toFixed(2) : '\u2014'}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Sharpe Ratio">
-                <div className="text-[9px] font-bold text-muted">Sharpe</div>
-                <div className="text-xs font-black">{Number.isFinite(result.metrics.sharpe) ? result.metrics.sharpe.toFixed(2) : '\u2014'}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Sortino Ratio">
-                <div className="text-[9px] font-bold text-muted">Sortino</div>
-                <div className="text-xs font-black">{Number.isFinite(result.metrics.sortino) ? result.metrics.sortino.toFixed(2) : '\u2014'}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Treynor Ratio">
-                <div className="text-[9px] font-bold text-muted">Treynor</div>
-                <div className="text-xs font-black">{Number.isFinite(result.metrics.treynor) ? result.metrics.treynor.toFixed(2) : '\u2014'}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Beta vs benchmark">
-                <div className="text-[9px] font-bold text-muted">Beta</div>
-                <div className="text-xs font-black">{Number.isFinite(result.metrics.beta) ? result.metrics.beta.toFixed(2) : '\u2014'}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Annualized volatility">
-                <div className="text-[9px] font-bold text-muted">Volatility</div>
-                <div className="text-xs font-black">{formatPct(result.metrics.vol)}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Win rate">
-                <div className="text-[9px] font-bold text-muted">Win rate</div>
-                <div className="text-xs font-black">{formatPct(result.metrics.winRate)}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Average turnover">
-                <div className="text-[9px] font-bold text-muted">Turnover</div>
-                <div className="text-xs font-black">{formatPct(result.metrics.avgTurnover)}</div>
-              </Card>
-              <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Average holdings">
-                <div className="text-[9px] font-bold text-muted">Avg Hold</div>
-                <div className="text-xs font-black">{result.metrics.avgHoldings.toFixed(2)}</div>
-              </Card>
-            </div>
+            {/* Metrics Row(s) - Show IS/OOS split if available */}
+            {(() => {
+              console.log('[BacktesterPanel] result.isMetrics:', result.isMetrics)
+              console.log('[BacktesterPanel] result.oosMetrics:', result.oosMetrics)
+              console.log('[BacktesterPanel] Condition check (isMetrics && oosMetrics):', result.isMetrics && result.oosMetrics)
+              return null
+            })()}
+            {result.isMetrics && result.oosMetrics ? (
+              <div className="flex flex-col gap-1.5">
+                {/* IS Metrics Row */}
+                <div className="grid grid-cols-10 gap-1 w-full">
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Date Range">
+                    <div className="text-[9px] font-bold text-muted whitespace-nowrap">IS Date range</div>
+                    <div className="text-[10px] font-black overflow-hidden text-ellipsis">{result.isMetrics.startDate ?? rangeLabel.start} {'\u2192'} {result.isMetrics.endDate ?? rangeLabel.end}</div>
+                    <div className="text-[9px] text-muted">{result.isMetrics.days ?? 0} days</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Compound Annual Growth Rate">
+                    <div className="text-[9px] font-bold text-muted">IS CAGR</div>
+                    <div className="text-xs font-black">{formatPct(result.isMetrics.cagr)}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Maximum Drawdown">
+                    <div className="text-[9px] font-bold text-muted">IS Max DD</div>
+                    <div className="text-xs font-black">{formatPct(result.isMetrics.maxDrawdown)}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Calmar Ratio: CAGR / Max DD">
+                    <div className="text-[9px] font-bold text-muted">IS Calmar</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.isMetrics.calmar) ? result.isMetrics.calmar.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Sharpe Ratio">
+                    <div className="text-[9px] font-bold text-muted">IS Sharpe</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.isMetrics.sharpe) ? result.isMetrics.sharpe.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Sortino Ratio">
+                    <div className="text-[9px] font-bold text-muted">IS Sortino</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.isMetrics.sortino) ? result.isMetrics.sortino.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Treynor Ratio">
+                    <div className="text-[9px] font-bold text-muted">IS Treynor</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.isMetrics.treynor) ? result.isMetrics.treynor.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Beta vs benchmark">
+                    <div className="text-[9px] font-bold text-muted">IS Beta</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.isMetrics.beta) ? result.isMetrics.beta.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Annualized volatility">
+                    <div className="text-[9px] font-bold text-muted">IS Volatility</div>
+                    <div className="text-xs font-black">{formatPct(result.isMetrics.vol)}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="In-Sample Win rate">
+                    <div className="text-[9px] font-bold text-muted">IS Win rate</div>
+                    <div className="text-xs font-black">{formatPct(result.isMetrics.winRate)}</div>
+                  </Card>
+                </div>
+
+                {/* OOS Metrics Row */}
+                <div className="grid grid-cols-10 gap-1 w-full">
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Date Range">
+                    <div className="text-[9px] font-bold text-muted whitespace-nowrap">OOS Date range</div>
+                    <div className="text-[10px] font-black overflow-hidden text-ellipsis">{result.oosMetrics.startDate ?? rangeLabel.start} {'\u2192'} {result.oosMetrics.endDate ?? rangeLabel.end}</div>
+                    <div className="text-[9px] text-muted">{result.oosMetrics.days ?? 0} days</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Compound Annual Growth Rate">
+                    <div className="text-[9px] font-bold text-muted">OOS CAGR</div>
+                    <div className="text-xs font-black">{formatPct(result.oosMetrics.cagr)}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Maximum Drawdown">
+                    <div className="text-[9px] font-bold text-muted">OOS Max DD</div>
+                    <div className="text-xs font-black">{formatPct(result.oosMetrics.maxDrawdown)}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Calmar Ratio: CAGR / Max DD">
+                    <div className="text-[9px] font-bold text-muted">OOS Calmar</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.oosMetrics.calmar) ? result.oosMetrics.calmar.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Sharpe Ratio">
+                    <div className="text-[9px] font-bold text-muted">OOS Sharpe</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.oosMetrics.sharpe) ? result.oosMetrics.sharpe.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Sortino Ratio">
+                    <div className="text-[9px] font-bold text-muted">OOS Sortino</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.oosMetrics.sortino) ? result.oosMetrics.sortino.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Treynor Ratio">
+                    <div className="text-[9px] font-bold text-muted">OOS Treynor</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.oosMetrics.treynor) ? result.oosMetrics.treynor.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Beta vs benchmark">
+                    <div className="text-[9px] font-bold text-muted">OOS Beta</div>
+                    <div className="text-xs font-black">{Number.isFinite(result.oosMetrics.beta) ? result.oosMetrics.beta.toFixed(2) : '\u2014'}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Annualized volatility">
+                    <div className="text-[9px] font-bold text-muted">OOS Volatility</div>
+                    <div className="text-xs font-black">{formatPct(result.oosMetrics.vol)}</div>
+                  </Card>
+                  <Card className="p-1 text-center cursor-help" title="Out-of-Sample Win rate">
+                    <div className="text-[9px] font-bold text-muted">OOS Win rate</div>
+                    <div className="text-xs font-black">{formatPct(result.oosMetrics.winRate)}</div>
+                  </Card>
+                </div>
+              </div>
+            ) : (
+              /* Single Metrics Row - No IS/OOS split */
+              <div className="flex gap-1.5 w-full">
+                <Card
+                  ref={rangePickerRef}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    if (!rangePickerOpen && visibleRange) {
+                      setRangeStart(isoFromUtcSeconds(visibleRange.from))
+                      setRangeEnd(isoFromUtcSeconds(visibleRange.to))
+                    }
+                    setRangePopoverPos(computeRangePopoverPos())
+                    setRangePickerOpen((v) => !v)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return
+                    e.preventDefault()
+                    if (!rangePickerOpen && visibleRange) {
+                      setRangeStart(isoFromUtcSeconds(visibleRange.from))
+                      setRangeEnd(isoFromUtcSeconds(visibleRange.to))
+                    }
+                    setRangePopoverPos(computeRangePopoverPos())
+                    setRangePickerOpen((v) => !v)
+                  }}
+                  className="cursor-pointer relative p-1.5 text-center flex-1 min-w-0"
+                  title="Click to set a custom date range"
+                >
+                  <div className="text-[9px] font-bold text-muted whitespace-nowrap">Date range</div>
+                  <div className="text-xs font-black whitespace-nowrap">{rangeLabel.start} {'\u2192'} {rangeLabel.end}</div>
+                  <div className="text-[9px] text-muted">{tradingDaysInRange} days</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Compound Annual Growth Rate">
+                  <div className="text-[9px] font-bold text-muted">CAGR</div>
+                  <div className="text-xs font-black">{formatPct(result.metrics.cagr)}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Maximum Drawdown">
+                  <div className="text-[9px] font-bold text-muted">Max DD</div>
+                  <div className="text-xs font-black">{formatPct(result.metrics.maxDrawdown)}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Calmar Ratio: CAGR / Max DD">
+                  <div className="text-[9px] font-bold text-muted">Calmar</div>
+                  <div className="text-xs font-black">{Number.isFinite(result.metrics.calmar) ? result.metrics.calmar.toFixed(2) : '\u2014'}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Sharpe Ratio">
+                  <div className="text-[9px] font-bold text-muted">Sharpe</div>
+                  <div className="text-xs font-black">{Number.isFinite(result.metrics.sharpe) ? result.metrics.sharpe.toFixed(2) : '\u2014'}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Sortino Ratio">
+                  <div className="text-[9px] font-bold text-muted">Sortino</div>
+                  <div className="text-xs font-black">{Number.isFinite(result.metrics.sortino) ? result.metrics.sortino.toFixed(2) : '\u2014'}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Treynor Ratio">
+                  <div className="text-[9px] font-bold text-muted">Treynor</div>
+                  <div className="text-xs font-black">{Number.isFinite(result.metrics.treynor) ? result.metrics.treynor.toFixed(2) : '\u2014'}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Beta vs benchmark">
+                  <div className="text-[9px] font-bold text-muted">Beta</div>
+                  <div className="text-xs font-black">{Number.isFinite(result.metrics.beta) ? result.metrics.beta.toFixed(2) : '\u2014'}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Annualized volatility">
+                  <div className="text-[9px] font-bold text-muted">Volatility</div>
+                  <div className="text-xs font-black">{formatPct(result.metrics.vol)}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Win rate">
+                  <div className="text-[9px] font-bold text-muted">Win rate</div>
+                  <div className="text-xs font-black">{formatPct(result.metrics.winRate)}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Average turnover">
+                  <div className="text-[9px] font-bold text-muted">Turnover</div>
+                  <div className="text-xs font-black">{formatPct(result.metrics.avgTurnover)}</div>
+                </Card>
+                <Card className="p-1.5 text-center flex-1 min-w-0 cursor-help" title="Average holdings">
+                  <div className="text-[9px] font-bold text-muted">Avg Hold</div>
+                  <div className="text-xs font-black">{result.metrics.avgHoldings.toFixed(2)}</div>
+                </Card>
+              </div>
+            )}
 
             {/* Charts */}
             <div>

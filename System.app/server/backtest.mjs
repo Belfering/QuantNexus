@@ -4492,7 +4492,7 @@ export async function runBacktest(payload, options = {}) {
     // Extract all timestamps from the equity curve
     const allTimestamps = points.map(p => p.time)
 
-    // For chronological strategy, calculate the split date based on percentage
+    // For chronological strategy, calculate the split date based on percentage OR use direct splitDate
     let chronologicalThresholdDate = null
     if (splitConfig.strategy === 'chronological' && splitConfig.chronologicalPercent) {
       // Sort timestamps to get date range
@@ -4514,6 +4514,11 @@ export async function runBacktest(payload, options = {}) {
       console.log(`[Backtest]   - End time: ${endTime} (${new Date(endTime * 1000).toISOString()})`)
       console.log(`[Backtest]   - Split percent: ${splitConfig.chronologicalPercent}%`)
       console.log(`[Backtest]   - Threshold date: ${chronologicalThresholdDate}`)
+    } else if (splitConfig.splitDate) {
+      // Use direct splitDate (for shard-generated strategies)
+      chronologicalThresholdDate = splitConfig.splitDate
+      console.log(`[Backtest] >>> SPLIT CALCULATION (direct date):`)
+      console.log(`[Backtest]   - Using splitDate: ${chronologicalThresholdDate}`)
     }
 
     // Split dates using the configured strategy
@@ -4616,12 +4621,12 @@ export async function runBacktest(payload, options = {}) {
         years: isBaseMetrics.days / 252,
         totalReturn: isEquityValues.length > 0 ? isEquityValues[isEquityValues.length - 1] - 1 : 0,
         cagr: isBaseMetrics.cagr,
-        vol: isBaseMetrics.volatility,
+        volatility: isBaseMetrics.volatility,
         maxDrawdown: isBaseMetrics.maxDrawdown,
-        calmar: isBaseMetrics.calmar,
-        sharpe: isBaseMetrics.sharpe,
-        sortino: isBaseMetrics.sortino,
-        treynor: isTreynor,
+        calmarRatio: isBaseMetrics.calmar,
+        sharpeRatio: isBaseMetrics.sharpe,
+        sortinoRatio: isBaseMetrics.sortino,
+        treynorRatio: isTreynor,
         beta: isBeta,
         winRate: isWinRate,
         bestDay: isBestDay === -Infinity ? 0 : isBestDay,
@@ -4631,7 +4636,7 @@ export async function runBacktest(payload, options = {}) {
         tim: isTIM, // Time in Market as decimal (0-1)
         timar: isTIMAR, // Time in Market Adjusted Return (CAGR/TIM)
       }
-      console.log(`[Backtest] >>> IS metrics computed: CAGR=${isMetrics.cagr.toFixed(4)}, Sharpe=${isMetrics.sharpe.toFixed(2)}, years=${isMetrics.years.toFixed(1)}, TIM=${(isTIM * 100).toFixed(1)}%, TIMAR=${(isTIMAR * 100).toFixed(2)}%`)
+      console.log(`[Backtest] >>> IS metrics computed: CAGR=${isMetrics.cagr.toFixed(4)}, Sharpe=${isMetrics.sharpeRatio.toFixed(2)}, years=${isMetrics.years.toFixed(1)}, TIM=${(isTIM * 100).toFixed(1)}%, TIMAR=${(isTIMAR * 100).toFixed(2)}%`)
     } else {
       console.log(`[Backtest] >>> WARNING: IS metrics NOT computed (isEquityValues.length=${isEquityValues.length}, isReturns.length=${isReturns.length})`)
     }
@@ -4742,12 +4747,12 @@ export async function runBacktest(payload, options = {}) {
         years: oosBaseMetrics.days / 252,
         totalReturn: oosEquityValues.length > 0 ? oosEquityValues[oosEquityValues.length - 1] - 1 : 0,
         cagr: oosBaseMetrics.cagr,
-        vol: oosBaseMetrics.volatility,
+        volatility: oosBaseMetrics.volatility,
         maxDrawdown: oosBaseMetrics.maxDrawdown,
-        calmar: oosBaseMetrics.calmar,
-        sharpe: oosBaseMetrics.sharpe,
-        sortino: oosBaseMetrics.sortino,
-        treynor: oosTreynor,
+        calmarRatio: oosBaseMetrics.calmar,
+        sharpeRatio: oosBaseMetrics.sharpe,
+        sortinoRatio: oosBaseMetrics.sortino,
+        treynorRatio: oosTreynor,
         beta: oosBeta,
         winRate: oosWinRate,
         bestDay: oosBestDay === -Infinity ? 0 : oosBestDay,
@@ -4757,7 +4762,7 @@ export async function runBacktest(payload, options = {}) {
         tim: oosTIM, // Time in Market as decimal (0-1)
         timar: oosTIMAR, // Time in Market Adjusted Return (CAGR/TIM)
       }
-      console.log(`[Backtest] >>> OOS metrics computed: CAGR=${oosMetrics.cagr.toFixed(4)}, Sharpe=${oosMetrics.sharpe.toFixed(2)}, years=${oosMetrics.years.toFixed(1)}, TIM=${(oosTIM * 100).toFixed(1)}%, TIMAR=${(oosTIMAR * 100).toFixed(2)}%`)
+      console.log(`[Backtest] >>> OOS metrics computed: CAGR=${oosMetrics.cagr.toFixed(4)}, Sharpe=${oosMetrics.sharpeRatio.toFixed(2)}, years=${oosMetrics.years.toFixed(1)}, TIM=${(oosTIM * 100).toFixed(1)}%, TIMAR=${(oosTIMAR * 100).toFixed(2)}%`)
     } else {
       console.log(`[Backtest] >>> WARNING: OOS metrics NOT computed (oosEquityValues.length=${oosEquityValues.length}, oosReturns.length=${oosReturns.length})`)
     }

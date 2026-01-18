@@ -176,6 +176,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
       // Extract OOS start date if available (for IS/OOS split visualization)
       console.log('[OOS Debug] splitConfig passed to backend:', splitConfig)
       console.log('[OOS Debug] shardOosDate passed:', shardOosDate)
+      console.log('[OOS Debug] serverResult.isMetrics:', serverResult.isMetrics)
       console.log('[OOS Debug] serverResult.oosMetrics:', serverResult.oosMetrics)
       let oosStartDate: string | undefined
 
@@ -231,6 +232,58 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
 
       const monthly = computeMonthlyReturns(days)
 
+      // Transform IS/OOS metrics if available
+      let isMetrics = undefined
+      let oosMetrics = undefined
+
+      if (serverResult.isMetrics) {
+        isMetrics = {
+          startDate: serverResult.isMetrics.startDate || '',
+          endDate: serverResult.isMetrics.endDate || '',
+          days: serverResult.isMetrics.days || 0,
+          years: (serverResult.isMetrics.days || 0) / 252,
+          totalReturn: serverResult.isMetrics.totalReturn || 0,
+          cagr: serverResult.isMetrics.cagr || 0,
+          vol: serverResult.isMetrics.volatility || 0,
+          maxDrawdown: serverResult.isMetrics.maxDrawdown || 0,
+          calmar: serverResult.isMetrics.calmarRatio || 0,
+          sharpe: serverResult.isMetrics.sharpeRatio || 0,
+          sortino: serverResult.isMetrics.sortinoRatio || 0,
+          treynor: serverResult.isMetrics.treynorRatio || 0,
+          beta: serverResult.isMetrics.beta || 0,
+          winRate: serverResult.isMetrics.winRate || 0,
+          bestDay: serverResult.isMetrics.bestDay || 0,
+          worstDay: serverResult.isMetrics.worstDay || 0,
+          avgTurnover: serverResult.isMetrics.avgTurnover || 0,
+          avgHoldings: serverResult.isMetrics.avgHoldings || 0,
+        }
+        console.log('[OOS Debug] Transformed IS metrics:', isMetrics)
+      }
+
+      if (serverResult.oosMetrics) {
+        oosMetrics = {
+          startDate: serverResult.oosMetrics.startDate || '',
+          endDate: serverResult.oosMetrics.endDate || '',
+          days: serverResult.oosMetrics.days || 0,
+          years: (serverResult.oosMetrics.days || 0) / 252,
+          totalReturn: serverResult.oosMetrics.totalReturn || 0,
+          cagr: serverResult.oosMetrics.cagr || 0,
+          vol: serverResult.oosMetrics.volatility || 0,
+          maxDrawdown: serverResult.oosMetrics.maxDrawdown || 0,
+          calmar: serverResult.oosMetrics.calmarRatio || 0,
+          sharpe: serverResult.oosMetrics.sharpeRatio || 0,
+          sortino: serverResult.oosMetrics.sortinoRatio || 0,
+          treynor: serverResult.oosMetrics.treynorRatio || 0,
+          beta: serverResult.oosMetrics.beta || 0,
+          winRate: serverResult.oosMetrics.winRate || 0,
+          bestDay: serverResult.oosMetrics.bestDay || 0,
+          worstDay: serverResult.oosMetrics.worstDay || 0,
+          avgTurnover: serverResult.oosMetrics.avgTurnover || 0,
+          avgHoldings: serverResult.oosMetrics.avgHoldings || 0,
+        }
+        console.log('[OOS Debug] Transformed OOS metrics:', oosMetrics)
+      }
+
       return {
         result: {
           points,
@@ -238,6 +291,8 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
           drawdownPoints,
           markers: [],
           metrics,
+          isMetrics,
+          oosMetrics,
           oosStartDate,
           days,
           allocations,

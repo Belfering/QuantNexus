@@ -193,9 +193,20 @@ export function useBotOperations({
     if (!currentTree) return
 
     // Pass splitConfig to backend ONLY on Forge tab when explicitly enabled (for IS/OOS split visualization)
-    const splitConfigToPass = tab === 'Forge' && capturedBot.splitConfig?.enabled
+    // For shard-generated strategies, auto-create splitConfig from shardOosDate
+    let splitConfigToPass = tab === 'Forge' && capturedBot.splitConfig?.enabled
       ? capturedBot.splitConfig
       : undefined
+
+    // If no splitConfig but we have shardOosDate, create one automatically for IS/OOS metrics
+    if (tab === 'Forge' && !splitConfigToPass && shardOosDate) {
+      splitConfigToPass = {
+        enabled: true,
+        strategy: 'chronological',
+        splitDate: shardOosDate,
+      }
+      console.log('[OOS Debug] Auto-created splitConfig from shardOosDate:', splitConfigToPass)
+    }
 
     console.log('[OOS Debug] Current tab:', tab)
     console.log('[OOS Debug] Bot splitConfig:', capturedBot.splitConfig)

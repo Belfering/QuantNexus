@@ -95,6 +95,15 @@ export interface ForgeModelTabProps {
   handleDeleteCallChain: (id: string) => void
   pushCallChain: (id: string, newRoot: FlowNode) => void
 
+  // Watchlist props (for save to watchlist)
+  handleSaveToWatchlist: (watchlistNameOrId: string) => Promise<void>
+  watchlists: { id: string; name: string }[]
+  saveMenuOpen: boolean
+  setSaveMenuOpen: (open: boolean) => void
+  saveNewWatchlistName: string
+  setSaveNewWatchlistName: (name: string) => void
+  justSavedFeedback: boolean
+
   // Backtest visual state
   backtestErrorNodeIds: Set<string>
   backtestFocusNodeId: string | null
@@ -124,6 +133,14 @@ export function ForgeModelTab({
   handleToggleCallChainCollapse,
   handleDeleteCallChain,
   pushCallChain,
+  // Watchlist props
+  handleSaveToWatchlist,
+  watchlists,
+  saveMenuOpen,
+  setSaveMenuOpen,
+  saveNewWatchlistName,
+  setSaveNewWatchlistName,
+  justSavedFeedback,
   // Backtest visual state
   backtestErrorNodeIds,
   backtestFocusNodeId,
@@ -660,8 +677,59 @@ export function ForgeModelTab({
               Replace{foundInstances.length > 0 ? ` (${foundInstances.length})` : ''}
             </Button>
           </div>
-          {/* Right section: Undo/Redo */}
+          {/* Right section: Save to Watchlist + Undo/Redo */}
           <div className="flex gap-2 justify-end">
+            <div className="relative">
+              <Button
+                onClick={() => setSaveMenuOpen(!saveMenuOpen)}
+                title="Save this system to a watchlist"
+                variant={justSavedFeedback ? 'accent' : 'secondary'}
+                className={`px-4 py-2 text-sm font-semibold ${justSavedFeedback ? 'transition-colors duration-300' : ''}`}
+              >
+                {justSavedFeedback ? '✓ Saved!' : 'Save to Watchlist'}
+              </Button>
+              {saveMenuOpen ? (
+                <Card
+                  className="absolute top-full right-0 z-[200] min-w-60 p-1.5 mt-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex flex-col gap-1">
+                    {watchlists.map((w) => (
+                      <Button key={w.id} variant="ghost" className="justify-start" onClick={() => handleSaveToWatchlist(w.id)}>
+                        {w.name}
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="p-2.5 border-t border-border-soft mt-1">
+                    <div className="text-xs font-bold mb-1.5">New watchlist</div>
+                    <Input
+                      value={saveNewWatchlistName}
+                      placeholder="Type a name…"
+                      onChange={(e) => setSaveNewWatchlistName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveToWatchlist(saveNewWatchlistName)
+                      }}
+                      className="w-full"
+                    />
+                    <div className="flex gap-2 mt-2">
+                      <Button onClick={() => handleSaveToWatchlist(saveNewWatchlistName)} className="flex-1">
+                        Save
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setSaveMenuOpen(false)
+                          setSaveNewWatchlistName('')
+                        }}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ) : null}
+            </div>
             <Button
               variant="secondary"
               className="px-4 py-2 text-sm font-semibold active:bg-accent/30"

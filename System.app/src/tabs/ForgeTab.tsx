@@ -22,6 +22,9 @@ import type {
   NumberedQuantifier,
   ConditionLine,
   BotSession,
+  Watchlist,
+  SavedBot,
+  AnalyzeBacktestState,
 } from '@/types'
 import {
   createNode,
@@ -80,7 +83,7 @@ import type { ParameterField, ParameterRange } from '@/features/parameters/types
 import { loadCallChainsFromApi } from '@/features/auth'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
 import { useShardStore } from '@/stores/useShardStore'
-import { useTreeSync, useTreeUndo, useTickerLists } from '@/hooks'
+import { useTreeSync, useTreeUndo, useTickerLists, useWatchlistCallbacks } from '@/hooks'
 // Updated: TIM/TIMAR metrics now included
 import { useBatchBacktest } from '@/features/optimization/hooks/useBatchBacktest'
 import { applyBranchToTree } from '@/features/optimization/services/branchGenerator'
@@ -112,6 +115,16 @@ export interface ForgeTabProps {
   handleDeleteCallChain: (id: string) => void
   pushCallChain: (id: string, newRoot: FlowNode) => void
 
+  // Watchlist props (for save to watchlist)
+  watchlists: Watchlist[]
+  savedBots: SavedBot[]
+  setWatchlists: (updater: (prev: Watchlist[]) => Watchlist[]) => void
+  setSavedBots: (updater: (prev: SavedBot[]) => SavedBot[]) => void
+  setBots: (updater: (prev: BotSession[]) => BotSession[]) => void
+  setAnalyzeBacktests: (updater: (prev: Record<string, AnalyzeBacktestState>) => Record<string, AnalyzeBacktestState>) => void
+  callChainsById: Map<string, CallChain>
+  tickerMetadata: Map<string, { assetType?: string; name?: string }>
+
   // Backtest visual state
   backtestErrorNodeIds: Set<string>
   backtestFocusNodeId: string | null
@@ -141,6 +154,15 @@ export function ForgeTab({
   handleToggleCallChainCollapse,
   handleDeleteCallChain,
   pushCallChain,
+  // Watchlist props
+  watchlists,
+  savedBots,
+  setWatchlists,
+  setSavedBots,
+  setBots,
+  setAnalyzeBacktests,
+  callChainsById,
+  tickerMetadata,
   // Backtest visual state
   backtestErrorNodeIds,
   backtestFocusNodeId,
@@ -170,6 +192,7 @@ export function ForgeTab({
   const shardFilterTopX = useShardStore(s => s.filterTopX)
   const shardFilterMode = useShardStore(s => s.filterMode)
   const shardFilterTopXPerPattern = useShardStore(s => s.filterTopXPerPattern)
+  const shardMetricRequirements = useShardStore(s => s.metricRequirements)
   const shardDiscoveredPatterns = useShardStore(s => s.discoveredPatterns)
   const shardLoadedJobs = useShardStore(s => s.loadedJobs)
   const shardCombinedTree = useShardStore(s => s.combinedTree)
@@ -183,6 +206,7 @@ export function ForgeTab({
   const shardSetFilterTopX = useShardStore(s => s.setFilterTopX)
   const shardSetFilterMode = useShardStore(s => s.setFilterMode)
   const shardSetFilterTopXPerPattern = useShardStore(s => s.setFilterTopXPerPattern)
+  const shardSetMetricRequirements = useShardStore(s => s.setMetricRequirements)
   const shardApplyFilters = useShardStore(s => s.applyFilters)
   const shardRemoveBranchFromFiltered = useShardStore(s => s.removeBranchFromFiltered)
   const shardClearFilteredBranches = useShardStore(s => s.clearFilteredBranches)
@@ -1089,6 +1113,46 @@ export function ForgeTab({
     enabledOverlays,
     toggleOverlay: handleToggleOverlay,
   } = useBacktestStore()
+
+  // UI Store - save menu
+  const saveMenuOpen = useUIStore(s => s.saveMenuOpen)
+  const setSaveMenuOpen = useUIStore(s => s.setSaveMenuOpen)
+  const saveNewWatchlistName = useUIStore(s => s.saveNewWatchlistName)
+  const setSaveNewWatchlistName = useUIStore(s => s.setSaveNewWatchlistName)
+  const justSavedFeedback = useUIStore(s => s.justSavedFeedback)
+  const setJustSavedFeedback = useUIStore(s => s.setJustSavedFeedback)
+
+  // Admin access (hardcoded for local development, same as App.tsx)
+  const isAdmin = true
+
+  // Helper for activeSavedBotId (used by watchlist hook)
+  const activeBotId = activeBot?.id ?? null
+  const activeSavedBotId = activeBot?.savedBotId
+
+  // Watchlist callbacks hook
+  const {
+    handleSaveToWatchlist,
+  } = useWatchlistCallbacks({
+    userId,
+    isAdmin,
+    current,
+    activeBotId,
+    activeSavedBotId,
+    activeBot,
+    watchlists,
+    savedBots,
+    callChainsById,
+    tickerMetadata,
+    backtestMode,
+    backtestCostBps,
+    setWatchlists,
+    setSavedBots,
+    setBots,
+    setAnalyzeBacktests,
+    setSaveMenuOpen,
+    setSaveNewWatchlistName,
+    setJustSavedFeedback,
+  })
 
   // Floating scrollbar position tracking
   const [flowchartRect, setFlowchartRect] = useState({ left: 0, width: 0 })
@@ -2709,11 +2773,13 @@ export function ForgeTab({
                 filterTopX={shardFilterTopX}
                 filterMode={shardFilterMode}
                 filterTopXPerPattern={shardFilterTopXPerPattern}
+                metricRequirements={shardMetricRequirements}
                 discoveredPatterns={shardDiscoveredPatterns}
                 onFilterMetricChange={shardSetFilterMetric}
                 onFilterTopXChange={shardSetFilterTopX}
                 onFilterModeChange={shardSetFilterMode}
                 onFilterTopXPerPatternChange={shardSetFilterTopXPerPattern}
+                onMetricRequirementsChange={shardSetMetricRequirements}
                 onApplyFilter={shardApplyFilters}
               />
 
@@ -2775,57 +2841,37 @@ export function ForgeTab({
                     return
                   }
 
-                  // Save to Model tab using similar logic as shardSaveToModel
-                  const userId = useAuthStore.getState().userId
-                  if (!userId) {
-                    console.error('[ForgeTab] Not logged in')
-                    return
-                  }
-
+                  // Create bot session in Forge tab WITHOUT saving to database
+                  // User can save manually using the "Save to Watchlist" button
                   const botId = `shard-${Date.now()}`
-                  const savedSystem = {
+
+                  // Add to bot store with the generated tree (unsaved)
+                  useBotStore.getState().addBot({
                     id: botId,
-                    name: tree.title,
-                    builderId: userId,
-                    payload: tree,
-                    visibility: 'private' as const,
-                    createdAt: Date.now(),
-                    tags: ['Shard', 'Strategy']
-                  }
+                    history: [tree],
+                    historyIndex: 0,
+                    backtest: {
+                      status: 'idle',
+                      result: null,
+                      errors: [],
+                      errorNodeIds: new Set(),
+                      focusNodeId: null,
+                      benchmarkMetrics: null
+                    },
+                    callChains: [],
+                    customIndicators: [],
+                    parameterRanges: [],
+                    tabContext: 'Forge'
+                    // Note: No savedBotId - this bot is unsaved until user clicks "Save to Watchlist"
+                  })
 
-                  try {
-                    const { createBotInApi } = await import('@/features/bots/api')
-                    await createBotInApi(userId, savedSystem)
+                  console.log('[ForgeTab] Generated strategy bot (unsaved):', botId, 'with', shardStrategyBranches.length, 'branches')
 
-                    // Add to bot store with the generated tree
-                    useBotStore.getState().addBot({
-                      id: botId,
-                      history: [tree],
-                      historyIndex: 0,
-                      backtest: {
-                        status: 'idle',
-                        result: null,
-                        errors: [],
-                        errorNodeIds: new Set(),
-                        focusNodeId: null,
-                        benchmarkMetrics: null
-                      },
-                      callChains: [],
-                      customIndicators: [],
-                      parameterRanges: [],
-                      tabContext: 'Forge'
-                    })
+                  // Navigate to Forge subtab
+                  useUIStore.getState().setForgeSubtab('Forge')
 
-                    console.log('[ForgeTab] Generated strategy bot:', botId, 'with', shardStrategyBranches.length, 'branches')
-
-                    // Navigate to Forge subtab
-                    useUIStore.getState().setForgeSubtab('Forge')
-
-                    // Set this bot as active in Forge tab
-                    useBotStore.getState().setActiveForgeBotId(botId)
-                  } catch (err) {
-                    console.error('[ForgeTab] Failed to save strategy bot:', err)
-                  }
+                  // Set this bot as active in Forge tab
+                  useBotStore.getState().setActiveForgeBotId(botId)
                 }}
               />
             </div>
@@ -2890,6 +2936,13 @@ export function ForgeTab({
             handleToggleCallChainCollapse={handleToggleCallChainCollapse}
             handleDeleteCallChain={handleDeleteCallChain}
             pushCallChain={pushCallChain}
+            handleSaveToWatchlist={handleSaveToWatchlist}
+            watchlists={watchlists}
+            saveMenuOpen={saveMenuOpen}
+            setSaveMenuOpen={setSaveMenuOpen}
+            saveNewWatchlistName={saveNewWatchlistName}
+            setSaveNewWatchlistName={setSaveNewWatchlistName}
+            justSavedFeedback={justSavedFeedback}
             backtestErrorNodeIds={backtestErrorNodeIds}
             backtestFocusNodeId={backtestFocusNodeId}
             flowchartScrollRef={flowchartScrollRef}

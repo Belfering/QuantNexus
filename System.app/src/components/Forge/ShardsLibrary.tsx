@@ -92,7 +92,7 @@ export function ShardsLibrary({
                   Loading...
                 </>
               ) : (
-                'Create & Save to Model'
+                'Create Strategy'
               )}
             </Button>
           </div>
