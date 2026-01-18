@@ -108,6 +108,11 @@ export type BacktestResult = {
   isMetrics?: BacktestMetrics // In-sample metrics (only if IS/OOS split enabled)
   oosMetrics?: BacktestMetrics // Out-of-sample metrics (only if IS/OOS split enabled)
   oosStartDate?: string // OOS start date in YYYY-MM-DD format (for vertical line indicator)
+  // IS/OOS split data for In Depth tab
+  isAllocations?: BacktestAllocationRow[] // In-sample allocations (only if IS/OOS split enabled)
+  oosAllocations?: BacktestAllocationRow[] // Out-of-sample allocations (only if IS/OOS split enabled)
+  isMonthly?: Array<{ year: number; month: number; value: number }> // In-sample monthly returns (computed in frontend)
+  oosMonthly?: Array<{ year: number; month: number; value: number }> // Out-of-sample monthly returns (computed in frontend)
   days: BacktestDayRow[]
   allocations: BacktestAllocationRow[]
   warnings: BacktestWarning[]

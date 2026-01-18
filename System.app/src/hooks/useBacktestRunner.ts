@@ -284,6 +284,54 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
         console.log('[OOS Debug] Transformed OOS metrics:', oosMetrics)
       }
 
+      // Transform IS/OOS split data for In Depth tab
+      let isAllocations = undefined
+      let oosAllocations = undefined
+      let isMonthly = undefined
+      let oosMonthly = undefined
+
+      if (serverResult.isAllocations) {
+        console.log('[useBacktestRunner] serverResult.isAllocations length:', serverResult.isAllocations.length)
+        console.log('[useBacktestRunner] serverResult.isAllocations[0]:', serverResult.isAllocations[0])
+        // Transform from backend format { date, alloc } to frontend format { date, entries }
+        isAllocations = (serverResult.isAllocations || []).map((a: { date: string; alloc: Record<string, number> }) => ({
+          date: a.date,
+          entries: Object.entries(a.alloc || {})
+            .filter(([_, w]) => (w as number) > 0)
+            .map(([ticker, weight]) => ({ ticker, weight: weight as number }))
+            .sort((x, y) => y.weight - x.weight),
+        }))
+        console.log('[useBacktestRunner] Transformed isAllocations length:', isAllocations.length)
+        console.log('[useBacktestRunner] Transformed isAllocations[0]:', isAllocations[0])
+      }
+      if (serverResult.oosAllocations) {
+        console.log('[useBacktestRunner] serverResult.oosAllocations length:', serverResult.oosAllocations.length)
+        console.log('[useBacktestRunner] serverResult.oosAllocations[0]:', serverResult.oosAllocations[0])
+        // Transform from backend format { date, alloc } to frontend format { date, entries }
+        oosAllocations = (serverResult.oosAllocations || []).map((a: { date: string; alloc: Record<string, number> }) => ({
+          date: a.date,
+          entries: Object.entries(a.alloc || {})
+            .filter(([_, w]) => (w as number) > 0)
+            .map(([ticker, weight]) => ({ ticker, weight: weight as number }))
+            .sort((x, y) => y.weight - x.weight),
+        }))
+        console.log('[useBacktestRunner] Transformed oosAllocations length:', oosAllocations.length)
+        console.log('[useBacktestRunner] Transformed oosAllocations[0]:', oosAllocations[0])
+      }
+
+      // Compute monthly returns for IS/OOS periods from filtered days
+      if (oosStartDate && days.length > 0) {
+        const isDays = days.filter(d => d.date < oosStartDate)
+        const oosDays = days.filter(d => d.date >= oosStartDate)
+
+        if (isDays.length > 0) {
+          isMonthly = computeMonthlyReturns(isDays)
+        }
+        if (oosDays.length > 0) {
+          oosMonthly = computeMonthlyReturns(oosDays)
+        }
+      }
+
       return {
         result: {
           points,
@@ -294,6 +342,10 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
           isMetrics,
           oosMetrics,
           oosStartDate,
+          isAllocations,
+          oosAllocations,
+          isMonthly,
+          oosMonthly,
           days,
           allocations,
           warnings: [],

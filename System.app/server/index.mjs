@@ -3303,7 +3303,7 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
 // POST /api/sanity-report - Generate sanity report from payload directly (for unsaved strategies)
 app.post('/api/sanity-report', async (req, res) => {
   try {
-    const { payload, mode = 'CC', costBps = 5 } = req.body
+    const { payload, mode = 'CC', costBps = 5, startDate, endDate } = req.body
 
     if (!payload) {
       return res.status(400).json({ error: 'payload is required' })
@@ -3312,7 +3312,8 @@ app.post('/api/sanity-report', async (req, res) => {
     const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload)
 
     // Run backtest to get daily returns
-    console.log(`[SanityReport] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}...`)
+    const dateRangeStr = startDate && endDate ? ` (${startDate} to ${endDate})` : ''
+    console.log(`[SanityReport] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}${dateRangeStr}...`)
     const startTime = Date.now()
 
     const backtestResult = await runBacktest(payloadStr, {
@@ -3326,6 +3327,31 @@ app.post('/api/sanity-report', async (req, res) => {
       })
     }
 
+    // Filter by date range if specified (for IS/OOS split analysis)
+    let filteredReturns = backtestResult.dailyReturns
+    let filteredEquityCurve = backtestResult.equityCurve
+    if (startDate || endDate) {
+      const filterIndices = []
+      for (let i = 0; i < backtestResult.equityCurve.length; i++) {
+        const pt = backtestResult.equityCurve[i]
+        if (pt.date) {
+          const include = (!startDate || pt.date >= startDate) && (!endDate || pt.date <= endDate)
+          if (include) {
+            filterIndices.push(i)
+          }
+        }
+      }
+      filteredReturns = filterIndices.map(i => backtestResult.dailyReturns[i])
+      filteredEquityCurve = filterIndices.map(i => backtestResult.equityCurve[i])
+      console.log(`[SanityReport] Filtered to ${filteredReturns.length} days (from ${filteredEquityCurve[0]?.date} to ${filteredEquityCurve[filteredEquityCurve.length - 1]?.date})`)
+
+      if (filteredReturns.length < 50) {
+        return res.status(400).json({
+          error: `Insufficient data in date range: need at least 50 trading days, got ${filteredReturns.length}`
+        })
+      }
+    }
+
     // Get SPY returns for beta/treynor calculation
     let spyReturns = null
     if (loadedTickers.has('SPY')) {
@@ -3336,28 +3362,28 @@ app.post('/api/sanity-report', async (req, res) => {
       }
     }
 
-    // Generate sanity report
-    const report = generateSanityReport(backtestResult.dailyReturns, {
+    // Generate sanity report using filtered data
+    const report = generateSanityReport(filteredReturns, {
       years: req.body.years || 5,
       blockSize: req.body.blockSize || 7,
       shards: req.body.shards || 10,
       seed: req.body.seed || 42,
       avgTurnover: backtestResult.avgTurnover,
       avgHoldings: backtestResult.avgHoldings,
-      equityCurve: backtestResult.equityCurve,
+      equityCurve: filteredEquityCurve,
     }, spyReturns)
 
     // Compute strategy beta vs each benchmark ticker
     const benchmarkTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
     const strategyBetas = {}
 
-    // Build strategy returns map keyed by date
-    if (backtestResult.equityCurve && backtestResult.dailyReturns) {
+    // Build strategy returns map keyed by date (using filtered data)
+    if (filteredEquityCurve && filteredReturns) {
       const strategyReturnsMap = new Map()
-      for (let i = 0; i < backtestResult.equityCurve.length && i < backtestResult.dailyReturns.length; i++) {
-        const pt = backtestResult.equityCurve[i]
+      for (let i = 0; i < filteredEquityCurve.length && i < filteredReturns.length; i++) {
+        const pt = filteredEquityCurve[i]
         if (pt.date) {
-          strategyReturnsMap.set(pt.date, backtestResult.dailyReturns[i])
+          strategyReturnsMap.set(pt.date, filteredReturns[i])
         }
       }
 
@@ -3406,6 +3432,7 @@ app.post('/api/sanity-report', async (req, res) => {
 
 // GET /api/benchmarks/metrics - Get metrics for benchmark tickers
 // Returns cached results when available, computes and caches on miss
+// Supports optional startDate/endDate query params for IS/OOS split analysis
 app.get('/api/benchmarks/metrics', async (req, res) => {
   try {
     await ensureDbInitialized()
@@ -3416,11 +3443,30 @@ app.get('/api/benchmarks/metrics', async (req, res) => {
       ? String(req.query.tickers).split(',').map(t => t.trim().toUpperCase()).filter(Boolean)
       : defaultTickers
 
+    // Optional date range filtering for IS/OOS split
+    const startDate = req.query.startDate ? String(req.query.startDate) : null
+    const endDate = req.query.endDate ? String(req.query.endDate) : null
+    const dateRangeStr = startDate || endDate ? ` (${startDate || 'start'} to ${endDate || 'end'})` : ''
+
+    if (startDate || endDate) {
+      console.log(`[Benchmarks] Date-filtered request${dateRangeStr}`)
+    }
+
     const dataDate = await getLatestTickerDataDate()
 
     // First, get SPY returns WITH DATES (needed for beta/treynor calculation with proper alignment)
     // This will auto-load SPY into memory if not already loaded
     let spyReturnsWithDates = await getTickerReturnsWithDates('SPY')
+
+    // Filter SPY returns by date range if specified
+    if ((startDate || endDate) && spyReturnsWithDates) {
+      const beforeCount = spyReturnsWithDates.length
+      spyReturnsWithDates = spyReturnsWithDates.filter(r => {
+        return (!startDate || r.date >= startDate) && (!endDate || r.date <= endDate)
+      })
+      console.log(`[Benchmarks] SPY filtered: ${beforeCount} → ${spyReturnsWithDates.length} days`)
+    }
+
     let spyReturnsMap = null
     if (spyReturnsWithDates) {
       spyReturnsMap = new Map(spyReturnsWithDates.map(r => [r.date, r.return]))
@@ -3432,17 +3478,33 @@ app.get('/api/benchmarks/metrics', async (req, res) => {
     // Process all tickers in parallel for 4-5x faster response
     await Promise.all(requestedTickers.map(async (ticker) => {
       try {
-        // Check cache first
-        const cached = backtestCache.getCachedBenchmarkMetrics(ticker, dataDate)
+        // Build cache key including date range
+        const cacheKey = startDate || endDate
+          ? `${ticker}:${dataDate}:${startDate || ''}:${endDate || ''}`
+          : ticker
+
+        // Check cache first (with date-range-aware key)
+        const cached = startDate || endDate
+          ? null  // Skip cache for date-filtered queries for now (could implement separate cache)
+          : backtestCache.getCachedBenchmarkMetrics(ticker, dataDate)
+
         if (cached) {
           results[ticker] = cached.metrics
           return
         }
 
         // Cache miss - compute metrics with date-aligned returns
-        const tickerWithDates = await getTickerReturnsWithDates(ticker)
+        let tickerWithDates = await getTickerReturnsWithDates(ticker)
+
+        // Filter ticker returns by date range if specified
+        if ((startDate || endDate) && tickerWithDates) {
+          tickerWithDates = tickerWithDates.filter(r => {
+            return (!startDate || r.date >= startDate) && (!endDate || r.date <= endDate)
+          })
+        }
+
         if (!tickerWithDates || tickerWithDates.length < 50) {
-          errors.push(`${ticker}: insufficient data (${tickerWithDates?.length || 0} days)`)
+          errors.push(`${ticker}: insufficient data (${tickerWithDates?.length || 0} days)${dateRangeStr}`)
           return
         }
 
@@ -3470,8 +3532,10 @@ app.get('/api/benchmarks/metrics', async (req, res) => {
         const metrics = computeBenchmarkMetrics(alignedTickerReturns, alignedSpyReturns)
 
         if (metrics) {
-          // Cache the result
-          backtestCache.setCachedBenchmarkMetrics(ticker, dataDate, metrics)
+          // Cache the result (only for full-period queries)
+          if (!startDate && !endDate) {
+            backtestCache.setCachedBenchmarkMetrics(ticker, dataDate, metrics)
+          }
           results[ticker] = metrics
         } else {
           errors.push(`${ticker}: failed to compute metrics`)

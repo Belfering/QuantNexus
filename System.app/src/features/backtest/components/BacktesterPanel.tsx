@@ -1,7 +1,7 @@
 // src/features/backtest/components/BacktesterPanel.tsx
 // Main backtest panel with controls, metrics, and visualization tabs
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { UTCTimestamp } from 'lightweight-charts'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,55 @@ import { DrawdownChart } from './DrawdownChart'
 import { RangeNavigator } from './RangeNavigator'
 import { AllocationChart, type AllocationSeriesData } from './AllocationChart'
 import { renderMonthlyHeatmap } from './MonthlyHeatmap'
+import type { BacktestDayRow } from '@/types/backtest'
+
+// Helper function to compute allocation series from day rows
+function computeAllocationSeries(
+  days: BacktestDayRow[],
+  tabContext: string
+): AllocationSeriesData[] {
+  if (days.length === 0) return []
+
+  const totals = new Map<string, number>()
+  for (const d of days) {
+    for (const h of d.holdings) {
+      const normalized = h.ticker.toUpperCase().trim()
+      if (normalized === 'EMPTY' || normalized === 'CASH') continue
+      totals.set(h.ticker, (totals.get(h.ticker) || 0) + h.weight)
+    }
+  }
+
+  const ranked = Array.from(totals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([t]) => t)
+
+  const palette = ['#0ea5e9', '#7c3aed', '#16a34a', '#f97316', '#db2777', '#0891b2', '#eab308', '#dc2626', '#475569', '#4f46e5']
+  const series = ranked.map((ticker, i) => ({
+    name: ticker,
+    color: palette[i % palette.length],
+    points: days.map((d) => ({
+      time: d.time,
+      value: d.holdings.find((h) => h.ticker === ticker)?.weight ?? 0,
+    })) as EquityPoint[],
+  }))
+
+  series.push({
+    name: 'Cash',
+    color: tabContext === 'Forge' ? 'transparent' : '#94a3b8',
+    points: days.map((d) => {
+      const invested = d.holdings
+        .filter(h => {
+          const normalized = h.ticker.toUpperCase().trim()
+          return normalized !== 'EMPTY' && normalized !== 'CASH'
+        })
+        .reduce((a, b) => a + b.weight, 0)
+      return { time: d.time, value: Math.max(0, 1 - invested) }
+    }) as EquityPoint[],
+  })
+
+  return series
+}
 
 export function BacktesterPanel({
   mode,
@@ -66,6 +115,71 @@ export function BacktesterPanel({
   const rangePickerRef = useRef<HTMLDivElement | null>(null)
   const rangePopoverRef = useRef<HTMLDivElement | null>(null)
   const [rangePopoverPos, setRangePopoverPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  // IS/OOS benchmark metrics state
+  type BenchmarkState = { status: 'idle' | 'loading' | 'done' | 'error'; data?: Record<string, ComparisonMetrics>; error?: string }
+  const [isBenchmarks, setIsBenchmarks] = useState<BenchmarkState>({ status: 'idle' })
+  const [oosBenchmarks, setOosBenchmarks] = useState<BenchmarkState>({ status: 'idle' })
+
+  // Reset IS/OOS benchmark states when result changes
+  useEffect(() => {
+    setIsBenchmarks({ status: 'idle' })
+    setOosBenchmarks({ status: 'idle' })
+  }, [result])
+
+  // Fetch IS/OOS benchmarks when result changes and has IS/OOS split
+  useEffect(() => {
+    const hasIsOos = !!(result?.isMetrics && result?.oosMetrics && result?.oosStartDate)
+
+    console.log(`[Benchmarks] useEffect triggered - hasIsOos: ${hasIsOos}, tab: ${tab}, benchmarkMetrics: ${benchmarkMetrics?.status}, isState: ${isBenchmarks.status}, oosState: ${oosBenchmarks.status}`)
+
+    if (hasIsOos && tab === 'Benchmarks' && benchmarkMetrics?.status === 'done') {
+      // Fetch IS benchmarks
+      if (isBenchmarks.status === 'idle') {
+        const startDate = result.isMetrics!.startDate
+        const endDate = result.oosStartDate!
+
+        console.log(`[Benchmarks] Fetching IS benchmarks: ${startDate} to ${endDate}`)
+        setIsBenchmarks({ status: 'loading' })
+        fetch(`/api/benchmarks/metrics?startDate=${startDate}&endDate=${endDate}`)
+          .then(res => res.json())
+          .then(data => {
+            console.log(`[Benchmarks] IS response:`, data)
+
+            if (data.success) {
+              setIsBenchmarks({ status: 'done', data: data.benchmarks })
+            } else {
+              setIsBenchmarks({ status: 'error', error: 'Failed to fetch IS benchmarks' })
+            }
+          })
+          .catch(err => {
+            setIsBenchmarks({ status: 'error', error: String(err) })
+          })
+      }
+
+      // Fetch OOS benchmarks
+      if (oosBenchmarks.status === 'idle') {
+        const startDate = result.oosStartDate!
+        const endDate = result.oosMetrics!.endDate
+
+        console.log(`[Benchmarks] Fetching OOS benchmarks: ${startDate} to ${endDate}`)
+        setOosBenchmarks({ status: 'loading' })
+        fetch(`/api/benchmarks/metrics?startDate=${startDate}&endDate=${endDate}`)
+          .then(res => res.json())
+          .then(data => {
+            console.log(`[Benchmarks] OOS response:`, data)
+            if (data.success) {
+              setOosBenchmarks({ status: 'done', data: data.benchmarks })
+            } else {
+              setOosBenchmarks({ status: 'error', error: 'Failed to fetch OOS benchmarks' })
+            }
+          })
+          .catch(err => {
+            setOosBenchmarks({ status: 'error', error: String(err) })
+          })
+      }
+    }
+  }, [result, tab, benchmarkMetrics, isBenchmarks.status, oosBenchmarks.status])
 
   const benchmarkKnown = useMemo(() => {
     const t = normalizeChoice(benchmark)
@@ -263,48 +377,7 @@ export function BacktesterPanel({
     : null
 
   const allocationSeries = useMemo<AllocationSeriesData[]>(() => {
-    const days = result?.days || []
-    if (days.length === 0) return []
-    const totals = new Map<string, number>()
-    for (const d of days) {
-      for (const h of d.holdings) {
-        // Skip cash-like positions (Empty, BIL, Cash)
-        const normalized = h.ticker.toUpperCase().trim()
-        if (normalized === 'EMPTY' || normalized === 'CASH') continue
-        totals.set(h.ticker, (totals.get(h.ticker) || 0) + h.weight)
-      }
-    }
-    const ranked = Array.from(totals.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([t]) => t)
-
-    const palette = ['#0ea5e9', '#7c3aed', '#16a34a', '#f97316', '#db2777', '#0891b2', '#eab308', '#dc2626', '#475569', '#4f46e5']
-    const series = ranked.map((ticker, i) => ({
-      name: ticker,
-      color: palette[i % palette.length],
-      points: days.map((d) => ({
-        time: d.time,
-        value: d.holdings.find((h) => h.ticker === ticker)?.weight ?? 0,
-      })) as EquityPoint[],
-    }))
-
-    series.push({
-      name: 'Cash',
-      color: tabContext === 'Forge' ? 'transparent' : '#94a3b8',
-      points: days.map((d) => {
-        // Only count real positions when calculating invested amount (exclude Cash/Empty)
-        const invested = d.holdings
-          .filter(h => {
-            const normalized = h.ticker.toUpperCase().trim()
-            return normalized !== 'EMPTY' && normalized !== 'CASH'
-          })
-          .reduce((a, b) => a + b.weight, 0)
-        return { time: d.time, value: Math.max(0, 1 - invested) }
-      }) as EquityPoint[],
-    })
-
-    return series
+    return computeAllocationSeries(result?.days || [], tabContext || 'Forge')
   }, [result, tabContext])
 
   const groupedWarnings = useMemo(() => {
@@ -354,9 +427,71 @@ export function BacktesterPanel({
           </div>
         )}
         {benchmarkMetrics?.status === 'done' && benchmarkMetrics.data && (
-          <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
-            {renderBenchmarksTable(result, benchmarkMetrics.data, modelSanityReport)}
-          </div>
+          <>
+            {result.isMetrics && result.oosMetrics && result.oosStartDate ? (
+              // === IS/OOS SPLIT VIEW (Side-by-Side) ===
+              <div className="flex flex-col gap-3">
+                {/* Loading indicator for IS/OOS benchmarks */}
+                {(isBenchmarks.status === 'loading' || oosBenchmarks.status === 'loading') && (
+                  <div className="text-muted text-sm p-3 border border-border rounded-lg text-center animate-pulse">
+                    Loading IS/OOS benchmark data...
+                  </div>
+                )}
+
+                {/* Error messages */}
+                {isBenchmarks.status === 'error' && (
+                  <div className="text-danger text-sm p-2 border border-danger rounded-lg">
+                    IS Benchmarks Error: {isBenchmarks.error}
+                  </div>
+                )}
+                {oosBenchmarks.status === 'error' && (
+                  <div className="text-danger text-sm p-2 border border-danger rounded-lg">
+                    OOS Benchmarks Error: {oosBenchmarks.error}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col">
+                    <div className="font-black mb-2 text-center">In-Sample Comparison</div>
+                    <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
+                      {isBenchmarks.status === 'done' && isBenchmarks.data ? (
+                        renderBenchmarksTable(
+                          { ...result, metrics: result.isMetrics },
+                          isBenchmarks.data,
+                          modelSanityReport
+                        )
+                      ) : isBenchmarks.status === 'loading' ? (
+                        <div className="text-muted text-center p-4">Loading IS benchmarks...</div>
+                      ) : (
+                        <div className="text-muted text-center p-4">Click Refresh to load benchmarks</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="font-black mb-2 text-center">Out-of-Sample Comparison</div>
+                    <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
+                      {oosBenchmarks.status === 'done' && oosBenchmarks.data ? (
+                        renderBenchmarksTable(
+                          { ...result, metrics: result.oosMetrics },
+                          oosBenchmarks.data,
+                          modelSanityReport
+                        )
+                      ) : oosBenchmarks.status === 'loading' ? (
+                        <div className="text-muted text-center p-4">Loading OOS benchmarks...</div>
+                      ) : (
+                        <div className="text-muted text-center p-4">Click Refresh to load benchmarks</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // === FULL PERIOD VIEW (No IS/OOS split) ===
+              <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
+                {renderBenchmarksTable(result, benchmarkMetrics.data, modelSanityReport)}
+              </div>
+            )}
+          </>
         )}
       </div>
     )
@@ -365,6 +500,7 @@ export function BacktesterPanel({
   // Render Robustness Tab Content
   const renderRobustnessTab = () => {
     const sanityState = modelSanityReport ?? { status: 'idle' as const }
+    const hasIsOosSplit = !!(result?.isMetrics && result?.oosMetrics && result?.oosStartDate)
 
     const getLevelColor = (level: string) => {
       if (level === 'Low') return 'text-success'
@@ -394,6 +530,19 @@ export function BacktesterPanel({
             {sanityState.status === 'loading' ? 'Running...' : sanityState.status === 'done' ? 'Re-run' : 'Generate'}
           </Button>
         </div>
+
+        {/* IS/OOS informational message */}
+        {hasIsOosSplit && sanityState.status === 'done' && (
+          <div className="text-muted text-sm p-3 border border-border rounded-xl bg-muted/10">
+            <div className="font-semibold mb-1">IS/OOS Robustness Analysis</div>
+            <div className="text-xs">
+              IS/OOS side-by-side robustness comparison is coming soon. The backend already supports date-range filtering via the `/api/sanity-report` endpoint (startDate/endDate parameters). Full implementation requires separate IS/OOS report state management in parent components.
+            </div>
+            <div className="text-xs mt-2">
+              Currently showing: Full period robustness analysis (all {result?.days.length || 0} days)
+            </div>
+          </div>
+        )}
 
         {sanityState.status === 'idle' && (
           <div className="text-muted text-sm p-4 border border-border rounded-xl text-center">
@@ -581,12 +730,6 @@ export function BacktesterPanel({
         {result && tab === 'Overview' ? (
           <>
             {/* Metrics Row(s) - Show IS/OOS split if available */}
-            {(() => {
-              console.log('[BacktesterPanel] result.isMetrics:', result.isMetrics)
-              console.log('[BacktesterPanel] result.oosMetrics:', result.oosMetrics)
-              console.log('[BacktesterPanel] Condition check (isMetrics && oosMetrics):', result.isMetrics && result.oosMetrics)
-              return null
-            })()}
             {result.isMetrics && result.oosMetrics ? (
               <div className="flex flex-col gap-1.5">
                 {/* IS Metrics Row */}
@@ -816,141 +959,418 @@ export function BacktesterPanel({
           </>
         ) : result && tab === 'In Depth' ? (
           <>
-            <div className="saved-item grid grid-cols-2 gap-4 items-stretch">
-              <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
-                <div className="font-black mb-1.5">Monthly Returns</div>
-                <div className="flex-1 overflow-auto min-h-0">
-                  {renderMonthlyHeatmap(result.monthly, result.days, theme)}
-                </div>
-              </div>
-              <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
-                <div className="font-black mb-1.5">Allocations (recent)</div>
-                <div className="flex-1 overflow-auto font-mono text-xs min-h-0">
-                  {(result.allocations || []).slice(-300).reverse().map((row) => (
-                    <div key={row.date}>
-                      {row.date} {'\u2014'}{' '}
-                      {row.entries.length === 0
-                        ? 'Cash'
-                        : row.entries
-                            .slice()
-                            .sort((a, b) => b.weight - a.weight)
-                            .map((e) => `${e.ticker} ${(e.weight * 100).toFixed(2)}%`)
-                            .join(', ')}
+            {result.isMetrics && result.oosMetrics && result.oosStartDate ? (
+              // === IS/OOS SPLIT VIEW (Side-by-Side) ===
+              <div className="flex flex-col gap-4">
+                {/* Row 1: Monthly Returns */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
+                    <div className="font-black mb-1.5">Monthly Returns (IS)</div>
+                    <div className="flex-1 overflow-auto min-h-0">
+                      {renderMonthlyHeatmap(result.isMonthly || [], result.days.filter(d => d.date < result.oosStartDate!), theme)}
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="saved-item">
-              <AllocationChart series={allocationSeries} visibleRange={visibleRange} theme={theme} />
-            </div>
-            <div className="saved-item grid grid-cols-2 gap-4 items-start">
-              <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '280px' }}>
-                <div className="font-black mb-1.5">Rebalance days ({rebalanceDays.length})</div>
-                <div className="backtester-table flex-1 overflow-auto min-h-0">
-                  <div className="backtester-row backtester-head-row">
-                    <div>Date</div>
-                    <div>Net</div>
-                    <div>Turnover</div>
-                    <div>Cost</div>
-                    <div>Holdings</div>
                   </div>
-                  <div className="backtester-body-rows">
-                    {rebalanceDays.slice(-400).reverse().map((d) => (
-                      <div key={d.date} className="backtester-row">
-                        <div>{d.date}</div>
-                        <div>{formatPct(d.netReturn)}</div>
-                        <div>{formatPct(d.turnover)}</div>
-                        <div>{formatPct(d.cost)}</div>
-                        <div className="font-mono text-xs">
-                          {d.holdings.length === 0
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
+                    <div className="font-black mb-1.5">Monthly Returns (OOS)</div>
+                    <div className="flex-1 overflow-auto min-h-0">
+                      {renderMonthlyHeatmap(result.oosMonthly || [], result.days.filter(d => d.date >= result.oosStartDate!), theme)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Row 2: Allocations */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
+                    <div className="font-black mb-1.5">Allocations - IS (recent)</div>
+                    <div className="flex-1 overflow-auto font-mono text-xs min-h-0">
+                      {(result.isAllocations || []).slice(-300).reverse().map((row) => (
+                        <div key={row.date}>
+                          {row.date} {'\u2014'}{' '}
+                          {row.entries.length === 0
                             ? 'Cash'
-                            : d.holdings
+                            : row.entries
                                 .slice()
                                 .sort((a, b) => b.weight - a.weight)
-                                .map((h) => `${h.ticker} ${(h.weight * 100).toFixed(1)}%`)
+                                .map((e) => `${e.ticker} ${(e.weight * 100).toFixed(2)}%`)
                                 .join(', ')}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '280px' }}>
-                <div className="font-black mb-1.5">Warnings ({result.warnings.length})</div>
-                {groupedWarnings.length === 0 ? (
-                  <div className="text-muted flex-1 flex items-center justify-center">No warnings.</div>
-                ) : (
-                  <div className="backtester-table flex-1 overflow-auto min-h-0">
-                    <div className="backtester-row backtester-head-row">
-                      <div>Count</div>
-                      <div>Message</div>
-                      <div>First</div>
-                      <div>Last</div>
-                    </div>
-                    <div className="backtester-body-rows">
-                      {groupedWarnings.map((g) => (
-                        <div key={g.message} className="backtester-row">
-                          <div>{g.count}</div>
-                          <div>{g.message}</div>
-                          <div>{g.first?.date ?? '\u2014'}</div>
-                          <div>{g.last?.date ?? '\u2014'}</div>
                         </div>
                       ))}
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-
-            {result.trace ? (
-              <div className="saved-item">
-                <div className="flex gap-2.5 items-center flex-wrap">
-                  <div className="font-black">Condition trace (debug)</div>
-                  <Button onClick={() => downloadTextFile('backtest_trace.json', JSON.stringify(result.trace, null, 2), 'application/json')}>
-                    Download trace JSON
-                  </Button>
-                </div>
-                <div className="mt-2 backtester-table max-h-[300px] overflow-auto">
-                  <div className="backtester-row backtester-head-row">
-                    <div>Node</div>
-                    <div>Kind</div>
-                    <div>Then</div>
-                    <div>Else</div>
-                    <div>Conditions</div>
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
+                    <div className="font-black mb-1.5">Allocations - OOS (recent)</div>
+                    <div className="flex-1 overflow-auto font-mono text-xs min-h-0">
+                      {(result.oosAllocations || []).slice(-300).reverse().map((row) => (
+                        <div key={row.date}>
+                          {row.date} {'\u2014'}{' '}
+                          {row.entries.length === 0
+                            ? 'Cash'
+                            : row.entries
+                                .slice()
+                                .sort((a, b) => b.weight - a.weight)
+                                .map((e) => `${e.ticker} ${(e.weight * 100).toFixed(2)}%`)
+                                .join(', ')}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="backtester-body-rows">
-                    {result.trace.nodes.slice(0, 80).map((n) => (
-                      <div key={n.nodeId} className="backtester-row">
-                        <div className="font-mono text-xs">{n.nodeId}</div>
-                        <div>{n.kind}</div>
-                        <div>{n.thenCount}</div>
-                        <div>{n.elseCount}</div>
-                        <div className="font-mono text-xs">
-                          {n.conditions.length === 0
-                            ? '\u2014'
-                            : n.conditions
-                                .slice(0, 4)
-                                .map((c) => `${c.type.toUpperCase()} ${c.expr} [T:${c.trueCount} F:${c.falseCount}]`)
-                                .join(' | ')}
+                </div>
+
+                {/* Row 3: Allocation Charts */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="font-black mb-1.5">Allocation Chart (IS)</div>
+                    <AllocationChart
+                      series={computeAllocationSeries(result.days.filter(d => d.date < result.oosStartDate!), tabContext || 'Forge')}
+                      visibleRange={visibleRange}
+                      theme={theme}
+                    />
+                  </div>
+                  <div>
+                    <div className="font-black mb-1.5">Allocation Chart (OOS)</div>
+                    <AllocationChart
+                      series={computeAllocationSeries(result.days.filter(d => d.date >= result.oosStartDate!), tabContext || 'Forge')}
+                      visibleRange={visibleRange}
+                      theme={theme}
+                    />
+                  </div>
+                </div>
+
+                {/* Row 4: Rebalance Days */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '280px' }}>
+                    <div className="font-black mb-1.5">Rebalance Days - IS ({result.days.filter(d => d.date < result.oosStartDate! && d.turnover > 0.0001).length})</div>
+                    <div className="backtester-table flex-1 overflow-auto min-h-0">
+                      <div className="backtester-row backtester-head-row">
+                        <div>Date</div>
+                        <div>Net</div>
+                        <div>Turnover</div>
+                        <div>Cost</div>
+                        <div>Holdings</div>
+                      </div>
+                      <div className="backtester-body-rows">
+                        {result.days.filter(d => d.date < result.oosStartDate! && d.turnover > 0.0001).slice(-400).reverse().map((d) => (
+                          <div key={d.date} className="backtester-row">
+                            <div>{d.date}</div>
+                            <div>{formatPct(d.netReturn)}</div>
+                            <div>{formatPct(d.turnover)}</div>
+                            <div>{formatPct(d.cost)}</div>
+                            <div className="font-mono text-xs">
+                              {d.holdings.length === 0
+                                ? 'Cash'
+                                : d.holdings
+                                    .slice()
+                                    .sort((a, b) => b.weight - a.weight)
+                                    .map((h) => `${h.ticker} ${(h.weight * 100).toFixed(1)}%`)
+                                    .join(', ')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '280px' }}>
+                    <div className="font-black mb-1.5">Rebalance Days - OOS ({result.days.filter(d => d.date >= result.oosStartDate! && d.turnover > 0.0001).length})</div>
+                    <div className="backtester-table flex-1 overflow-auto min-h-0">
+                      <div className="backtester-row backtester-head-row">
+                        <div>Date</div>
+                        <div>Net</div>
+                        <div>Turnover</div>
+                        <div>Cost</div>
+                        <div>Holdings</div>
+                      </div>
+                      <div className="backtester-body-rows">
+                        {result.days.filter(d => d.date >= result.oosStartDate! && d.turnover > 0.0001).slice(-400).reverse().map((d) => (
+                          <div key={d.date} className="backtester-row">
+                            <div>{d.date}</div>
+                            <div>{formatPct(d.netReturn)}</div>
+                            <div>{formatPct(d.turnover)}</div>
+                            <div>{formatPct(d.cost)}</div>
+                            <div className="font-mono text-xs">
+                              {d.holdings.length === 0
+                                ? 'Cash'
+                                : d.holdings
+                                    .slice()
+                                    .sort((a, b) => b.weight - a.weight)
+                                    .map((h) => `${h.ticker} ${(h.weight * 100).toFixed(1)}%`)
+                                    .join(', ')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Row 5: Warnings */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '280px' }}>
+                    <div className="font-black mb-1.5">Warnings - IS ({result.warnings.filter(w => w.date < result.oosStartDate!).length})</div>
+                    {(() => {
+                      const isWarnings = result.warnings.filter(w => w.date < result.oosStartDate!)
+                      const grouped = new Map<string, { message: string; count: number; first?: BacktestWarning; last?: BacktestWarning }>()
+                      for (const w of isWarnings) {
+                        const key = w.message
+                        const prev = grouped.get(key)
+                        if (!prev) grouped.set(key, { message: key, count: 1, first: w, last: w })
+                        else grouped.set(key, { ...prev, count: prev.count + 1, last: w })
+                      }
+                      const groupedList = Array.from(grouped.values()).sort((a, b) => b.count - a.count)
+
+                      return groupedList.length === 0 ? (
+                        <div className="text-muted flex-1 flex items-center justify-center">No warnings.</div>
+                      ) : (
+                        <div className="backtester-table flex-1 overflow-auto min-h-0">
+                          <div className="backtester-row backtester-head-row">
+                            <div>Count</div>
+                            <div>Message</div>
+                            <div>First</div>
+                            <div>Last</div>
+                          </div>
+                          <div className="backtester-body-rows">
+                            {groupedList.map((g) => (
+                              <div key={g.message} className="backtester-row">
+                                <div>{g.count}</div>
+                                <div>{g.message}</div>
+                                <div>{g.first?.date ?? '\u2014'}</div>
+                                <div>{g.last?.date ?? '\u2014'}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '280px' }}>
+                    <div className="font-black mb-1.5">Warnings - OOS ({result.warnings.filter(w => w.date >= result.oosStartDate!).length})</div>
+                    {(() => {
+                      const oosWarnings = result.warnings.filter(w => w.date >= result.oosStartDate!)
+                      const grouped = new Map<string, { message: string; count: number; first?: BacktestWarning; last?: BacktestWarning }>()
+                      for (const w of oosWarnings) {
+                        const key = w.message
+                        const prev = grouped.get(key)
+                        if (!prev) grouped.set(key, { message: key, count: 1, first: w, last: w })
+                        else grouped.set(key, { ...prev, count: prev.count + 1, last: w })
+                      }
+                      const groupedList = Array.from(grouped.values()).sort((a, b) => b.count - a.count)
+
+                      return groupedList.length === 0 ? (
+                        <div className="text-muted flex-1 flex items-center justify-center">No warnings.</div>
+                      ) : (
+                        <div className="backtester-table flex-1 overflow-auto min-h-0">
+                          <div className="backtester-row backtester-head-row">
+                            <div>Count</div>
+                            <div>Message</div>
+                            <div>First</div>
+                            <div>Last</div>
+                          </div>
+                          <div className="backtester-body-rows">
+                            {groupedList.map((g) => (
+                              <div key={g.message} className="backtester-row">
+                                <div>{g.count}</div>
+                                <div>{g.message}</div>
+                                <div>{g.first?.date ?? '\u2014'}</div>
+                                <div>{g.last?.date ?? '\u2014'}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+
+                {/* Trace section (no split needed) */}
+                {result.trace ? (
+                  <div className="saved-item">
+                    <div className="flex gap-2.5 items-center flex-wrap">
+                      <div className="font-black">Condition trace (debug)</div>
+                      <Button onClick={() => downloadTextFile('backtest_trace.json', JSON.stringify(result.trace, null, 2), 'application/json')}>
+                        Download trace JSON
+                      </Button>
+                    </div>
+                    <div className="mt-2 backtester-table max-h-[300px] overflow-auto">
+                      <div className="backtester-row backtester-head-row">
+                        <div>Node</div>
+                        <div>Kind</div>
+                        <div>Then</div>
+                        <div>Else</div>
+                        <div>Conditions</div>
+                      </div>
+                      <div className="backtester-body-rows">
+                        {result.trace.nodes.slice(0, 80).map((n) => (
+                          <div key={n.nodeId} className="backtester-row">
+                            <div className="font-mono text-xs">{n.nodeId}</div>
+                            <div>{n.kind}</div>
+                            <div>{n.thenCount}</div>
+                            <div>{n.elseCount}</div>
+                            <div className="font-mono text-xs">
+                              {n.conditions.length === 0
+                                ? '\u2014'
+                                : n.conditions
+                                    .slice(0, 4)
+                                    .map((c) => `${c.type.toUpperCase()} ${c.expr} [T:${c.trueCount} F:${c.falseCount}]`)
+                                    .join(' | ')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {result.trace.nodes.length > 80 ? (
+                      <div className="mt-1.5 text-muted">Showing first 80 nodes. Use Download trace JSON for the full set.</div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {/* Download buttons (no split needed) */}
+                <Card>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" onClick={() => downloadEquityCsv(result, mode, costBps, benchmark, showBenchmark)}>Download equity CSV</Button>
+                    <Button size="sm" onClick={() => downloadAllocationsCsv(result)}>Download allocations CSV</Button>
+                    <Button size="sm" onClick={() => downloadRebalancesCsv(result)}>Download rebalances CSV</Button>
+                  </div>
+                </Card>
+              </div>
+            ) : (
+              // === FULL PERIOD VIEW (No IS/OOS split) ===
+              <>
+                <div className="saved-item grid grid-cols-2 gap-4 items-stretch">
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
+                    <div className="font-black mb-1.5">Monthly Returns</div>
+                    <div className="flex-1 overflow-auto min-h-0">
+                      {renderMonthlyHeatmap(result.monthly, result.days, theme)}
+                    </div>
+                  </div>
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '320px' }}>
+                    <div className="font-black mb-1.5">Allocations (recent)</div>
+                    <div className="flex-1 overflow-auto font-mono text-xs min-h-0">
+                      {(result.allocations || []).slice(-300).reverse().map((row) => (
+                        <div key={row.date}>
+                          {row.date} {'\u2014'}{' '}
+                          {row.entries.length === 0
+                            ? 'Cash'
+                            : row.entries
+                                .slice()
+                                .sort((a, b) => b.weight - a.weight)
+                                .map((e) => `${e.ticker} ${(e.weight * 100).toFixed(2)}%`)
+                                .join(', ')}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="saved-item">
+                  <AllocationChart series={allocationSeries} visibleRange={visibleRange} theme={theme} />
+                </div>
+                <div className="saved-item grid grid-cols-2 gap-4 items-start">
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '280px' }}>
+                    <div className="font-black mb-1.5">Rebalance days ({rebalanceDays.length})</div>
+                    <div className="backtester-table flex-1 overflow-auto min-h-0">
+                      <div className="backtester-row backtester-head-row">
+                        <div>Date</div>
+                        <div>Net</div>
+                        <div>Turnover</div>
+                        <div>Cost</div>
+                        <div>Holdings</div>
+                      </div>
+                      <div className="backtester-body-rows">
+                        {rebalanceDays.slice(-400).reverse().map((d) => (
+                          <div key={d.date} className="backtester-row">
+                            <div>{d.date}</div>
+                            <div>{formatPct(d.netReturn)}</div>
+                            <div>{formatPct(d.turnover)}</div>
+                            <div>{formatPct(d.cost)}</div>
+                            <div className="font-mono text-xs">
+                              {d.holdings.length === 0
+                                ? 'Cash'
+                                : d.holdings
+                                    .slice()
+                                    .sort((a, b) => b.weight - a.weight)
+                                    .map((h) => `${h.ticker} ${(h.weight * 100).toFixed(1)}%`)
+                                    .join(', ')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border border-border rounded-lg p-3 flex flex-col" style={{ height: '280px' }}>
+                    <div className="font-black mb-1.5">Warnings ({result.warnings.length})</div>
+                    {groupedWarnings.length === 0 ? (
+                      <div className="text-muted flex-1 flex items-center justify-center">No warnings.</div>
+                    ) : (
+                      <div className="backtester-table flex-1 overflow-auto min-h-0">
+                        <div className="backtester-row backtester-head-row">
+                          <div>Count</div>
+                          <div>Message</div>
+                          <div>First</div>
+                          <div>Last</div>
+                        </div>
+                        <div className="backtester-body-rows">
+                          {groupedWarnings.map((g) => (
+                            <div key={g.message} className="backtester-row">
+                              <div>{g.count}</div>
+                              <div>{g.message}</div>
+                              <div>{g.first?.date ?? '\u2014'}</div>
+                              <div>{g.last?.date ?? '\u2014'}</div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
-                {result.trace.nodes.length > 80 ? (
-                  <div className="mt-1.5 text-muted">Showing first 80 nodes. Use Download trace JSON for the full set.</div>
-                ) : null}
-              </div>
-            ) : null}
 
-            <Card>
-              <div className="flex gap-2 flex-wrap">
-                <Button size="sm" onClick={() => downloadEquityCsv(result, mode, costBps, benchmark, showBenchmark)}>Download equity CSV</Button>
-                <Button size="sm" onClick={() => downloadAllocationsCsv(result)}>Download allocations CSV</Button>
-                <Button size="sm" onClick={() => downloadRebalancesCsv(result)}>Download rebalances CSV</Button>
-              </div>
-            </Card>
+                {result.trace ? (
+                  <div className="saved-item">
+                    <div className="flex gap-2.5 items-center flex-wrap">
+                      <div className="font-black">Condition trace (debug)</div>
+                      <Button onClick={() => downloadTextFile('backtest_trace.json', JSON.stringify(result.trace, null, 2), 'application/json')}>
+                        Download trace JSON
+                      </Button>
+                    </div>
+                    <div className="mt-2 backtester-table max-h-[300px] overflow-auto">
+                      <div className="backtester-row backtester-head-row">
+                        <div>Node</div>
+                        <div>Kind</div>
+                        <div>Then</div>
+                        <div>Else</div>
+                        <div>Conditions</div>
+                      </div>
+                      <div className="backtester-body-rows">
+                        {result.trace.nodes.slice(0, 80).map((n) => (
+                          <div key={n.nodeId} className="backtester-row">
+                            <div className="font-mono text-xs">{n.nodeId}</div>
+                            <div>{n.kind}</div>
+                            <div>{n.thenCount}</div>
+                            <div>{n.elseCount}</div>
+                            <div className="font-mono text-xs">
+                              {n.conditions.length === 0
+                                ? '\u2014'
+                                : n.conditions
+                                    .slice(0, 4)
+                                    .map((c) => `${c.type.toUpperCase()} ${c.expr} [T:${c.trueCount} F:${c.falseCount}]`)
+                                    .join(' | ')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {result.trace.nodes.length > 80 ? (
+                      <div className="mt-1.5 text-muted">Showing first 80 nodes. Use Download trace JSON for the full set.</div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <Card>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" onClick={() => downloadEquityCsv(result, mode, costBps, benchmark, showBenchmark)}>Download equity CSV</Button>
+                    <Button size="sm" onClick={() => downloadAllocationsCsv(result)}>Download allocations CSV</Button>
+                    <Button size="sm" onClick={() => downloadRebalancesCsv(result)}>Download rebalances CSV</Button>
+                  </div>
+                </Card>
+              </>
+            )}
           </>
         ) : result && tab === 'Benchmarks' ? (
           renderBenchmarksTab()

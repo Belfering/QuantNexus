@@ -4486,6 +4486,7 @@ export async function runBacktest(payload, options = {}) {
   // Compute IS/OOS metrics if split is enabled
   let isMetrics = null
   let oosMetrics = null
+  let chronologicalThresholdDate = null  // Declare at higher scope for use in IS/OOS data splits
   console.log(`[Backtest] >>> Checking IS/OOS split - enabled: ${splitConfig?.enabled}, strategy: ${splitConfig?.strategy}, percent: ${splitConfig?.chronologicalPercent}`)
   if (splitConfig?.enabled) {
     console.log(`[Backtest] >>> IS/OOS split is ENABLED, proceeding with split calculation`)
@@ -4493,7 +4494,6 @@ export async function runBacktest(payload, options = {}) {
     const allTimestamps = points.map(p => p.time)
 
     // For chronological strategy, calculate the split date based on percentage OR use direct splitDate
-    let chronologicalThresholdDate = null
     if (splitConfig.strategy === 'chronological' && splitConfig.chronologicalPercent) {
       // Sort timestamps to get date range
       const sortedTimestamps = [...allTimestamps].sort((a, b) => a - b)
@@ -4770,6 +4770,20 @@ export async function runBacktest(payload, options = {}) {
     console.log(`[Backtest] >>> IS/OOS split is DISABLED or not configured`)
   }
 
+  // === IS/OOS SPLIT DATA FOR IN DEPTH TAB ===
+  let isAllocations = []
+  let oosAllocations = []
+  let oosStartDate = null
+
+  if (splitConfig?.enabled && chronologicalThresholdDate) {
+    // Split allocations by date
+    isAllocations = dailyAllocations.filter(a => a.date < chronologicalThresholdDate)
+    oosAllocations = dailyAllocations.filter(a => a.date >= chronologicalThresholdDate)
+    oosStartDate = chronologicalThresholdDate
+
+    console.log(`[Backtest] >>> IS/OOS data split: isAllocations=${isAllocations.length}, oosAllocations=${oosAllocations.length}, oosStartDate=${oosStartDate}`)
+  }
+
   // Create a context object for indicator lookups outside the main eval loop
   const overlayCtx = {
     db,
@@ -4909,10 +4923,14 @@ export async function runBacktest(payload, options = {}) {
     },
     isMetrics, // In-sample metrics (only if split enabled)
     oosMetrics, // Out-of-sample metrics (only if split enabled)
+    oosStartDate, // OOS start date for split indicator (only if split enabled)
     equityCurve: points.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
     benchmarkCurve: benchmarkPoints.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
     // Include daily allocations for the Allocations tab
     allocations: dailyAllocations,
+    // Include IS/OOS split allocations (only if split enabled)
+    isAllocations: splitConfig?.enabled ? isAllocations : undefined,
+    oosAllocations: splitConfig?.enabled ? oosAllocations : undefined,
     // Include indicator overlay series if requested
     indicatorOverlays: overlaySeriesResult.length > 0 ? overlaySeriesResult : undefined,
     // Include daily returns for sanity report

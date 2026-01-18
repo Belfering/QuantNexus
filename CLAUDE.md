@@ -116,6 +116,23 @@ Or trigger via API: `POST /api/download`
 - `PYTHON`: Python executable (default: `python`)
 - `PORT`: API server port (default: 8787)
 
+## Production Server (QuantNexus)
+
+The production application is deployed on a Hetzner server accessible via SSH:
+
+**SSH Connection:**
+- **Host alias**: `quantnexus` (configured in `~/.ssh/config`)
+- **HostName**: `178.156.221.28`
+- **User**: `root`
+- **IdentityFile**: `~/.ssh/hetzner_quantnexus_brian`
+
+**Connecting to the server:**
+```bash
+ssh quantnexus
+```
+
+Once connected, you can manage the production deployment, check logs, and access server files.
+
 ## Key Implementation Details
 
 1. **Tree Rendering**: The `NodeCard` component recursively renders the entire tree using depth-based indentation (`depth * 18px` for cards, `depth * 14px` for internal lines).

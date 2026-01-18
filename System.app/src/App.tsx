@@ -889,12 +889,12 @@ function App() {
       if (uiState.analyzeCollapsedByBotId[bot.id] === false) {
         // Auto-run backtest when card is expanded
         const state = analyzeBacktests[bot.id]
-        if (!state || state.status === 'idle' || state.status === 'error') {
+        if (!state || state.status === 'idle') {
           runAnalyzeBacktest(bot)
         }
         // Also auto-fetch sanity report (MC/KF) when card is expanded
         const sanityState = sanityReports[bot.id]
-        if (!sanityState || sanityState.status === 'idle' || sanityState.status === 'error') {
+        if (!sanityState || sanityState.status === 'idle') {
           runSanityReport(bot)
         }
       }

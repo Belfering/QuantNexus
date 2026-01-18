@@ -13,6 +13,7 @@ import type { TickerModalMode } from '@/shared/components'
 import type { ParameterRange, VisualParameter } from '@/features/parameters/types'
 import { isWindowlessIndicator } from '../../../constants'
 import { IndicatorDropdown } from './IndicatorDropdown'
+import { getIndicatorConfig } from '@/constants/indicatorDefaults'
 
 // Month names for date picker
 const MONTHS = [
@@ -265,6 +266,7 @@ export const ConditionEditor = ({
                   const paramId = `${nodeId}-${cond.id}-threshold`
                   const range = parameterRanges?.find(r => r.id === paramId)
                   const isOptimized = range?.enabled || underRollingNode
+                  const indicatorConfig = getIndicatorConfig(cond.metric)
 
                   return (
                     <Popover open={showThresholdConfig} onOpenChange={setShowThresholdConfig}>
@@ -303,6 +305,7 @@ export const ConditionEditor = ({
                             onUpdateRange?.(paramId, false)
                             setShowThresholdConfig(false)
                           }}
+                          indicatorConfig={indicatorConfig}
                         />
                       </PopoverContent>
                     </Popover>
