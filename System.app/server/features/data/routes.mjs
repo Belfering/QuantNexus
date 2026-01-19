@@ -370,6 +370,20 @@ router.get('/download/:jobId', asyncHandler(async (req, res) => {
   res.json(job)
 }))
 
+/**
+ * DELETE /api/download/:jobId - Cancel a running download job
+ */
+router.delete('/download/:jobId', asyncHandler(async (req, res) => {
+  const { killJob } = await import('../lib/jobs.mjs')
+  const result = killJob(req.params.jobId)
+
+  if (result.success) {
+    res.json(result)
+  } else {
+    res.status(400).json(result)
+  }
+}))
+
 // ============================================================================
 // Export router
 // ============================================================================

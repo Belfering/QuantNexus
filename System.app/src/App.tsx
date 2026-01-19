@@ -1023,14 +1023,14 @@ function App() {
     return null
   }
 
-  // Login check disabled for no-auth local mode
-  // if (!userId) {
-  //   return (
-  //     <div className={cn('app min-h-screen bg-bg text-text font-sans', `theme-${colorTheme}`, theme === 'dark' && 'theme-dark dark')}>
-  //       <LoginScreen onLogin={handleLogin} />
-  //     </div>
-  //   )
-  // }
+  // Login check - show login screen if not authenticated
+  if (!userId) {
+    return (
+      <div className={cn('app min-h-screen bg-bg text-text font-sans', `theme-${colorTheme}`, theme === 'dark' && 'theme-dark dark')}>
+        <LoginScreen onLogin={handleLogin} />
+      </div>
+    )
+  }
 
   return (
     <div className={cn('app h-screen flex flex-col bg-bg text-text font-sans', `theme-${colorTheme}`, theme === 'dark' && 'theme-dark dark')}>
@@ -1049,7 +1049,7 @@ function App() {
         <div
           className="grid"
           style={{
-            gridTemplateColumns: (tab === 'Model' || tab === 'Forge') ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr' : '1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr',
+            gridTemplateColumns: (tab === 'Model' || tab === 'Forge') ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr' : '1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr 3fr 1fr',
             gridTemplateRows: (tab === 'Model' || tab === 'Forge') ? 'auto auto' : 'auto',
           }}
         >
@@ -1072,7 +1072,7 @@ function App() {
           <div
             className="border-2 border-border"
             style={{
-              gridColumn: '8 / 9',
+              gridColumn: '9 / 10',
               gridRow: (tab === 'Model' || tab === 'Forge') ? '1 / 3' : '1 / 2',
             }}
           >
@@ -1098,15 +1098,15 @@ function App() {
           {/* Logout button - shows username, spans 2 rows on Model tab */}
           <button
             className="px-4 py-3 text-sm font-bold bg-surface hover:bg-muted/50 text-foreground flex flex-col items-center justify-center border-l border-border"
-            style={{ gridColumn: '9 / 10', gridRow: (tab === 'Model' || tab === 'Forge') ? '1 / 3' : '1 / 2' }}
+            style={{ gridColumn: '10 / 11', gridRow: (tab === 'Model' || tab === 'Forge') ? '1 / 3' : '1 / 2' }}
             onClick={handleLogout}
           >
             <span className="text-xs text-muted">{userDisplayName || 'User'}</span>
             <span>Logout</span>
           </button>
-          {/* Row 2: Model sub-buttons (only when Model tab active) - flex container spans columns 1-8 */}
+          {/* Row 2: Model sub-buttons (only when Model tab active) - flex container spans columns 1-9 */}
           {tab === 'Model' && (
-            <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 8', gridRow: '2 / 3' }}>
+            <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 9', gridRow: '2 / 3' }}>
               <Button onClick={handleNewBot} className="flex-1 rounded-none border-r border-border h-10">New System</Button>
               <div className="relative flex-1">
                 <Button
@@ -1168,7 +1168,7 @@ function App() {
           )}
           {/* Row 2: Forge subtabs (only when Forge tab active) */}
           {tab === 'Forge' && (
-            <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 8', gridRow: '2 / 3' }}>
+            <div className="flex items-stretch border-t border-border" style={{ gridColumn: '1 / 9', gridRow: '2 / 3' }}>
               <Button
                 onClick={() => useUIStore.getState().setForgeSubtab('Data')}
                 variant={forgeSubtab === 'Data' ? 'accent' : 'secondary'}

@@ -73,6 +73,7 @@ export function AdminPanel({
   const [registryStats, setRegistryStats] = useState<{ total: number; active: number; syncedToday: number; pending: number; lastSync: string | null } | null>(null)
   const [registrySyncing, setRegistrySyncing] = useState(false)
   const [registryMsg, setRegistryMsg] = useState<string | null>(null)
+  const [runningDownloadJobs, setRunningDownloadJobs] = useState<{ full?: string; recent?: string; prices?: string }>({})
 
   // Tiingo API Key state
   const [tiingoKeyStatus, setTiingoKeyStatus] = useState<{ hasKey: boolean; loading: boolean }>({ hasKey: false, loading: true })
@@ -641,6 +642,38 @@ export function AdminPanel({
     fetchVariables()
     return () => { cancelled = true }
   }, [adminTab, isSuperAdmin])
+
+  // Poll running download jobs and auto-clear when complete
+  useEffect(() => {
+    const jobIds = Object.values(runningDownloadJobs).filter(Boolean)
+    if (jobIds.length === 0) return
+
+    const checkJobs = async () => {
+      for (const [mode, jobId] of Object.entries(runningDownloadJobs)) {
+        if (!jobId) continue
+        try {
+          const res = await fetch(`/api/download/${jobId}`)
+          if (res.ok) {
+            const job = await res.json()
+            if (job.status === 'done' || job.status === 'error') {
+              // Job finished, clear it from state
+              setRunningDownloadJobs(prev => ({ ...prev, [mode]: undefined }))
+              if (job.status === 'error') {
+                setRegistryMsg(`${mode} job failed: ${job.error || 'Unknown error'}`)
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore polling errors
+        }
+      }
+    }
+
+    // Poll immediately, then every 2 seconds
+    checkJobs()
+    const interval = setInterval(checkJobs, 2000)
+    return () => clearInterval(interval)
+  }, [runningDownloadJobs])
 
   const saveEligibilityRequirements = useCallback(async (reqs: EligibilityRequirement[]) => {
     setEligibilitySaving(true)
@@ -1459,7 +1492,7 @@ export function AdminPanel({
               {/* Button 1: Tiingo Full - Download all historical data */}
               <Button
                 variant="default"
-                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning}
+                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning || !!runningDownloadJobs.full}
                 onClick={async () => {
                   const tickerCount = registryStats?.active || registryTickers.length
                   if (!confirm(`Download FULL history from Tiingo for ${tickerCount.toLocaleString()} registry tickers?\n\nThis will overwrite existing parquet files.\nEstimated time: ~15 minutes`)) return
@@ -1477,6 +1510,7 @@ export function AdminPanel({
                     })
                     const data = await res.json()
                     if (res.ok) {
+                      setRunningDownloadJobs(prev => ({ ...prev, full: data.jobId }))
                       setRegistryMsg(`Tiingo Full started (Job ${data.jobId})`)
                       // Refresh sync schedule status
                       const schedRes = await fetch('/api/admin/sync-schedule')
@@ -1493,10 +1527,37 @@ export function AdminPanel({
                 Tiingo Full ({(registryStats?.active || registryTickers.length).toLocaleString()})
               </Button>
 
+              {/* Cancel button for Tiingo Full */}
+              {runningDownloadJobs.full && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={async () => {
+                    if (!confirm('Cancel Tiingo Full download?')) return
+                    try {
+                      const res = await fetch(`/api/download/${runningDownloadJobs.full}`, {
+                        method: 'DELETE'
+                      })
+                      const data = await res.json()
+                      if (res.ok) {
+                        setRunningDownloadJobs(prev => ({ ...prev, full: undefined }))
+                        setRegistryMsg('Tiingo Full cancelled')
+                      } else {
+                        setRegistryMsg(`Cancel failed: ${data.error}`)
+                      }
+                    } catch (e) {
+                      setRegistryMsg(`Cancel error: ${e}`)
+                    }
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
+
               {/* Button 2: Tiingo 5d - Download last 5 days and append */}
               <Button
                 variant="secondary"
-                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning}
+                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning || !!runningDownloadJobs.recent}
                 onClick={async () => {
                   const tickerCount = registryStats?.active || registryTickers.length
                   if (!confirm(`Download last 5 days from Tiingo for ${tickerCount.toLocaleString()} tickers?\n\nThis will append new data to existing files.\nSafe for daily updates.\nEstimated time: ~8-10 minutes`)) return
@@ -1515,6 +1576,7 @@ export function AdminPanel({
                     })
                     const data = await res.json()
                     if (res.ok) {
+                      setRunningDownloadJobs(prev => ({ ...prev, recent: data.jobId }))
                       setRegistryMsg(`Tiingo 5d started (Job ${data.jobId})`)
                       const schedRes = await fetch('/api/admin/sync-schedule')
                       if (schedRes.ok) setSyncSchedule(await schedRes.json())
@@ -1530,10 +1592,37 @@ export function AdminPanel({
                 Tiingo 5d
               </Button>
 
+              {/* Cancel button for Tiingo 5d */}
+              {runningDownloadJobs.recent && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={async () => {
+                    if (!confirm('Cancel Tiingo 5d download?')) return
+                    try {
+                      const res = await fetch(`/api/download/${runningDownloadJobs.recent}`, {
+                        method: 'DELETE'
+                      })
+                      const data = await res.json()
+                      if (res.ok) {
+                        setRunningDownloadJobs(prev => ({ ...prev, recent: undefined }))
+                        setRegistryMsg('Tiingo 5d cancelled')
+                      } else {
+                        setRegistryMsg(`Cancel failed: ${data.error}`)
+                      }
+                    } catch (e) {
+                      setRegistryMsg(`Cancel error: ${e}`)
+                    }
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
+
               {/* Button 3: Tiingo Prices - Fetch real-time IEX prices to CSV */}
               <Button
                 variant="ghost"
-                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning}
+                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning || !!runningDownloadJobs.prices}
                 onClick={async () => {
                   const tickerCount = registryStats?.active || registryTickers.length
                   if (!confirm(`Fetch real-time prices for ${tickerCount.toLocaleString()} tickers?\n\nWill output CSV file.\nEstimated time: ~30-60 seconds (batch optimized!)`)) return
@@ -1551,6 +1640,7 @@ export function AdminPanel({
                     })
                     const data = await res.json()
                     if (res.ok) {
+                      setRunningDownloadJobs(prev => ({ ...prev, prices: data.jobId }))
                       setRegistryMsg(`Tiingo Prices started (Job ${data.jobId}) - will create CSV`)
                       const schedRes = await fetch('/api/admin/sync-schedule')
                       if (schedRes.ok) setSyncSchedule(await schedRes.json())
@@ -1565,6 +1655,33 @@ export function AdminPanel({
               >
                 Tiingo Prices
               </Button>
+
+              {/* Cancel button for Tiingo Prices */}
+              {runningDownloadJobs.prices && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={async () => {
+                    if (!confirm('Cancel Tiingo Prices fetch?')) return
+                    try {
+                      const res = await fetch(`/api/download/${runningDownloadJobs.prices}`, {
+                        method: 'DELETE'
+                      })
+                      const data = await res.json()
+                      if (res.ok) {
+                        setRunningDownloadJobs(prev => ({ ...prev, prices: undefined }))
+                        setRegistryMsg('Tiingo Prices cancelled')
+                      } else {
+                        setRegistryMsg(`Cancel failed: ${data.error}`)
+                      }
+                    } catch (e) {
+                      setRegistryMsg(`Cancel error: ${e}`)
+                    }
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
             </div>
 
             {/* Refresh Stats */}

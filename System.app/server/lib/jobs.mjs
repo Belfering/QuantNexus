@@ -92,6 +92,32 @@ export function completeJob(jobId, error = null) {
 }
 
 /**
+ * Kill a running job by its PID
+ */
+export function killJob(jobId) {
+  const job = jobs.get(jobId)
+  if (!job) {
+    return { success: false, error: 'Job not found' }
+  }
+
+  if (job.status !== 'running') {
+    return { success: false, error: 'Job is not running' }
+  }
+
+  if (!job.pid) {
+    return { success: false, error: 'No PID available for this job' }
+  }
+
+  try {
+    process.kill(job.pid, 'SIGTERM')
+    completeJob(jobId, 'Cancelled by user')
+    return { success: true, message: 'Job cancelled' }
+  } catch (err) {
+    return { success: false, error: String(err.message || err) }
+  }
+}
+
+/**
  * Get all jobs (for admin/debug)
  */
 export function getAllJobs() {
