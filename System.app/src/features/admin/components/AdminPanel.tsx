@@ -664,14 +664,20 @@ export function AdminPanel({
             }
 
             if (job.status === 'done' || job.status === 'error') {
-              // Job finished, clear it from state
-              setRunningDownloadJobs(prev => ({ ...prev, [mode]: undefined }))
+              // Job finished, keep logs visible for 30 seconds
+              setTimeout(() => {
+                setRunningDownloadJobs(prev => ({ ...prev, [mode]: undefined }))
+              }, 30000)
+
               if (job.status === 'error') {
                 setRegistryMsg(`${mode} job failed: ${job.error || 'Unknown error'}`)
                 console.error(`[${mode}] Job failed:`, job.error)
+                console.error(`[${mode}] Full logs:`, job.logs)
               } else {
-                setRegistryMsg(`${mode} job completed successfully`)
+                setRegistryMsg(`${mode} job completed`)
                 console.log(`[${mode}] Job completed`)
+                console.log(`[${mode}] Full logs:`, job.logs)
+                console.log(`[${mode}] Final events:`, job.events)
               }
             }
           } else {
