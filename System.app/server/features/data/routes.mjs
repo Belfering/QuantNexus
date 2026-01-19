@@ -13,6 +13,9 @@ import { createLogger } from '../../lib/logger.mjs'
 import { newJobId, getJob, createJob, addJobLog, completeJob } from '../../lib/jobs.mjs'
 import { asyncHandler } from '../../middleware/errorHandler.mjs'
 import { validate } from '../../middleware/validation.mjs'
+import { decrypt } from '../../lib/crypto.mjs'
+import { ensureDbInitialized } from '../../db/index.mjs'
+import database from '../../db/database.mjs'
 import {
   normalizeTicker,
   readTickersFile,
@@ -257,6 +260,29 @@ router.post('/candles/batch', validate(batchCandlesSchema), asyncHandler(async (
 // ============================================================================
 
 /**
+ * Helper: Get Tiingo API key from request, database, or environment
+ */
+async function getTiingoApiKey(requestKey) {
+  // Use request-provided key if available
+  if (requestKey) return requestKey
+
+  // Try to get stored encrypted key from database
+  try {
+    await ensureDbInitialized()
+    const config = await database.getAdminConfig()
+    if (config.tiingo_api_key) {
+      const decrypted = decrypt(config.tiingo_api_key)
+      if (decrypted) return decrypted
+    }
+  } catch {
+    // Ignore errors, fall through to env var
+  }
+
+  // Fallback to environment variable
+  return process.env.TIINGO_API_KEY || ''
+}
+
+/**
  * POST /api/download - Start a download job
  * Supports three modes: full (all history), recent (last N days), prices (IEX real-time)
  */
@@ -322,7 +348,8 @@ router.post('/download', asyncHandler(async (req, res) => {
   args.push('--limit', String(limit))
 
   // Add Tiingo API key if available
-  const tiingoApiKey = req.body?.tiingoApiKey || process.env.TIINGO_API_KEY
+  const tiingoApiKey = await getTiingoApiKey(req.body?.tiingoApiKey)
+  logger.info('Tiingo API key status', { hasKey: !!tiingoApiKey, length: tiingoApiKey?.length || 0 })
   if (tiingoApiKey) {
     args.push('--api-key', String(tiingoApiKey))
   }
@@ -330,6 +357,16 @@ router.post('/download', asyncHandler(async (req, res) => {
   const job = createJob(jobId, {
     type: 'download',
     config: { mode, source, batchSize, sleepSeconds, maxRetries, threads, maxWorkers, recentDays, limit },
+  })
+
+  logger.info('Starting download job', {
+    jobId,
+    mode,
+    source,
+    python: PYTHON,
+    scriptPath,
+    tickerCount: req.body?.tickers?.length || 'file',
+    args: args.join(' ')
   })
 
   const child = spawn(PYTHON, args, { windowsHide: true })

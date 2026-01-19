@@ -126,7 +126,10 @@
       "Bash(npm run db:query:*)",
       "Bash(test:*)",
       "Bash(head:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(if [ -d \"C:\\\\Users\\\\Trader\\\\Desktop\\\\test\" ])",
+      "Bash(then ls -la \"C:\\\\Users\\\\Trader\\\\Desktop\\\\test\")",
+      "Bash(else echo \"Directory does not exist\")"
     ]
   }
 }
