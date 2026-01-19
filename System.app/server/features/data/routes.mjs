@@ -258,49 +258,74 @@ router.post('/candles/batch', validate(batchCandlesSchema), asyncHandler(async (
 
 /**
  * POST /api/download - Start a download job
+ * Supports three modes: full (all history), recent (last N days), prices (IEX real-time)
  */
 router.post('/download', asyncHandler(async (req, res) => {
   const jobId = newJobId()
 
+  const mode = String(req.body?.mode || 'full') // full, recent, or prices
   const source = String(req.body?.source || 'tiingo')
   const batchSize = Math.max(1, Math.min(500, Number(req.body?.batchSize ?? (source === 'tiingo' ? 50 : 100))))
   const sleepSeconds = Math.max(0, Math.min(60, Number(req.body?.sleepSeconds ?? (source === 'tiingo' ? 0.2 : 3))))
   const maxRetries = Math.max(0, Math.min(10, Number(req.body?.maxRetries ?? 3)))
   const threads = Boolean(req.body?.threads ?? true)
+  const maxWorkers = Math.max(1, Math.min(50, Number(req.body?.maxWorkers ?? 20)))
+  const recentDays = Math.max(1, Math.min(30, Number(req.body?.recentDays ?? 5)))
   const limit = Math.max(0, Math.min(100000, Number(req.body?.limit ?? 0)))
 
   const scriptName = source === 'tiingo' ? 'tiingo_download.py' : 'download.py'
   const scriptPath = path.join(TICKER_DATA_ROOT, scriptName)
+
+  // Base args for all modes
   const args = [
     '-u',
     scriptPath,
-    '--tickers-file',
-    TICKERS_PATH,
-    '--out-dir',
-    PARQUET_DIR,
-    '--batch-size',
-    String(batchSize),
-    '--sleep-seconds',
-    String(sleepSeconds),
-    '--max-retries',
-    String(maxRetries),
-    '--threads',
-    threads ? '1' : '0',
-    '--limit',
-    String(limit),
+    '--mode',
+    mode,
   ]
 
+  // Add ticker list (prefer tickers array if provided, otherwise use file)
+  if (req.body?.tickers && Array.isArray(req.body.tickers)) {
+    // Write tickers to temporary JSON file for Python script
+    const tickersJsonPath = path.join(TICKER_DATA_ROOT, `temp_tickers_${jobId}.json`)
+    await fs.writeFile(tickersJsonPath, JSON.stringify(req.body.tickers))
+    args.push('--tickers-json', tickersJsonPath)
+  } else {
+    args.push('--tickers-file', TICKERS_PATH)
+  }
+
+  // Output directory
+  args.push('--out-dir', PARQUET_DIR)
+
+  // Mode-specific args
+  if (mode === 'recent') {
+    args.push('--recent-days', String(recentDays))
+    args.push('--max-workers', String(maxWorkers))
+  } else if (mode === 'prices') {
+    args.push('--max-workers', String(maxWorkers))
+  } else {
+    // full mode
+    args.push('--batch-size', String(batchSize))
+    args.push('--sleep-seconds', String(sleepSeconds))
+    args.push('--threads', threads ? '1' : '0')
+    if (source === 'tiingo') {
+      args.push('--tiingo-only')
+    }
+  }
+
+  // Common args
+  args.push('--max-retries', String(maxRetries))
+  args.push('--limit', String(limit))
+
   // Add Tiingo API key if available
-  // Note: getTiingoApiKey is imported from admin feature
-  // For now, use request-provided key or env var
   const tiingoApiKey = req.body?.tiingoApiKey || process.env.TIINGO_API_KEY
-  if (source === 'tiingo' && tiingoApiKey) {
+  if (tiingoApiKey) {
     args.push('--api-key', String(tiingoApiKey))
   }
 
   const job = createJob(jobId, {
     type: 'download',
-    config: { source, batchSize, sleepSeconds, maxRetries, threads, limit },
+    config: { mode, source, batchSize, sleepSeconds, maxRetries, threads, maxWorkers, recentDays, limit },
   })
 
   const child = spawn(PYTHON, args, { windowsHide: true })
@@ -330,7 +355,7 @@ router.post('/download', asyncHandler(async (req, res) => {
     }
   })
 
-  logger.info('Download job started', { jobId, source, batchSize })
+  logger.info('Download job started', { jobId, mode, source, tickerCount: req.body?.tickers?.length || 'file' })
   res.json({ jobId })
 }))
 

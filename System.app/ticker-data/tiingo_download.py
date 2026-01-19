@@ -282,6 +282,241 @@ def _fetch_ticker_metadata(ticker: str, api_key: str) -> dict | None:
         return None
 
 
+def download_recent_data(
+    tickers: Iterable[str],
+    *,
+    out_dir: str | Path,
+    cfg: DownloadConfig,
+    api_key: str,
+    recent_days: int = 5,
+    progress_cb: Optional[Callable[[dict], None]] = None,
+    skip_metadata: Optional[set[str]] = None,
+    no_metadata: bool = False,
+    max_workers: int = 20,
+) -> list[Path]:
+    """Download last N days of data for tickers and append to existing parquet files."""
+    from datetime import datetime, timedelta
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    out_root = ensure_dir(out_dir)
+    tickers_list = [t.upper().strip() for t in tickers if str(t).strip()]
+    out_paths: list[Path] = []
+    skip_set = skip_metadata or set()
+
+    # Calculate date range for recent data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=recent_days)
+    start_date_str = start_date.strftime("%Y-%m-%d")
+
+    if progress_cb:
+        progress_cb({"type": "start", "tickers": len(tickers_list), "mode": "recent", "days": recent_days})
+
+    def download_ticker_recent(ticker: str) -> tuple[str, bool, str]:
+        """Download recent data for one ticker. Returns (ticker, success, message)"""
+        try:
+            safe_ticker = _sanitize_ticker_for_filename(ticker)
+            out_path = out_root / f"{safe_ticker}.parquet"
+
+            # Download recent data from Tiingo
+            url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices"
+            headers = {"Content-Type": "application/json"}
+            params = {
+                "token": api_key,
+                "startDate": start_date_str,
+                "format": "json",
+            }
+
+            resp = requests.get(url, headers=headers, params=params, timeout=60)
+            if resp.status_code == 404:
+                return (ticker, False, "not_found")
+            resp.raise_for_status()
+            data = resp.json()
+
+            if not data:
+                return (ticker, False, "no_data")
+
+            # Normalize new data
+            df_new = pd.DataFrame(data)
+            df_new = _normalize_tiingo_df(df_new, ticker)
+
+            if df_new.empty:
+                return (ticker, False, "empty_frame")
+
+            # If parquet exists, append only new dates
+            if out_path.exists():
+                df_existing = pd.read_parquet(out_path)
+                df_existing["Date"] = pd.to_datetime(df_existing["Date"])
+                df_new["Date"] = pd.to_datetime(df_new["Date"])
+
+                # Find dates not already in file
+                existing_dates = set(df_existing["Date"].dt.date)
+                new_dates_mask = ~df_new["Date"].dt.date.isin(existing_dates)
+                df_to_append = df_new[new_dates_mask]
+
+                if df_to_append.empty:
+                    return (ticker, True, "no_new_data")
+
+                # Append and sort
+                df_combined = pd.concat([df_existing, df_to_append], ignore_index=True)
+                df_combined = df_combined.sort_values("Date").reset_index(drop=True)
+                df_combined.to_parquet(out_path, index=False)
+                appended_rows = len(df_to_append)
+            else:
+                # Create new file
+                df_new.to_parquet(out_path, index=False)
+                appended_rows = len(df_new)
+
+            # Fetch metadata if needed
+            metadata = None
+            if not no_metadata and ticker not in skip_set:
+                metadata = _fetch_ticker_metadata(ticker, api_key)
+
+            return (ticker, True, f"appended_{appended_rows}", metadata)
+
+        except Exception as e:
+            return (ticker, False, str(e)[:200])
+
+    # Process tickers concurrently
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(download_ticker_recent, t): t for t in tickers_list}
+
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                result = future.result()
+                ticker_name, success, message = result[0], result[1], result[2]
+                metadata = result[3] if len(result) > 3 else None
+
+                if success:
+                    safe_ticker = _sanitize_ticker_for_filename(ticker_name)
+                    out_path = out_root / f"{safe_ticker}.parquet"
+                    out_paths.append(out_path)
+
+                    save_event = {
+                        "type": "ticker_saved",
+                        "ticker": ticker_name,
+                        "path": str(out_path),
+                        "saved": len(out_paths),
+                        "total": len(tickers_list),
+                        "source": "tiingo_recent",
+                        "message": message,
+                    }
+                    if metadata:
+                        save_event["name"] = metadata.get("name")
+                        save_event["description"] = metadata.get("description")
+
+                    if progress_cb:
+                        progress_cb(save_event)
+                else:
+                    if progress_cb:
+                        progress_cb({"type": "ticker_skipped", "ticker": ticker_name, "reason": message})
+            except Exception as e:
+                if progress_cb:
+                    progress_cb({"type": "ticker_skipped", "ticker": ticker, "reason": str(e)[:200]})
+
+    if progress_cb:
+        progress_cb({"type": "done", "saved": len(out_paths), "total": len(tickers_list)})
+
+    return out_paths
+
+
+def download_iex_prices(
+    tickers: Iterable[str],
+    *,
+    out_dir: str | Path,
+    api_key: str,
+    progress_cb: Optional[Callable[[dict], None]] = None,
+    max_workers: int = 20,
+) -> Path:
+    """Download real-time prices from Tiingo IEX endpoint and save to CSV."""
+    from datetime import datetime
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    out_root = ensure_dir(out_dir)
+    tickers_list = [t.upper().strip() for t in tickers if str(t).strip()]
+
+    # Output CSV path with timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    csv_path = out_root / f"ticker_prices_{timestamp}.csv"
+
+    if progress_cb:
+        progress_cb({"type": "start", "tickers": len(tickers_list), "mode": "prices"})
+
+    prices_data = []
+
+    def fetch_price(ticker: str) -> tuple[str, dict | None]:
+        """Fetch IEX price for one ticker. Returns (ticker, price_data)"""
+        try:
+            url = f"https://api.tiingo.com/iex/{ticker}"
+            params = {"token": api_key}
+
+            resp = requests.get(url, headers={"Content-Type": "application/json"}, params=params, timeout=30)
+            if resp.status_code == 404:
+                return (ticker, None)
+            resp.raise_for_status()
+
+            data = resp.json()
+            if not data or not isinstance(data, list) or len(data) == 0:
+                return (ticker, None)
+
+            # IEX returns array, take first item
+            price_info = data[0]
+            return (ticker, {
+                "ticker": ticker,
+                "last": price_info.get("last"),
+                "timestamp": price_info.get("timestamp"),
+                "volume": price_info.get("volume"),
+                "bid": price_info.get("bidPrice"),
+                "ask": price_info.get("askPrice"),
+            })
+        except Exception as e:
+            return (ticker, None)
+
+    # Fetch prices concurrently
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_price, t): t for t in tickers_list}
+
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                ticker_name, price_data = future.result()
+
+                if price_data:
+                    prices_data.append(price_data)
+                    if progress_cb:
+                        progress_cb({
+                            "type": "price_fetched",
+                            "ticker": ticker_name,
+                            "fetched": len(prices_data),
+                            "total": len(tickers_list),
+                            "price": price_data.get("last"),
+                        })
+                else:
+                    if progress_cb:
+                        progress_cb({"type": "price_skipped", "ticker": ticker_name})
+            except Exception as e:
+                if progress_cb:
+                    progress_cb({"type": "price_skipped", "ticker": ticker, "reason": str(e)[:200]})
+
+    # Save to CSV
+    if prices_data:
+        df_prices = pd.DataFrame(prices_data)
+        df_prices.to_csv(csv_path, index=False)
+
+        if progress_cb:
+            progress_cb({
+                "type": "done",
+                "fetched": len(prices_data),
+                "total": len(tickers_list),
+                "csv_path": str(csv_path),
+            })
+    else:
+        if progress_cb:
+            progress_cb({"type": "done", "fetched": 0, "total": len(tickers_list), "error": "No prices fetched"})
+
+    return csv_path
+
+
 def download_to_parquet_tiingo_only(
     tickers: Iterable[str],
     *,
@@ -503,6 +738,7 @@ def _cli() -> int:
     import argparse
 
     ap = argparse.ArgumentParser(description="Download OHLCV via yfinance (batch) with Tiingo fallback to per-ticker Parquet files.")
+    ap.add_argument("--mode", type=str, default="full", choices=["full", "recent", "prices"], help="Download mode: full=all history, recent=last N days, prices=real-time IEX prices")
     ap.add_argument("--tickers-file", help="Path to tickers.txt (line-separated)")
     ap.add_argument("--tickers-json", help="Path to tickers.json (from sync_tickers.py)")
     ap.add_argument("--out-dir", required=True, help="Output directory for <TICKER>.parquet files")
@@ -510,6 +746,8 @@ def _cli() -> int:
     ap.add_argument("--sleep-seconds", type=float, default=2.0, help="Sleep between batches")
     ap.add_argument("--max-retries", type=int, default=3)
     ap.add_argument("--threads", type=int, default=1, help="Ignored (kept for compatibility)")
+    ap.add_argument("--max-workers", type=int, default=20, help="Concurrent workers for Tiingo API calls (default: 20)")
+    ap.add_argument("--recent-days", type=int, default=5, help="Number of recent days to download (for --mode=recent)")
     ap.add_argument("--limit", type=int, default=0, help="0 = no limit")
     ap.add_argument("--offset", type=int, default=0, help="Skip first N tickers (for resuming)")
     ap.add_argument("--start-date", type=str, default="1990-01-01", help="Start date for Tiingo fallback")
@@ -561,22 +799,62 @@ def _cli() -> int:
         print(json.dumps(ev), flush=True)
 
     try:
-        if args.tiingo_only:
-            # Tiingo-only mode: download ALL tickers directly from Tiingo API (slower but thorough)
-            out = download_to_parquet_tiingo_only(
+        # Route to appropriate download function based on mode
+        if args.mode == "prices":
+            # Prices mode: fetch real-time IEX prices to CSV
+            if not args.api_key:
+                print(json.dumps({"type": "error", "message": "API key required for prices mode"}))
+                return 1
+
+            csv_path = download_iex_prices(
+                tickers,
+                out_dir=args.out_dir,
+                api_key=args.api_key,
+                progress_cb=cb,
+                max_workers=args.max_workers,
+            )
+            print(json.dumps({"type": "complete", "csv_path": str(csv_path)}), flush=True)
+            return 0
+
+        elif args.mode == "recent":
+            # Recent mode: download last N days and append
+            if not args.api_key:
+                print(json.dumps({"type": "error", "message": "API key required for recent mode"}))
+                return 1
+
+            out = download_recent_data(
                 tickers,
                 out_dir=args.out_dir,
                 cfg=cfg,
                 api_key=args.api_key,
+                recent_days=args.recent_days,
                 progress_cb=cb,
                 skip_metadata=skip_metadata_set,
                 no_metadata=args.no_metadata,
+                max_workers=args.max_workers,
             )
-        else:
-            # Default mode: yFinance batch + Tiingo fallback for failed tickers
-            out = download_to_parquet(tickers, out_dir=args.out_dir, cfg=cfg, api_key=args.api_key, progress_cb=cb, skip_metadata=skip_metadata_set, no_metadata=args.no_metadata)
-        print(json.dumps({"type": "complete", "saved": len(out)}), flush=True)
-        return 0
+            print(json.dumps({"type": "complete", "saved": len(out)}), flush=True)
+            return 0
+
+        else:  # mode == "full"
+            # Full mode: download all historical data
+            if args.tiingo_only:
+                # Tiingo-only mode: download ALL tickers directly from Tiingo API (slower but thorough)
+                out = download_to_parquet_tiingo_only(
+                    tickers,
+                    out_dir=args.out_dir,
+                    cfg=cfg,
+                    api_key=args.api_key,
+                    progress_cb=cb,
+                    skip_metadata=skip_metadata_set,
+                    no_metadata=args.no_metadata,
+                )
+            else:
+                # Default mode: yFinance batch + Tiingo fallback for failed tickers
+                out = download_to_parquet(tickers, out_dir=args.out_dir, cfg=cfg, api_key=args.api_key, progress_cb=cb, skip_metadata=skip_metadata_set, no_metadata=args.no_metadata)
+            print(json.dumps({"type": "complete", "saved": len(out)}), flush=True)
+            return 0
+
     except Exception as e:
         import traceback
         print(json.dumps({"type": "fatal_error", "error": str(e), "traceback": traceback.format_exc()}), flush=True)

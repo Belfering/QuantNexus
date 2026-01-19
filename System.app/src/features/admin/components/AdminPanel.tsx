@@ -1456,56 +1456,118 @@ export function AdminPanel({
                   : `yFinance (${parquetTickers.length.toLocaleString()})`}
             </Button>
 
-            {/* Tiingo Download - fills gaps from yFinance */}
-            <Button
-              variant={syncSchedule?.status?.isRunning && syncSchedule?.status?.currentJob?.source === 'tiingo' ? 'destructive' : 'default'}
-              disabled={!syncSchedule?.status?.isRunning && !tiingoKeyStatus.hasKey}
-              onClick={async () => {
-                // If running tiingo, this becomes a stop button
-                if (syncSchedule?.status?.isRunning && syncSchedule?.status?.currentJob?.source === 'tiingo') {
-                  if (!confirm('Stop the running Tiingo download?')) return
-                  setRegistryMsg('Stopping download...')
+            {/* Tiingo Download Buttons - Three Modes */}
+            <div className="flex gap-2">
+              {/* Button 1: Tiingo Full - Download all historical data */}
+              <Button
+                variant="default"
+                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning}
+                onClick={async () => {
+                  const tickerCount = registryStats?.active || registryTickers.length
+                  if (!confirm(`Download FULL history from Tiingo for ${tickerCount.toLocaleString()} registry tickers?\n\nThis will overwrite existing parquet files.\nEstimated time: ~15 minutes`)) return
+                  setRegistryMsg('Starting Tiingo Full download...')
                   try {
-                    const res = await fetch('/api/admin/sync-schedule/kill', { method: 'POST' })
+                    const res = await fetch('/api/download', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        mode: 'full',
+                        source: 'tiingo',
+                        tickers: registryTickers,
+                        maxWorkers: 20,
+                      })
+                    })
                     const data = await res.json()
-                    setRegistryMsg(data.message || 'Download stopped')
-                    const schedRes = await fetch('/api/admin/sync-schedule')
-                    if (schedRes.ok) setSyncSchedule(await schedRes.json())
+                    if (res.ok) {
+                      setRegistryMsg(`Tiingo Full started (Job ${data.jobId})`)
+                      // Refresh sync schedule status
+                      const schedRes = await fetch('/api/admin/sync-schedule')
+                      if (schedRes.ok) setSyncSchedule(await schedRes.json())
+                    } else {
+                      setRegistryMsg(`Error: ${data.error}`)
+                    }
                   } catch (e) {
                     setRegistryMsg(`Error: ${e}`)
                   }
-                  return
-                }
-                // If another download is running, don't allow starting
-                if (syncSchedule?.status?.isRunning) return
-                if (!confirm(`Download missing data and metadata from Tiingo for ${parquetTickers.length.toLocaleString()} tickers?`)) return
-                setRegistryMsg('Starting Tiingo download (fills gaps + metadata)...')
-                try {
-                  const res = await fetch('/api/admin/sync-schedule/run-now', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ source: 'tiingo', tickers: parquetTickers, fillGaps: true })
-                  })
-                  const data = await res.json()
-                  if (res.ok) {
-                    setRegistryMsg(data.message || 'Tiingo download started')
-                    const schedRes = await fetch('/api/admin/sync-schedule')
-                    if (schedRes.ok) setSyncSchedule(await schedRes.json())
-                  } else {
-                    setRegistryMsg(`Error: ${data.error}`)
+                }}
+                title={!tiingoKeyStatus.hasKey ? 'Configure Tiingo API key first' : 'Download all historical data (overwrites existing)'}
+              >
+                Tiingo Full ({(registryStats?.active || registryTickers.length).toLocaleString()})
+              </Button>
+
+              {/* Button 2: Tiingo 5d - Download last 5 days and append */}
+              <Button
+                variant="secondary"
+                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning}
+                onClick={async () => {
+                  const tickerCount = registryStats?.active || registryTickers.length
+                  if (!confirm(`Download last 5 days from Tiingo for ${tickerCount.toLocaleString()} tickers?\n\nThis will append new data to existing files.\nSafe for daily updates.`)) return
+                  setRegistryMsg('Starting Tiingo 5d update...')
+                  try {
+                    const res = await fetch('/api/download', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        mode: 'recent',
+                        source: 'tiingo',
+                        tickers: registryTickers,
+                        recentDays: 5,
+                        maxWorkers: 20,
+                      })
+                    })
+                    const data = await res.json()
+                    if (res.ok) {
+                      setRegistryMsg(`Tiingo 5d started (Job ${data.jobId})`)
+                      const schedRes = await fetch('/api/admin/sync-schedule')
+                      if (schedRes.ok) setSyncSchedule(await schedRes.json())
+                    } else {
+                      setRegistryMsg(`Error: ${data.error}`)
+                    }
+                  } catch (e) {
+                    setRegistryMsg(`Error: ${e}`)
                   }
-                } catch (e) {
-                  setRegistryMsg(`Error: ${e}`)
-                }
-              }}
-              title={!tiingoKeyStatus.hasKey ? 'Configure Tiingo API key first' : undefined}
-            >
-              {syncSchedule?.status?.isRunning && syncSchedule?.status?.currentJob?.source === 'tiingo'
-                ? '⬛ Stop Tiingo'
-                : syncSchedule?.status?.isRunning
-                  ? 'Running...'
-                  : `Tiingo (${parquetTickers.length.toLocaleString()})`}
-            </Button>
+                }}
+                title={!tiingoKeyStatus.hasKey ? 'Configure Tiingo API key first' : 'Download last 5 days (appends to existing files)'}
+              >
+                Tiingo 5d
+              </Button>
+
+              {/* Button 3: Tiingo Prices - Fetch real-time IEX prices to CSV */}
+              <Button
+                variant="ghost"
+                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning}
+                onClick={async () => {
+                  const tickerCount = registryStats?.active || registryTickers.length
+                  if (!confirm(`Fetch real-time prices for ${tickerCount.toLocaleString()} tickers?\n\nWill output CSV file for verification.`)) return
+                  setRegistryMsg('Fetching real-time prices...')
+                  try {
+                    const res = await fetch('/api/download', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        mode: 'prices',
+                        source: 'tiingo',
+                        tickers: registryTickers,
+                        maxWorkers: 20,
+                      })
+                    })
+                    const data = await res.json()
+                    if (res.ok) {
+                      setRegistryMsg(`Tiingo Prices started (Job ${data.jobId}) - will create CSV`)
+                      const schedRes = await fetch('/api/admin/sync-schedule')
+                      if (schedRes.ok) setSyncSchedule(await schedRes.json())
+                    } else {
+                      setRegistryMsg(`Error: ${data.error}`)
+                    }
+                  } catch (e) {
+                    setRegistryMsg(`Error: ${e}`)
+                  }
+                }}
+                title={!tiingoKeyStatus.hasKey ? 'Configure Tiingo API key first' : 'Fetch current prices from IEX (outputs CSV)'}
+              >
+                Tiingo Prices
+              </Button>
+            </div>
 
             {/* Refresh Stats */}
             <Button
