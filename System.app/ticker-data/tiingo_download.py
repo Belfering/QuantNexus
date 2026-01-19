@@ -426,11 +426,19 @@ def download_iex_prices(
     out_dir: str | Path,
     api_key: str,
     progress_cb: Optional[Callable[[dict], None]] = None,
-    max_workers: int = 20,
+    max_workers: int = 100,
 ) -> Path:
-    """Download real-time prices from Tiingo IEX endpoint and save to CSV."""
+    """Download real-time prices from Tiingo IEX endpoint and save to CSV.
+
+    Optimized for speed with:
+    - High concurrency (100 workers default)
+    - HTTP connection pooling for reused connections
+    - Fast timeout for quick failure recovery
+    """
     from datetime import datetime
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
 
     out_root = ensure_dir(out_dir)
     tickers_list = [t.upper().strip() for t in tickers if str(t).strip()]
@@ -444,13 +452,26 @@ def download_iex_prices(
 
     prices_data = []
 
+    # Create session with connection pooling (shared across threads)
+    session = requests.Session()
+
+    # Configure connection pool for high concurrency
+    adapter = HTTPAdapter(
+        pool_connections=max_workers,
+        pool_maxsize=max_workers * 2,
+        max_retries=Retry(total=2, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
+    )
+    session.mount('https://', adapter)
+    session.mount('http://', adapter)
+
     def fetch_price(ticker: str) -> tuple[str, dict | None]:
         """Fetch IEX price for one ticker. Returns (ticker, price_data)"""
         try:
             url = f"https://api.tiingo.com/iex/{ticker}"
             params = {"token": api_key}
 
-            resp = requests.get(url, headers={"Content-Type": "application/json"}, params=params, timeout=30)
+            # Reduced timeout from 30s to 10s for faster failures
+            resp = session.get(url, headers={"Content-Type": "application/json"}, params=params, timeout=10)
             if resp.status_code == 404:
                 return (ticker, None)
             resp.raise_for_status()
@@ -472,7 +493,7 @@ def download_iex_prices(
         except Exception as e:
             return (ticker, None)
 
-    # Fetch prices concurrently
+    # Fetch prices concurrently with high worker count
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(fetch_price, t): t for t in tickers_list}
 
@@ -497,6 +518,9 @@ def download_iex_prices(
             except Exception as e:
                 if progress_cb:
                     progress_cb({"type": "price_skipped", "ticker": ticker, "reason": str(e)[:200]})
+
+    # Close session after all requests complete
+    session.close()
 
     # Save to CSV
     if prices_data:
@@ -746,7 +770,7 @@ def _cli() -> int:
     ap.add_argument("--sleep-seconds", type=float, default=2.0, help="Sleep between batches")
     ap.add_argument("--max-retries", type=int, default=3)
     ap.add_argument("--threads", type=int, default=1, help="Ignored (kept for compatibility)")
-    ap.add_argument("--max-workers", type=int, default=20, help="Concurrent workers for Tiingo API calls (default: 20)")
+    ap.add_argument("--max-workers", type=int, default=100, help="Concurrent workers for Tiingo API calls (default: 100, optimized for speed)")
     ap.add_argument("--recent-days", type=int, default=5, help="Number of recent days to download (for --mode=recent)")
     ap.add_argument("--limit", type=int, default=0, help="0 = no limit")
     ap.add_argument("--offset", type=int, default=0, help="Skip first N tickers (for resuming)")
