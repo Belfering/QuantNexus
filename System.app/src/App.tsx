@@ -10,11 +10,13 @@ import {
 
 // Lazy-loaded tab components (code splitting)
 const AnalyzeTab = lazy(() => import('./tabs/AnalyzeTab'))
+const DashboardTab = lazy(() => import('./tabs/DashboardTab'))
 const ForgeTab = lazy(() => import('./tabs/ForgeTab'))
 const AdminTab = lazy(() => import('./tabs/AdminTab'))
 const DatabasesTab = lazy(() => import('./tabs/DatabasesTab'))
 const HelpTab = lazy(() => import('./tabs/HelpTab'))
 const ModelTab = lazy(() => import('./tabs/ModelTab'))
+const NexusTab = lazy(() => import('./tabs/NexusTab'))
 import './App.css'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -1052,7 +1054,7 @@ function App() {
           }}
         >
           {/* Row 1: Main tabs */}
-          {(['Forge', 'Analyze', 'Model', 'Help/Support', ...(isAdmin ? ['Admin'] : []), ...(hasEngineerAccess ? ['Databases'] : [])] as ('Forge' | 'Analyze' | 'Model' | 'Help/Support' | 'Admin' | 'Databases')[]).map((t) => (
+          {(['Dashboard', 'Nexus', 'Model', 'Forge', 'Analyze', 'Help/Support', ...(hasEngineerAccess ? ['Databases'] : []), ...(isAdmin ? ['Admin'] : [])] as ('Dashboard' | 'Nexus' | 'Model' | 'Forge' | 'Analyze' | 'Help/Support' | 'Databases' | 'Admin')[]).map((t) => (
             <button
               key={t}
               className={`px-4 py-3 text-sm font-bold border-r-2 border-border transition-colors h-20 ${
@@ -1307,7 +1309,11 @@ function App() {
         tickerLists={tickerLists}
       />
       <main className={`flex-1 overflow-hidden min-h-0 ${tab === 'Model' || tab === 'Forge' ? 'pb-4' : ''}`}>
-        {tab === 'Forge' ? (
+        {tab === 'Dashboard' ? (
+          <Suspense fallback={<div className="p-4 text-muted">Loading Dashboard...</div>}>
+            <DashboardTab />
+          </Suspense>
+        ) : tab === 'Forge' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Forge...</div>}>
             <ForgeTab
               // Backtest panel props (derived or callback)
@@ -1441,6 +1447,10 @@ function App() {
               // Call chains
               callChainsById={callChainsById}
             />
+          </Suspense>
+        ) : tab === 'Nexus' ? (
+          <Suspense fallback={<div className="p-4 text-muted">Loading Nexus...</div>}>
+            <NexusTab />
           </Suspense>
         ) : null}
       </main>
