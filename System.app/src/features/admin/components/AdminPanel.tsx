@@ -74,6 +74,7 @@ export function AdminPanel({
   const [registrySyncing, setRegistrySyncing] = useState(false)
   const [registryMsg, setRegistryMsg] = useState<string | null>(null)
   const [runningDownloadJobs, setRunningDownloadJobs] = useState<{ full?: string; recent?: string; prices?: string }>({})
+  const [jobLogs, setJobLogs] = useState<{ full?: string[]; recent?: string[]; prices?: string[] }>({})
 
   // Tiingo API Key state
   const [tiingoKeyStatus, setTiingoKeyStatus] = useState<{ hasKey: boolean; loading: boolean }>({ hasKey: false, loading: true })
@@ -655,23 +656,36 @@ export function AdminPanel({
           const res = await fetch(`/api/download/${jobId}`)
           if (res.ok) {
             const job = await res.json()
+            console.log(`[${mode}] Job status:`, job.status, `logs: ${job.logs?.length || 0}`)
+
+            // Update logs
+            if (job.logs && Array.isArray(job.logs)) {
+              setJobLogs(prev => ({ ...prev, [mode]: job.logs }))
+            }
+
             if (job.status === 'done' || job.status === 'error') {
               // Job finished, clear it from state
               setRunningDownloadJobs(prev => ({ ...prev, [mode]: undefined }))
               if (job.status === 'error') {
                 setRegistryMsg(`${mode} job failed: ${job.error || 'Unknown error'}`)
+                console.error(`[${mode}] Job failed:`, job.error)
+              } else {
+                setRegistryMsg(`${mode} job completed successfully`)
+                console.log(`[${mode}] Job completed`)
               }
             }
+          } else {
+            console.error(`[${mode}] Failed to fetch job status:`, res.status)
           }
         } catch (e) {
-          // Ignore polling errors
+          console.error(`[${mode}] Error polling job:`, e)
         }
       }
     }
 
-    // Poll immediately, then every 2 seconds
+    // Poll immediately, then every 1 second
     checkJobs()
-    const interval = setInterval(checkJobs, 2000)
+    const interval = setInterval(checkJobs, 1000)
     return () => clearInterval(interval)
   }, [runningDownloadJobs])
 
@@ -1511,12 +1525,15 @@ export function AdminPanel({
                     const data = await res.json()
                     if (res.ok) {
                       setRunningDownloadJobs(prev => ({ ...prev, full: data.jobId }))
+                      setJobLogs(prev => ({ ...prev, full: [`Job ${data.jobId} started...`] }))
                       setRegistryMsg(`Tiingo Full started (Job ${data.jobId})`)
+                      console.log('[Tiingo Full] Job started:', data.jobId)
                       // Refresh sync schedule status
                       const schedRes = await fetch('/api/admin/sync-schedule')
                       if (schedRes.ok) setSyncSchedule(await schedRes.json())
                     } else {
                       setRegistryMsg(`Error: ${data.error}`)
+                      console.error('[Tiingo Full] Error:', data.error)
                     }
                   } catch (e) {
                     setRegistryMsg(`Error: ${e}`)
@@ -1577,11 +1594,14 @@ export function AdminPanel({
                     const data = await res.json()
                     if (res.ok) {
                       setRunningDownloadJobs(prev => ({ ...prev, recent: data.jobId }))
+                      setJobLogs(prev => ({ ...prev, recent: [`Job ${data.jobId} started...`] }))
                       setRegistryMsg(`Tiingo 5d started (Job ${data.jobId})`)
+                      console.log('[Tiingo 5d] Job started:', data.jobId)
                       const schedRes = await fetch('/api/admin/sync-schedule')
                       if (schedRes.ok) setSyncSchedule(await schedRes.json())
                     } else {
                       setRegistryMsg(`Error: ${data.error}`)
+                      console.error('[Tiingo 5d] Error:', data.error)
                     }
                   } catch (e) {
                     setRegistryMsg(`Error: ${e}`)
@@ -1641,11 +1661,14 @@ export function AdminPanel({
                     const data = await res.json()
                     if (res.ok) {
                       setRunningDownloadJobs(prev => ({ ...prev, prices: data.jobId }))
+                      setJobLogs(prev => ({ ...prev, prices: [`Job ${data.jobId} started...`] }))
                       setRegistryMsg(`Tiingo Prices started (Job ${data.jobId}) - will create CSV`)
+                      console.log('[Tiingo Prices] Job started:', data.jobId)
                       const schedRes = await fetch('/api/admin/sync-schedule')
                       if (schedRes.ok) setSyncSchedule(await schedRes.json())
                     } else {
                       setRegistryMsg(`Error: ${data.error}`)
+                      console.error('[Tiingo Prices] Error:', data.error)
                     }
                   } catch (e) {
                     setRegistryMsg(`Error: ${e}`)
@@ -1683,6 +1706,64 @@ export function AdminPanel({
                 </Button>
               )}
             </div>
+
+            {/* Job Progress/Logs Display */}
+            {Object.entries(runningDownloadJobs).some(([_, jobId]) => jobId) && (
+              <div className="mt-4 p-4 bg-gray-900 rounded-lg border border-gray-700">
+                <h4 className="text-sm font-semibold text-gray-300 mb-2">Download Progress</h4>
+                {Object.entries(runningDownloadJobs).map(([mode, jobId]) => {
+                  if (!jobId) return null
+                  const logs = jobLogs[mode as keyof typeof jobLogs] || []
+                  const lastLog = logs[logs.length - 1] || ''
+
+                  // Parse progress from logs
+                  let progress = 0
+                  let progressText = 'Starting...'
+                  try {
+                    const progressLogs = logs.filter(log => {
+                      try {
+                        const parsed = JSON.parse(log)
+                        return parsed.type === 'ticker_saved' || parsed.type === 'batch_fetched'
+                      } catch {
+                        return false
+                      }
+                    })
+                    if (progressLogs.length > 0) {
+                      const latest = JSON.parse(progressLogs[progressLogs.length - 1])
+                      if (latest.saved && latest.total) {
+                        progress = (latest.saved / latest.total) * 100
+                        progressText = `${latest.saved.toLocaleString()} / ${latest.total.toLocaleString()}`
+                      } else if (latest.total_fetched && latest.total_tickers) {
+                        progress = (latest.total_fetched / latest.total_tickers) * 100
+                        progressText = `${latest.total_fetched.toLocaleString()} / ${latest.total_tickers.toLocaleString()}`
+                      }
+                    }
+                  } catch {}
+
+                  return (
+                    <div key={mode} className="mb-4 last:mb-0">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-gray-400 uppercase">{mode}</span>
+                        <span className="text-xs text-gray-500">{progressText}</span>
+                      </div>
+                      {progress > 0 && (
+                        <div className="w-full bg-gray-800 rounded-full h-2 mb-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, progress)}%` }}
+                          />
+                        </div>
+                      )}
+                      <div className="max-h-32 overflow-y-auto bg-black/30 rounded p-2 text-xs font-mono">
+                        {logs.slice(-10).map((log, i) => (
+                          <div key={i} className="text-gray-400 whitespace-pre-wrap break-all">{log}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
 
             {/* Refresh Stats */}
             <Button
