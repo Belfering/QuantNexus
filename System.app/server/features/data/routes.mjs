@@ -294,8 +294,12 @@ router.post('/download', asyncHandler(async (req, res) => {
     args.push('--tickers-file', TICKERS_PATH)
   }
 
-  // Output directory
-  args.push('--out-dir', PARQUET_DIR)
+  // Output directory (prices mode uses separate directory)
+  if (mode === 'prices') {
+    args.push('--out-dir', 'C:\\Users\\Trader\\Desktop\\test')
+  } else {
+    args.push('--out-dir', PARQUET_DIR)
+  }
 
   // Mode-specific args
   if (mode === 'recent') {
