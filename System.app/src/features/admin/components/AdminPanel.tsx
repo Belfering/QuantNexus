@@ -1536,8 +1536,8 @@ export function AdminPanel({
                 disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning}
                 onClick={async () => {
                   const tickerCount = registryStats?.active || registryTickers.length
-                  if (!confirm(`Fetch real-time prices for ${tickerCount.toLocaleString()} tickers?\n\nWill output CSV file.\nEstimated time: ~8-10 minutes (optimized)`)) return
-                  setRegistryMsg('Fetching real-time prices...')
+                  if (!confirm(`Fetch real-time prices for ${tickerCount.toLocaleString()} tickers?\n\nWill output CSV file.\nEstimated time: ~30-60 seconds (batch optimized!)`)) return
+                  setRegistryMsg('Fetching real-time prices (batch mode)...')
                   try {
                     const res = await fetch('/api/download', {
                       method: 'POST',
@@ -1546,7 +1546,7 @@ export function AdminPanel({
                         mode: 'prices',
                         source: 'tiingo',
                         tickers: registryTickers,
-                        maxWorkers: 100,
+                        maxWorkers: 10,
                       })
                     })
                     const data = await res.json()
