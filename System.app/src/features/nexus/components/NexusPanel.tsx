@@ -277,7 +277,7 @@ export function NexusPanel(props: NexusPanelProps) {
 
   // Render bot card
   const renderBotCard = useCallback((r: CommunityBotRow, _opts?: { showCollapsedMetrics?: boolean }) => {
-    const collapsed = uiState.communityCollapsedByBotId[r.id] ?? true
+    const collapsed = uiState?.communityCollapsedByBotId?.[r.id] ?? true
     const b = allNexusBots.find((bot) => bot.id === r.id) ?? savedBots.find((bot) => bot.id === r.id)
     const analyzeState = analyzeBacktests[r.id]
     const wlTags = watchlistsByBotId.get(r.id) ?? []
@@ -506,7 +506,7 @@ export function NexusPanel(props: NexusPanelProps) {
       </Card>
     )
   }, [
-    uiState.communityCollapsedByBotId,
+    uiState?.communityCollapsedByBotId,
     allNexusBots,
     savedBots,
     analyzeBacktests,

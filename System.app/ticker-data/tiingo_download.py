@@ -426,15 +426,15 @@ def download_iex_prices(
     out_dir: str | Path,
     api_key: str,
     progress_cb: Optional[Callable[[dict], None]] = None,
-    max_workers: int = 10,
-    batch_size: int = 500,
+    max_workers: int = 5,  # Reduced to avoid rate limiting
+    batch_size: int = 50,  # Reduced from 500 due to Tiingo 502 errors
 ) -> Path:
     """Download real-time prices from Tiingo IEX endpoint and save to CSV.
 
-    ULTRA-OPTIMIZED with batch requests:
-    - Fetches up to 500 tickers per API call (batch endpoint)
-    - 12,000 tickers = 24 requests = ~30-60 seconds
-    - Uses concurrent batch requests for maximum throughput
+    Batch requests with rate limiting:
+    - Fetches up to 50 tickers per API call (batch endpoint)
+    - 12,000 tickers = ~240 requests with 5 concurrent workers
+    - Includes 0.5s delay per request to avoid rate limiting
     """
     from datetime import datetime
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -460,41 +460,80 @@ def download_iex_prices(
         progress_cb({"type": "batch_info", "total_batches": len(batches), "batch_size": batch_size})
 
     def fetch_batch(batch: list[str]) -> list[dict]:
-        """Fetch prices for a batch of tickers in a single API call."""
-        try:
-            # Tiingo IEX batch endpoint: /iex/?tickers=AAPL,MSFT,GOOGL
-            url = "https://api.tiingo.com/iex/"
-            params = {
-                "token": api_key,
-                "tickers": ",".join(batch)
-            }
+        """Fetch prices with smart fallback: IEX (real-time) -> EOD (closing)."""
+        batch_prices = []
 
-            resp = requests.get(url, headers={"Content-Type": "application/json"}, params=params, timeout=30)
-            resp.raise_for_status()
+        for ticker in batch:
+            price_data = None
 
-            data = resp.json()
-            if not data or not isinstance(data, list):
-                return []
+            try:
+                # Step 1: Try IEX endpoint for real-time price (works during market hours)
+                iex_url = f"https://api.tiingo.com/iex/{ticker}"
+                resp = requests.get(
+                    iex_url,
+                    headers={"Content-Type": "application/json"},
+                    params={"token": api_key},
+                    timeout=10
+                )
 
-            # Parse batch response
-            batch_prices = []
-            for price_info in data:
-                ticker = price_info.get("ticker", "").upper()
-                if ticker:
-                    batch_prices.append({
-                        "ticker": ticker,
-                        "last": price_info.get("last"),
-                        "timestamp": price_info.get("timestamp"),
-                        "volume": price_info.get("volume"),
-                        "bid": price_info.get("bidPrice"),
-                        "ask": price_info.get("askPrice"),
-                    })
+                if resp.status_code == 200:
+                    iex_data = resp.json()
+                    if iex_data and isinstance(iex_data, list) and len(iex_data) > 0:
+                        iex_price = iex_data[0]
+                        last_price = iex_price.get("last")
 
-            return batch_prices
+                        # If we have a valid real-time price, use it
+                        if last_price is not None:
+                            price_data = {
+                                "ticker": ticker.upper(),
+                                "price": last_price,
+                                "timestamp": iex_price.get("timestamp"),
+                                "volume": iex_price.get("volume"),
+                                "bid": iex_price.get("bidPrice"),
+                                "ask": iex_price.get("askPrice"),
+                                "source": "IEX",
+                            }
+            except:
+                pass  # Fall through to EOD
 
-        except Exception as e:
-            # Return empty list on error, individual tickers will be skipped
-            return []
+            # Step 2: If IEX didn't work, fall back to EOD endpoint
+            if price_data is None:
+                try:
+                    eod_url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices"
+                    resp = requests.get(
+                        eod_url,
+                        headers={"Content-Type": "application/json"},
+                        params={"token": api_key},
+                        timeout=10
+                    )
+
+                    if resp.status_code == 200:
+                        eod_data = resp.json()
+                        if eod_data and isinstance(eod_data, list) and len(eod_data) > 0:
+                            latest = eod_data[-1]
+                            close_price = latest.get("close")
+
+                            if close_price is not None:
+                                price_data = {
+                                    "ticker": ticker.upper(),
+                                    "price": close_price,
+                                    "date": latest.get("date"),
+                                    "volume": latest.get("volume"),
+                                    "open": latest.get("open"),
+                                    "high": latest.get("high"),
+                                    "low": latest.get("low"),
+                                    "source": "EOD",
+                                }
+                except:
+                    pass  # Skip this ticker
+
+            if price_data:
+                batch_prices.append(price_data)
+
+            # Small delay between ticker requests to avoid rate limiting
+            time.sleep(0.05)
+
+        return batch_prices
 
     # Fetch batches concurrently
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

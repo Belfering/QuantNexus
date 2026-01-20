@@ -32,7 +32,7 @@ export function DashboardEquityChart({
 
   // Convert equity to % returns (rebased to 0%)
   const toReturns = useCallback((data: EquityCurvePoint[]) => {
-    if (data.length === 0) return []
+    if (!data || data.length === 0) return []
     const startValue = data[0].value
     return data.map((p) => ({
       time: p.time,
@@ -44,7 +44,7 @@ export function DashboardEquityChart({
 
   // Compute drawdown from portfolio data (unified)
   const drawdownData = useMemo(() => {
-    if (portfolioData.length === 0) return []
+    if (!portfolioData || portfolioData.length === 0) return []
     let peak = portfolioData[0].value
     return portfolioData.map((p) => {
       if (p.value > peak) peak = p.value
@@ -87,7 +87,7 @@ export function DashboardEquityChart({
 
     // Add bot lines
     const newBotSeriesRefs: ISeriesApi<'Line'>[] = []
-    botSeries.forEach((bot) => {
+    botSeries?.forEach((bot) => {
       const series = equityChart.addSeries(LineSeries, {
         color: bot.color,
         lineWidth: 1,
@@ -152,7 +152,7 @@ export function DashboardEquityChart({
       botSeriesRefs.current = []
       drawdownSeriesRef.current = null
     }
-  }, [botSeries.length])
+  }, [botSeries?.length])
 
   // Update chart colors when theme changes (without recreating the charts)
   useEffect(() => {
@@ -185,7 +185,7 @@ export function DashboardEquityChart({
     portfolioSeriesRef.current.setData(portfolioReturns)
 
     // Set bot series data
-    botSeries.forEach((bot, idx) => {
+    botSeries?.forEach((bot, idx) => {
       const series = botSeriesRefs.current[idx]
       if (series) {
         series.setData(toReturns(bot.data))
