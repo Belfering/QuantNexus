@@ -1311,7 +1311,34 @@ function App() {
       <main className={`flex-1 overflow-hidden min-h-0 ${tab === 'Model' || tab === 'Forge' ? 'pb-4' : ''}`}>
         {tab === 'Dashboard' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Dashboard...</div>}>
-            <DashboardTab />
+            <DashboardTab
+              // UI state
+              uiState={uiState}
+              setUiState={setUiState}
+              // Computed/derived dashboard values
+              eligibleBots={eligibleBots}
+              dashboardCash={dashboardCash}
+              dashboardTotalValue={dashboardTotalValue}
+              dashboardTotalPnl={dashboardTotalPnl}
+              dashboardTotalPnlPct={dashboardTotalPnlPct}
+              dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
+              dashboardEquityCurve={dashboardEquityCurve}
+              dashboardBotSeries={dashboardBotSeries}
+              // Action callbacks
+              handleDashboardBuy={handleDashboardBuy}
+              handleDashboardSell={handleDashboardSell}
+              handleDashboardBuyMore={handleDashboardBuyMore}
+              handleNexusBuy={handleNexusBuy}
+              runAnalyzeBacktest={runAnalyzeBacktest}
+              runSanityReport={runSanityReport}
+              updateBotInApi={updateBotInApi}
+              handleCopyToNew={handleCopyToNew}
+              handleOpenSaved={handleOpenSaved}
+              // Helpers
+              getFundSlotForBot={getFundSlotForBot}
+              // Eligibility requirements
+              appEligibilityRequirements={appEligibilityRequirements}
+            />
           </Suspense>
         ) : tab === 'Forge' ? (
           <Suspense fallback={<div className="p-4 text-muted">Loading Forge...</div>}>

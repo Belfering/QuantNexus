@@ -224,7 +224,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
               <Card className="p-3 text-center">
                 <div className="text-[10px] font-bold text-muted">Total PnL (%)</div>
                 <div className={cn("text-lg font-black", dashboardTotalPnlPct >= 0 ? 'text-success' : 'text-danger')}>
-                  {dashboardTotalPnlPct != null ? `${dashboardTotalPnlPct >= 0 ? '+' : ''}${dashboardTotalPnlPct.toFixed(2)}%` : '—'}
+                  {dashboardTotalPnlPct >= 0 ? '+' : ''}{dashboardTotalPnlPct.toFixed(2)}%
                 </div>
               </Card>
               <Card className="p-3 text-center">
@@ -233,7 +233,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
               </Card>
               <Card className="p-3 text-center">
                 <div className="text-[10px] font-bold text-muted">Positions</div>
-                <div className="text-lg font-black">{dashboardInvestmentsWithPnl?.length ?? 0}</div>
+                <div className="text-lg font-black">{dashboardInvestmentsWithPnl.length}</div>
               </Card>
             </div>
 
@@ -248,7 +248,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                       <div className="w-3 h-0.5 rounded" style={{ backgroundColor: '#3b82f6' }} />
                       <span className="text-muted font-bold">Portfolio</span>
                     </div>
-                    {dashboardBotSeries?.map((bot) => (
+                    {dashboardBotSeries.map((bot) => (
                       <div key={bot.id} className="flex items-center gap-1.5">
                         <div className="w-3 h-0.5 rounded" style={{ backgroundColor: bot.color }} />
                         <span className="text-muted font-bold">{bot.name}</span>
@@ -273,7 +273,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
               <DashboardEquityChart
                 portfolioData={dashboardEquityCurve}
                 botSeries={dashboardBotSeries}
-                theme={uiState?.theme ?? 'dark'}
+                theme={uiState.theme}
               />
             </Card>
 
@@ -350,7 +350,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                         />
                         <div className="absolute top-full left-0 right-0 z-[200] mt-1 max-h-48 overflow-y-auto bg-card border border-border rounded-md shadow-lg">
                           {(() => {
-                            const availableBots = (eligibleBots ?? []).filter(
+                            const availableBots = eligibleBots.filter(
                               (bot) => !dashboardPortfolio.investments.some((inv) => inv.botId === bot.id)
                             )
                             const searchLower = dashboardBuyBotSearch.toLowerCase()
@@ -408,7 +408,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                     )}
                   </div>
 
-                  {eligibleBots?.length === 0 && (
+                  {eligibleBots.length === 0 && (
                     <div className="text-xs text-muted">
                       No eligible systems. Your private systems or systems tagged "Atlas"/"Nexus" will appear here.
                     </div>
@@ -419,12 +419,12 @@ export function DashboardPanel(props: DashboardPanelProps) {
                 <div className="border-t border-border my-3" />
 
                 {/* Systems Invested In Section - Uses same card format as Nexus */}
-                <div className="font-black mb-3">Systems Invested In ({dashboardInvestmentsWithPnl?.length ?? 0})</div>
-                {(dashboardInvestmentsWithPnl?.length ?? 0) === 0 ? (
+                <div className="font-black mb-3">Systems Invested In ({dashboardInvestmentsWithPnl.length})</div>
+                {dashboardInvestmentsWithPnl.length === 0 ? (
                   <div className="text-muted text-center py-4">No investments yet.</div>
                 ) : (
                   <div className="flex flex-col gap-2.5">
-                    {dashboardInvestmentsWithPnl?.map((inv, idx) => {
+                    {dashboardInvestmentsWithPnl.map((inv, idx) => {
                       const isExpanded = dashboardBotExpanded[inv.botId] ?? false
                       const isSelling = dashboardSellBotId === inv.botId
                       const isBuyingMore = dashboardBuyMoreBotId === inv.botId
@@ -738,7 +738,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                       const slices: Array<{ color: string; percent: number; label: string }> = []
 
                       // Add bot slices
-                      dashboardInvestmentsWithPnl?.forEach((inv, idx) => {
+                      dashboardInvestmentsWithPnl.forEach((inv, idx) => {
                         const pct = dashboardTotalValue > 0 ? inv.currentValue / dashboardTotalValue : 0
                         if (pct > 0) {
                           slices.push({
@@ -797,7 +797,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                   {/* Legend */}
                   <div className="flex-1 grid gap-1.5 text-sm">
-                    {dashboardInvestmentsWithPnl?.map((inv, idx) => {
+                    {dashboardInvestmentsWithPnl.map((inv, idx) => {
                       const pct = dashboardTotalValue > 0 ? (inv.currentValue / dashboardTotalValue) * 100 : 0
                       return (
                         <div key={inv.botId} className="flex items-center gap-2">
