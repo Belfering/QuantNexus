@@ -1401,6 +1401,13 @@ function App() {
               handleToggleCallChainCollapse={handleToggleCallChainCollapse}
               handleDeleteCallChain={handleDeleteCallChain}
               pushCallChain={pushCallChain}
+              // Watchlist props
+              watchlists={watchlists}
+              savedBots={savedBots}
+              setWatchlists={setWatchlists}
+              setSavedBots={setSavedBots}
+              tickerMetadata={tickerMetadata}
+              callChainsById={callChainsById}
               // Backtest visual state
               backtestErrorNodeIds={backtestErrorNodeIds}
               backtestFocusNodeId={modelBacktestFocusNodeId}

@@ -21,6 +21,9 @@ import type {
   ConditionLine,
   BotSession,
   CustomIndicator,
+  Watchlist,
+  SavedBot,
+  UserId,
 } from '@/types'
 import {
   createNode,
@@ -70,7 +73,7 @@ import { BacktesterPanel, parseFormula, ROLLING_FUNCTIONS } from '@/features/bac
 import { loadCallChainsFromApi } from '@/features/auth'
 import { newId } from '@/features/builder'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
-import { useTreeSync, useTreeUndo } from '@/hooks'
+import { useTreeSync, useTreeUndo, useWatchlistCallbacks } from '@/hooks'
 
 export interface ModelTabProps {
   // Backtest panel props (from App.tsx - derived or callback)
@@ -93,6 +96,14 @@ export interface ModelTabProps {
   handleToggleCallChainCollapse: (id: string) => void
   handleDeleteCallChain: (id: string) => void
   pushCallChain: (id: string, newRoot: FlowNode) => void
+
+  // Watchlist props (for save to watchlist)
+  watchlists: Watchlist[]
+  savedBots: SavedBot[]
+  setWatchlists: (updater: (prev: Watchlist[]) => Watchlist[]) => void
+  setSavedBots: (updater: (prev: SavedBot[]) => SavedBot[]) => void
+  tickerMetadata: Map<string, { assetType?: string; name?: string }>
+  callChainsById: Map<string, CallChain>
 
   // Backtest visual state
   backtestErrorNodeIds: Set<string>
@@ -123,6 +134,13 @@ export function ModelTab({
   handleToggleCallChainCollapse,
   handleDeleteCallChain,
   pushCallChain,
+  // Watchlist props
+  watchlists,
+  savedBots,
+  setWatchlists,
+  setSavedBots,
+  tickerMetadata,
+  callChainsById,
   // Backtest visual state
   backtestErrorNodeIds,
   backtestFocusNodeId,
@@ -314,6 +332,21 @@ export function ModelTab({
     setHighlightedInstance,
   } = useBotStore()
 
+  // UI Store - save menu
+  const saveMenuOpen = useUIStore(s => s.saveMenuOpen)
+  const setSaveMenuOpen = useUIStore(s => s.setSaveMenuOpen)
+  const saveNewWatchlistName = useUIStore(s => s.saveNewWatchlistName)
+  const setSaveNewWatchlistName = useUIStore(s => s.setSaveNewWatchlistName)
+  const justSavedFeedback = useUIStore(s => s.justSavedFeedback)
+  const setJustSavedFeedback = useUIStore(s => s.setJustSavedFeedback)
+
+  // Admin access (hardcoded for local development, same as App.tsx)
+  const isAdmin = true
+
+  // Helper for activeSavedBotId (used by watchlist hook)
+  const activeBotId = activeBot?.id ?? null
+  const activeSavedBotId = activeBot?.savedBotId
+
   // Backtest store
   const {
     backtestMode,
@@ -332,6 +365,52 @@ export function ModelTab({
     enabledOverlays,
     toggleOverlay: handleToggleOverlay,
   } = useBacktestStore()
+
+  // Watchlist callbacks hook
+  const {
+    handleSaveToWatchlist,
+  } = useWatchlistCallbacks({
+    userId,
+    isAdmin,
+    savedBots,
+    setSavedBots,
+    watchlists,
+    setWatchlists,
+    current,
+    activeBotId,
+    activeSavedBotId,
+    activeBot,
+    tabContext: 'Model',
+    bots: [], // ModelTab doesn't use bots state
+    setBots: () => {}, // No-op
+    setAnalyzeBacktests: () => {}, // No-op
+    setSaveMenuOpen,
+    setSaveNewWatchlistName,
+    setJustSavedFeedback,
+    callChainsById,
+    tickerMetadata,
+    backtestMode,
+    backtestCostBps,
+  })
+
+  // Close save menu when clicking outside
+  useEffect(() => {
+    if (!saveMenuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Don't close if clicking inside the save menu dropdown
+      if (target.closest('.save-watchlist-dropdown')) return
+      setSaveMenuOpen(false)
+    }
+    // Use timeout to avoid closing on the same click that opened it
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside)
+    }, 0)
+    return () => {
+      clearTimeout(timeoutId)
+      document.removeEventListener('click', handleClickOutside)
+    }
+  }, [saveMenuOpen, setSaveMenuOpen])
 
   // Custom Indicators state (FRD-035)
   const [newIndicatorName, setNewIndicatorName] = useState('')
@@ -659,8 +738,67 @@ export function ModelTab({
               Replace{foundInstances.length > 0 ? ` (${foundInstances.length})` : ''}
             </Button>
           </div>
-          {/* Right section: Undo/Redo */}
-          <div className="flex gap-2 justify-end">
+          {/* Right section: Save to Watchlist + Undo/Redo */}
+          <div className="flex gap-2 justify-end overflow-visible">
+            <div className="relative overflow-visible">
+              <Button
+                onClick={() => setSaveMenuOpen(!saveMenuOpen)}
+                title="Save this system to a watchlist"
+                variant={justSavedFeedback ? 'accent' : 'secondary'}
+                className={`px-4 py-2 text-sm font-semibold ${justSavedFeedback ? 'transition-colors duration-300' : ''}`}
+              >
+                {justSavedFeedback ? '✓ Saved!' : 'Save to Watchlist'}
+              </Button>
+              {saveMenuOpen ? (
+                <Card
+                  className="save-watchlist-dropdown absolute top-full right-0 z-[200] min-w-60 p-1.5 mt-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex flex-col gap-1">
+                    {watchlists.map((w) => (
+                      <Button
+                        key={w.id}
+                        variant="ghost"
+                        className="justify-start"
+                        onClick={() => handleSaveToWatchlist(w.id)}
+                      >
+                        {w.name}
+                      </Button>
+                    ))}
+                    {watchlists.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        No watchlists yet
+                      </div>
+                    )}
+                    <div className="h-px bg-border my-1" />
+                    <div className="flex gap-1 px-1">
+                      <Input
+                        placeholder="New watchlist name"
+                        value={saveNewWatchlistName}
+                        onChange={(e) => setSaveNewWatchlistName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && saveNewWatchlistName.trim()) {
+                            handleSaveToWatchlist(saveNewWatchlistName.trim())
+                          }
+                        }}
+                        className="h-8 text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (saveNewWatchlistName.trim()) {
+                            handleSaveToWatchlist(saveNewWatchlistName.trim())
+                          }
+                        }}
+                        disabled={!saveNewWatchlistName.trim()}
+                      >
+                        Create
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ) : null}
+            </div>
             <Button
               variant="secondary"
               className="px-4 py-2 text-sm font-semibold active:bg-accent/30"

@@ -1154,6 +1154,25 @@ export function ForgeTab({
     setJustSavedFeedback,
   })
 
+  // Close save menu when clicking outside
+  useEffect(() => {
+    if (!saveMenuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Don't close if clicking inside the save menu dropdown
+      if (target.closest('.save-watchlist-dropdown')) return
+      setSaveMenuOpen(false)
+    }
+    // Use timeout to avoid closing on the same click that opened it
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside)
+    }, 0)
+    return () => {
+      clearTimeout(timeoutId)
+      document.removeEventListener('click', handleClickOutside)
+    }
+  }, [saveMenuOpen, setSaveMenuOpen])
+
   // Floating scrollbar position tracking
   const [flowchartRect, setFlowchartRect] = useState({ left: 0, width: 0 })
 

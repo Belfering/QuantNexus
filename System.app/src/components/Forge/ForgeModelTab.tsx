@@ -681,7 +681,10 @@ export function ForgeModelTab({
           <div className="flex gap-2 justify-end">
             <div className="relative">
               <Button
-                onClick={() => setSaveMenuOpen(!saveMenuOpen)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSaveMenuOpen(!saveMenuOpen)
+                }}
                 title="Save this system to a watchlist"
                 variant={justSavedFeedback ? 'accent' : 'secondary'}
                 className={`px-4 py-2 text-sm font-semibold ${justSavedFeedback ? 'transition-colors duration-300' : ''}`}
@@ -690,12 +693,16 @@ export function ForgeModelTab({
               </Button>
               {saveMenuOpen ? (
                 <Card
-                  className="absolute top-full right-0 z-[200] min-w-60 p-1.5 mt-1"
-                  onClick={(e) => e.stopPropagation()}
+                  className="save-watchlist-dropdown absolute top-full right-0 z-[200] min-w-60 p-1.5 mt-1"
                 >
                   <div className="flex flex-col gap-1">
                     {watchlists.map((w) => (
-                      <Button key={w.id} variant="ghost" className="justify-start" onClick={() => handleSaveToWatchlist(w.id)}>
+                      <Button
+                        key={w.id}
+                        variant="ghost"
+                        className="justify-start"
+                        onClick={() => handleSaveToWatchlist(w.id)}
+                      >
                         {w.name}
                       </Button>
                     ))}
@@ -712,7 +719,10 @@ export function ForgeModelTab({
                       className="w-full"
                     />
                     <div className="flex gap-2 mt-2">
-                      <Button onClick={() => handleSaveToWatchlist(saveNewWatchlistName)} className="flex-1">
+                      <Button
+                        onClick={() => handleSaveToWatchlist(saveNewWatchlistName)}
+                        className="flex-1"
+                      >
                         Save
                       </Button>
                       <Button
