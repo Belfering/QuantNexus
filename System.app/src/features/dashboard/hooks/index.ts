@@ -8,3 +8,9 @@ export {
   type UseDashboardInvestmentsParams,
   type UseDashboardInvestmentsResult,
 } from './useDashboardInvestments'
+
+export {
+  useAlpacaPortfolio,
+  type UseAlpacaPortfolioParams,
+  type UseAlpacaPortfolioResult,
+} from './useAlpacaPortfolio'

@@ -246,3 +246,57 @@ export async function submitLimitBuy(client, symbol, qty, limitPrice) {
     status: order.status,
   }
 }
+
+/**
+ * Get portfolio value history for equity chart
+ * @param {Alpaca} client - Alpaca client instance
+ * @param {string} period - Time period: '1D', '1W', '1M', '3M', '6M', '1Y', 'ALL'
+ * @returns {Promise<Array>} Array of { timestamp, equity, profitLoss, profitLossPct }
+ */
+export async function getPortfolioHistory(client, period = '1M') {
+  // Map period to Alpaca parameters
+  const periodMap = {
+    '1D': { period: '1D', timeframe: '5Min' },
+    '1W': { period: '1W', timeframe: '15Min' },
+    '1M': { period: '1M', timeframe: '1D' },
+    '3M': { period: '3M', timeframe: '1D' },
+    '6M': { period: '6M', timeframe: '1D' },
+    'YTD': { period: '1A', timeframe: '1D' },
+    '1Y': { period: '1A', timeframe: '1D' },
+    'ALL': { period: 'all', timeframe: '1D' },
+  }
+
+  const params = periodMap[period] || periodMap['1M']
+
+  try {
+    const history = await client.getPortfolioHistory({
+      period: params.period,
+      timeframe: params.timeframe,
+      extended_hours: false,
+    })
+
+    // History returns { timestamp[], equity[], profit_loss[], profit_loss_pct[] }
+    const result = []
+    const timestamps = history.timestamp || []
+    const equities = history.equity || []
+    const profitLoss = history.profit_loss || []
+    const profitLossPct = history.profit_loss_pct || []
+
+    for (let i = 0; i < timestamps.length; i++) {
+      // Skip null values (weekend gaps)
+      if (equities[i] != null) {
+        result.push({
+          timestamp: timestamps[i] * 1000, // Convert to milliseconds
+          equity: equities[i],
+          profitLoss: profitLoss[i] || 0,
+          profitLossPct: profitLossPct[i] || 0,
+        })
+      }
+    }
+
+    return result
+  } catch (error) {
+    console.error('[alpaca] Failed to get portfolio history:', error.message)
+    return []
+  }
+}

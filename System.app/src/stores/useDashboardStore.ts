@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DashboardTimePeriod, DashboardPortfolio } from '@/types'
+import type { DashboardTimePeriod, DashboardPortfolio, AlpacaAccount, AlpacaPosition, AlpacaHistoryPoint, BotInvestment, PositionLedgerEntry, UnallocatedPosition } from '@/types'
 import { defaultDashboardPortfolio } from '@/types'
 
 // React-style SetStateAction type for useState compatibility
@@ -39,6 +39,20 @@ interface DashboardState {
   dashboardBuyMoreAmount: string
   dashboardBuyMoreMode: BuySellMode
 
+  // Alpaca/Paper Trading state
+  alpacaBrokerStatus: { hasCredentials: boolean; isPaper: boolean; isConnected: boolean } | null
+  alpacaAccount: AlpacaAccount | null
+  alpacaPositions: AlpacaPosition[]
+  alpacaHistory: AlpacaHistoryPoint[]
+  alpacaLoading: boolean
+  alpacaError: string | null
+  alpacaLastRefresh: number | null
+
+  // Bot investments and position attribution (for live/paper trading)
+  botInvestments: BotInvestment[]
+  positionLedger: PositionLedgerEntry[]
+  unallocatedPositions: UnallocatedPosition[]
+
   // Community state (from useCommunityState.ts)
   communityTopSort: CommunitySort
   communitySearchFilters: CommunitySearchFilter[]
@@ -62,6 +76,20 @@ interface DashboardState {
   setDashboardBuyMoreBotId: (dataOrFn: SetStateAction<string | null>) => void
   setDashboardBuyMoreAmount: (dataOrFn: SetStateAction<string>) => void
   setDashboardBuyMoreMode: (dataOrFn: SetStateAction<BuySellMode>) => void
+
+  // Alpaca/Paper Trading actions
+  setAlpacaBrokerStatus: (status: { hasCredentials: boolean; isPaper: boolean; isConnected: boolean } | null) => void
+  setAlpacaAccount: (account: AlpacaAccount | null) => void
+  setAlpacaPositions: (positions: AlpacaPosition[]) => void
+  setAlpacaHistory: (history: AlpacaHistoryPoint[]) => void
+  setAlpacaLoading: (loading: boolean) => void
+  setAlpacaError: (error: string | null) => void
+  setAlpacaLastRefresh: (timestamp: number | null) => void
+
+  // Bot investment and position attribution actions
+  setBotInvestments: (investments: BotInvestment[]) => void
+  setPositionLedger: (ledger: PositionLedgerEntry[]) => void
+  setUnallocatedPositions: (positions: UnallocatedPosition[]) => void
 
   // Community actions - support both direct values and callbacks
   setCommunityTopSort: (dataOrFn: SetStateAction<CommunitySort>) => void
@@ -105,6 +133,20 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   dashboardBuyMoreAmount: '',
   dashboardBuyMoreMode: '$',
 
+  // Initial state - Alpaca/Paper Trading
+  alpacaBrokerStatus: null,
+  alpacaAccount: null,
+  alpacaPositions: [],
+  alpacaHistory: [],
+  alpacaLoading: false,
+  alpacaError: null,
+  alpacaLastRefresh: null,
+
+  // Initial state - Bot investments and position attribution
+  botInvestments: [],
+  positionLedger: [],
+  unallocatedPositions: [],
+
   // Initial state - Community
   communityTopSort: { key: 'oosCagr', dir: 'desc' },
   communitySearchFilters: [{ id: 'filter-0', mode: 'builder', comparison: 'greater', value: '' }],
@@ -128,6 +170,20 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   setDashboardBuyMoreBotId: (dataOrFn) => handleSetState(set, 'dashboardBuyMoreBotId', dataOrFn),
   setDashboardBuyMoreAmount: (dataOrFn) => handleSetState(set, 'dashboardBuyMoreAmount', dataOrFn),
   setDashboardBuyMoreMode: (dataOrFn) => handleSetState(set, 'dashboardBuyMoreMode', dataOrFn),
+
+  // Alpaca/Paper Trading actions
+  setAlpacaBrokerStatus: (status) => set({ alpacaBrokerStatus: status }),
+  setAlpacaAccount: (account) => set({ alpacaAccount: account }),
+  setAlpacaPositions: (positions) => set({ alpacaPositions: positions }),
+  setAlpacaHistory: (history) => set({ alpacaHistory: history }),
+  setAlpacaLoading: (loading) => set({ alpacaLoading: loading }),
+  setAlpacaError: (error) => set({ alpacaError: error }),
+  setAlpacaLastRefresh: (timestamp) => set({ alpacaLastRefresh: timestamp }),
+
+  // Bot investment and position attribution actions
+  setBotInvestments: (investments) => set({ botInvestments: investments }),
+  setPositionLedger: (ledger) => set({ positionLedger: ledger }),
+  setUnallocatedPositions: (positions) => set({ unallocatedPositions: positions }),
 
   // Community actions
   setCommunityTopSort: (dataOrFn) => handleSetState(set, 'communityTopSort', dataOrFn),
@@ -156,6 +212,18 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       communitySearchFilters: [{ id: 'filter-0', mode: 'builder', comparison: 'greater', value: '' }],
       communitySearchSort: { key: 'oosCagr', dir: 'desc' },
       atlasSort: { key: 'oosCagr', dir: 'desc' },
+      // Alpaca state reset
+      alpacaBrokerStatus: null,
+      alpacaAccount: null,
+      alpacaPositions: [],
+      alpacaHistory: [],
+      alpacaLoading: false,
+      alpacaError: null,
+      alpacaLastRefresh: null,
+      // Bot investment state reset
+      botInvestments: [],
+      positionLedger: [],
+      unallocatedPositions: [],
     })
   },
 }))

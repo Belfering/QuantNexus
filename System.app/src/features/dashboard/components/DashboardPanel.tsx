@@ -25,6 +25,8 @@ import type {
 import type { BotReturnSeries } from '../types'
 import type { InvestmentWithPnl } from '../hooks/useDashboardInvestments'
 import type { UTCTimestamp } from 'lightweight-charts'
+import type { PortfolioMode } from '@/types'
+import { useAlpacaPortfolio } from '../hooks'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -171,6 +173,19 @@ export function DashboardPanel(props: DashboardPanelProps) {
     setDashboardBuyMoreMode,
   } = useDashboardStore()
 
+  // Portfolio mode from UI state (persisted)
+  const portfolioMode: PortfolioMode = uiState.portfolioMode || 'simulated'
+  const setPortfolioMode = (mode: PortfolioMode) => {
+    setUiState((prev) => ({ ...prev, portfolioMode: mode }))
+  }
+
+  // Alpaca/Paper Trading hook - always enabled so we can check if credentials exist
+  const alpaca = useAlpacaPortfolio({
+    portfolioMode,
+    timePeriod: dashboardTimePeriod,
+    enabled: true, // Always enabled to check broker status for toggle button
+  })
+
   // Derived: watchlists by bot ID
   const watchlistsByBotId = useMemo(() => {
     const map = new Map<string, Watchlist[]>()
@@ -187,6 +202,15 @@ export function DashboardPanel(props: DashboardPanelProps) {
   // Memoize current time to avoid impure Date.now() calls during render
   // eslint-disable-next-line react-hooks/purity -- Date.now() is intentionally captured once at mount
   const now = useMemo(() => Date.now(), [])
+
+  // Convert Alpaca history to chart format
+  const alpacaEquityCurve = useMemo((): EquityCurvePoint[] => {
+    if (!alpaca.history || alpaca.history.length === 0) return []
+    return alpaca.history.map((h) => ({
+      time: Math.floor(h.timestamp / 1000) as UTCTimestamp, // Convert ms to seconds
+      value: h.equity,
+    }))
+  }, [alpaca.history])
 
   return (
     <Card className="h-full flex flex-col overflow-hidden m-4">
@@ -205,35 +229,40 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
         {dashboardSubtab === 'Portfolio' ? (
           <div className="mt-3 flex flex-col gap-4">
-            {/* 6 Stat Bubbles - Using Dashboard Portfolio */}
+            {/* 6 Stat Bubbles - Alpaca Data (Live or Paper) */}
             <div className="grid grid-cols-6 gap-3">
               <Card className="p-3 text-center">
-                <div className="text-[10px] font-bold text-muted">Account Value</div>
-                <div className="text-lg font-black">{formatUsd(dashboardTotalValue)}</div>
+                <div className="text-[10px] font-bold text-muted">Equity</div>
+                <div className="text-lg font-black">{alpaca.account ? formatUsd(alpaca.account.equity) : '—'}</div>
               </Card>
               <Card className="p-3 text-center">
-                <div className="text-[10px] font-bold text-muted">Cash Available</div>
-                <div className="text-lg font-black">{formatUsd(dashboardCash)}</div>
+                <div className="text-[10px] font-bold text-muted">Cash</div>
+                <div className="text-lg font-black">{alpaca.account ? formatUsd(alpaca.account.cash) : '—'}</div>
               </Card>
               <Card className="p-3 text-center">
-                <div className="text-[10px] font-bold text-muted">Total PnL ($)</div>
-                <div className={cn("text-lg font-black", dashboardTotalPnl >= 0 ? 'text-success' : 'text-danger')}>
-                  {formatSignedUsd(dashboardTotalPnl)}
+                <div className="text-[10px] font-bold text-muted">Unrealized P&L</div>
+                {(() => {
+                  const totalPl = alpaca.positions.reduce((sum, p) => sum + p.unrealizedPl, 0)
+                  return (
+                    <div className={cn("text-lg font-black", totalPl >= 0 ? 'text-success' : 'text-danger')}>
+                      {formatSignedUsd(totalPl)}
+                    </div>
+                  )
+                })()}
+              </Card>
+              <Card className="p-3 text-center">
+                <div className="text-[10px] font-bold text-muted">Buying Power</div>
+                <div className="text-lg font-black">{alpaca.account ? formatUsd(alpaca.account.buyingPower) : '—'}</div>
+              </Card>
+              <Card className="p-3 text-center">
+                <div className="text-[10px] font-bold text-muted">Market Value</div>
+                <div className="text-lg font-black">
+                  {formatUsd(alpaca.positions.reduce((sum, p) => sum + p.marketValue, 0))}
                 </div>
-              </Card>
-              <Card className="p-3 text-center">
-                <div className="text-[10px] font-bold text-muted">Total PnL (%)</div>
-                <div className={cn("text-lg font-black", dashboardTotalPnlPct >= 0 ? 'text-success' : 'text-danger')}>
-                  {dashboardTotalPnlPct >= 0 ? '+' : ''}{dashboardTotalPnlPct.toFixed(2)}%
-                </div>
-              </Card>
-              <Card className="p-3 text-center">
-                <div className="text-[10px] font-bold text-muted">Invested</div>
-                <div className="text-lg font-black">{formatUsd(dashboardTotalValue - dashboardCash)}</div>
               </Card>
               <Card className="p-3 text-center">
                 <div className="text-[10px] font-bold text-muted">Positions</div>
-                <div className="text-lg font-black">{dashboardInvestmentsWithPnl.length}</div>
+                <div className="text-lg font-black">{alpaca.positions.length}</div>
               </Card>
             </div>
 
@@ -242,19 +271,39 @@ export function DashboardPanel(props: DashboardPanelProps) {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-4">
                   <div className="font-black">Portfolio Performance</div>
-                  {/* Legend for bot lines */}
-                  <div className="flex items-center gap-3 text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-0.5 rounded" style={{ backgroundColor: '#3b82f6' }} />
-                      <span className="text-muted font-bold">Portfolio</span>
-                    </div>
-                    {dashboardBotSeries.map((bot) => (
-                      <div key={bot.id} className="flex items-center gap-1.5">
-                        <div className="w-3 h-0.5 rounded" style={{ backgroundColor: bot.color }} />
-                        <span className="text-muted font-bold">{bot.name}</span>
-                      </div>
-                    ))}
+                  {/* Mode Toggle - Live vs Paper Trading */}
+                  <div className="flex gap-1 bg-muted/30 rounded-lg p-1">
+                    <Button
+                      size="sm"
+                      variant={portfolioMode === 'live' ? 'accent' : 'ghost'}
+                      className="h-6 px-3 text-xs"
+                      onClick={() => setPortfolioMode('live')}
+                    >
+                      Live
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={portfolioMode === 'paper' ? 'accent' : 'ghost'}
+                      className="h-6 px-3 text-xs"
+                      onClick={() => setPortfolioMode('paper')}
+                    >
+                      Paper
+                    </Button>
                   </div>
+                  {/* Connection status indicator */}
+                  {(portfolioMode === 'paper' || portfolioMode === 'live') && (
+                    <div className={cn(
+                      "flex items-center gap-1.5 text-xs",
+                      alpaca.isConnected ? "text-emerald-500" : "text-amber-500"
+                    )}>
+                      <div className={cn(
+                        "w-2 h-2 rounded-full",
+                        alpaca.isConnected ? "bg-emerald-500" : "bg-amber-500",
+                        alpaca.isLoading && "animate-pulse"
+                      )} />
+                      {alpaca.isLoading ? 'Loading...' : alpaca.isConnected ? 'Connected' : 'Disconnected'}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-1">
                   {(['1D', '1W', '1M', '3M', '6M', 'YTD', '1Y', 'ALL'] as DashboardTimePeriod[]).map((period) => (
@@ -271,16 +320,566 @@ export function DashboardPanel(props: DashboardPanelProps) {
                 </div>
               </div>
               <DashboardEquityChart
-                portfolioData={dashboardEquityCurve}
-                botSeries={dashboardBotSeries}
+                portfolioData={alpacaEquityCurve}
+                botSeries={[]}
                 theme={uiState.theme}
               />
             </Card>
 
             {/* Bottom Zone: Buy System + Invested Systems (left 2/3) | Portfolio Allocation (right 1/3) */}
             <div className="grid grid-cols-3 gap-4">
-              {/* Left Panel: Buy System + Systems Invested In (2/3 width) */}
+              {/* Left Panel: Alpaca Positions (Live or Paper) */}
               <Card className="col-span-2 p-4">
+                {(portfolioMode === 'paper' || portfolioMode === 'live') ? (
+                  /* Live/Paper Trading Mode - Show Unallocated, Buy System, and Invested Systems */
+                  (() => {
+                    // Calculate total invested (dollar amounts only) to show adjusted available cash
+                    const totalInvestedDollars = alpaca.investments
+                      .filter(inv => inv.weightMode === 'dollars')
+                      .reduce((sum, inv) => sum + inv.investmentAmount, 0)
+
+                    // Available cash = Alpaca cash minus reserved investment amounts
+                    const availableCash = (alpaca.account?.cash ?? 0) - totalInvestedDollars
+
+                    return (
+                  <>
+                    {/* Section 1: Unallocated Positions (positions not attributed to any bot - never traded by scheduler) */}
+                    {alpaca.unallocatedPositions.length > 0 && (
+                      <>
+                        <div className="font-black mb-3">
+                          Unallocated Positions ({alpaca.unallocatedPositions.length})
+                          <span className="text-xs font-normal text-muted ml-2">(not traded by scheduler)</span>
+                        </div>
+                        <div className="flex flex-col gap-2 mb-4">
+                          {/* Header row */}
+                          <div className="grid grid-cols-6 gap-2 text-xs text-muted font-bold px-2">
+                            <div>Symbol</div>
+                            <div className="text-right">Qty</div>
+                            <div className="text-right">Avg Price</div>
+                            <div className="text-right">Current</div>
+                            <div className="text-right">Market Value</div>
+                            <div className="text-right">Unrealized P&L</div>
+                          </div>
+                          {/* Position rows */}
+                          {alpaca.unallocatedPositions.map((pos) => (
+                            <div key={pos.symbol} className="grid grid-cols-6 gap-2 text-sm px-2 py-1.5 rounded bg-muted/20">
+                              <div className="font-bold">{pos.symbol}</div>
+                              <div className="text-right">{pos.unallocatedQty}</div>
+                              <div className="text-right">{formatUsd(pos.avgEntryPrice)}</div>
+                              <div className="text-right">{formatUsd(pos.currentPrice)}</div>
+                              <div className="text-right">{formatUsd(pos.unallocatedQty * pos.currentPrice)}</div>
+                              <div className={cn("text-right font-bold", pos.unrealizedPl >= 0 ? 'text-success' : 'text-danger')}>
+                                {formatSignedUsd((pos.currentPrice - pos.avgEntryPrice) * pos.unallocatedQty)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="border-t border-border my-3" />
+                      </>
+                    )}
+
+                    {/* Section 2: Buy System (using Alpaca cash) */}
+                    <div className="font-black mb-3">Buy System</div>
+                    <div className="grid gap-2 mb-4">
+                      {/* Cash available line */}
+                      <div className="text-sm">
+                        <span className="text-muted">Cash Available:</span>{' '}
+                        <span className="font-bold">{formatUsd(availableCash)}</span>
+                        {totalInvestedDollars > 0 && (
+                          <span className="text-muted ml-2">(${formatUsd(totalInvestedDollars).replace('$', '')} reserved for investments)</span>
+                        )}
+                        {dashboardBuyMode === '%' && dashboardBuyAmount && (
+                          <span className="text-muted"> · Amount: {formatUsd((parseFloat(dashboardBuyAmount) / 100) * availableCash)}</span>
+                        )}
+                      </div>
+
+                      {/* Buy button, $/% toggle, amount input */}
+                      <div className="flex gap-2 items-center">
+                        <Button
+                          onClick={async () => {
+                            if (!dashboardBuyBotId || !dashboardBuyAmount) return
+                            const amount = dashboardBuyMode === '%'
+                              ? (parseFloat(dashboardBuyAmount) / 100) * availableCash
+                              : parseFloat(dashboardBuyAmount)
+                            if (amount > availableCash) {
+                              console.warn('[Dashboard] Investment amount exceeds available cash')
+                              return
+                            }
+                            const success = await alpaca.addInvestment(dashboardBuyBotId, amount, dashboardBuyMode === '%' ? 'percent' : 'dollars')
+                            if (success) {
+                              setDashboardBuyBotId('')
+                              setDashboardBuyBotSearch('')
+                              setDashboardBuyAmount('')
+                            }
+                          }}
+                          disabled={!dashboardBuyBotId || !dashboardBuyAmount || !alpaca.isConnected || availableCash <= 0}
+                          className="h-8 px-4"
+                        >
+                          Invest
+                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant={dashboardBuyMode === '$' ? 'accent' : 'outline'}
+                            className="h-8 w-8 p-0"
+                            onClick={() => setDashboardBuyMode('$')}
+                          >
+                            $
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={dashboardBuyMode === '%' ? 'accent' : 'outline'}
+                            className="h-8 w-8 p-0"
+                            onClick={() => setDashboardBuyMode('%')}
+                          >
+                            %
+                          </Button>
+                        </div>
+                        <Input
+                          type="number"
+                          placeholder={dashboardBuyMode === '$' ? 'Amount' : '% of cash'}
+                          value={dashboardBuyAmount}
+                          onChange={(e) => setDashboardBuyAmount(e.target.value)}
+                          className="h-8 flex-1"
+                        />
+                      </div>
+
+                      {/* System selector with search */}
+                      <div className="relative">
+                        <Input
+                          type="text"
+                          placeholder="Search and select a system..."
+                          value={dashboardBuyBotSearch}
+                          onChange={(e) => {
+                            setDashboardBuyBotSearch(e.target.value)
+                            setDashboardBuyBotDropdownOpen(true)
+                          }}
+                          onFocus={() => setDashboardBuyBotDropdownOpen(true)}
+                          className="h-8 w-full"
+                        />
+                        {dashboardBuyBotDropdownOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-[199]"
+                              onClick={() => setDashboardBuyBotDropdownOpen(false)}
+                            />
+                            <div className="absolute top-full left-0 right-0 z-[200] mt-1 max-h-48 overflow-y-auto bg-card border border-border rounded-md shadow-lg">
+                              {(() => {
+                                // Filter out bots already invested in
+                                const investedBotIds = new Set(alpaca.investments.map(inv => inv.botId))
+                                const availableBots = eligibleBots.filter(
+                                  (bot) => !investedBotIds.has(bot.id)
+                                )
+                                const searchLower = dashboardBuyBotSearch.toLowerCase()
+                                const filteredBots = availableBots.filter(
+                                  (bot) =>
+                                    bot.name.toLowerCase().includes(searchLower) ||
+                                    bot.tags?.some((t) => t.toLowerCase().includes(searchLower))
+                                )
+
+                                if (filteredBots.length === 0) {
+                                  return (
+                                    <div className="px-3 py-2 text-sm text-muted">
+                                      {availableBots.length === 0
+                                        ? 'No eligible systems available'
+                                        : 'No matching systems found'}
+                                    </div>
+                                  )
+                                }
+
+                                return filteredBots.map((bot) => (
+                                  <div
+                                    key={bot.id}
+                                    className={cn(
+                                      'px-3 py-2 text-sm cursor-pointer hover:bg-muted/50',
+                                      dashboardBuyBotId === bot.id && 'bg-muted'
+                                    )}
+                                    onClick={() => {
+                                      setDashboardBuyBotId(bot.id)
+                                      setDashboardBuyBotSearch(bot.name)
+                                      setDashboardBuyBotDropdownOpen(false)
+                                    }}
+                                  >
+                                    <div className="font-bold">{bot.name}</div>
+                                    {bot.tags && bot.tags.length > 0 && (
+                                      <div className="text-xs text-muted">{bot.tags.join(', ')}</div>
+                                    )}
+                                  </div>
+                                ))
+                              })()}
+                            </div>
+                          </>
+                        )}
+                        {dashboardBuyBotId && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0 text-muted hover:text-foreground"
+                            onClick={() => {
+                              setDashboardBuyBotId('')
+                              setDashboardBuyBotSearch('')
+                            }}
+                          >
+                            ×
+                          </Button>
+                        )}
+                      </div>
+
+                      {eligibleBots.length === 0 && (
+                        <div className="text-xs text-muted">
+                          No eligible systems. Your private systems or systems tagged "Atlas"/"Nexus" will appear here.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="border-t border-border my-3" />
+
+                    {/* Section 3: Systems Invested In - Full expandable cards like simulated mode */}
+                    <div className="font-black mb-3">Systems Invested In ({alpaca.investments.length})</div>
+                    {alpaca.investments.length === 0 ? (
+                      <div className="text-muted text-center py-4">No investments yet. Use "Buy System" above to invest in a trading bot.</div>
+                    ) : (
+                      <div className="flex flex-col gap-2.5">
+                        {alpaca.investments.map((inv, idx) => {
+                          // Find bot info
+                          const b = savedBots.find((bot) => bot.id === inv.botId) ?? allNexusBots.find((bot) => bot.id === inv.botId)
+                          const botColor = BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length]
+                          const isExpanded = dashboardBotExpanded[inv.botId] ?? false
+                          const isBuyingMore = dashboardBuyMoreBotId === inv.botId
+                          const analyzeState = analyzeBacktests[inv.botId]
+                          const wlTags = watchlistsByBotId.get(inv.botId) ?? []
+
+                          // Get positions attributed to this bot from ledger
+                          const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
+                          const hasPositions = botPositions.length > 0
+
+                          // Calculate P&L from actual Alpaca positions (position-based)
+                          const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
+                          const currentValue = botPositions.reduce((sum, l) => {
+                            const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                            return sum + (pos ? l.shares * pos.currentPrice : 0)
+                          }, 0)
+
+                          // If no positions yet, use investment amount as placeholder
+                          const displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
+                          const displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
+                          const pnl = displayCurrentValue - displayCostBasis
+                          const pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
+
+                          // Calculate allocation as percentage of total portfolio
+                          const totalEquity = alpaca.account?.equity ?? 0
+                          const allocation = totalEquity > 0 ? (displayCurrentValue / totalEquity) * 100 : 0
+
+                          // Use anonymized display name for Nexus bots from other users
+                          const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
+                          const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
+                          const displayName = b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
+                            ? `${builderName}'s Fund #${fundSlot}`
+                            : b?.tags?.includes('Nexus') && b?.builderId !== userId
+                              ? `${builderName}'s Fund`
+                              : inv.botName || b?.name || inv.botId
+
+                          const toggleCollapse = () => {
+                            const next = !isExpanded
+                            setDashboardBotExpanded((prev) => ({ ...prev, [inv.botId]: next }))
+                            // Run backtest if expanding and not already done
+                            if (next && b) {
+                              if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
+                                runAnalyzeBacktest(b)
+                              }
+                            }
+                          }
+
+                          return (
+                            <Card key={inv.botId} className="grid gap-2.5">
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: botColor }} />
+                                <Button variant="ghost" size="sm" onClick={toggleCollapse}>
+                                  {isExpanded ? 'Collapse' : 'Expand'}
+                                </Button>
+                                <div className="font-black">{displayName}</div>
+                                <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
+                                  {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
+                                </Badge>
+                                {/* Investment amount badge */}
+                                <Badge variant="accent" className="text-xs">
+                                  {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                </Badge>
+                                {/* Pending status badge when no positions yet */}
+                                {!hasPositions && (
+                                  <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
+                                    Pending - Next Trade Window
+                                  </Badge>
+                                )}
+                                {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
+                                <div className="flex gap-1.5 flex-wrap">
+                                  {wlTags.map((w) => (
+                                    <Badge key={w.id} variant="accent" className="gap-1.5">
+                                      {w.name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                                <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+                                  {/* Show P&L only if we have positions */}
+                                  {hasPositions && (
+                                    <>
+                                      <div className="text-sm text-muted">
+                                        {formatUsd(displayCostBasis)} → {formatUsd(displayCurrentValue)}
+                                      </div>
+                                      <div className={cn("font-bold min-w-[80px] text-right", pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                        {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                                      </div>
+                                    </>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
+                                    }}
+                                  >
+                                    Buy More
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => alpaca.removeInvestment(inv.botId)}
+                                  >
+                                    Remove
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Buy More inline form */}
+                              {isBuyingMore && (
+                                <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
+                                  <div className="flex gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                      className="h-8 w-8 p-0"
+                                      onClick={() => setDashboardBuyMoreMode('$')}
+                                    >
+                                      $
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                      className="h-8 w-8 p-0"
+                                      onClick={() => setDashboardBuyMoreMode('%')}
+                                    >
+                                      %
+                                    </Button>
+                                  </div>
+                                  <Input
+                                    type="number"
+                                    placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                    value={dashboardBuyMoreAmount}
+                                    onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                    className="h-8 w-32"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    onClick={async () => {
+                                      const amount = dashboardBuyMoreMode === '%'
+                                        ? (parseFloat(dashboardBuyMoreAmount) / 100) * availableCash
+                                        : parseFloat(dashboardBuyMoreAmount)
+                                      if (isNaN(amount) || amount <= 0) return
+                                      if (amount > availableCash) {
+                                        console.warn('[Dashboard] Buy More amount exceeds available cash')
+                                        return
+                                      }
+                                      const success = await alpaca.addInvestment(inv.botId, inv.investmentAmount + amount, 'dollars')
+                                      if (success) {
+                                        setDashboardBuyMoreBotId(null)
+                                        setDashboardBuyMoreAmount('')
+                                      }
+                                    }}
+                                  >
+                                    Buy More
+                                  </Button>
+                                  <span className="text-sm text-muted">Cash: {formatUsd(availableCash)}</span>
+                                </div>
+                              )}
+
+                              {/* Expanded view - same format as simulated mode */}
+                              {isExpanded && !isBuyingMore && (
+                                <div className="flex flex-col gap-2.5 w-full">
+                                  <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
+                                    {analyzeState?.status === 'loading' ? (
+                                      <div className="text-muted">Running backtest…</div>
+                                    ) : analyzeState?.status === 'error' ? (
+                                      <div className="grid gap-2">
+                                        <div className="text-muted">{analyzeState.error ?? 'Failed to run backtest.'}</div>
+                                        {b?.payload && <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>}
+                                      </div>
+                                    ) : analyzeState?.status === 'done' ? (
+                                      <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
+                                        {/* Live Stats - show pending message or actual stats */}
+                                        <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                          <div className="font-black mb-2 text-center">Live Stats</div>
+                                          {hasPositions ? (
+                                            <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
+                                              <div>
+                                                <div className="stat-label">Allocation</div>
+                                                <div className="stat-value">{allocation.toFixed(1)}%</div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Cost Basis</div>
+                                                <div className="stat-value">{formatUsd(displayCostBasis)}</div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Current Value</div>
+                                                <div className="stat-value">{formatUsd(displayCurrentValue)}</div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">P&L</div>
+                                                <div className={cn("stat-value", pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                  {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="text-muted text-sm py-2">
+                                              Trades will execute at next scheduled window. Investment: {formatUsd(inv.investmentAmount)}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {/* Backtest Snapshot - shows what the bot WILL trade */}
+                                        <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                          <div className="w-full">
+                                            <div className="font-black mb-1.5">Backtest Snapshot</div>
+                                            <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
+                                            <div className="w-full max-w-full overflow-hidden">
+                                              <EquityChart
+                                                points={analyzeState.result?.points ?? []}
+                                                benchmarkPoints={analyzeState.result?.benchmarkPoints}
+                                                markers={analyzeState.result?.markers ?? []}
+                                                logScale
+                                                showCursorStats={false}
+                                                heightPx={390}
+                                                theme={uiState.theme}
+                                              />
+                                            </div>
+                                            <div className="mt-2.5 w-full">
+                                              <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Historical Stats */}
+                                        <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                          <div className="w-full">
+                                            <div className="font-black mb-2">Historical Stats</div>
+                                            <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
+                                              <div>
+                                                <div className="stat-label">CAGR</div>
+                                                <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Max DD</div>
+                                                <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Calmar Ratio</div>
+                                                <div className="stat-value">
+                                                  {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
+                                                    ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
+                                                    : '--'}
+                                                </div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Sharpe Ratio</div>
+                                                <div className="stat-value">
+                                                  {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
+                                                    ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                                    : '--'}
+                                                </div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Sortino Ratio</div>
+                                                <div className="stat-value">
+                                                  {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
+                                                    ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
+                                                    : '--'}
+                                                </div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Treynor Ratio</div>
+                                                <div className="stat-value">
+                                                  {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
+                                                    ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
+                                                    : '--'}
+                                                </div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Beta</div>
+                                                <div className="stat-value">
+                                                  {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
+                                                    ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
+                                                    : '--'}
+                                                </div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Volatility</div>
+                                                <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
+                                              </div>
+                                              <div>
+                                                <div className="stat-label">Win Rate</div>
+                                                <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="text-muted">Click Expand to load backtest data.</div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Show attributed positions in collapsed view */}
+                              {!isExpanded && hasPositions && (
+                                <div className="mt-2 pt-2 border-t border-border text-sm">
+                                  <div className="text-xs text-muted mb-1">Positions:</div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {botPositions.map((l) => {
+                                      const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                                      return (
+                                        <Badge key={l.symbol} variant="default" className="text-xs">
+                                          {l.symbol}: {l.shares} @ {formatUsd(l.avgPrice)}
+                                          {pos && ` → ${formatUsd(pos.currentPrice)}`}
+                                        </Badge>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </Card>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* Last refresh indicator */}
+                    {alpaca.lastRefresh && (
+                      <div className="text-xs text-muted mt-3 pt-2 border-t border-border">
+                        Last updated: {new Date(alpaca.lastRefresh).toLocaleTimeString()}
+                        <Button size="sm" variant="ghost" className="ml-2 h-5 px-2 text-xs" onClick={() => alpaca.refresh()}>
+                          Refresh
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                    );
+                  })()
+                ) : (
+                  /* Simulated Mode - Show bot investments */
+                  <>
                 {/* Buy System Section */}
                 <div className="font-black mb-3">Buy System</div>
                 <div className="grid gap-2 mb-4">
@@ -725,11 +1324,117 @@ export function DashboardPanel(props: DashboardPanelProps) {
                     })}
                   </div>
                 )}
+                  </>
+                )}
               </Card>
 
               {/* Right Panel: Portfolio Allocation Pie Chart */}
               <Card className="p-4">
                 <div className="font-black mb-3">Portfolio Allocation</div>
+                {(portfolioMode === 'paper' || portfolioMode === 'live') ? (
+                  /* Live/Paper Trading Mode - Show Alpaca position allocation */
+                  <div className="flex items-start gap-4">
+                    {/* Pie Chart SVG */}
+                    <svg viewBox="0 0 100 100" className="w-40 h-40 flex-shrink-0">
+                      {(() => {
+                        const totalValue = (alpaca.account?.equity ?? 0)
+                        const cashValue = (alpaca.account?.cash ?? 0)
+                        const cashAlloc = totalValue > 0 ? cashValue / totalValue : 1
+                        const slices: Array<{ color: string; percent: number; label: string }> = []
+
+                        // Add position slices
+                        alpaca.positions.forEach((pos, idx) => {
+                          const pct = totalValue > 0 ? pos.marketValue / totalValue : 0
+                          if (pct > 0) {
+                            slices.push({
+                              color: BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length],
+                              percent: pct,
+                              label: pos.symbol,
+                            })
+                          }
+                        })
+
+                        // Add cash slice
+                        if (cashAlloc > 0) {
+                          slices.push({ color: '#94a3b8', percent: cashAlloc, label: 'Cash' })
+                        }
+
+                        // Draw pie slices
+                        let cumulativePercent = 0
+                        return slices.map((slice, i) => {
+                          const startAngle = cumulativePercent * 360
+                          cumulativePercent += slice.percent
+                          const endAngle = cumulativePercent * 360
+
+                          const startRad = ((startAngle - 90) * Math.PI) / 180
+                          const endRad = ((endAngle - 90) * Math.PI) / 180
+
+                          const x1 = 50 + 45 * Math.cos(startRad)
+                          const y1 = 50 + 45 * Math.sin(startRad)
+                          const x2 = 50 + 45 * Math.cos(endRad)
+                          const y2 = 50 + 45 * Math.sin(endRad)
+
+                          const largeArc = slice.percent > 0.5 ? 1 : 0
+
+                          // Handle full circle case
+                          if (slices.length === 1) {
+                            return (
+                              <circle
+                                key={i}
+                                cx="50"
+                                cy="50"
+                                r="45"
+                                fill={slice.color}
+                              />
+                            )
+                          }
+
+                          return (
+                            <path
+                              key={i}
+                              d={`M 50 50 L ${x1} ${y1} A 45 45 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                              fill={slice.color}
+                            />
+                          )
+                        })
+                      })()}
+                    </svg>
+
+                    {/* Legend */}
+                    <div className="flex-1 grid gap-1.5 text-sm">
+                      {alpaca.positions.map((pos, idx) => {
+                        const totalValue = alpaca.account?.equity ?? 0
+                        const pct = totalValue > 0 ? (pos.marketValue / totalValue) * 100 : 0
+                        return (
+                          <div key={pos.symbol} className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-sm flex-shrink-0"
+                              style={{ backgroundColor: BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length] }}
+                            />
+                            <span className="flex-1 truncate font-bold">{pos.symbol}</span>
+                            <span className="text-muted">{pct.toFixed(1)}%</span>
+                            <span className="font-bold">{formatUsd(pos.marketValue)}</span>
+                          </div>
+                        )
+                      })}
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-sm flex-shrink-0 bg-slate-400" />
+                        <span className="flex-1 font-bold">Cash</span>
+                        <span className="text-muted">
+                          {(alpaca.account?.equity ?? 0) > 0 ? (((alpaca.account?.cash ?? 0) / (alpaca.account?.equity ?? 1)) * 100).toFixed(1) : '100.0'}%
+                        </span>
+                        <span className="font-bold">{formatUsd(alpaca.account?.cash ?? 0)}</span>
+                      </div>
+                      <div className="border-t border-border pt-1.5 mt-1 flex items-center gap-2">
+                        <div className="w-3 h-3" />
+                        <span className="flex-1 font-black">Total</span>
+                        <span className="text-muted">100%</span>
+                        <span className="font-black">{formatUsd(alpaca.account?.equity ?? 0)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Live (Simulated) Mode - Show bot allocation */
                 <div className="flex items-start gap-4">
                   {/* Pie Chart SVG */}
                   <svg viewBox="0 0 100 100" className="w-40 h-40 flex-shrink-0">
@@ -827,6 +1532,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                     </div>
                   </div>
                 </div>
+                )}
               </Card>
             </div>
           </div>

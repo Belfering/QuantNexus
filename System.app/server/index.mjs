@@ -11,6 +11,7 @@ import { encrypt, decrypt } from './utils/crypto.mjs'
 import { validateDisplayName } from './utils/profanity-filter.mjs'
 import { seedAdminUser } from './seed-admin.mjs'
 import * as scheduler from './scheduler.mjs'
+import * as tradingScheduler from './live/trading-scheduler.mjs'
 import { authenticate, requireAdmin, requireSuperAdmin, requireMainAdmin, isSuperAdmin, isMainAdmin, hasAdminAccess, hasEngineerAccess, canChangeUserRole } from './middleware/auth.mjs'
 import * as atlasDb from './db/atlas-db.mjs'
 
@@ -4488,5 +4489,12 @@ app.listen(PORT, async () => {
     tickerDataRoot: TICKER_DATA_ROOT,
     parquetDir: PARQUET_DIR,
     pythonCmd: PYTHON,
+  })
+
+  // Start the trading scheduler (executes at X minutes before market close)
+  tradingScheduler.startTradingScheduler({
+    dbPath: process.env.ATLAS_DB_PATH
+      ? path.join(path.dirname(process.env.ATLAS_DB_PATH), 'atlas.db')
+      : path.join(__dirname, 'data/atlas.db'),
   })
 })

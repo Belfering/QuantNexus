@@ -4,7 +4,7 @@
 import type { ThemeMode, ColorTheme } from './theme'
 import type { SavedBot, Watchlist } from './bot'
 import type { CallChain } from './flowNode'
-import type { DashboardPortfolio } from './dashboard'
+import type { DashboardPortfolio, PortfolioMode } from './dashboard'
 import type { FundZones } from './admin'
 
 export type UserUiState = {
@@ -18,6 +18,7 @@ export type UserUiState = {
   communityWatchlistSlot1Id: string | null
   communityWatchlistSlot2Id: string | null
   fundZones: FundZones
+  portfolioMode: PortfolioMode // 'simulated' or 'paper'
 }
 
 export type UserData = {

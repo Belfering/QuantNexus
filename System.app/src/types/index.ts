@@ -71,6 +71,13 @@ export type {
   DashboardInvestment,
   DashboardPortfolio,
   DbPosition,
+  PortfolioMode,
+  AlpacaAccount,
+  AlpacaPosition,
+  AlpacaHistoryPoint,
+  BotInvestment,
+  PositionLedgerEntry,
+  UnallocatedPosition,
 } from './dashboard'
 export { STARTING_CAPITAL, defaultDashboardPortfolio } from './dashboard'
 

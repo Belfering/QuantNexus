@@ -90,24 +90,46 @@ export function AdminPanel({
   const [syncKilling, setSyncKilling] = useState(false)
 
   // Trading Control state (broker credentials, dry run, live trading)
-  const [brokerCredentials, setBrokerCredentials] = useState<{
+  // Paper Trading credentials
+  const [paperCredentials, setPaperCredentials] = useState<{
     hasCredentials: boolean
-    isPaper: boolean
     baseUrl: string
     updatedAt?: number
   } | null>(null)
-  const [brokerApiKey, setBrokerApiKey] = useState('')
-  const [brokerApiSecret, setBrokerApiSecret] = useState('')
-  const [brokerIsPaper, setBrokerIsPaper] = useState(true)
-  const [brokerSaving, setBrokerSaving] = useState(false)
-  const [brokerTesting, setBrokerTesting] = useState(false)
-  const [brokerAccount, setBrokerAccount] = useState<{
+  const [paperApiKey, setPaperApiKey] = useState('')
+  const [paperApiSecret, setPaperApiSecret] = useState('')
+  const [paperSaving, setPaperSaving] = useState(false)
+  const [paperTesting, setPaperTesting] = useState(false)
+  const [paperAccount, setPaperAccount] = useState<{
     equity: number
     cash: number
     buyingPower: number
     status: string
   } | null>(null)
-  const [brokerError, setBrokerError] = useState<string | null>(null)
+  const [paperError, setPaperError] = useState<string | null>(null)
+
+  // Live Trading credentials
+  const [liveCredentials, setLiveCredentials] = useState<{
+    hasCredentials: boolean
+    baseUrl: string
+    updatedAt?: number
+  } | null>(null)
+  const [liveApiKey, setLiveApiKey] = useState('')
+  const [liveApiSecret, setLiveApiSecret] = useState('')
+  const [liveSaving, setLiveSaving] = useState(false)
+  const [liveTesting, setLiveTesting] = useState(false)
+  const [liveAccount, setLiveAccount] = useState<{
+    equity: number
+    cash: number
+    buyingPower: number
+    status: string
+  } | null>(null)
+  const [liveError, setLiveError] = useState<string | null>(null)
+
+  // Legacy compatibility aliases
+  const brokerCredentials = paperCredentials
+  const brokerAccount = paperAccount
+  const brokerError = paperError || liveError
   const [dryRunCashReserve, setDryRunCashReserve] = useState(0)
   const [dryRunCashMode, setDryRunCashMode] = useState<'dollars' | 'percent'>('dollars')
   const [dryRunResult, setDryRunResult] = useState<{
@@ -417,10 +439,10 @@ export function AdminPanel({
         if (!res.ok) return
         if (cancelled) return
         const data = await res.json()
-        setBrokerCredentials(data)
-        if (data.hasCredentials) {
-          setBrokerIsPaper(data.isPaper)
-        }
+        // Set paper credentials
+        setPaperCredentials(data.paper || { hasCredentials: false, baseUrl: 'https://paper-api.alpaca.markets' })
+        // Set live credentials
+        setLiveCredentials(data.live || { hasCredentials: false, baseUrl: 'https://api.alpaca.markets' })
       } catch {
         // Ignore errors - credentials may not exist yet
       }
@@ -760,6 +782,511 @@ export function AdminPanel({
     }
   }, [])
 
+  // Trading Settings Card Component
+  const TradingSettingsCard = useCallback(() => {
+    const [settings, setSettings] = useState({
+      orderType: 'limit' as 'limit' | 'market',
+      limitPercent: 1.0,
+      maxAllocationPercent: 99.0,
+      fallbackTicker: 'SGOV',
+      cashReserveMode: 'dollars' as 'dollars' | 'percent',
+      cashReserveAmount: 0,
+      minutesBeforeClose: 10,
+      pairedTickers: [] as string[][],
+      enabled: false,
+    })
+    const [schedulerStatus, setSchedulerStatus] = useState<{
+      isRunning: boolean
+      schedulerActive: boolean
+      enabledUserCount: number
+      nextExecutionTime: string
+      isTradingDay: boolean
+    } | null>(null)
+    const [settingsLoading, setSettingsLoading] = useState(true)
+    const [settingsSaving, setSettingsSaving] = useState(false)
+    const [settingsError, setSettingsError] = useState<string | null>(null)
+    const [manualExecuting, setManualExecuting] = useState(false)
+    const [newPair, setNewPair] = useState(['', ''])
+
+    // Fetch settings and scheduler status on mount
+    useEffect(() => {
+      let cancelled = false
+
+      const fetchData = async () => {
+        try {
+          // Fetch trading settings
+          const settingsRes = await fetch(`${API_BASE}/admin/trading/settings`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+          })
+          if (settingsRes.ok) {
+            const data = await settingsRes.json()
+            if (!cancelled) {
+              setSettings({
+                orderType: data.orderType || 'limit',
+                limitPercent: data.limitPercent ?? 1.0,
+                maxAllocationPercent: data.maxAllocationPercent ?? 99.0,
+                fallbackTicker: data.fallbackTicker || 'SGOV',
+                cashReserveMode: data.cashReserveMode || 'dollars',
+                cashReserveAmount: data.cashReserveAmount ?? 0,
+                minutesBeforeClose: data.minutesBeforeClose ?? 10,
+                pairedTickers: data.pairedTickers || [],
+                enabled: data.enabled ?? false,
+              })
+            }
+          }
+
+          // Fetch scheduler status
+          const statusRes = await fetch(`${API_BASE}/admin/trading/scheduler/status`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+          })
+          if (statusRes.ok) {
+            const status = await statusRes.json()
+            if (!cancelled) {
+              setSchedulerStatus(status)
+            }
+          }
+        } catch (e) {
+          if (!cancelled) {
+            setSettingsError(String((e as Error)?.message || e))
+          }
+        } finally {
+          if (!cancelled) {
+            setSettingsLoading(false)
+          }
+        }
+      }
+
+      void fetchData()
+      return () => { cancelled = true }
+    }, [])
+
+    const saveSettings = async () => {
+      setSettingsSaving(true)
+      setSettingsError(null)
+      try {
+        const res = await fetch(`${API_BASE}/admin/trading/settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+          body: JSON.stringify(settings),
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || 'Failed to save settings')
+        }
+      } catch (e) {
+        setSettingsError(String((e as Error)?.message || e))
+      } finally {
+        setSettingsSaving(false)
+      }
+    }
+
+    const triggerManualExecution = async () => {
+      if (!confirm('This will execute trades for ALL enabled users. Continue?')) return
+      setManualExecuting(true)
+      setSettingsError(null)
+      try {
+        const res = await fetch(`${API_BASE}/admin/trading/scheduler/trigger`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getAuthToken()}` },
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to trigger execution')
+        alert(`Execution completed: ${JSON.stringify(data.result?.summary || data.message)}`)
+      } catch (e) {
+        setSettingsError(String((e as Error)?.message || e))
+      } finally {
+        setManualExecuting(false)
+      }
+    }
+
+    const addPairedTicker = () => {
+      if (newPair[0] && newPair[1]) {
+        setSettings(prev => ({
+          ...prev,
+          pairedTickers: [...prev.pairedTickers, [newPair[0].toUpperCase(), newPair[1].toUpperCase()]],
+        }))
+        setNewPair(['', ''])
+      }
+    }
+
+    const removePairedTicker = (index: number) => {
+      setSettings(prev => ({
+        ...prev,
+        pairedTickers: prev.pairedTickers.filter((_, i) => i !== index),
+      }))
+    }
+
+    if (settingsLoading) {
+      return <Card className="p-6"><div className="text-muted-foreground">Loading trading settings...</div></Card>
+    }
+
+    return (
+      <Card className="p-6">
+        <div className="font-bold mb-4 flex items-center gap-2">
+          Trading Settings & Scheduler
+          {settings.enabled && (
+            <span className="px-2 py-0.5 rounded text-xs bg-green-500/20 text-green-500">
+              Enabled
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Configure automated trading execution. The scheduler runs X minutes before market close on trading days.
+        </p>
+
+        {settingsError && (
+          <div className="text-destructive text-sm p-3 bg-destructive/10 rounded-lg mb-4">
+            {settingsError}
+          </div>
+        )}
+
+        {/* Scheduler Status */}
+        {schedulerStatus && (
+          <div className="mb-6 p-4 bg-muted/50 rounded-lg">
+            <div className="grid grid-cols-4 gap-4 text-sm">
+              <div>
+                <div className="text-muted-foreground">Scheduler</div>
+                <div className={`font-bold ${schedulerStatus.schedulerActive ? 'text-green-500' : 'text-muted-foreground'}`}>
+                  {schedulerStatus.schedulerActive ? 'Active' : 'Inactive'}
+                </div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Next Execution</div>
+                <div className="font-bold">{schedulerStatus.nextExecutionTime}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Trading Day</div>
+                <div className={`font-bold ${schedulerStatus.isTradingDay ? 'text-green-500' : 'text-yellow-500'}`}>
+                  {schedulerStatus.isTradingDay ? 'Yes' : 'No (Weekend/Holiday)'}
+                </div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Status</div>
+                <div className={`font-bold ${schedulerStatus.isRunning ? 'text-yellow-500' : 'text-muted-foreground'}`}>
+                  {schedulerStatus.isRunning ? 'Executing...' : 'Idle'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Enable Toggle */}
+        <div className="mb-6 flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.enabled}
+              onChange={(e) => setSettings(prev => ({ ...prev, enabled: e.target.checked }))}
+              className="w-4 h-4"
+            />
+            <span className="text-sm font-medium">Enable Automated Trading</span>
+          </label>
+          <span className="text-xs text-muted-foreground">
+            (When enabled, trades execute automatically at scheduled time)
+          </span>
+        </div>
+
+        {/* Settings Grid */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Minutes Before Close</label>
+            <input
+              type="number"
+              value={settings.minutesBeforeClose}
+              onChange={(e) => setSettings(prev => ({ ...prev, minutesBeforeClose: parseInt(e.target.value) || 10 }))}
+              min={1}
+              max={60}
+              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Order Type</label>
+            <select
+              value={settings.orderType}
+              onChange={(e) => setSettings(prev => ({ ...prev, orderType: e.target.value as 'limit' | 'market' }))}
+              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
+            >
+              <option value="limit">Limit (Safer)</option>
+              <option value="market">Market (Faster)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Limit Price Buffer %</label>
+            <input
+              type="number"
+              value={settings.limitPercent}
+              onChange={(e) => setSettings(prev => ({ ...prev, limitPercent: parseFloat(e.target.value) || 1.0 }))}
+              min={0}
+              max={5}
+              step={0.1}
+              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
+              disabled={settings.orderType !== 'limit'}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Max Allocation %</label>
+            <input
+              type="number"
+              value={settings.maxAllocationPercent}
+              onChange={(e) => setSettings(prev => ({ ...prev, maxAllocationPercent: parseFloat(e.target.value) || 99 }))}
+              min={50}
+              max={100}
+              step={0.5}
+              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Fallback Ticker</label>
+            <input
+              type="text"
+              value={settings.fallbackTicker}
+              onChange={(e) => setSettings(prev => ({ ...prev, fallbackTicker: e.target.value.toUpperCase() }))}
+              placeholder="SGOV"
+              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Cash Reserve</label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={settings.cashReserveAmount}
+                onChange={(e) => setSettings(prev => ({ ...prev, cashReserveAmount: parseFloat(e.target.value) || 0 }))}
+                min={0}
+                className="flex-1 px-3 py-2 rounded border border-border bg-background text-sm"
+              />
+              <select
+                value={settings.cashReserveMode}
+                onChange={(e) => setSettings(prev => ({ ...prev, cashReserveMode: e.target.value as 'dollars' | 'percent' }))}
+                className="w-16 px-2 py-2 rounded border border-border bg-background text-sm"
+              >
+                <option value="dollars">$</option>
+                <option value="percent">%</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Paired Tickers */}
+        <div className="mb-6">
+          <label className="text-sm text-muted-foreground mb-2 block">
+            Paired Tickers (e.g., SPY-SH: if both present, keep higher allocation, remove lower)
+          </label>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {settings.pairedTickers.map((pair, i) => (
+              <span key={i} className="px-2 py-1 bg-muted rounded text-sm flex items-center gap-1">
+                {pair[0]}-{pair[1]}
+                <button onClick={() => removePairedTicker(i)} className="text-destructive hover:text-destructive/80">×</button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newPair[0]}
+              onChange={(e) => setNewPair([e.target.value.toUpperCase(), newPair[1]])}
+              placeholder="SPY"
+              className="w-20 px-2 py-1 rounded border border-border bg-background text-sm"
+            />
+            <span className="text-muted-foreground">-</span>
+            <input
+              type="text"
+              value={newPair[1]}
+              onChange={(e) => setNewPair([newPair[0], e.target.value.toUpperCase()])}
+              placeholder="SH"
+              className="w-20 px-2 py-1 rounded border border-border bg-background text-sm"
+            />
+            <Button size="sm" variant="outline" onClick={addPairedTicker} disabled={!newPair[0] || !newPair[1]}>
+              Add
+            </Button>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-2">
+          <Button onClick={saveSettings} disabled={settingsSaving}>
+            {settingsSaving ? 'Saving...' : 'Save Settings'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={triggerManualExecution}
+            disabled={manualExecuting || !settings.enabled}
+          >
+            {manualExecuting ? 'Executing...' : 'Execute Now'}
+          </Button>
+        </div>
+      </Card>
+    )
+  }, [])
+
+  // Trade Execution History Component
+  const TradeExecutionHistory = useCallback(() => {
+    const [executions, setExecutions] = useState<Array<{
+      id: number
+      executionDate: string
+      status: string
+      targetAllocations: Record<string, number>
+      executedOrders: Array<{ symbol: string; side: string; qty: number; success: boolean }>
+      errors: string[]
+      createdAt: number
+    }>>([])
+    const [historyMode, setHistoryMode] = useState<'paper' | 'live'>('paper')
+    const [historyLoading, setHistoryLoading] = useState(true)
+    const [expandedExecution, setExpandedExecution] = useState<number | null>(null)
+
+    useEffect(() => {
+      let cancelled = false
+
+      const fetchExecutions = async () => {
+        setHistoryLoading(true)
+        try {
+          const res = await fetch(`${API_BASE}/admin/trading/executions?mode=${historyMode}&limit=20`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (!cancelled) {
+              setExecutions(data.executions || [])
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch executions:', e)
+        } finally {
+          if (!cancelled) {
+            setHistoryLoading(false)
+          }
+        }
+      }
+
+      void fetchExecutions()
+      return () => { cancelled = true }
+    }, [historyMode])
+
+    return (
+      <Card className="p-6">
+        <div className="font-bold mb-4 flex items-center gap-4">
+          Trade Execution History
+          <div className="flex gap-2">
+            <button
+              className={`px-3 py-1 rounded text-sm ${historyMode === 'paper' ? 'bg-yellow-500/20 text-yellow-500' : 'bg-muted text-muted-foreground'}`}
+              onClick={() => setHistoryMode('paper')}
+            >
+              Paper
+            </button>
+            <button
+              className={`px-3 py-1 rounded text-sm ${historyMode === 'live' ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}`}
+              onClick={() => setHistoryMode('live')}
+            >
+              Live
+            </button>
+          </div>
+        </div>
+
+        {historyLoading ? (
+          <div className="text-muted-foreground">Loading execution history...</div>
+        ) : executions.length === 0 ? (
+          <div className="text-muted-foreground">No {historyMode} executions yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {executions.map(exec => (
+              <div key={exec.id} className="border border-border rounded-lg overflow-hidden">
+                <button
+                  className="w-full p-4 flex items-center justify-between hover:bg-muted/50 text-left"
+                  onClick={() => setExpandedExecution(expandedExecution === exec.id ? null : exec.id)}
+                >
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium">{exec.executionDate}</span>
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      exec.status === 'success' ? 'bg-green-500/20 text-green-500' :
+                      exec.status === 'partial' ? 'bg-yellow-500/20 text-yellow-500' :
+                      'bg-destructive/20 text-destructive'
+                    }`}>
+                      {exec.status}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {exec.executedOrders?.length || 0} orders
+                    </span>
+                  </div>
+                  <span className="text-muted-foreground">{expandedExecution === exec.id ? '▲' : '▼'}</span>
+                </button>
+
+                {expandedExecution === exec.id && (
+                  <div className="p-4 border-t border-border bg-muted/30 space-y-4">
+                    {/* Target Allocations */}
+                    <div>
+                      <div className="text-sm font-medium mb-2">Target Allocations</div>
+                      <div className="flex flex-wrap gap-1">
+                        {Object.entries(exec.targetAllocations || {})
+                          .filter(([, pct]) => pct > 0.5)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([ticker, pct]) => (
+                            <span key={ticker} className="px-2 py-1 bg-background rounded text-xs">
+                              {ticker} {(pct as number).toFixed(1)}%
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+
+                    {/* Executed Orders */}
+                    {exec.executedOrders && exec.executedOrders.length > 0 && (
+                      <div>
+                        <div className="text-sm font-medium mb-2">Executed Orders</div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Side</TableHead>
+                              <TableHead>Symbol</TableHead>
+                              <TableHead className="text-right">Qty</TableHead>
+                              <TableHead>Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {exec.executedOrders.map((order, i) => (
+                              <TableRow key={i}>
+                                <TableCell className={order.side === 'sell' ? 'text-destructive' : 'text-green-500'}>
+                                  {order.side?.toUpperCase()}
+                                </TableCell>
+                                <TableCell className="font-medium">{order.symbol}</TableCell>
+                                <TableCell className="text-right">{order.qty}</TableCell>
+                                <TableCell>
+                                  <span className={order.success ? 'text-green-500' : 'text-destructive'}>
+                                    {order.success ? 'Filled' : 'Failed'}
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+
+                    {/* Errors */}
+                    {exec.errors && exec.errors.length > 0 && (
+                      <div>
+                        <div className="text-sm font-medium text-destructive mb-2">Errors</div>
+                        <ul className="text-xs text-destructive list-disc list-inside">
+                          {exec.errors.map((err, i) => (
+                            <li key={i}>{err}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="text-xs text-muted-foreground">
+                      Executed at: {new Date(exec.createdAt * 1000).toLocaleString()}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    )
+  }, [])
 
 
   return (
@@ -2194,50 +2721,53 @@ export function AdminPanel({
         <div className="space-y-6">
           <div className="font-black text-lg">Trading Control</div>
           <p className="text-sm text-muted-foreground">
-            Connect to Alpaca for live trading. Credentials are stored encrypted locally and never leave this machine.
+            Connect to Alpaca for paper and live trading. Credentials are stored encrypted locally and never leave this machine.
           </p>
 
-          {brokerError && (
-            <div className="text-destructive text-sm p-3 bg-destructive/10 rounded-lg">
-              {brokerError}
-            </div>
-          )}
-
-          {/* Broker Connection Section */}
+          {/* Paper Trading Credentials Card */}
           <Card className="p-6">
             <div className="font-bold mb-4 flex items-center gap-2">
-              Alpaca Connection
-              {brokerCredentials?.hasCredentials && (
-                <span className={`px-2 py-0.5 rounded text-xs ${brokerCredentials.isPaper ? 'bg-yellow-500/20 text-yellow-500' : 'bg-green-500/20 text-green-500'}`}>
-                  {brokerCredentials.isPaper ? 'Paper Trading' : 'Live Trading'}
+              Paper Trading Credentials
+              {paperCredentials?.hasCredentials && (
+                <span className="px-2 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-500">
+                  Configured
                 </span>
               )}
             </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Using paper-api.alpaca.markets (safe for testing)
+            </p>
 
-            {brokerAccount ? (
+            {paperError && (
+              <div className="text-destructive text-sm p-3 bg-destructive/10 rounded-lg mb-4">
+                {paperError}
+              </div>
+            )}
+
+            {paperAccount ? (
               <div className="mb-6 p-4 bg-muted/50 rounded-lg">
                 <div className="grid grid-cols-4 gap-4 text-sm">
                   <div>
                     <div className="text-muted-foreground">Equity</div>
-                    <div className="font-bold text-lg">${brokerAccount.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                    <div className="font-bold text-lg">${paperAccount.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Cash</div>
-                    <div className="font-bold text-lg">${brokerAccount.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                    <div className="font-bold text-lg">${paperAccount.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Buying Power</div>
-                    <div className="font-bold text-lg">${brokerAccount.buyingPower.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                    <div className="font-bold text-lg">${paperAccount.buyingPower.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Status</div>
-                    <div className={`font-bold text-lg ${brokerAccount.status === 'ACTIVE' ? 'text-green-500' : 'text-yellow-500'}`}>
-                      {brokerAccount.status}
+                    <div className={`font-bold text-lg ${paperAccount.status === 'ACTIVE' ? 'text-green-500' : 'text-yellow-500'}`}>
+                      {paperAccount.status}
                     </div>
                   </div>
                 </div>
               </div>
-            ) : brokerCredentials?.hasCredentials ? (
+            ) : paperCredentials?.hasCredentials ? (
               <div className="mb-6 p-4 bg-muted/50 rounded-lg text-muted-foreground">
                 Credentials saved. Click "Test Connection" to verify.
               </div>
@@ -2248,9 +2778,9 @@ export function AdminPanel({
                 <label className="text-sm text-muted-foreground mb-1 block">API Key</label>
                 <input
                   type="password"
-                  value={brokerApiKey}
-                  onChange={(e) => setBrokerApiKey(e.target.value)}
-                  placeholder={brokerCredentials?.hasCredentials ? '••••••••••••' : 'Enter Alpaca API Key'}
+                  value={paperApiKey}
+                  onChange={(e) => setPaperApiKey(e.target.value)}
+                  placeholder={paperCredentials?.hasCredentials ? '••••••••••••' : 'Enter Alpaca Paper API Key'}
                   className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
                 />
               </div>
@@ -2258,82 +2788,198 @@ export function AdminPanel({
                 <label className="text-sm text-muted-foreground mb-1 block">API Secret</label>
                 <input
                   type="password"
-                  value={brokerApiSecret}
-                  onChange={(e) => setBrokerApiSecret(e.target.value)}
-                  placeholder={brokerCredentials?.hasCredentials ? '••••••••••••' : 'Enter Alpaca API Secret'}
+                  value={paperApiSecret}
+                  onChange={(e) => setPaperApiSecret(e.target.value)}
+                  placeholder={paperCredentials?.hasCredentials ? '••••••••••••' : 'Enter Alpaca Paper API Secret'}
                   className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
                 />
               </div>
             </div>
 
-            <div className="flex items-center gap-4 mb-4">
-              <label className="flex items-center gap-2 cursor-pointer">
+            <div className="flex gap-2">
+              <Button
+                onClick={async () => {
+                  if (!paperApiKey || !paperApiSecret) {
+                    setPaperError('Please enter both API Key and API Secret')
+                    return
+                  }
+                  setPaperSaving(true)
+                  setPaperError(null)
+                  try {
+                    const res = await fetch(`${API_BASE}/admin/broker/credentials`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                      body: JSON.stringify({ apiKey: paperApiKey, apiSecret: paperApiSecret, credentialType: 'paper' }),
+                    })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data.error || 'Failed to save credentials')
+                    setPaperCredentials({ hasCredentials: true, baseUrl: 'https://paper-api.alpaca.markets' })
+                    setPaperApiKey('')
+                    setPaperApiSecret('')
+                  } catch (e) {
+                    setPaperError(String((e as Error)?.message || e))
+                  } finally {
+                    setPaperSaving(false)
+                  }
+                }}
+                disabled={paperSaving || (!paperApiKey && !paperApiSecret)}
+              >
+                {paperSaving ? 'Saving...' : 'Save Credentials'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  setPaperTesting(true)
+                  setPaperError(null)
+                  try {
+                    const res = await fetch(`${API_BASE}/admin/broker/test`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                      body: JSON.stringify({ credentialType: 'paper' }),
+                    })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data.error || 'Connection test failed')
+                    setPaperAccount(data.account)
+                  } catch (e) {
+                    setPaperError(String((e as Error)?.message || e))
+                    setPaperAccount(null)
+                  } finally {
+                    setPaperTesting(false)
+                  }
+                }}
+                disabled={paperTesting || !paperCredentials?.hasCredentials}
+              >
+                {paperTesting ? 'Testing...' : 'Test Connection'}
+              </Button>
+            </div>
+          </Card>
+
+          {/* Live Trading Credentials Card */}
+          <Card className="p-6 border-green-500/30">
+            <div className="font-bold mb-4 flex items-center gap-2">
+              Live Trading Credentials
+              {liveCredentials?.hasCredentials && (
+                <span className="px-2 py-0.5 rounded text-xs bg-green-500/20 text-green-500">
+                  Configured
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Using api.alpaca.markets (REAL MONEY - use with caution!)
+            </p>
+
+            {liveError && (
+              <div className="text-destructive text-sm p-3 bg-destructive/10 rounded-lg mb-4">
+                {liveError}
+              </div>
+            )}
+
+            {liveAccount ? (
+              <div className="mb-6 p-4 bg-green-500/10 rounded-lg">
+                <div className="grid grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <div className="text-muted-foreground">Equity</div>
+                    <div className="font-bold text-lg text-green-500">${liveAccount.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Cash</div>
+                    <div className="font-bold text-lg text-green-500">${liveAccount.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Buying Power</div>
+                    <div className="font-bold text-lg text-green-500">${liveAccount.buyingPower.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Status</div>
+                    <div className={`font-bold text-lg ${liveAccount.status === 'ACTIVE' ? 'text-green-500' : 'text-yellow-500'}`}>
+                      {liveAccount.status}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : liveCredentials?.hasCredentials ? (
+              <div className="mb-6 p-4 bg-muted/50 rounded-lg text-muted-foreground">
+                Credentials saved. Click "Test Connection" to verify.
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="text-sm text-muted-foreground mb-1 block">API Key</label>
                 <input
-                  type="checkbox"
-                  checked={brokerIsPaper}
-                  onChange={(e) => setBrokerIsPaper(e.target.checked)}
-                  className="rounded"
+                  type="password"
+                  value={liveApiKey}
+                  onChange={(e) => setLiveApiKey(e.target.value)}
+                  placeholder={liveCredentials?.hasCredentials ? '••••••••••••' : 'Enter Alpaca Live API Key'}
+                  className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
                 />
-                <span className="text-sm">Paper Trading Mode</span>
-              </label>
-              <span className="text-xs text-muted-foreground">
-                {brokerIsPaper ? 'Using paper-api.alpaca.markets (safe for testing)' : 'Using api.alpaca.markets (REAL MONEY!)'}
-              </span>
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground mb-1 block">API Secret</label>
+                <input
+                  type="password"
+                  value={liveApiSecret}
+                  onChange={(e) => setLiveApiSecret(e.target.value)}
+                  placeholder={liveCredentials?.hasCredentials ? '••••••••••••' : 'Enter Alpaca Live API Secret'}
+                  className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
+                />
+              </div>
             </div>
 
             <div className="flex gap-2">
               <Button
                 onClick={async () => {
-                  if (!brokerApiKey || !brokerApiSecret) {
-                    setBrokerError('Please enter both API Key and API Secret')
+                  if (!liveApiKey || !liveApiSecret) {
+                    setLiveError('Please enter both API Key and API Secret')
                     return
                   }
-                  setBrokerSaving(true)
-                  setBrokerError(null)
+                  setLiveSaving(true)
+                  setLiveError(null)
                   try {
                     const res = await fetch(`${API_BASE}/admin/broker/credentials`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
-                      body: JSON.stringify({ apiKey: brokerApiKey, apiSecret: brokerApiSecret, isPaper: brokerIsPaper }),
+                      body: JSON.stringify({ apiKey: liveApiKey, apiSecret: liveApiSecret, credentialType: 'live' }),
                     })
                     const data = await res.json()
                     if (!res.ok) throw new Error(data.error || 'Failed to save credentials')
-                    setBrokerCredentials({ hasCredentials: true, isPaper: brokerIsPaper, baseUrl: brokerIsPaper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets' })
-                    setBrokerApiKey('')
-                    setBrokerApiSecret('')
+                    setLiveCredentials({ hasCredentials: true, baseUrl: 'https://api.alpaca.markets' })
+                    setLiveApiKey('')
+                    setLiveApiSecret('')
                   } catch (e) {
-                    setBrokerError(String((e as Error)?.message || e))
+                    setLiveError(String((e as Error)?.message || e))
                   } finally {
-                    setBrokerSaving(false)
+                    setLiveSaving(false)
                   }
                 }}
-                disabled={brokerSaving || (!brokerApiKey && !brokerApiSecret)}
+                disabled={liveSaving || (!liveApiKey && !liveApiSecret)}
               >
-                {brokerSaving ? 'Saving...' : 'Save Credentials'}
+                {liveSaving ? 'Saving...' : 'Save Credentials'}
               </Button>
               <Button
                 variant="outline"
                 onClick={async () => {
-                  setBrokerTesting(true)
-                  setBrokerError(null)
+                  setLiveTesting(true)
+                  setLiveError(null)
                   try {
                     const res = await fetch(`${API_BASE}/admin/broker/test`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                      body: JSON.stringify({ credentialType: 'live' }),
                     })
                     const data = await res.json()
                     if (!res.ok) throw new Error(data.error || 'Connection test failed')
-                    setBrokerAccount(data.account)
+                    setLiveAccount(data.account)
                   } catch (e) {
-                    setBrokerError(String((e as Error)?.message || e))
-                    setBrokerAccount(null)
+                    setLiveError(String((e as Error)?.message || e))
+                    setLiveAccount(null)
                   } finally {
-                    setBrokerTesting(false)
+                    setLiveTesting(false)
                   }
                 }}
-                disabled={brokerTesting || !brokerCredentials?.hasCredentials}
+                disabled={liveTesting || !liveCredentials?.hasCredentials}
               >
-                {brokerTesting ? 'Testing...' : 'Test Connection'}
+                {liveTesting ? 'Testing...' : 'Test Connection'}
               </Button>
             </div>
           </Card>
@@ -2512,6 +3158,12 @@ export function AdminPanel({
               </div>
             )}
           </Card>
+
+          {/* Trading Settings Card */}
+          <TradingSettingsCard />
+
+          {/* Trade Execution History */}
+          <TradeExecutionHistory />
 
           {/* Warning for Live Trading */}
           {!brokerCredentials?.isPaper && brokerCredentials?.hasCredentials && (

@@ -10,8 +10,9 @@ import crypto from 'crypto'
 import Database from 'better-sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { createAlpacaClient, testConnection, getAccountInfo, getLatestPrices } from '../live/broker-alpaca.mjs'
-import { executeDryRun } from '../live/trade-executor.mjs'
+import { createAlpacaClient, testConnection, getAccountInfo, getPositions, getLatestPrices, getPortfolioHistory } from '../live/broker-alpaca.mjs'
+import { executeDryRun, executeLiveTrades } from '../live/trade-executor.mjs'
+import { computeFinalAllocations } from '../live/backtest-allocator.mjs'
 import { authenticate, requireMainAdmin } from '../middleware/auth.mjs'
 import { runBacktest } from '../backtest.mjs'
 
@@ -33,20 +34,172 @@ const sqlite = new Database(dbPath)
 const ENCRYPTION_KEY = process.env.BROKER_ENCRYPTION_KEY || 'dev-encryption-key-32-chars-long!'
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm'
 
-// Ensure broker_credentials table exists
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS broker_credentials (
-    user_id TEXT PRIMARY KEY,
-    encrypted_api_key TEXT NOT NULL,
-    encrypted_api_secret TEXT NOT NULL,
-    iv TEXT NOT NULL,
-    auth_tag TEXT NOT NULL,
-    is_paper INTEGER DEFAULT 1,
-    base_url TEXT,
-    created_at INTEGER DEFAULT (unixepoch()),
-    updated_at INTEGER DEFAULT (unixepoch())
-  )
-`)
+// Migration: Handle schema changes for broker_credentials table
+// The table may exist with old schema (user_id as primary key) or not exist at all
+try {
+  // Check if table exists
+  const tableExists = sqlite.prepare(`
+    SELECT name FROM sqlite_master WHERE type='table' AND name='broker_credentials'
+  `).get()
+
+  if (tableExists) {
+    // Table exists - check if it has the credential_type column
+    const tableInfo = sqlite.prepare(`PRAGMA table_info(broker_credentials)`).all()
+    const hasCredentialType = tableInfo.some(col => col.name === 'credential_type')
+
+    if (!hasCredentialType) {
+      console.log('[live] Migrating broker_credentials to new schema with credential_type...')
+      // Old schema - need to migrate
+      // 1. Rename old table
+      sqlite.exec(`ALTER TABLE broker_credentials RENAME TO broker_credentials_old`)
+
+      // 2. Create new table with proper schema
+      sqlite.exec(`
+        CREATE TABLE broker_credentials (
+          user_id TEXT NOT NULL,
+          credential_type TEXT NOT NULL DEFAULT 'paper',
+          encrypted_api_key TEXT NOT NULL,
+          encrypted_api_secret TEXT NOT NULL,
+          iv TEXT NOT NULL,
+          auth_tag TEXT NOT NULL,
+          base_url TEXT,
+          created_at INTEGER DEFAULT (unixepoch()),
+          updated_at INTEGER DEFAULT (unixepoch()),
+          PRIMARY KEY (user_id, credential_type)
+        )
+      `)
+
+      // 3. Check if old table has is_paper column
+      const oldTableInfo = sqlite.prepare(`PRAGMA table_info(broker_credentials_old)`).all()
+      const hasIsPaper = oldTableInfo.some(col => col.name === 'is_paper')
+
+      // 4. Copy data from old table to new table
+      if (hasIsPaper) {
+        sqlite.exec(`
+          INSERT INTO broker_credentials (user_id, credential_type, encrypted_api_key, encrypted_api_secret, iv, auth_tag, base_url, created_at, updated_at)
+          SELECT user_id, CASE WHEN is_paper = 1 THEN 'paper' ELSE 'live' END, encrypted_api_key, encrypted_api_secret, iv, auth_tag, base_url, created_at, updated_at
+          FROM broker_credentials_old
+        `)
+      } else {
+        // No is_paper column, assume all are paper
+        sqlite.exec(`
+          INSERT INTO broker_credentials (user_id, credential_type, encrypted_api_key, encrypted_api_secret, iv, auth_tag, base_url, created_at, updated_at)
+          SELECT user_id, 'paper', encrypted_api_key, encrypted_api_secret, iv, auth_tag, base_url, created_at, updated_at
+          FROM broker_credentials_old
+        `)
+      }
+
+      // 5. Drop old table
+      sqlite.exec(`DROP TABLE broker_credentials_old`)
+      console.log('[live] Migration complete')
+    }
+  } else {
+    // Table doesn't exist - create fresh
+    sqlite.exec(`
+      CREATE TABLE broker_credentials (
+        user_id TEXT NOT NULL,
+        credential_type TEXT NOT NULL DEFAULT 'paper',
+        encrypted_api_key TEXT NOT NULL,
+        encrypted_api_secret TEXT NOT NULL,
+        iv TEXT NOT NULL,
+        auth_tag TEXT NOT NULL,
+        base_url TEXT,
+        created_at INTEGER DEFAULT (unixepoch()),
+        updated_at INTEGER DEFAULT (unixepoch()),
+        PRIMARY KEY (user_id, credential_type)
+      )
+    `)
+    console.log('[live] Created broker_credentials table')
+  }
+} catch (err) {
+  console.error('[live] Error during broker_credentials migration:', err)
+}
+
+// Create trading tables if they don't exist
+try {
+  // user_bot_investments - tracks which bots a user has "invested" in
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS user_bot_investments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      credential_type TEXT NOT NULL DEFAULT 'paper',
+      bot_id TEXT NOT NULL,
+      investment_amount REAL NOT NULL,
+      weight_mode TEXT DEFAULT 'dollars',
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(user_id, credential_type, bot_id)
+    )
+  `)
+
+  // bot_position_ledger - tracks exact shares attributed to each bot
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS bot_position_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      credential_type TEXT NOT NULL,
+      bot_id TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      shares REAL NOT NULL,
+      avg_price REAL NOT NULL,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(user_id, credential_type, bot_id, symbol)
+    )
+  `)
+
+  // trading_settings - global trading settings per user
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS trading_settings (
+      user_id TEXT PRIMARY KEY,
+      order_type TEXT DEFAULT 'limit',
+      limit_percent REAL DEFAULT 1.0,
+      max_allocation_percent REAL DEFAULT 99.0,
+      fallback_ticker TEXT DEFAULT 'SGOV',
+      cash_reserve_mode TEXT DEFAULT 'dollars',
+      cash_reserve_amount REAL DEFAULT 0,
+      minutes_before_close INTEGER DEFAULT 10,
+      paired_tickers TEXT DEFAULT '',
+      enabled INTEGER DEFAULT 0
+    )
+  `)
+
+  // trade_executions - log of all trade execution runs
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS trade_executions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      credential_type TEXT NOT NULL,
+      execution_date TEXT NOT NULL,
+      status TEXT NOT NULL,
+      target_allocations TEXT,
+      executed_orders TEXT,
+      errors TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    )
+  `)
+
+  // trade_orders - individual orders from each execution
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS trade_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      execution_id INTEGER REFERENCES trade_executions(id),
+      side TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      qty INTEGER NOT NULL,
+      price REAL,
+      order_type TEXT,
+      status TEXT,
+      alpaca_order_id TEXT,
+      error TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    )
+  `)
+
+  console.log('[live] Trading tables initialized')
+} catch (err) {
+  console.error('[live] Error creating trading tables:', err)
+}
 
 /**
  * Encrypt sensitive data
@@ -81,7 +234,7 @@ function decrypt(encrypted, ivHex, authTagHex) {
 
 /**
  * GET /api/admin/broker/credentials
- * Get broker credentials status (not the actual credentials)
+ * Get broker credentials status for both paper and live (not the actual credentials)
  */
 router.get('/broker/credentials', (req, res) => {
   try {
@@ -90,25 +243,30 @@ router.get('/broker/credentials', (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    const row = sqlite.prepare(`
-      SELECT is_paper, base_url, updated_at
+    const rows = sqlite.prepare(`
+      SELECT credential_type, base_url, updated_at
       FROM broker_credentials
       WHERE user_id = ?
-    `).get(userId)
+    `).all(userId)
 
-    if (!row) {
-      return res.json({
-        hasCredentials: false,
-        isPaper: true,
-        baseUrl: 'https://paper-api.alpaca.markets',
-      })
-    }
+    const paperRow = rows.find(r => r.credential_type === 'paper')
+    const liveRow = rows.find(r => r.credential_type === 'live')
 
     res.json({
-      hasCredentials: true,
-      isPaper: row.is_paper === 1,
-      baseUrl: row.base_url || (row.is_paper === 1 ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'),
-      updatedAt: row.updated_at,
+      paper: {
+        hasCredentials: !!paperRow,
+        baseUrl: paperRow?.base_url || 'https://paper-api.alpaca.markets',
+        updatedAt: paperRow?.updated_at,
+      },
+      live: {
+        hasCredentials: !!liveRow,
+        baseUrl: liveRow?.base_url || 'https://api.alpaca.markets',
+        updatedAt: liveRow?.updated_at,
+      },
+      // Legacy fields for backwards compatibility
+      hasCredentials: !!paperRow || !!liveRow,
+      isPaper: !!paperRow,
+      baseUrl: paperRow?.base_url || liveRow?.base_url || 'https://paper-api.alpaca.markets',
     })
   } catch (error) {
     console.error('[live] Error getting broker credentials:', error)
@@ -119,6 +277,7 @@ router.get('/broker/credentials', (req, res) => {
 /**
  * POST /api/admin/broker/credentials
  * Save broker credentials (encrypted)
+ * Body: { apiKey, apiSecret, credentialType: 'paper' | 'live' }
  */
 router.post('/broker/credentials', (req, res) => {
   try {
@@ -127,39 +286,41 @@ router.post('/broker/credentials', (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    const { apiKey, apiSecret, isPaper } = req.body
+    const { apiKey, apiSecret, credentialType, isPaper } = req.body
     if (!apiKey || !apiSecret) {
       return res.status(400).json({ error: 'API Key and Secret are required' })
     }
 
+    // Determine credential type (support new and legacy format)
+    const type = credentialType || (isPaper !== false ? 'paper' : 'live')
+    const baseUrl = type === 'paper' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
+
     // Encrypt credentials
     const encryptedKey = encrypt(apiKey)
     const encryptedSecret = encrypt(apiSecret)
-    const baseUrl = isPaper !== false ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
 
-    // Upsert credentials
+    // Upsert credentials for this type
     sqlite.prepare(`
-      INSERT INTO broker_credentials (user_id, encrypted_api_key, encrypted_api_secret, iv, auth_tag, is_paper, base_url, updated_at)
+      INSERT INTO broker_credentials (user_id, credential_type, encrypted_api_key, encrypted_api_secret, iv, auth_tag, base_url, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
-      ON CONFLICT(user_id) DO UPDATE SET
+      ON CONFLICT(user_id, credential_type) DO UPDATE SET
         encrypted_api_key = excluded.encrypted_api_key,
         encrypted_api_secret = excluded.encrypted_api_secret,
         iv = excluded.iv,
         auth_tag = excluded.auth_tag,
-        is_paper = excluded.is_paper,
         base_url = excluded.base_url,
         updated_at = unixepoch()
     `).run(
       userId,
+      type,
       encryptedKey.encrypted,
       encryptedSecret.encrypted,
-      encryptedKey.iv + ':' + encryptedSecret.iv,  // Store both IVs
-      encryptedKey.authTag + ':' + encryptedSecret.authTag,  // Store both auth tags
-      isPaper !== false ? 1 : 0,
+      encryptedKey.iv + ':' + encryptedSecret.iv,
+      encryptedKey.authTag + ':' + encryptedSecret.authTag,
       baseUrl
     )
 
-    res.json({ success: true })
+    res.json({ success: true, credentialType: type })
   } catch (error) {
     console.error('[live] Error saving broker credentials:', error)
     res.status(500).json({ error: 'Failed to save broker credentials' })
@@ -168,13 +329,15 @@ router.post('/broker/credentials', (req, res) => {
 
 /**
  * Get decrypted credentials for a user
+ * @param {string} userId - User ID
+ * @param {string} credentialType - 'paper' or 'live' (defaults to 'paper')
  */
-function getDecryptedCredentials(userId) {
+function getDecryptedCredentials(userId, credentialType = 'paper') {
   const row = sqlite.prepare(`
-    SELECT encrypted_api_key, encrypted_api_secret, iv, auth_tag, is_paper, base_url
+    SELECT encrypted_api_key, encrypted_api_secret, iv, auth_tag, credential_type, base_url
     FROM broker_credentials
-    WHERE user_id = ?
-  `).get(userId)
+    WHERE user_id = ? AND credential_type = ?
+  `).get(userId, credentialType)
 
   if (!row) return null
 
@@ -184,7 +347,7 @@ function getDecryptedCredentials(userId) {
   return {
     apiKey: decrypt(row.encrypted_api_key, ivKey, authTagKey),
     apiSecret: decrypt(row.encrypted_api_secret, ivSecret, authTagSecret),
-    isPaper: row.is_paper === 1,
+    isPaper: row.credential_type === 'paper',
     baseUrl: row.base_url,
   }
 }
@@ -192,6 +355,7 @@ function getDecryptedCredentials(userId) {
 /**
  * POST /api/admin/broker/test
  * Test broker connection
+ * Body: { credentialType: 'paper' | 'live' }
  */
 router.post('/broker/test', async (req, res) => {
   try {
@@ -200,9 +364,10 @@ router.post('/broker/test', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    const credentials = getDecryptedCredentials(userId)
+    const { credentialType = 'paper' } = req.body
+    const credentials = getDecryptedCredentials(userId, credentialType)
     if (!credentials) {
-      return res.status(400).json({ error: 'No broker credentials saved' })
+      return res.status(400).json({ error: `No ${credentialType} trading credentials saved` })
     }
 
     const client = createAlpacaClient(credentials)
@@ -214,6 +379,7 @@ router.post('/broker/test', async (req, res) => {
 
     res.json({
       success: true,
+      credentialType,
       account: {
         equity: result.account.equity,
         cash: result.account.cash,
@@ -405,6 +571,820 @@ router.post('/live/dry-run', async (req, res) => {
   } catch (error) {
     console.error('[live] Error executing dry run:', error)
     res.status(500).json({ error: error.message || 'Dry run failed' })
+  }
+})
+
+// ============================================
+// Dashboard Broker Endpoints (for Portfolio tab)
+// These endpoints are accessible from the Dashboard, not just Admin
+// Query param: mode=paper|live (defaults to 'paper')
+// ============================================
+
+/**
+ * GET /api/dashboard/broker/status
+ * Check if user has Alpaca credentials and connection status
+ * Query params: mode (paper|live)
+ */
+router.get('/dashboard/broker/status', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    const row = sqlite.prepare(`
+      SELECT credential_type, base_url, updated_at
+      FROM broker_credentials
+      WHERE user_id = ? AND credential_type = ?
+    `).get(userId, credentialType)
+
+    if (!row) {
+      return res.json({
+        hasCredentials: false,
+        isPaper: credentialType === 'paper',
+        isConnected: false,
+        mode: credentialType,
+      })
+    }
+
+    // Try to verify connection
+    let isConnected = false
+    try {
+      const credentials = getDecryptedCredentials(userId, credentialType)
+      if (credentials) {
+        const client = createAlpacaClient(credentials)
+        const result = await testConnection(client)
+        isConnected = result.success
+      }
+    } catch {
+      isConnected = false
+    }
+
+    res.json({
+      hasCredentials: true,
+      isPaper: credentialType === 'paper',
+      isConnected,
+      mode: credentialType,
+      updatedAt: row.updated_at,
+    })
+  } catch (error) {
+    console.error('[live] Error getting dashboard broker status:', error)
+    res.status(500).json({ error: 'Failed to get broker status' })
+  }
+})
+
+/**
+ * GET /api/dashboard/broker/account
+ * Get Alpaca account info (equity, cash, buyingPower)
+ * Query params: mode (paper|live)
+ */
+router.get('/dashboard/broker/account', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    const credentials = getDecryptedCredentials(userId, credentialType)
+    if (!credentials) {
+      return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
+    }
+
+    const client = createAlpacaClient(credentials)
+    const account = await getAccountInfo(client)
+
+    res.json({
+      equity: account.equity,
+      cash: account.cash,
+      buyingPower: account.buyingPower,
+      portfolioValue: account.portfolioValue,
+      status: account.status,
+      mode: credentialType,
+    })
+  } catch (error) {
+    console.error('[live] Error getting dashboard broker account:', error)
+    res.status(500).json({ error: error.message || 'Failed to get account info' })
+  }
+})
+
+/**
+ * GET /api/dashboard/broker/positions
+ * Get current Alpaca positions with P&L
+ * Query params: mode (paper|live)
+ */
+router.get('/dashboard/broker/positions', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    const credentials = getDecryptedCredentials(userId, credentialType)
+    if (!credentials) {
+      return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
+    }
+
+    const client = createAlpacaClient(credentials)
+    const positions = await getPositions(client)
+
+    res.json({
+      positions: positions.map(p => ({
+        symbol: p.symbol,
+        qty: p.qty,
+        avgEntryPrice: p.avgEntryPrice,
+        marketValue: p.marketValue,
+        costBasis: p.costBasis,
+        unrealizedPl: p.unrealizedPl,
+        unrealizedPlPc: p.unrealizedPlPc,
+        currentPrice: p.currentPrice,
+        side: p.side,
+      })),
+      mode: credentialType,
+    })
+  } catch (error) {
+    console.error('[live] Error getting dashboard broker positions:', error)
+    res.status(500).json({ error: error.message || 'Failed to get positions' })
+  }
+})
+
+/**
+ * GET /api/dashboard/broker/history
+ * Get portfolio value history for equity chart
+ * Query params: period (1D, 1W, 1M, 3M, 6M, 1Y, ALL), mode (paper|live)
+ */
+router.get('/dashboard/broker/history', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    const credentials = getDecryptedCredentials(userId, credentialType)
+    if (!credentials) {
+      return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
+    }
+
+    const period = req.query.period || '1M'
+    const client = createAlpacaClient(credentials)
+    const history = await getPortfolioHistory(client, period)
+
+    res.json({
+      history: history.map(h => ({
+        timestamp: h.timestamp,
+        equity: h.equity,
+        profitLoss: h.profitLoss,
+        profitLossPct: h.profitLossPct,
+      })),
+      mode: credentialType,
+    })
+  } catch (error) {
+    console.error('[live] Error getting dashboard broker history:', error)
+    res.status(500).json({ error: error.message || 'Failed to get portfolio history' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trading Investments API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/trading/investments
+ * Get user's bot investments for a mode (paper|live)
+ */
+router.get('/trading/investments', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    const investments = sqlite.prepare(`
+      SELECT id, bot_id, investment_amount, weight_mode, created_at, updated_at
+      FROM user_bot_investments
+      WHERE user_id = ? AND credential_type = ?
+      ORDER BY created_at DESC
+    `).all(userId, credentialType)
+
+    res.json({ investments, mode: credentialType })
+  } catch (error) {
+    console.error('[live] Error getting investments:', error)
+    res.status(500).json({ error: error.message || 'Failed to get investments' })
+  }
+})
+
+/**
+ * POST /api/admin/trading/investments
+ * Add or update a bot investment
+ */
+router.post('/trading/investments', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { botId, investmentAmount, weightMode, mode } = req.body
+    if (!botId || investmentAmount === undefined) {
+      return res.status(400).json({ error: 'botId and investmentAmount are required' })
+    }
+
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+    const wMode = weightMode || 'dollars'
+
+    // Upsert - insert or update on conflict
+    sqlite.prepare(`
+      INSERT INTO user_bot_investments (user_id, credential_type, bot_id, investment_amount, weight_mode, updated_at)
+      VALUES (?, ?, ?, ?, ?, unixepoch())
+      ON CONFLICT(user_id, credential_type, bot_id) DO UPDATE SET
+        investment_amount = excluded.investment_amount,
+        weight_mode = excluded.weight_mode,
+        updated_at = unixepoch()
+    `).run(userId, credentialType, botId, investmentAmount, wMode)
+
+    res.json({ success: true, botId, investmentAmount, weightMode: wMode, mode: credentialType })
+  } catch (error) {
+    console.error('[live] Error saving investment:', error)
+    res.status(500).json({ error: error.message || 'Failed to save investment' })
+  }
+})
+
+/**
+ * DELETE /api/admin/trading/investments/:botId
+ * Remove a bot investment
+ */
+router.delete('/trading/investments/:botId', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { botId } = req.params
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    const result = sqlite.prepare(`
+      DELETE FROM user_bot_investments
+      WHERE user_id = ? AND credential_type = ? AND bot_id = ?
+    `).run(userId, credentialType, botId)
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Investment not found' })
+    }
+
+    res.json({ success: true, botId, mode: credentialType })
+  } catch (error) {
+    console.error('[live] Error deleting investment:', error)
+    res.status(500).json({ error: error.message || 'Failed to delete investment' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Position Ledger API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/trading/ledger
+ * Get position ledger for a mode (paper|live)
+ */
+router.get('/trading/ledger', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    const ledger = sqlite.prepare(`
+      SELECT id, bot_id, symbol, shares, avg_price, created_at, updated_at
+      FROM bot_position_ledger
+      WHERE user_id = ? AND credential_type = ?
+      ORDER BY bot_id, symbol
+    `).all(userId, credentialType)
+
+    res.json({ ledger, mode: credentialType })
+  } catch (error) {
+    console.error('[live] Error getting position ledger:', error)
+    res.status(500).json({ error: error.message || 'Failed to get position ledger' })
+  }
+})
+
+/**
+ * GET /api/admin/trading/unallocated
+ * Get unallocated positions (Alpaca positions minus ledger-attributed positions)
+ */
+router.get('/trading/unallocated', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    // Get Alpaca credentials
+    const credentials = getDecryptedCredentials(userId, credentialType)
+    if (!credentials) {
+      return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
+    }
+
+    // Get Alpaca positions
+    const client = createAlpacaClient(credentials)
+    const alpacaPositions = await getPositions(client)
+
+    // Get ledger totals by symbol
+    const ledger = sqlite.prepare(`
+      SELECT symbol, SUM(shares) as total_shares
+      FROM bot_position_ledger
+      WHERE user_id = ? AND credential_type = ?
+      GROUP BY symbol
+    `).all(userId, credentialType)
+
+    const ledgerBySymbol = {}
+    for (const row of ledger) {
+      ledgerBySymbol[row.symbol] = row.total_shares
+    }
+
+    // Calculate unallocated positions
+    const unallocated = []
+    for (const pos of alpacaPositions) {
+      const attributedShares = ledgerBySymbol[pos.symbol] || 0
+      const unallocatedShares = pos.qty - attributedShares
+
+      if (unallocatedShares > 0.0001) {  // Small threshold for floating point
+        unallocated.push({
+          symbol: pos.symbol,
+          unallocatedQty: unallocatedShares,
+          avgEntryPrice: pos.avgEntryPrice,
+          marketValue: pos.marketValue * (unallocatedShares / pos.qty),
+          costBasis: pos.costBasis * (unallocatedShares / pos.qty),
+          unrealizedPl: pos.unrealizedPl * (unallocatedShares / pos.qty),
+          unrealizedPlPc: pos.unrealizedPlPc,
+          currentPrice: pos.currentPrice,
+          side: pos.side,
+        })
+      }
+    }
+
+    res.json({ unallocated, mode: credentialType })
+  } catch (error) {
+    console.error('[live] Error getting unallocated positions:', error)
+    res.status(500).json({ error: error.message || 'Failed to get unallocated positions' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trading Settings API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/trading/settings
+ * Get trading settings for user
+ */
+router.get('/trading/settings', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    let settings = sqlite.prepare(`
+      SELECT * FROM trading_settings WHERE user_id = ?
+    `).get(userId)
+
+    // Return defaults if no settings exist
+    if (!settings) {
+      settings = {
+        user_id: userId,
+        order_type: 'limit',
+        limit_percent: 1.0,
+        max_allocation_percent: 99.0,
+        fallback_ticker: 'SGOV',
+        cash_reserve_mode: 'dollars',
+        cash_reserve_amount: 0,
+        minutes_before_close: 10,
+        paired_tickers: '',
+        enabled: 0,
+      }
+    }
+
+    // Parse paired_tickers JSON if present
+    let pairedTickers = []
+    if (settings.paired_tickers) {
+      try {
+        pairedTickers = JSON.parse(settings.paired_tickers)
+      } catch (e) {
+        pairedTickers = []
+      }
+    }
+
+    res.json({
+      orderType: settings.order_type,
+      limitPercent: settings.limit_percent,
+      maxAllocationPercent: settings.max_allocation_percent,
+      fallbackTicker: settings.fallback_ticker,
+      cashReserveMode: settings.cash_reserve_mode,
+      cashReserveAmount: settings.cash_reserve_amount,
+      minutesBeforeClose: settings.minutes_before_close,
+      pairedTickers,
+      enabled: !!settings.enabled,
+    })
+  } catch (error) {
+    console.error('[live] Error getting trading settings:', error)
+    res.status(500).json({ error: error.message || 'Failed to get trading settings' })
+  }
+})
+
+/**
+ * POST /api/admin/trading/settings
+ * Update trading settings
+ */
+router.post('/trading/settings', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const {
+      orderType,
+      limitPercent,
+      maxAllocationPercent,
+      fallbackTicker,
+      cashReserveMode,
+      cashReserveAmount,
+      minutesBeforeClose,
+      pairedTickers,
+      enabled,
+    } = req.body
+
+    // Serialize paired tickers to JSON
+    const pairedTickersJson = pairedTickers ? JSON.stringify(pairedTickers) : ''
+
+    sqlite.prepare(`
+      INSERT INTO trading_settings (
+        user_id, order_type, limit_percent, max_allocation_percent, fallback_ticker,
+        cash_reserve_mode, cash_reserve_amount, minutes_before_close, paired_tickers, enabled
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        order_type = excluded.order_type,
+        limit_percent = excluded.limit_percent,
+        max_allocation_percent = excluded.max_allocation_percent,
+        fallback_ticker = excluded.fallback_ticker,
+        cash_reserve_mode = excluded.cash_reserve_mode,
+        cash_reserve_amount = excluded.cash_reserve_amount,
+        minutes_before_close = excluded.minutes_before_close,
+        paired_tickers = excluded.paired_tickers,
+        enabled = excluded.enabled
+    `).run(
+      userId,
+      orderType || 'limit',
+      limitPercent ?? 1.0,
+      maxAllocationPercent ?? 99.0,
+      fallbackTicker || 'SGOV',
+      cashReserveMode || 'dollars',
+      cashReserveAmount ?? 0,
+      minutesBeforeClose ?? 10,
+      pairedTickersJson,
+      enabled ? 1 : 0
+    )
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('[live] Error saving trading settings:', error)
+    res.status(500).json({ error: error.message || 'Failed to save trading settings' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trade Execution API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/admin/trading/execute
+ * Execute trades for all invested bots (or dry run)
+ * Body: { mode: 'paper'|'live', dryRun: boolean }
+ */
+router.post('/trading/execute', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { mode = 'paper', dryRun = true } = req.body
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    console.log(`[live] Executing trades for user ${userId}, mode=${credentialType}, dryRun=${dryRun}`)
+
+    // Get credentials
+    const credentials = getDecryptedCredentials(userId, credentialType)
+    if (!credentials) {
+      return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
+    }
+
+    // Get trading settings
+    let settings = sqlite.prepare(`
+      SELECT * FROM trading_settings WHERE user_id = ?
+    `).get(userId)
+
+    if (!settings) {
+      settings = {
+        order_type: 'limit',
+        limit_percent: 1.0,
+        max_allocation_percent: 99.0,
+        fallback_ticker: 'SGOV',
+        cash_reserve_mode: 'dollars',
+        cash_reserve_amount: 0,
+        paired_tickers: '',
+      }
+    }
+
+    // Parse paired tickers
+    let pairedTickers = []
+    if (settings.paired_tickers) {
+      try {
+        pairedTickers = JSON.parse(settings.paired_tickers)
+      } catch (e) {
+        pairedTickers = []
+      }
+    }
+
+    // Get investments for this mode
+    const investmentRows = sqlite.prepare(`
+      SELECT i.*, b.name as bot_name, b.payload as bot_payload
+      FROM user_bot_investments i
+      LEFT JOIN bots b ON i.bot_id = b.id
+      WHERE i.user_id = ? AND i.credential_type = ?
+    `).all(userId, credentialType)
+
+    if (investmentRows.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No investments to execute',
+        allocations: {},
+        dryRun,
+      })
+    }
+
+    // Build investments with bot objects
+    const investments = investmentRows.map(row => ({
+      botId: row.bot_id,
+      investmentAmount: row.investment_amount,
+      weightMode: row.weight_mode,
+      bot: row.bot_payload ? {
+        id: row.bot_id,
+        name: row.bot_name,
+        payload: JSON.parse(row.bot_payload),
+      } : null,
+    }))
+
+    // Get account info for total equity
+    const client = createAlpacaClient(credentials)
+    const account = await getAccountInfo(client)
+    const totalEquity = account.equity
+
+    // Calculate cash reserve
+    let reservedCash = 0
+    if (settings.cash_reserve_amount) {
+      if (settings.cash_reserve_mode === 'percent') {
+        reservedCash = totalEquity * (settings.cash_reserve_amount / 100)
+      } else {
+        reservedCash = settings.cash_reserve_amount
+      }
+    }
+    const adjustedEquity = Math.max(0, totalEquity - reservedCash)
+
+    // Compute final allocations from all bot backtests
+    const allocations = await computeFinalAllocations(
+      investments,
+      adjustedEquity,
+      {
+        fallbackTicker: settings.fallback_ticker,
+        pairedTickers,
+        maxAllocationPercent: settings.max_allocation_percent,
+      }
+    )
+
+    const executionDate = new Date().toISOString().split('T')[0]
+    let result
+
+    if (dryRun) {
+      // Dry run - calculate what would happen
+      result = await executeDryRun(credentials, allocations, {
+        cashReserve: reservedCash,
+        cashMode: 'dollars',
+      })
+      result.dryRun = true
+    } else {
+      // Live execution
+      result = await executeLiveTrades(credentials, allocations, {
+        cashReserve: reservedCash,
+        cashMode: 'dollars',
+        orderType: settings.order_type,
+        limitPercent: settings.limit_percent,
+      })
+      result.dryRun = false
+
+      // Log the execution
+      const execResult = sqlite.prepare(`
+        INSERT INTO trade_executions (user_id, credential_type, execution_date, status, target_allocations, executed_orders, errors)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        userId,
+        credentialType,
+        executionDate,
+        result.summary.errorCount > 0 ? 'partial' : 'success',
+        JSON.stringify(allocations),
+        JSON.stringify([...(result.sells || []), ...(result.buys || [])]),
+        JSON.stringify(result.errors || [])
+      )
+
+      // Log individual orders
+      const executionId = execResult.lastInsertRowid
+      for (const order of [...(result.sells || []), ...(result.buys || [])]) {
+        sqlite.prepare(`
+          INSERT INTO trade_orders (execution_id, side, symbol, qty, price, order_type, status, alpaca_order_id, error)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          executionId,
+          order.side,
+          order.symbol,
+          order.qty || 0,
+          order.limitPrice || order.price || null,
+          order.type || settings.order_type,
+          order.success ? 'filled' : 'failed',
+          order.id || null,
+          order.error || null
+        )
+      }
+
+      // Update position ledger based on executed orders
+      // (This would need more logic to track shares per bot)
+    }
+
+    res.json({
+      success: true,
+      mode: credentialType,
+      dryRun,
+      account: {
+        equity: totalEquity,
+        cash: account.cash,
+        reservedCash,
+        adjustedEquity,
+      },
+      allocations,
+      result,
+    })
+  } catch (error) {
+    console.error('[live] Error executing trades:', error)
+    res.status(500).json({ error: error.message || 'Failed to execute trades' })
+  }
+})
+
+/**
+ * GET /api/admin/trading/executions
+ * Get trade execution history
+ */
+router.get('/trading/executions', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const mode = req.query.mode || 'paper'
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100)
+
+    const executions = sqlite.prepare(`
+      SELECT *
+      FROM trade_executions
+      WHERE user_id = ? AND credential_type = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(userId, credentialType, limit)
+
+    // Parse JSON fields
+    const parsed = executions.map(exec => ({
+      id: exec.id,
+      executionDate: exec.execution_date,
+      status: exec.status,
+      targetAllocations: JSON.parse(exec.target_allocations || '{}'),
+      executedOrders: JSON.parse(exec.executed_orders || '[]'),
+      errors: JSON.parse(exec.errors || '[]'),
+      createdAt: exec.created_at,
+    }))
+
+    res.json({ executions: parsed, mode: credentialType })
+  } catch (error) {
+    console.error('[live] Error getting executions:', error)
+    res.status(500).json({ error: error.message || 'Failed to get executions' })
+  }
+})
+
+/**
+ * GET /api/admin/trading/orders
+ * Get individual order history for an execution
+ */
+router.get('/trading/orders/:executionId', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { executionId } = req.params
+
+    // Verify the execution belongs to this user
+    const execution = sqlite.prepare(`
+      SELECT id FROM trade_executions WHERE id = ? AND user_id = ?
+    `).get(executionId, userId)
+
+    if (!execution) {
+      return res.status(404).json({ error: 'Execution not found' })
+    }
+
+    const orders = sqlite.prepare(`
+      SELECT *
+      FROM trade_orders
+      WHERE execution_id = ?
+      ORDER BY created_at
+    `).all(executionId)
+
+    res.json({ orders, executionId: parseInt(executionId) })
+  } catch (error) {
+    console.error('[live] Error getting orders:', error)
+    res.status(500).json({ error: error.message || 'Failed to get orders' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trading Scheduler Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/trading/scheduler/status
+ * Get trading scheduler status
+ */
+router.get('/trading/scheduler/status', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    // Import trading scheduler dynamically to avoid circular dependencies
+    import('../live/trading-scheduler.mjs').then(({ getTradingSchedulerStatus }) => {
+      const status = getTradingSchedulerStatus()
+      res.json(status)
+    }).catch(error => {
+      console.error('[live] Error getting scheduler status:', error)
+      res.status(500).json({ error: 'Failed to get scheduler status' })
+    })
+  } catch (error) {
+    console.error('[live] Error getting scheduler status:', error)
+    res.status(500).json({ error: error.message || 'Failed to get scheduler status' })
+  }
+})
+
+/**
+ * POST /api/admin/trading/scheduler/trigger
+ * Manually trigger trading execution
+ */
+router.post('/trading/scheduler/trigger', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    // Import trading scheduler dynamically
+    const { triggerManualExecution } = await import('../live/trading-scheduler.mjs')
+    const result = await triggerManualExecution()
+    res.json(result)
+  } catch (error) {
+    console.error('[live] Error triggering manual execution:', error)
+    res.status(500).json({ error: error.message || 'Failed to trigger execution' })
   }
 })
 
