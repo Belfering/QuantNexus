@@ -199,14 +199,17 @@ export function ForgeTab({
       rollingNode.rankBy = activeBot.splitConfig?.rankBy ?? 'Sharpe Ratio'
       const newTree = ensureSlots(rollingNode)
       useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: newTree })
+      treeStore.setRoot(newTree) // Immediately load into useTreeStore
     } else if (forgeSubtab === 'Shaping' && !activeBot.splitTree) {
       const basicNode = createNode('basic')
       const newTree = ensureSlots(basicNode)
       useBotStore.getState().updateBot(activeBot.id, { splitTree: newTree })
+      treeStore.setRoot(newTree) // Immediately load into useTreeStore
     } else if (forgeSubtab === 'Combine' && !activeBot.combineTree) {
       const basicNode = createNode('basic')
       const newTree = ensureSlots(basicNode)
       useBotStore.getState().updateBot(activeBot.id, { combineTree: newTree })
+      treeStore.setRoot(newTree) // Immediately load into useTreeStore
     }
   }, [forgeSubtab, activeBot?.id])
 

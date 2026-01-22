@@ -92,6 +92,9 @@ function createInitialBotSession(title: string, tabContext: 'Forge' | 'Model'): 
     id: `bot-${newId()}`,
     history: [root],
     historyIndex: 0,
+    splitTree: undefined, // Created on-demand when Shaping tab accessed
+    walkForwardTree: undefined, // Created on-demand when Walk Forward tab accessed
+    combineTree: undefined, // Created on-demand when Combine tab accessed
     backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
     callChains: [],
     customIndicators: [],
