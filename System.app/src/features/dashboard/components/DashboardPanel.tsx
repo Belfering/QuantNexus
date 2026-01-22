@@ -950,10 +950,13 @@ export function DashboardPanel(props: DashboardPanelProps) {
                         </Button>
                       </div>
                     )}
+                        </>
+                      )
+                    })()}
                   </>
-                    );
-                  })()
-                ) : (
+                )
+              })()
+            ) : (
                   /* Simulated Mode - Show bot investments */
                   <>
                 {/* Buy System Section */}

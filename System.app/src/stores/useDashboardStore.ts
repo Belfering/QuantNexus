@@ -27,6 +27,7 @@ interface DashboardState {
   // Dashboard UI state (from useDashboardUIState.ts)
   dashboardTimePeriod: DashboardTimePeriod
   dashboardBotExpanded: Record<string, boolean>
+  dashboardUnallocatedExpanded: boolean
   dashboardBuyBotId: string
   dashboardBuyBotSearch: string
   dashboardBuyBotDropdownOpen: boolean
@@ -65,6 +66,7 @@ interface DashboardState {
   // Dashboard UI actions - support both direct values and callbacks
   setDashboardTimePeriod: (dataOrFn: SetStateAction<DashboardTimePeriod>) => void
   setDashboardBotExpanded: (dataOrFn: SetStateAction<Record<string, boolean>>) => void
+  setDashboardUnallocatedExpanded: (dataOrFn: SetStateAction<boolean>) => void
   setDashboardBuyBotId: (dataOrFn: SetStateAction<string>) => void
   setDashboardBuyBotSearch: (dataOrFn: SetStateAction<string>) => void
   setDashboardBuyBotDropdownOpen: (dataOrFn: SetStateAction<boolean>) => void
@@ -121,6 +123,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   // Initial state - Dashboard UI
   dashboardTimePeriod: '1Y',
   dashboardBotExpanded: {},
+  dashboardUnallocatedExpanded: true,
   dashboardBuyBotId: '',
   dashboardBuyBotSearch: '',
   dashboardBuyBotDropdownOpen: false,
@@ -159,6 +162,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   // Dashboard UI actions
   setDashboardTimePeriod: (dataOrFn) => handleSetState(set, 'dashboardTimePeriod', dataOrFn),
   setDashboardBotExpanded: (dataOrFn) => handleSetState(set, 'dashboardBotExpanded', dataOrFn),
+  setDashboardUnallocatedExpanded: (dataOrFn) => handleSetState(set, 'dashboardUnallocatedExpanded', dataOrFn),
   setDashboardBuyBotId: (dataOrFn) => handleSetState(set, 'dashboardBuyBotId', dataOrFn),
   setDashboardBuyBotSearch: (dataOrFn) => handleSetState(set, 'dashboardBuyBotSearch', dataOrFn),
   setDashboardBuyBotDropdownOpen: (dataOrFn) => handleSetState(set, 'dashboardBuyBotDropdownOpen', dataOrFn),
@@ -197,6 +201,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       dashboardPortfolio: defaultDashboardPortfolio(),
       dashboardTimePeriod: '1Y',
       dashboardBotExpanded: {},
+      dashboardUnallocatedExpanded: true,
       dashboardBuyBotId: '',
       dashboardBuyBotSearch: '',
       dashboardBuyBotDropdownOpen: false,
