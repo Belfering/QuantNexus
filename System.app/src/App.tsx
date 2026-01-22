@@ -455,14 +455,7 @@ function App() {
     loadUserData,
   })
 
-  // Set Forge as default tab for logged-in users (only on initial mount)
-  const [hasSetInitialTab, setHasSetInitialTab] = useState(false)
-  useEffect(() => {
-    if (userId && !hasSetInitialTab) {
-      setTab('Forge')
-      setHasSetInitialTab(true)
-    }
-  }, [userId, hasSetInitialTab])
+  // Default tab is set in useUIStore (Dashboard)
 
   // Watchlists, preferences, and Nexus bots loading moved to useUserDataSync hook (Phase 2N-21)
   // Ticker loading, metadata, and filtering moved to useTickerManager hook (Phase 2N-22)
@@ -983,7 +976,14 @@ function App() {
     // Portfolio will be loaded from database API via useEffect when userId changes
     setDashboardPortfolio(defaultDashboardPortfolio())
     setAnalyzeBacktests({})
-    setTab('Forge')
+    // Reset bot store to ensure clean state
+    console.log('[App] handleLogin: Creating fresh bot sessions (Forge and Model)')
+    const forgeBot = createBotSession('Forge System', 'Forge')
+    const modelBot = createBotSession('Algo Name Here', 'Model')
+    setBots([forgeBot, modelBot])
+    setActiveForgeBotId(forgeBot.id)
+    setActiveModelBotId(modelBot.id)
+    setTab('Dashboard')
   }
 
   const handleLogout = () => {
@@ -1003,11 +1003,15 @@ function App() {
     setSavedBots([])
     setWatchlists([])
     // NOTE: Call chains are now per-bot, reset via setBots
-    setBots([createBotSession('Algo Name Here')])
+    const forgeBot = createBotSession('Forge System', 'Forge')
+    const modelBot = createBotSession('Algo Name Here', 'Model')
+    setBots([forgeBot, modelBot])
+    setActiveForgeBotId(forgeBot.id)
+    setActiveModelBotId(modelBot.id)
     setUiState(defaultUiState())
     setDashboardPortfolio(defaultDashboardPortfolio())
     setAnalyzeBacktests({})
-    setTab('Forge')
+    setTab('Dashboard')
     setSaveMenuOpen(false)
     setAddToWatchlistBotId(null)
   }
