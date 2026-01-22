@@ -188,31 +188,6 @@ export function ForgeTab({
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 
-  // Initialize trees on first access to each subtab
-  useEffect(() => {
-    if (!activeBot) return
-
-    // Check if current subtab's tree is missing and initialize it
-    if (forgeSubtab === 'Walk Forward' && !activeBot.walkForwardTree) {
-      const rollingNode = createNode('rolling')
-      rollingNode.rollingWindow = activeBot.splitConfig?.rollingWindowPeriod ?? 'monthly'
-      rollingNode.rankBy = activeBot.splitConfig?.rankBy ?? 'Sharpe Ratio'
-      const newTree = ensureSlots(rollingNode)
-      useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: newTree })
-      treeStore.setRoot(newTree) // Immediately load into useTreeStore
-    } else if (forgeSubtab === 'Shaping' && !activeBot.splitTree) {
-      const basicNode = createNode('basic')
-      const newTree = ensureSlots(basicNode)
-      useBotStore.getState().updateBot(activeBot.id, { splitTree: newTree })
-      treeStore.setRoot(newTree) // Immediately load into useTreeStore
-    } else if (forgeSubtab === 'Combine' && !activeBot.combineTree) {
-      const basicNode = createNode('basic')
-      const newTree = ensureSlots(basicNode)
-      useBotStore.getState().updateBot(activeBot.id, { combineTree: newTree })
-      treeStore.setRoot(newTree) // Immediately load into useTreeStore
-    }
-  }, [forgeSubtab, activeBot?.id])
-
   // Flowchart scroll width for the horizontal scrollbar (updated by App.tsx)
   const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
 

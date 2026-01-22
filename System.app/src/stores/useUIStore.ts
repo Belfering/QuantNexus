@@ -100,7 +100,7 @@ interface UIState {
 
 export const useUIStore = create<UIState>()((set) => ({
   // Initial state - Navigation
-  tab: 'Model',
+  tab: 'Dashboard',
   dashboardSubtab: 'Portfolio',
   analyzeSubtab: 'Systems',
   forgeSubtab: 'Data',

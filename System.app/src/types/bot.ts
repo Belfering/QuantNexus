@@ -104,9 +104,10 @@ export type BotSession = {
   id: string
   history: FlowNode[]  // DEPRECATED - kept for backward compatibility
   historyIndex: number  // DEPRECATED - kept for backward compatibility
+  root?: FlowNode  // Current tree for Model tab
   splitTree?: FlowNode  // Current tree for Shaping tab (chronological optimization)
   walkForwardTree?: FlowNode  // Current tree for Walk Forward tab (rolling optimization)
-  forgeTree?: FlowNode  // Current tree for Forge tab (independent model builder)
+  combineTree?: FlowNode  // Current tree for Combine tab (independent model builder)
   savedBotId?: string
   backtest: BotBacktestState
   callChains: CallChain[] // Per-bot call chains (stored with bot payload)

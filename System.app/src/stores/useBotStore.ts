@@ -86,15 +86,36 @@ interface BotState {
 
 // Helper to create initial bot
 function createInitialBotSession(title: string, tabContext: 'Forge' | 'Model'): BotSession {
+  // Create all 4 independent trees upfront with fresh nodes
   const root = ensureSlots(createNode('basic'))
   root.title = title
+
+  const splitTree = ensureSlots(createNode('basic'))
+  splitTree.title = title
+
+  const walkForwardTree = ensureSlots(createNode('basic'))
+  walkForwardTree.title = title
+
+  const combineTree = ensureSlots(createNode('basic'))
+  combineTree.title = title
+
+  console.log('[BotStore] Creating bot with 4 independent trees:', {
+    title,
+    tabContext,
+    rootId: root.id,
+    splitTreeId: splitTree.id,
+    walkForwardTreeId: walkForwardTree.id,
+    combineTreeId: combineTree.id,
+  })
+
   return {
     id: `bot-${newId()}`,
     history: [root],
     historyIndex: 0,
-    splitTree: undefined, // Created on-demand when Shaping tab accessed
-    walkForwardTree: undefined, // Created on-demand when Walk Forward tab accessed
-    combineTree: undefined, // Created on-demand when Combine tab accessed
+    root, // Current tree for Model tab
+    splitTree, // Current tree for Shaping tab
+    walkForwardTree, // Current tree for Walk Forward tab
+    combineTree, // Current tree for Combine tab
     backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
     callChains: [],
     customIndicators: [],
