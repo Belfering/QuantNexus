@@ -1200,11 +1200,11 @@ function App() {
                 Shards
               </Button>
               <Button
-                onClick={() => useUIStore.getState().setForgeSubtab('Forge')}
-                variant={forgeSubtab === 'Forge' ? 'accent' : 'secondary'}
+                onClick={() => useUIStore.getState().setForgeSubtab('Combine')}
+                variant={forgeSubtab === 'Combine' ? 'accent' : 'secondary'}
                 className="flex-1 rounded-none h-10"
               >
-                Forge
+                Combine
               </Button>
             </div>
           )}
