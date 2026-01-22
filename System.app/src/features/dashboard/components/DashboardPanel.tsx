@@ -1,7 +1,7 @@
 // src/features/dashboard/components/DashboardPanel.tsx
 // Dashboard tab component - displays portfolio, investments, and partner program
 
-import { type Dispatch, type SetStateAction, useMemo } from 'react'
+import { type Dispatch, type SetStateAction, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,8 @@ import { formatPct, formatUsd, formatSignedUsd } from '@/shared/utils'
 import { EquityChart, DrawdownChart } from '@/features/backtest'
 import { DashboardEquityChart } from './DashboardEquityChart'
 import { PartnerTBillChart } from './PartnerTBillChart'
+import { UnallocatedPositionsTable } from './UnallocatedPositionsTable'
+import { SellPositionModal, type SellOrder } from './SellPositionModal'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useDashboardStore } from '@/stores'
 import type {
   SavedBot,
@@ -149,6 +151,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
     setDashboardTimePeriod,
     dashboardBotExpanded,
     setDashboardBotExpanded,
+    dashboardUnallocatedExpanded,
+    setDashboardUnallocatedExpanded,
     dashboardBuyBotId,
     setDashboardBuyBotId,
     dashboardBuyBotSearch,
@@ -185,6 +189,9 @@ export function DashboardPanel(props: DashboardPanelProps) {
     timePeriod: dashboardTimePeriod,
     enabled: true, // Always enabled to check broker status for toggle button
   })
+
+  // Bulk sell modal state for unallocated positions
+  const [isBulkSellModalOpen, setIsBulkSellModalOpen] = useState(false)
 
   // Derived: watchlists by bot ID
   const watchlistsByBotId = useMemo(() => {
@@ -343,42 +350,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                     return (
                   <>
-                    {/* Section 1: Unallocated Positions (positions not attributed to any bot - never traded by scheduler) */}
-                    {alpaca.unallocatedPositions.length > 0 && (
-                      <>
-                        <div className="font-black mb-3">
-                          Unallocated Positions ({alpaca.unallocatedPositions.length})
-                          <span className="text-xs font-normal text-muted ml-2">(not traded by scheduler)</span>
-                        </div>
-                        <div className="flex flex-col gap-2 mb-4">
-                          {/* Header row */}
-                          <div className="grid grid-cols-6 gap-2 text-xs text-muted font-bold px-2">
-                            <div>Symbol</div>
-                            <div className="text-right">Qty</div>
-                            <div className="text-right">Avg Price</div>
-                            <div className="text-right">Current</div>
-                            <div className="text-right">Market Value</div>
-                            <div className="text-right">Unrealized P&L</div>
-                          </div>
-                          {/* Position rows */}
-                          {alpaca.unallocatedPositions.map((pos) => (
-                            <div key={pos.symbol} className="grid grid-cols-6 gap-2 text-sm px-2 py-1.5 rounded bg-muted/20">
-                              <div className="font-bold">{pos.symbol}</div>
-                              <div className="text-right">{pos.unallocatedQty}</div>
-                              <div className="text-right">{formatUsd(pos.avgEntryPrice)}</div>
-                              <div className="text-right">{formatUsd(pos.currentPrice)}</div>
-                              <div className="text-right">{formatUsd(pos.unallocatedQty * pos.currentPrice)}</div>
-                              <div className={cn("text-right font-bold", pos.unrealizedPl >= 0 ? 'text-success' : 'text-danger')}>
-                                {formatSignedUsd((pos.currentPrice - pos.avgEntryPrice) * pos.unallocatedQty)}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="border-t border-border my-3" />
-                      </>
-                    )}
-
-                    {/* Section 2: Buy System (using Alpaca cash) */}
+                    {/* Section 1: Buy System (using Alpaca cash) */}
                     <div className="font-black mb-3">Buy System</div>
                     <div className="grid gap-2 mb-4">
                       {/* Cash available line */}
@@ -535,61 +507,126 @@ export function DashboardPanel(props: DashboardPanelProps) {
                     {/* Divider */}
                     <div className="border-t border-border my-3" />
 
-                    {/* Section 3: Systems Invested In - Full expandable cards like simulated mode */}
-                    <div className="font-black mb-3">Systems Invested In ({alpaca.investments.length})</div>
-                    {alpaca.investments.length === 0 ? (
-                      <div className="text-muted text-center py-4">No investments yet. Use "Buy System" above to invest in a trading bot.</div>
-                    ) : (
-                      <div className="flex flex-col gap-2.5">
-                        {alpaca.investments.map((inv, idx) => {
-                          // Find bot info
-                          const b = savedBots.find((bot) => bot.id === inv.botId) ?? allNexusBots.find((bot) => bot.id === inv.botId)
-                          const botColor = BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length]
-                          const isExpanded = dashboardBotExpanded[inv.botId] ?? false
-                          const isBuyingMore = dashboardBuyMoreBotId === inv.botId
-                          const analyzeState = analyzeBacktests[inv.botId]
-                          const wlTags = watchlistsByBotId.get(inv.botId) ?? []
+                    {/* Section 2: Systems Invested In - Full expandable cards like simulated mode */}
+                    {(() => {
+                      // Calculate unallocated totals
+                      const unallocatedValue = alpaca.unallocatedPositions.reduce((sum, pos) =>
+                        sum + (pos.unallocatedQty * pos.currentPrice), 0)
+                      const unallocatedCostBasis = alpaca.unallocatedPositions.reduce((sum, pos) =>
+                        sum + (pos.unallocatedQty * pos.avgEntryPrice), 0)
+                      const unallocatedPnl = unallocatedValue - unallocatedCostBasis
+                      const unallocatedPnlPct = unallocatedCostBasis > 0
+                        ? (unallocatedPnl / unallocatedCostBasis) * 100
+                        : 0
 
-                          // Get positions attributed to this bot from ledger
-                          const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
-                          const hasPositions = botPositions.length > 0
+                      // Create synthetic unallocated "bot" investment
+                      const syntheticUnallocated = alpaca.unallocatedPositions.length > 0 ? {
+                        id: -1,
+                        botId: '__UNALLOCATED__',
+                        botName: `Unallocated Positions (${alpaca.unallocatedPositions.length})`,
+                        investmentAmount: unallocatedValue,
+                        weightMode: 'dollars' as const,
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                        // Extended properties for display
+                        _synthetic: true,
+                        _costBasis: unallocatedCostBasis,
+                        _currentValue: unallocatedValue,
+                        _pnl: unallocatedPnl,
+                        _pnlPct: unallocatedPnlPct,
+                      } : null
 
-                          // Calculate P&L from actual Alpaca positions (position-based)
-                          const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
-                          const currentValue = botPositions.reduce((sum, l) => {
-                            const pos = alpaca.positions.find(p => p.symbol === l.symbol)
-                            return sum + (pos ? l.shares * pos.currentPrice : 0)
-                          }, 0)
+                      // Prepend to investments array
+                      const allInvestments = syntheticUnallocated
+                        ? [syntheticUnallocated, ...alpaca.investments]
+                        : alpaca.investments
 
-                          // If no positions yet, use investment amount as placeholder
-                          const displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
-                          const displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
-                          const pnl = displayCurrentValue - displayCostBasis
-                          const pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
+                      return (
+                        <>
+                          <div className="font-black mb-3">Systems Invested In ({allInvestments.length})</div>
+                          {allInvestments.length === 0 ? (
+                            <div className="text-muted text-center py-4">No investments yet. Use "Buy System" above to invest in a trading bot.</div>
+                          ) : (
+                            <div className="flex flex-col gap-2.5">
+                              {allInvestments.map((inv, idx) => {
+                                const isSyntheticUnallocated = inv.botId === '__UNALLOCATED__'
 
-                          // Calculate allocation as percentage of total portfolio
-                          const totalEquity = alpaca.account?.equity ?? 0
-                          const allocation = totalEquity > 0 ? (displayCurrentValue / totalEquity) * 100 : 0
+                                // Find bot info (not applicable for synthetic)
+                                const b = isSyntheticUnallocated ? null : (savedBots.find((bot) => bot.id === inv.botId) ?? allNexusBots.find((bot) => bot.id === inv.botId))
 
-                          // Use anonymized display name for Nexus bots from other users
-                          const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
-                          const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
-                          const displayName = b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
-                            ? `${builderName}'s Fund #${fundSlot}`
-                            : b?.tags?.includes('Nexus') && b?.builderId !== userId
-                              ? `${builderName}'s Fund`
-                              : inv.botName || b?.name || inv.botId
+                                // Use slate/gray color for unallocated, cycle through BOT_CHART_COLORS for regular bots
+                                const botColor = isSyntheticUnallocated
+                                  ? '#94a3b8' // slate-400
+                                  : BOT_CHART_COLORS[(idx - 1) % BOT_CHART_COLORS.length] // Offset by 1 since unallocated takes first slot
 
-                          const toggleCollapse = () => {
-                            const next = !isExpanded
-                            setDashboardBotExpanded((prev) => ({ ...prev, [inv.botId]: next }))
-                            // Run backtest if expanding and not already done
-                            if (next && b) {
-                              if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
-                                runAnalyzeBacktest(b)
-                              }
-                            }
-                          }
+                                const isExpanded = dashboardBotExpanded[inv.botId] ?? false
+                                const isBuyingMore = dashboardBuyMoreBotId === inv.botId
+                                const analyzeState = analyzeBacktests[inv.botId]
+                                const wlTags = watchlistsByBotId.get(inv.botId) ?? []
+
+                                // For synthetic unallocated, use pre-calculated values; otherwise calculate from ledger
+                                let displayCostBasis: number
+                                let displayCurrentValue: number
+                                let pnl: number
+                                let pnlPercent: number
+                                let hasPositions: boolean
+                                let allocation: number
+
+                                if (isSyntheticUnallocated) {
+                                  // Use pre-calculated values for synthetic unallocated
+                                  displayCostBasis = inv._costBasis
+                                  displayCurrentValue = inv._currentValue
+                                  pnl = inv._pnl
+                                  pnlPercent = inv._pnlPct
+                                  hasPositions = alpaca.unallocatedPositions.length > 0
+                                  const totalEquity = alpaca.account?.equity ?? 0
+                                  allocation = totalEquity > 0 ? (displayCurrentValue / totalEquity) * 100 : 0
+                                } else {
+                                  // Get positions attributed to this bot from ledger
+                                  const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
+                                  hasPositions = botPositions.length > 0
+
+                                  // Calculate P&L from actual Alpaca positions (position-based)
+                                  const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
+                                  const currentValue = botPositions.reduce((sum, l) => {
+                                    const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                                    return sum + (pos ? l.shares * pos.currentPrice : 0)
+                                  }, 0)
+
+                                  // If no positions yet, use investment amount as placeholder
+                                  displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
+                                  displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
+                                  pnl = displayCurrentValue - displayCostBasis
+                                  pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
+
+                                  // Calculate allocation as percentage of total portfolio
+                                  const totalEquity = alpaca.account?.equity ?? 0
+                                  allocation = totalEquity > 0 ? (displayCurrentValue / totalEquity) * 100 : 0
+                                }
+
+                                // Use anonymized display name for Nexus bots from other users (not for synthetic)
+                                const displayName = isSyntheticUnallocated
+                                  ? inv.botName
+                                  : (() => {
+                                      const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
+                                      const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
+                                      return b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
+                                        ? `${builderName}'s Fund #${fundSlot}`
+                                        : b?.tags?.includes('Nexus') && b?.builderId !== userId
+                                          ? `${builderName}'s Fund`
+                                          : inv.botName || b?.name || inv.botId
+                                    })()
+
+                                const toggleCollapse = () => {
+                                  const next = !isExpanded
+                                  setDashboardBotExpanded((prev) => ({ ...prev, [inv.botId]: next }))
+                                  // Run backtest if expanding and not already done (not for synthetic)
+                                  if (next && b && !isSyntheticUnallocated) {
+                                    if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
+                                      runAnalyzeBacktest(b)
+                                    }
+                                  }
+                                }
 
                           return (
                             <Card key={inv.botId} className="grid gap-2.5">
@@ -599,29 +636,41 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   {isExpanded ? 'Collapse' : 'Expand'}
                                 </Button>
                                 <div className="font-black">{displayName}</div>
-                                <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
-                                  {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
-                                </Badge>
-                                {/* Investment amount badge */}
-                                <Badge variant="accent" className="text-xs">
-                                  {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
-                                </Badge>
-                                {/* Pending status badge when no positions yet */}
-                                {!hasPositions && (
-                                  <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
-                                    Pending - Next Trade Window
+
+                                {isSyntheticUnallocated ? (
+                                  // Synthetic unallocated card badges
+                                  <Badge variant="default" className="bg-slate-600/20 text-slate-400 border-slate-600/30">
+                                    Not Traded by Scheduler
                                   </Badge>
-                                )}
-                                {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
-                                <div className="flex gap-1.5 flex-wrap">
-                                  {wlTags.map((w) => (
-                                    <Badge key={w.id} variant="accent" className="gap-1.5">
-                                      {w.name}
+                                ) : (
+                                  // Regular bot badges
+                                  <>
+                                    <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
+                                      {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
                                     </Badge>
-                                  ))}
-                                </div>
+                                    {/* Investment amount badge */}
+                                    <Badge variant="accent" className="text-xs">
+                                      {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                    </Badge>
+                                    {/* Pending status badge when no positions yet */}
+                                    {!hasPositions && (
+                                      <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
+                                        Pending - Next Trade Window
+                                      </Badge>
+                                    )}
+                                    {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
+                                    <div className="flex gap-1.5 flex-wrap">
+                                      {wlTags.map((w) => (
+                                        <Badge key={w.id} variant="accent" className="gap-1.5">
+                                          {w.name}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+
                                 <div className="ml-auto flex items-center gap-2.5 flex-wrap">
-                                  {/* Show P&L only if we have positions */}
+                                  {/* Show P&L for both synthetic and regular */}
                                   {hasPositions && (
                                     <>
                                       <div className="text-sm text-muted">
@@ -632,22 +681,37 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                       </div>
                                     </>
                                   )}
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
-                                    }}
-                                  >
-                                    Buy More
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => alpaca.removeInvestment(inv.botId)}
-                                  >
-                                    Remove
-                                  </Button>
+
+                                  {isSyntheticUnallocated ? (
+                                    // Synthetic unallocated: Show only Sell button
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => setIsBulkSellModalOpen(true)}
+                                    >
+                                      Sell
+                                    </Button>
+                                  ) : (
+                                    // Regular bot: Show Buy More and Remove buttons
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
+                                        }}
+                                      >
+                                        Buy More
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() => alpaca.removeInvestment(inv.botId)}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </>
+                                  )}
                                 </div>
                               </div>
 
@@ -704,11 +768,22 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                 </div>
                               )}
 
-                              {/* Expanded view - same format as simulated mode */}
+                              {/* Expanded view - different content for synthetic vs regular */}
                               {isExpanded && !isBuyingMore && (
-                                <div className="flex flex-col gap-2.5 w-full">
-                                  <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
-                                    {analyzeState?.status === 'loading' ? (
+                                isSyntheticUnallocated ? (
+                                  // Synthetic unallocated expanded view: Show UnallocatedPositionsTable
+                                  <div className="mt-3">
+                                    <UnallocatedPositionsTable
+                                      positions={alpaca.unallocatedPositions}
+                                      credentialType={portfolioMode === 'live' ? 'live' : 'paper'}
+                                      onSellComplete={() => alpaca.refetch()}
+                                    />
+                                  </div>
+                                ) : (
+                                  // Regular bot expanded view: Show backtest stats
+                                  <div className="flex flex-col gap-2.5 w-full">
+                                    <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
+                                      {analyzeState?.status === 'loading' ? (
                                       <div className="text-muted">Running backtest…</div>
                                     ) : analyzeState?.status === 'error' ? (
                                       <div className="grid gap-2">
@@ -840,10 +915,11 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                     )}
                                   </div>
                                 </div>
+                                )
                               )}
 
                               {/* Show attributed positions in collapsed view */}
-                              {!isExpanded && hasPositions && (
+                              {!isExpanded && hasPositions && !isSyntheticUnallocated && (
                                 <div className="mt-2 pt-2 border-t border-border text-sm">
                                   <div className="text-xs text-muted mb-1">Positions:</div>
                                   <div className="flex flex-wrap gap-2">
@@ -2120,6 +2196,37 @@ export function DashboardPanel(props: DashboardPanelProps) {
           </div>
         )}
       </CardContent>
+
+      {/* Bulk Sell Modal for Unallocated Positions */}
+      <SellPositionModal
+        isOpen={isBulkSellModalOpen}
+        onClose={() => setIsBulkSellModalOpen(false)}
+        mode="bulk"
+        positions={alpaca.unallocatedPositions}
+        credentialType={portfolioMode === 'live' ? 'live' : 'paper'}
+        onConfirm={async (sellOrders) => {
+          // Use the same hook/API as the individual sell
+          const response = await fetch('/api/dashboard/broker/sell-unallocated', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              credentialType: portfolioMode === 'live' ? 'live' : 'paper',
+              orders: sellOrders.map((o) => ({ symbol: o.symbol, qty: o.qty })),
+            }),
+          })
+
+          if (response.ok) {
+            const result = await response.json()
+            console.log(`Successfully submitted ${result.orders.length} bulk sell order(s)`)
+            setIsBulkSellModalOpen(false)
+            alpaca.refetch()
+          } else {
+            const data = await response.json().catch(() => ({}))
+            console.error('Failed to sell positions:', data.error || 'Unknown error')
+          }
+        }}
+      />
     </Card>
   )
 }
