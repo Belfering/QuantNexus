@@ -21,9 +21,9 @@ import type { FlowNode } from '@/types'
  * Returns the current tree root for convenience.
  *
  * @param tabContext - Optional: 'Forge' or 'Model' to sync with tab-specific bot
- * @param treeField - Optional: Which tree field to sync with ('root', 'splitTree', 'walkForwardTree', 'forgeTree')
+ * @param treeField - Optional: Which tree field to sync with ('root', 'splitTree', 'walkForwardTree', 'combineTree')
  */
-export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' | 'splitTree' | 'walkForwardTree' | 'forgeTree'): FlowNode {
+export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' | 'splitTree' | 'walkForwardTree' | 'combineTree'): FlowNode {
   const globalActiveBotId = useBotStore((s) => s.activeBotId)
   const activeForgeBotId = useBotStore((s) => s.activeForgeBotId)
   const activeModelBotId = useBotStore((s) => s.activeModelBotId)
@@ -51,20 +51,27 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
     ? activeBot[treeField]
     : activeBot?.history[activeBot.historyIndex] // fallback to deprecated history
 
-  // Effect: Load tree when active bot changes
+  // Effect: Load tree when active bot or tree field changes
   useEffect(() => {
-    if (!activeBotTree) return
-
-    // Check if this is a bot switch (not initial mount)
-    const isBotSwitch = prevBotIdRef.current !== null && prevBotIdRef.current !== activeBotId
+    // Check if this is a bot switch or tree field switch
+    const prevBotId = prevBotIdRef.current
+    const isBotSwitch = prevBotId !== null && prevBotId !== activeBotId
+    const isTreeFieldSwitch = prevBotId === activeBotId && activeBotTree !== root
     prevBotIdRef.current = activeBotId
+
+    // If tree is undefined, skip syncing - let ForgeTab initialization handle it
+    // We don't set a temporary node because that causes the same node to be used everywhere
+    if (!activeBotTree) {
+      // Don't do anything - ForgeTab will initialize the tree and trigger a re-sync
+      return
+    }
 
     // Load the active bot's tree into useTreeStore
     isSyncingRef.current = true
     setRoot(activeBotTree)
 
-    // Clear zundo history on bot switch for fresh undo/redo stack
-    if (isBotSwitch) {
+    // Clear zundo history on bot/tree field switch for fresh undo/redo stack
+    if (isBotSwitch || isTreeFieldSwitch) {
       getTreeTemporalState().clear()
     }
 
@@ -72,7 +79,7 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
     requestAnimationFrame(() => {
       isSyncingRef.current = false
     })
-  }, [activeBotId, activeBotTree, setRoot])
+  }, [activeBotId, activeBotTree, setRoot, treeField])
 
   // Effect: Save tree back to active bot when useTreeStore.root changes
   useEffect(() => {

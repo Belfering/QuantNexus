@@ -171,14 +171,47 @@ export function ForgeTab({
   floatingScrollRef,
 }: ForgeTabProps) {
   // --- Tree state from useTreeStore (Phase 2N-15c) ---
-  // Manual tree sync for Forge tab to handle different subtabs (Shaping, Walk Forward, Forge)
-  const current = useTreeStore((s) => s.root)
+  // Get forgeSubtab first to determine which tree field to sync
+  const { forgeSubtab, setForgeSubtab } = useUIStore()
+
+  // Determine which tree field based on active subtab
+  const treeField = forgeSubtab === 'Shaping'
+    ? 'splitTree'
+    : forgeSubtab === 'Walk Forward'
+    ? 'walkForwardTree'
+    : forgeSubtab === 'Combine'
+    ? 'combineTree'
+    : 'splitTree' // Default for Data/Shards
+
+  // Use tree sync with treeField - saves on EVERY change
+  const current = useTreeSync('Forge', treeField)
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 
+  // Initialize trees on first access to each subtab
+  useEffect(() => {
+    if (!activeBot) return
+
+    // Check if current subtab's tree is missing and initialize it
+    if (forgeSubtab === 'Walk Forward' && !activeBot.walkForwardTree) {
+      const rollingNode = createNode('rolling')
+      rollingNode.rollingWindow = activeBot.splitConfig?.rollingWindowPeriod ?? 'monthly'
+      rollingNode.rankBy = activeBot.splitConfig?.rankBy ?? 'Sharpe Ratio'
+      const newTree = ensureSlots(rollingNode)
+      useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: newTree })
+    } else if (forgeSubtab === 'Shaping' && !activeBot.splitTree) {
+      const basicNode = createNode('basic')
+      const newTree = ensureSlots(basicNode)
+      useBotStore.getState().updateBot(activeBot.id, { splitTree: newTree })
+    } else if (forgeSubtab === 'Combine' && !activeBot.combineTree) {
+      const basicNode = createNode('basic')
+      const newTree = ensureSlots(basicNode)
+      useBotStore.getState().updateBot(activeBot.id, { combineTree: newTree })
+    }
+  }, [forgeSubtab, activeBot?.id])
+
   // Flowchart scroll width for the horizontal scrollbar (updated by App.tsx)
   const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
-  const { forgeSubtab, setForgeSubtab } = useUIStore()
 
   // Ticker lists for Forge optimization (Phase 3)
   const { tickerLists } = useTickerLists()
@@ -263,88 +296,8 @@ export function ForgeTab({
     return validateStrategyComposition(shardStrategyBranches)
   }, [shardStrategyBranches])
 
-  // Manage separate trees for Split and Walk Forward tabs
-  const prevSubtabRef = useRef<string | null>(null)
-  const isLoadingTreeRef = useRef(false)
-
-  useEffect(() => {
-    if (!activeBot) return
-    if (isLoadingTreeRef.current) return // Prevent re-entry during tree load
-
-    // Check if this is a tab switch
-    const isTabSwitch = prevSubtabRef.current !== null && prevSubtabRef.current !== forgeSubtab
-
-    if (isTabSwitch) {
-      // Save current tree to the previous tab's field (get fresh value from store)
-      const currentTree = useTreeStore.getState().root
-      if (prevSubtabRef.current === 'Shaping') {
-        useBotStore.getState().updateBot(activeBot.id, { splitTree: currentTree })
-        console.log('[ForgeTab] Saved Shaping tree to bot storage')
-      } else if (prevSubtabRef.current === 'Walk Forward') {
-        useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: currentTree })
-        console.log('[ForgeTab] Saved Walk Forward tree to bot storage')
-      } else if (prevSubtabRef.current === 'Forge') {
-        useBotStore.getState().updateBot(activeBot.id, { forgeTree: currentTree })
-        console.log('[ForgeTab] Saved Forge tree to bot storage')
-      }
-    }
-
-    // Load the tree for the new tab (always load to ensure correct tree is displayed)
-    isLoadingTreeRef.current = true
-
-    if (forgeSubtab === 'Walk Forward') {
-      if (activeBot.walkForwardTree) {
-        // Load existing Walk Forward tree
-        treeStore.setRoot(activeBot.walkForwardTree)
-        console.log('[ForgeTab] Loaded existing Walk Forward tree:', activeBot.walkForwardTree.kind)
-      } else {
-        // Initialize new rolling tree
-        const rollingNode = createNode('rolling')
-        rollingNode.rollingWindow = activeBot.splitConfig?.rollingWindowPeriod ?? 'monthly'
-        rollingNode.rankBy = activeBot.splitConfig?.rankBy ?? 'Sharpe Ratio'
-        const newTree = ensureSlots(rollingNode)
-        treeStore.setRoot(newTree)
-        // Save the initialized tree immediately
-        useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: newTree })
-        console.log('[ForgeTab] Initialized Walk Forward tab with new rolling node')
-      }
-    } else if (forgeSubtab === 'Shaping') {
-      if (activeBot.splitTree) {
-        // Load existing Shaping tree
-        treeStore.setRoot(activeBot.splitTree)
-        console.log('[ForgeTab] Loaded existing Shaping tree:', activeBot.splitTree.kind)
-      } else {
-        // Initialize new basic tree
-        const basicNode = createNode('basic')
-        const newTree = ensureSlots(basicNode)
-        treeStore.setRoot(newTree)
-        // Save the initialized tree immediately
-        useBotStore.getState().updateBot(activeBot.id, { splitTree: newTree })
-        console.log('[ForgeTab] Initialized Shaping tab with new basic node')
-      }
-    } else if (forgeSubtab === 'Forge') {
-      if (activeBot.forgeTree) {
-        // Load existing Forge tree
-        treeStore.setRoot(activeBot.forgeTree)
-        console.log('[ForgeTab] Loaded existing Forge tree:', activeBot.forgeTree.kind)
-      } else {
-        // Initialize new basic tree for Forge
-        const basicNode = createNode('basic')
-        const newTree = ensureSlots(basicNode)
-        treeStore.setRoot(newTree)
-        // Save the initialized tree immediately
-        useBotStore.getState().updateBot(activeBot.id, { forgeTree: newTree })
-        console.log('[ForgeTab] Initialized Forge tab with new basic node')
-      }
-    }
-
-    prevSubtabRef.current = forgeSubtab
-
-    // Allow re-entry on next render cycle
-    requestAnimationFrame(() => {
-      isLoadingTreeRef.current = false
-    })
-  }, [forgeSubtab, activeBot?.id])
+  // Tree syncing is now handled automatically by useTreeSync hook above
+  // No manual save/load needed - it saves on every change and loads on subtab switch
 
   // Forge node limit tracking (only for Split and Walk Forward tabs)
   const forgeNodeCount = useMemo(() => {
@@ -2903,8 +2856,8 @@ export function ForgeTab({
 
                   console.log('[ForgeTab] Generated strategy bot (unsaved):', botId, 'with', shardStrategyBranches.length, 'branches')
 
-                  // Navigate to Forge subtab
-                  useUIStore.getState().setForgeSubtab('Forge')
+                  // Navigate to Combine subtab
+                  useUIStore.getState().setForgeSubtab('Combine')
 
                   // Set this bot as active in Forge tab
                   useBotStore.getState().setActiveForgeBotId(botId)
@@ -2952,8 +2905,8 @@ export function ForgeTab({
           </>
         )}
 
-        {/* Forge Subtab - Independent copy of Model tab */}
-        {forgeSubtab === 'Forge' && (
+        {/* Combine Subtab - Independent copy of Model tab */}
+        {forgeSubtab === 'Combine' && (
           <ForgeModelTab
             tickerOptions={tickerOptions}
             backtestStatus={backtestStatus}
