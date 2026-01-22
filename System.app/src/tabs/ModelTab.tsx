@@ -150,7 +150,7 @@ export function ModelTab({
 }: ModelTabProps) {
   // --- Tree state from useTreeStore (Phase 2N-15c) ---
   // Use Model-specific tree sync to keep independent from Forge tab
-  const current = useTreeSync('Model')
+  const current = useTreeSync('Model', 'root')
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 

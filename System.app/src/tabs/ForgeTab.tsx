@@ -171,8 +171,8 @@ export function ForgeTab({
   floatingScrollRef,
 }: ForgeTabProps) {
   // --- Tree state from useTreeStore (Phase 2N-15c) ---
-  // Use Forge-specific tree sync to keep independent from Model tab
-  const current = useTreeSync('Forge')
+  // Manual tree sync for Forge tab to handle different subtabs (Shaping, Walk Forward, Forge)
+  const current = useTreeStore((s) => s.root)
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 
@@ -277,12 +277,15 @@ export function ForgeTab({
     if (isTabSwitch) {
       // Save current tree to the previous tab's field (get fresh value from store)
       const currentTree = useTreeStore.getState().root
-      if (prevSubtabRef.current === 'Split') {
+      if (prevSubtabRef.current === 'Shaping') {
         useBotStore.getState().updateBot(activeBot.id, { splitTree: currentTree })
-        console.log('[ForgeTab] Saved Split tree to bot storage')
+        console.log('[ForgeTab] Saved Shaping tree to bot storage')
       } else if (prevSubtabRef.current === 'Walk Forward') {
         useBotStore.getState().updateBot(activeBot.id, { walkForwardTree: currentTree })
         console.log('[ForgeTab] Saved Walk Forward tree to bot storage')
+      } else if (prevSubtabRef.current === 'Forge') {
+        useBotStore.getState().updateBot(activeBot.id, { forgeTree: currentTree })
+        console.log('[ForgeTab] Saved Forge tree to bot storage')
       }
     }
 
@@ -307,9 +310,9 @@ export function ForgeTab({
       }
     } else if (forgeSubtab === 'Shaping') {
       if (activeBot.splitTree) {
-        // Load existing Split tree
+        // Load existing Shaping tree
         treeStore.setRoot(activeBot.splitTree)
-        console.log('[ForgeTab] Loaded existing Split tree:', activeBot.splitTree.kind)
+        console.log('[ForgeTab] Loaded existing Shaping tree:', activeBot.splitTree.kind)
       } else {
         // Initialize new basic tree
         const basicNode = createNode('basic')
@@ -317,7 +320,21 @@ export function ForgeTab({
         treeStore.setRoot(newTree)
         // Save the initialized tree immediately
         useBotStore.getState().updateBot(activeBot.id, { splitTree: newTree })
-        console.log('[ForgeTab] Initialized Split tab with new basic node')
+        console.log('[ForgeTab] Initialized Shaping tab with new basic node')
+      }
+    } else if (forgeSubtab === 'Forge') {
+      if (activeBot.forgeTree) {
+        // Load existing Forge tree
+        treeStore.setRoot(activeBot.forgeTree)
+        console.log('[ForgeTab] Loaded existing Forge tree:', activeBot.forgeTree.kind)
+      } else {
+        // Initialize new basic tree for Forge
+        const basicNode = createNode('basic')
+        const newTree = ensureSlots(basicNode)
+        treeStore.setRoot(newTree)
+        // Save the initialized tree immediately
+        useBotStore.getState().updateBot(activeBot.id, { forgeTree: newTree })
+        console.log('[ForgeTab] Initialized Forge tab with new basic node')
       }
     }
 

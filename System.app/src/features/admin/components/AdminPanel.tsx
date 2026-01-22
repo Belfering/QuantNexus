@@ -134,9 +134,11 @@ export function AdminPanel({
   const [dryRunCashMode, setDryRunCashMode] = useState<'dollars' | 'percent'>('dollars')
   const [dryRunResult, setDryRunResult] = useState<{
     mode: string
+    executionMode?: string
+    executedAt?: string
     timestamp: string
     account: { equity: number; cash: number; reservedCash: number; adjustedEquity: number }
-    positions: Array<{ ticker: string; targetPercent: number; price: number | null; limitPrice?: number; shares: number; value: number; error?: string; skipped?: boolean; reason?: string }>
+    positions: Array<{ ticker: string; targetPercent: number; price: number | null; limitPrice?: number; shares: number; value: number; error?: string; skipped?: boolean; reason?: string; orderId?: string; status?: string }>
     summary: { totalAllocated: number; unallocated: number; allocationPercent: number; positionCount: number }
     botBreakdown?: Array<{ botId: string; botName: string; investment: number; weight: string; date: string; allocations: Record<string, number>; usedLivePrices?: boolean }>
     mergedAllocations?: Record<string, number>
@@ -144,6 +146,8 @@ export function AdminPanel({
     usedLivePrices?: boolean
   } | null>(null)
   const [dryRunRunning, setDryRunRunning] = useState(false)
+  const [executionMode, setExecutionMode] = useState<'execute-paper' | 'execute-live' | null>(null)
+  const [showLiveConfirmation, setShowLiveConfirmation] = useState(false)
 
   // Registry tickers (all tickers from Tiingo master list)
   const [registryTickers, setRegistryTickers] = useState<string[]>([])
@@ -601,6 +605,43 @@ export function AdminPanel({
       }
     }
   }, [adminConfig, savedBots, onRefreshNexusBots, userId])
+
+  // Execute trades now (Paper or Live)
+  const executeNow = useCallback(async (mode: 'execute-paper' | 'execute-live') => {
+    setDryRunRunning(true)
+    setBrokerError(null)
+    setDryRunResult(null)
+    setExecutionMode(mode)
+
+    try {
+      const res = await fetch(`${API_BASE}/admin/live/dry-run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+        body: JSON.stringify({
+          cashReserve: dryRunCashReserve,
+          cashMode: dryRunCashMode,
+          mode, // 'execute-paper' or 'execute-live'
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to execute trades')
+      setDryRunResult(data)
+
+      // Show success message
+      if (mode === 'execute-live') {
+        console.log('✅ Live execution completed:', data.positions?.length, 'orders')
+      } else {
+        console.log('✅ Paper execution completed:', data.positions?.length, 'orders')
+      }
+    } catch (e) {
+      setBrokerError(String((e as Error)?.message || e))
+      console.error('Execution failed:', e)
+    } finally {
+      setDryRunRunning(false)
+      setExecutionMode(null)
+      setShowLiveConfirmation(false)
+    }
+  }, [dryRunCashReserve, dryRunCashMode])
 
   // Get admin's bots that are available to add to Atlas Fund
   // Show ALL admin bots that aren't already tagged as Atlas
@@ -2984,12 +3025,15 @@ export function AdminPanel({
             </div>
           </Card>
 
-          {/* Dry Run Section */}
+          {/* Execute Trades Now Section */}
           <Card className="p-6">
-            <div className="font-bold mb-4">Dry Run (Simulated Trade)</div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Simulates executing today's allocations based on your Dashboard investments. Each bot's flowchart is evaluated
-              for the current date, and allocations are merged weighted by your investment amounts.
+            <div className="font-bold mb-2">Execute Trades Now</div>
+            <p className="text-sm text-muted-foreground mb-3">
+              Execute trades immediately using current allocations from your invested bots.
+              Trades execute now (not at market close).
+              <span className="block mt-1 font-bold text-yellow-600 dark:text-yellow-400">
+                ⚠️ Use Paper for testing before running on Live.
+              </span>
             </p>
 
             <div className="flex items-center gap-4 mb-4">
@@ -3013,35 +3057,114 @@ export function AdminPanel({
                 </div>
               </div>
 
-              <Button
-                onClick={async () => {
-                  setDryRunRunning(true)
-                  setBrokerError(null)
-                  setDryRunResult(null)
-                  try {
-                    const res = await fetch(`${API_BASE}/admin/live/dry-run`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
-                      body: JSON.stringify({ cashReserve: dryRunCashReserve, cashMode: dryRunCashMode }),
-                    })
-                    const data = await res.json()
-                    if (!res.ok) throw new Error(data.error || 'Dry run failed')
-                    setDryRunResult(data)
-                  } catch (e) {
-                    setBrokerError(String((e as Error)?.message || e))
-                  } finally {
-                    setDryRunRunning(false)
-                  }
-                }}
-                disabled={dryRunRunning || !brokerCredentials?.hasCredentials}
-                className="mt-5"
-              >
-                {dryRunRunning ? 'Evaluating bots...' : 'Run Dry Test'}
-              </Button>
+              <div className="flex gap-2 mt-5">
+                {/* Paper button */}
+                <Button
+                  onClick={() => {
+                    setExecutionMode('execute-paper')
+                    executeNow('execute-paper')
+                  }}
+                  disabled={dryRunRunning || !brokerCredentials?.hasCredentials}
+                  variant="default"
+                >
+                  {dryRunRunning && executionMode === 'execute-paper'
+                    ? '⏳ Executing on Paper...'
+                    : '📄 Execute Now (Paper)'}
+                </Button>
+
+                {/* Live button */}
+                <Button
+                  onClick={() => {
+                    setExecutionMode('execute-live')
+                    setShowLiveConfirmation(true)
+                  }}
+                  disabled={dryRunRunning || !brokerCredentials?.hasCredentials}
+                  variant="destructive"
+                >
+                  {dryRunRunning && executionMode === 'execute-live'
+                    ? '⏳ Executing on Live...'
+                    : '🔴 Execute Now (Live)'}
+                </Button>
+              </div>
             </div>
+
+            {/* Live Execution Confirmation Dialog */}
+            {showLiveConfirmation && (
+              <div
+                className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+                onClick={() => {
+                  setShowLiveConfirmation(false)
+                  setExecutionMode(null)
+                }}
+              >
+                <Card
+                  className="max-w-md p-6 m-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 className="text-lg font-bold mb-2 text-destructive flex items-center gap-2">
+                    <span>⚠️</span>
+                    Execute Live Trades Now?
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    This will <span className="font-bold">IMMEDIATELY</span> execute trades on your{' '}
+                    <span className="font-bold text-destructive">LIVE Alpaca account</span> using real money.
+                  </p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    The system will:
+                  </p>
+                  <ul className="text-sm text-muted-foreground mb-4 list-disc list-inside space-y-1">
+                    <li>Cancel all pending orders</li>
+                    <li>Sell positions not in target allocation</li>
+                    <li>Buy positions according to bot allocations</li>
+                  </ul>
+                  <p className="text-sm font-bold mb-4">
+                    Are you sure you want to proceed?
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setShowLiveConfirmation(false)
+                        setExecutionMode(null)
+                      }}
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => executeNow('execute-live')}
+                      className="flex-1"
+                    >
+                      ✓ Confirm Live Execution
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+            )}
 
             {dryRunResult && (
               <div className="mt-4 space-y-4">
+                {/* Execution Mode Indicator */}
+                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border">
+                  <div className="flex items-center gap-2">
+                    {dryRunResult.executionMode === 'execute-live' ? (
+                      <>
+                        <span className="text-lg">🔴</span>
+                        <span className="font-bold text-destructive">LIVE Execution</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-lg">📄</span>
+                        <span className="font-bold">Paper Execution</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {dryRunResult.executedAt && new Date(dryRunResult.executedAt).toLocaleString()}
+                  </div>
+                </div>
+
                 {/* Live Price Indicator */}
                 {dryRunResult.usedLivePrices && (
                   <div className="flex items-center gap-2 text-sm text-green-600">
@@ -3129,6 +3252,7 @@ export function AdminPanel({
                         <TableHead className="text-right">Limit Price</TableHead>
                         <TableHead className="text-right">Shares</TableHead>
                         <TableHead className="text-right">Value</TableHead>
+                        <TableHead>Order ID</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -3142,10 +3266,17 @@ export function AdminPanel({
                           <TableCell className="text-right">{pos.shares}</TableCell>
                           <TableCell className="text-right">${pos.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                           <TableCell>
+                            {pos.orderId ? (
+                              <span className="text-xs font-mono text-muted-foreground">{pos.orderId.slice(0, 8)}...</span>
+                            ) : '-'}
+                          </TableCell>
+                          <TableCell>
                             {pos.error ? (
                               <span className="text-destructive text-xs">{pos.error}</span>
                             ) : pos.skipped ? (
                               <span className="text-yellow-500 text-xs">{pos.reason}</span>
+                            ) : pos.status ? (
+                              <span className="text-green-500 text-xs">{pos.status}</span>
                             ) : (
                               <span className="text-green-500 text-xs">OK</span>
                             )}

@@ -10,7 +10,7 @@ import crypto from 'crypto'
 import Database from 'better-sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { createAlpacaClient, testConnection, getAccountInfo, getPositions, getLatestPrices, getPortfolioHistory } from '../live/broker-alpaca.mjs'
+import { createAlpacaClient, testConnection, getAccountInfo, getPositions, getLatestPrices, getPortfolioHistory, submitMarketSell } from '../live/broker-alpaca.mjs'
 import { executeDryRun, executeLiveTrades } from '../live/trade-executor.mjs'
 import { computeFinalAllocations } from '../live/backtest-allocator.mjs'
 import { authenticate, requireMainAdmin } from '../middleware/auth.mjs'
@@ -395,9 +395,11 @@ router.post('/broker/test', async (req, res) => {
 
 /**
  * POST /api/admin/live/dry-run
- * Execute a dry run simulation using current fund allocations
- * Runs backtest on each fund slot bot to get current-day allocations,
- * merges them weighted by investment amounts, then simulates trades.
+ * Executes trades immediately on Live or Paper account using current bot allocations.
+ * Despite the endpoint name (kept for backwards compatibility), this now actually executes trades.
+ * @param {string} mode - 'execute-live' or 'execute-paper'
+ * @param {number} cashReserve - Cash reserve amount
+ * @param {string} cashMode - 'dollars' or 'percent'
  */
 router.post('/live/dry-run', async (req, res) => {
   try {
@@ -406,12 +408,52 @@ router.post('/live/dry-run', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    const { cashReserve = 0, cashMode = 'dollars' } = req.body
+    const { cashReserve = 0, cashMode = 'dollars', mode = 'execute-paper' } = req.body
 
-    // Get broker credentials
-    const credentials = getDecryptedCredentials(userId)
+    // Validate mode
+    if (mode !== 'execute-live' && mode !== 'execute-paper') {
+      return res.status(400).json({ error: 'Invalid mode. Must be "execute-live" or "execute-paper"' })
+    }
+
+    // Get credentials based on execution mode
+    const credentialType = mode === 'execute-live' ? 'live' : 'paper'
+    const credentials = getDecryptedCredentials(userId, credentialType)
     if (!credentials) {
-      return res.status(400).json({ error: 'No broker credentials saved' })
+      return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
+    }
+
+    // Safety check for live execution
+    if (mode === 'execute-live') {
+      // Ensure credentials are actually live (not paper)
+      if (credentials.apiKey && credentials.apiKey.includes('paper')) {
+        return res.status(400).json({
+          error: 'Invalid live credentials - appears to be paper account'
+        })
+      }
+
+      // Log live execution start
+      console.log('[live] ⚠️  LIVE EXECUTION STARTED', {
+        userId,
+        timestamp: new Date().toISOString(),
+        cashReserve,
+        cashMode,
+      })
+
+      // Market hours warning (non-blocking)
+      const now = new Date()
+      const hours = now.getUTCHours()
+      const day = now.getUTCDay()
+      const isWeekend = day === 0 || day === 6
+      const outsideMarketHours = hours < 14 || hours >= 21
+
+      if (isWeekend || outsideMarketHours) {
+        console.warn('[live] ⚠️  Executing outside market hours:', {
+          day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day],
+          hourUTC: hours,
+          isWeekend,
+          outsideMarketHours
+        })
+      }
     }
 
     // Get user's fund slot bots (investments)
@@ -517,27 +559,42 @@ router.post('/live/dry-run', async (req, res) => {
       }
     }
 
-    // Execute dry run with merged allocations
-    let dryRunResult = null
+    // Execute live trades with merged allocations
+    let executionResult = null
     const allTickers = Object.keys(mergedAllocations)
 
     if (allTickers.length > 0) {
       try {
-        dryRunResult = await executeDryRun(credentials, mergedAllocations, {
-          cashReserve: reservedCash,
-          cashMode: 'dollars', // Already converted
-        })
+        executionResult = await executeLiveTrades(credentials, mergedAllocations, adjustedEquity)
+
+        // Log successful execution
+        if (mode === 'execute-live') {
+          console.log('[live] ✅ LIVE EXECUTION COMPLETED', {
+            positionsExecuted: executionResult.positions?.length || 0,
+            totalAllocated: executionResult.summary?.totalAllocated || 0,
+          })
+        } else {
+          console.log('[live] ✅ Paper execution completed', {
+            positionsExecuted: executionResult.positions?.length || 0,
+          })
+        }
       } catch (err) {
-        console.error('[live] executeDryRun failed:', err.message)
+        console.error(`[live] executeLiveTrades (${mode}) failed:`, err.message)
+        if (mode === 'execute-live') {
+          console.error('[live] ❌ LIVE EXECUTION FAILED:', err)
+        }
+        throw err // Re-throw to be caught by outer try-catch
       }
     }
 
     // Build response
-    const positions = dryRunResult?.positions || []
+    const positions = executionResult?.positions || []
     const validPositions = positions.filter(p => p.shares > 0)
 
     res.json({
-      mode: 'dry_run',
+      mode: mode, // 'execute-live' or 'execute-paper'
+      executionMode: mode, // For clarity in frontend
+      executedAt: new Date().toISOString(),
       timestamp: new Date().toISOString(),
       usedLivePrices: true,
       account: {
@@ -560,11 +617,13 @@ router.post('/live/dry-run', async (req, res) => {
         skipped: p.skipped,
         reason: p.reason,
         error: p.error,
+        orderId: p.orderId, // Include actual order ID from Alpaca
+        status: p.status, // Include order status
       })),
       summary: {
-        totalAllocated: dryRunResult?.summary?.totalAllocated || 0,
-        unallocated: dryRunResult?.summary?.unallocated || adjustedEquity,
-        allocationPercent: dryRunResult?.summary?.allocationPercent || 0,
+        totalAllocated: executionResult?.summary?.totalAllocated || 0,
+        unallocated: executionResult?.summary?.unallocated || adjustedEquity,
+        allocationPercent: executionResult?.summary?.allocationPercent || 0,
         positionCount: validPositions.length,
       },
     })
@@ -755,6 +814,64 @@ router.get('/dashboard/broker/history', async (req, res) => {
   }
 })
 
+/**
+ * POST /api/dashboard/broker/sell-unallocated
+ * Sell unallocated positions
+ * Body: { credentialType: 'live' | 'paper', orders: Array<{ symbol: string, qty: number }> }
+ */
+router.post('/dashboard/broker/sell-unallocated', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { credentialType, orders } = req.body
+
+    if (!credentialType || !['live', 'paper'].includes(credentialType)) {
+      return res.status(400).json({ error: 'Invalid credentialType' })
+    }
+
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return res.status(400).json({ error: 'No orders provided' })
+    }
+
+    const credentials = getDecryptedCredentials(userId, credentialType)
+    if (!credentials) {
+      return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
+    }
+
+    const client = createAlpacaClient(credentials)
+    const results = []
+    const errors = []
+
+    for (const order of orders) {
+      const { symbol, qty } = order
+      if (!symbol || !qty || qty <= 0) {
+        errors.push({ symbol, error: 'Invalid order parameters' })
+        continue
+      }
+
+      try {
+        const result = await submitMarketSell(client, symbol, qty)
+        results.push(result)
+      } catch (err) {
+        console.error(`[live] Failed to sell ${symbol}:`, err)
+        errors.push({ symbol, error: err.message })
+      }
+    }
+
+    res.json({
+      success: errors.length === 0,
+      orders: results,
+      errors: errors.length > 0 ? errors : undefined,
+    })
+  } catch (error) {
+    console.error('[live] Error selling unallocated positions:', error)
+    res.status(500).json({ error: error.message || 'Failed to sell positions' })
+  }
+})
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Trading Investments API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -780,7 +897,17 @@ router.get('/trading/investments', (req, res) => {
       ORDER BY created_at DESC
     `).all(userId, credentialType)
 
-    res.json({ investments, mode: credentialType })
+    // Transform snake_case to camelCase for frontend
+    const investmentsFormatted = investments.map(inv => ({
+      id: inv.id,
+      botId: inv.bot_id,
+      investmentAmount: inv.investment_amount,
+      weightMode: inv.weight_mode,
+      createdAt: inv.created_at,
+      updatedAt: inv.updated_at,
+    }))
+
+    res.json({ investments: investmentsFormatted, mode: credentialType })
   } catch (error) {
     console.error('[live] Error getting investments:', error)
     res.status(500).json({ error: error.message || 'Failed to get investments' })

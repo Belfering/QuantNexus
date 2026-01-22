@@ -200,6 +200,24 @@ export function DashboardEquityChart({
   return (
     <div className="w-full flex flex-col gap-1">
       <div ref={equityContainerRef} className="w-full h-[200px] rounded-t-lg border border-b-0 border-border overflow-hidden" />
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 flex-wrap px-2 py-1 text-xs">
+        {/* Portfolio line */}
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-0.5 rounded-full" style={{ backgroundColor: '#3b82f6' }} />
+          <span className="font-semibold text-text">Portfolio</span>
+        </div>
+
+        {/* Bot lines */}
+        {botSeries.map((bot) => (
+          <div key={bot.id} className="flex items-center gap-1.5">
+            <div className="w-3 h-0.5 rounded-full" style={{ backgroundColor: bot.color }} />
+            <span className="text-muted">{bot.name}</span>
+          </div>
+        ))}
+      </div>
+
       <div className="text-[10px] text-muted font-bold px-1">Drawdown</div>
       <div ref={drawdownContainerRef} className="w-full h-[80px] rounded-b-lg border border-border overflow-hidden" />
     </div>

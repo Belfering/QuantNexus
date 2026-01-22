@@ -14,3 +14,8 @@ export {
   type UseAlpacaPortfolioParams,
   type UseAlpacaPortfolioResult,
 } from './useAlpacaPortfolio'
+
+export {
+  useSellUnallocated,
+  type SellOrder,
+} from './useSellUnallocated'

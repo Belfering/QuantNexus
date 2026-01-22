@@ -16,13 +16,14 @@ import type { FlowNode } from '@/types'
  * - Clears zundo history for fresh undo/redo stack
  *
  * When useTreeStore.root changes:
- * - Saves the tree back to the active bot's current history entry
+ * - Saves the tree back to the active bot's tree field
  *
  * Returns the current tree root for convenience.
  *
  * @param tabContext - Optional: 'Forge' or 'Model' to sync with tab-specific bot
+ * @param treeField - Optional: Which tree field to sync with ('root', 'splitTree', 'walkForwardTree', 'forgeTree')
  */
-export function useTreeSync(tabContext?: 'Forge' | 'Model'): FlowNode {
+export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' | 'splitTree' | 'walkForwardTree' | 'forgeTree'): FlowNode {
   const globalActiveBotId = useBotStore((s) => s.activeBotId)
   const activeForgeBotId = useBotStore((s) => s.activeForgeBotId)
   const activeModelBotId = useBotStore((s) => s.activeModelBotId)
@@ -44,9 +45,11 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model'): FlowNode {
   // Track if we're in the middle of syncing to prevent loops
   const isSyncingRef = useRef(false)
 
-  // Get active bot's current tree
+  // Get active bot's current tree based on treeField parameter
   const activeBot = bots.find((b) => b.id === activeBotId)
-  const activeBotTree = activeBot?.history[activeBot.historyIndex]
+  const activeBotTree = treeField && activeBot
+    ? activeBot[treeField]
+    : activeBot?.history[activeBot.historyIndex] // fallback to deprecated history
 
   // Effect: Load tree when active bot changes
   useEffect(() => {
@@ -80,17 +83,23 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model'): FlowNode {
     // Check if tree actually changed (reference equality)
     if (root === activeBotTree) return
 
-    // Update the active bot's current history entry
+    // Update the active bot's tree field
     setBots((prev) =>
       prev.map((b) => {
         if (b.id !== activeBotId) return b
-        // Update the current history entry
-        const newHistory = [...b.history]
-        newHistory[b.historyIndex] = ensureSlots(root)
-        return { ...b, history: newHistory }
+
+        if (treeField) {
+          // Update the specified tree field (root, splitTree, walkForwardTree, forgeTree)
+          return { ...b, [treeField]: ensureSlots(root) }
+        } else {
+          // Fallback to deprecated history array
+          const newHistory = [...b.history]
+          newHistory[b.historyIndex] = ensureSlots(root)
+          return { ...b, history: newHistory }
+        }
       })
     )
-  }, [root, activeBotId, activeBot, activeBotTree, setBots])
+  }, [root, activeBotId, activeBot, activeBotTree, setBots, treeField])
 
   return root
 }
