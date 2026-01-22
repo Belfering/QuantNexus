@@ -4,6 +4,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import type { UserId } from '@/types'
 import { CURRENT_USER_KEY } from '@/constants/config'
+import { useBotStore } from '@/stores/useBotStore'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -180,6 +181,9 @@ export const useAuth = (): UseAuthResult => {
     } catch {
       // ignore
     }
+    // Reset bot store to fresh initial state with new bots
+    useBotStore.getState().reset()
+
     setUserId(null)
     setUserRole(null)
     setUserDisplayName(null)
