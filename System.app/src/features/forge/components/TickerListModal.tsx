@@ -7,6 +7,9 @@ import { TickerSearchModal } from '@/shared/components/TickerSearchModal'
 import { useTickerManager } from '@/hooks/useTickerManager'
 import type { TickerList, TickerListCreateInput, CSVImportResult } from '@/types/tickerList'
 
+// Define allowedModes outside component to maintain stable reference
+const TICKER_SEARCH_MODES = ['tickers'] as const
+
 interface TickerListModalProps {
   isOpen: boolean
   onClose: () => void
@@ -366,7 +369,7 @@ export function TickerListModal({ isOpen, onClose, onSave, editingList, mode }: 
             onSelect={handleAddTicker}
             tickerOptions={tickerOptions}
             tickerMetadata={tickerMetadata}
-            allowedModes={['tickers']}
+            allowedModes={TICKER_SEARCH_MODES}
             position="right"
           />
         )}
