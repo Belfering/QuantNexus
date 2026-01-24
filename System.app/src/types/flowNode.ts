@@ -32,6 +32,9 @@ export type ConditionLine = {
   tickerListName?: string
   rightTickerListId?: string
   rightTickerListName?: string
+  // Auto mode for condition tickers (cascading ticker matching)
+  conditionMode?: 'manual' | 'match_indicator'
+  rightConditionMode?: 'manual' | 'match_indicator'
 }
 
 export type NumberedItem = {

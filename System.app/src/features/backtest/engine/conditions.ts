@@ -125,6 +125,40 @@ const isDateInRange = (
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Condition Validation Functions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Validate condition tickers are resolved (not 'AUTO')
+ * Call this before running backtest to catch unresolved Auto mode tickers
+ */
+export const validateConditionTickers = (
+  conditions: ConditionLine[] | undefined,
+  nodeId: string
+): { valid: boolean; errors: string[] } => {
+  const errors: string[] = []
+
+  if (!conditions || conditions.length === 0) {
+    return { valid: true, errors: [] }
+  }
+
+  for (const cond of conditions) {
+    if (cond.ticker === 'AUTO' || (cond.conditionMode === 'match_indicator' && cond.ticker === 'AUTO')) {
+      errors.push(`Node ${nodeId}: Left ticker is unresolved Auto mode (no parent condition)`)
+    }
+
+    if (cond.expanded && (cond.rightTicker === 'AUTO' || (cond.rightConditionMode === 'match_indicator' && cond.rightTicker === 'AUTO'))) {
+      errors.push(`Node ${nodeId}: Right ticker is unresolved Auto mode (no parent condition)`)
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Condition Evaluation Functions
 // ─────────────────────────────────────────────────────────────────────────────
 

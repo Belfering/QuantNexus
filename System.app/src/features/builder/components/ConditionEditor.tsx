@@ -118,6 +118,14 @@ export const ConditionEditor = ({
     return ticker
   }
 
+  // Helper to determine if ticker is in Auto mode
+  const isAutoMode = (mode?: 'manual' | 'match_indicator'): boolean => {
+    return mode === 'match_indicator'
+  }
+
+  const isLeftAuto = isAutoMode(cond.conditionMode)
+  const isRightAuto = cond.expanded && isAutoMode(cond.rightConditionMode)
+
   return (
     <div className="flex items-center gap-2">
       <Badge variant="default" className="gap-1 py-1 px-2.5">
@@ -229,21 +237,34 @@ export const ConditionEditor = ({
                 // In Forge mode, allow tickers, ratios, branches, and lists. In Model mode, exclude lists.
                 const allowedModes = isForgeMode ? ['tickers', 'ratios', 'branches', 'lists'] : ['tickers', 'ratios', 'branches']
                 openTickerModal?.((ticker) => {
+                  // Handle Auto mode selection
+                  if (ticker === 'mode:match_indicator') {
+                    onUpdate({
+                      conditionMode: 'match_indicator',
+                      ticker: 'AUTO' as PositionChoice  // Placeholder
+                    })
+                    return
+                  }
+
                   // When changing ticker, clear ticker list fields if selecting a non-list ticker
                   if (ticker.startsWith('list:')) {
-                    onUpdate({ ticker: ticker as PositionChoice })
+                    onUpdate({
+                      ticker: ticker as PositionChoice,
+                      conditionMode: 'manual'
+                    })
                   } else {
                     // Clear ticker list metadata when selecting a regular ticker
                     onUpdate({
                       ticker: ticker as PositionChoice,
                       tickerListId: undefined,
-                      tickerListName: undefined
+                      tickerListName: undefined,
+                      conditionMode: 'manual'
                     })
                   }
                 }, undefined, allowedModes, nodeKind, cond.ticker)
               }}
             >
-              {formatTickerDisplay(cond.ticker, cond.tickerListName)}
+              {isLeftAuto ? '(Auto)' : formatTickerDisplay(cond.ticker, cond.tickerListName)}
             </button>
 
             {/* Comparator */}
@@ -399,21 +420,34 @@ export const ConditionEditor = ({
                     // In Forge mode, allow tickers, ratios, branches, and lists. In Model mode, exclude lists.
                     const allowedModes = isForgeMode ? ['tickers', 'ratios', 'branches', 'lists'] : ['tickers', 'ratios', 'branches']
                     openTickerModal?.((ticker) => {
+                      // Handle Auto mode selection for right ticker
+                      if (ticker === 'mode:match_indicator') {
+                        onUpdate({
+                          rightConditionMode: 'match_indicator',
+                          rightTicker: 'AUTO' as PositionChoice  // Placeholder
+                        })
+                        return
+                      }
+
                       // When changing ticker, clear ticker list fields if selecting a non-list ticker
                       if (ticker.startsWith('list:')) {
-                        onUpdate({ rightTicker: ticker as PositionChoice })
+                        onUpdate({
+                          rightTicker: ticker as PositionChoice,
+                          rightConditionMode: 'manual'
+                        })
                       } else {
                         // Clear ticker list metadata when selecting a regular ticker
                         onUpdate({
                           rightTicker: ticker as PositionChoice,
                           rightTickerListId: undefined,
-                          rightTickerListName: undefined
+                          rightTickerListName: undefined,
+                          rightConditionMode: 'manual'
                         })
                       }
                     }, undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY')
                   }}
                 >
-                  {formatTickerDisplay(cond.rightTicker ?? 'SPY', cond.rightTickerListName)}
+                  {isRightAuto ? '(Auto)' : formatTickerDisplay(cond.rightTicker ?? 'SPY', cond.rightTickerListName)}
                 </button>
               </>
             )}

@@ -130,23 +130,51 @@ export function hasAutoModeInTree(node: FlowNode): boolean {
 }
 
 /**
+ * Resolve Auto mode ticker by walking up ancestor chain
+ * @param ancestorTickers - Stack of tickers from parent conditions (most recent first)
+ * @returns Resolved ticker or null if cannot resolve
+ */
+function resolveAutoTicker(ancestorTickers: string[]): string | null {
+  // Use most recent non-Auto ticker from ancestors
+  for (const ticker of ancestorTickers) {
+    if (ticker && ticker !== 'AUTO') {
+      return ticker
+    }
+  }
+  return null
+}
+
+/**
  * Apply ticker substitutions to a tree
  * @param node - The node to apply substitutions to (will be modified recursively)
  * @param substitutions - Map of ticker list ID to selected ticker
  * @param appliedTickers - Set of tickers that have been applied to conditions (for match_indicator mode)
  * @param extractedTickers - Object to collect the first condition ticker and position ticker found
+ * @param ancestorTickers - Stack of parent condition tickers for Auto mode resolution
  */
 function applyTickerSubstitutions(
   node: FlowNode,
   substitutions: Record<string, string>,
   appliedTickers: Set<string> = new Set(),
-  extractedTickers?: { conditionTicker?: string, positionTicker?: string }
+  extractedTickers?: { conditionTicker?: string, positionTicker?: string },
+  ancestorTickers: string[] = []
 ): void {
   // Apply to condition tickers
   if (node.conditions && Array.isArray(node.conditions)) {
     for (const condition of node.conditions) {
-      // Replace ticker if it references a ticker list
-      if (condition.tickerListId && substitutions[condition.tickerListId]) {
+      // LEFT TICKER: Handle Auto mode
+      if (condition.conditionMode === 'match_indicator') {
+        const resolved = resolveAutoTicker(ancestorTickers)
+        if (resolved) {
+          condition.ticker = resolved
+          appliedTickers.add(resolved)
+          console.log(`[BranchGenerator] Auto mode: Resolved left ticker to ${resolved}`)
+        } else {
+          console.warn(`[BranchGenerator] Auto mode: Could not resolve left ticker (no parent conditions)`)
+        }
+      }
+      // LEFT TICKER: Replace ticker if it references a ticker list
+      else if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
         appliedTickers.add(condition.ticker)
         // Track first condition ticker for database
@@ -158,7 +186,7 @@ function applyTickerSubstitutions(
         delete (condition as any).tickerListId
         delete (condition as any).tickerListName
       }
-      // FALLBACK: Handle ticker field containing "list:UUID" directly (without tickerListId field)
+      // LEFT TICKER: FALLBACK - Handle ticker field containing "list:UUID" directly
       else if (condition.ticker && typeof condition.ticker === 'string' && condition.ticker.startsWith('list:')) {
         const listId = condition.ticker.substring(5)
         if (substitutions[listId]) {
@@ -171,15 +199,26 @@ function applyTickerSubstitutions(
           console.log(`[BranchGenerator] Substituted ticker ${condition.ticker} for inline list ${listId}`)
         }
       }
-      // Also track regular (non-list) tickers for AUTO mode matching
-      else if (condition.ticker && typeof condition.ticker === 'string') {
+      // LEFT TICKER: Track regular (non-list, non-Auto) tickers
+      else if (condition.ticker && typeof condition.ticker === 'string' && condition.ticker !== 'AUTO') {
         appliedTickers.add(condition.ticker)
         if (extractedTickers && !extractedTickers.conditionTicker) {
           extractedTickers.conditionTicker = condition.ticker
         }
       }
-      // Replace right ticker if it references a ticker list
-      if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
+      // RIGHT TICKER: Handle Auto mode for expanded conditions
+      if (condition.expanded && condition.rightConditionMode === 'match_indicator') {
+        const resolved = resolveAutoTicker(ancestorTickers)
+        if (resolved) {
+          condition.rightTicker = resolved
+          appliedTickers.add(resolved)
+          console.log(`[BranchGenerator] Auto mode: Resolved right ticker to ${resolved}`)
+        } else {
+          console.warn(`[BranchGenerator] Auto mode: Could not resolve right ticker (no parent conditions)`)
+        }
+      }
+      // RIGHT TICKER: Replace right ticker if it references a ticker list
+      else if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
         appliedTickers.add(condition.rightTicker)
         console.log(`[BranchGenerator] Substituted right ticker ${condition.rightTicker} for list ${condition.rightTickerListId}`)
@@ -187,7 +226,7 @@ function applyTickerSubstitutions(
         delete (condition as any).rightTickerListId
         delete (condition as any).rightTickerListName
       }
-      // FALLBACK: Handle rightTicker field containing "list:UUID" directly
+      // RIGHT TICKER: FALLBACK - Handle rightTicker field containing "list:UUID" directly
       else if (condition.rightTicker && typeof condition.rightTicker === 'string' && condition.rightTicker.startsWith('list:')) {
         const listId = condition.rightTicker.substring(5)
         if (substitutions[listId]) {
@@ -195,6 +234,10 @@ function applyTickerSubstitutions(
           appliedTickers.add(condition.rightTicker)
           console.log(`[BranchGenerator] Substituted right ticker ${condition.rightTicker} for inline list ${listId}`)
         }
+      }
+      // RIGHT TICKER: Track regular (non-list, non-Auto) tickers
+      else if (condition.rightTicker && typeof condition.rightTicker === 'string' && condition.rightTicker !== 'AUTO') {
+        appliedTickers.add(condition.rightTicker)
       }
       // Also track regular (non-list) right tickers for AUTO mode matching
       else if (condition.rightTicker && typeof condition.rightTicker === 'string') {
@@ -256,7 +299,19 @@ function applyTickerSubstitutions(
   // Apply to entry/exit conditions for altExit nodes
   if (node.entryConditions && Array.isArray(node.entryConditions)) {
     for (const condition of node.entryConditions) {
-      if (condition.tickerListId && substitutions[condition.tickerListId]) {
+      // LEFT TICKER: Handle Auto mode
+      if (condition.conditionMode === 'match_indicator') {
+        const resolved = resolveAutoTicker(ancestorTickers)
+        if (resolved) {
+          condition.ticker = resolved
+          appliedTickers.add(resolved)
+          console.log(`[BranchGenerator] Auto mode: Resolved entry condition left ticker to ${resolved}`)
+        } else {
+          console.warn(`[BranchGenerator] Auto mode: Could not resolve entry condition left ticker`)
+        }
+      }
+      // LEFT TICKER: Replace ticker if it references a ticker list
+      else if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
         appliedTickers.add(condition.ticker)
         delete (condition as any).tickerListId
@@ -269,7 +324,19 @@ function applyTickerSubstitutions(
           appliedTickers.add(condition.ticker)
         }
       }
-      if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
+      // RIGHT TICKER: Handle Auto mode
+      if (condition.expanded && condition.rightConditionMode === 'match_indicator') {
+        const resolved = resolveAutoTicker(ancestorTickers)
+        if (resolved) {
+          condition.rightTicker = resolved
+          appliedTickers.add(resolved)
+          console.log(`[BranchGenerator] Auto mode: Resolved entry condition right ticker to ${resolved}`)
+        } else {
+          console.warn(`[BranchGenerator] Auto mode: Could not resolve entry condition right ticker`)
+        }
+      }
+      // RIGHT TICKER: Replace right ticker if it references a ticker list
+      else if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
         appliedTickers.add(condition.rightTicker)
         delete (condition as any).rightTickerListId
@@ -286,7 +353,19 @@ function applyTickerSubstitutions(
   }
   if (node.exitConditions && Array.isArray(node.exitConditions)) {
     for (const condition of node.exitConditions) {
-      if (condition.tickerListId && substitutions[condition.tickerListId]) {
+      // LEFT TICKER: Handle Auto mode
+      if (condition.conditionMode === 'match_indicator') {
+        const resolved = resolveAutoTicker(ancestorTickers)
+        if (resolved) {
+          condition.ticker = resolved
+          appliedTickers.add(resolved)
+          console.log(`[BranchGenerator] Auto mode: Resolved exit condition left ticker to ${resolved}`)
+        } else {
+          console.warn(`[BranchGenerator] Auto mode: Could not resolve exit condition left ticker`)
+        }
+      }
+      // LEFT TICKER: Replace ticker if it references a ticker list
+      else if (condition.tickerListId && substitutions[condition.tickerListId]) {
         condition.ticker = substitutions[condition.tickerListId]
         appliedTickers.add(condition.ticker)
         delete (condition as any).tickerListId
@@ -299,7 +378,19 @@ function applyTickerSubstitutions(
           appliedTickers.add(condition.ticker)
         }
       }
-      if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
+      // RIGHT TICKER: Handle Auto mode
+      if (condition.expanded && condition.rightConditionMode === 'match_indicator') {
+        const resolved = resolveAutoTicker(ancestorTickers)
+        if (resolved) {
+          condition.rightTicker = resolved
+          appliedTickers.add(resolved)
+          console.log(`[BranchGenerator] Auto mode: Resolved exit condition right ticker to ${resolved}`)
+        } else {
+          console.warn(`[BranchGenerator] Auto mode: Could not resolve exit condition right ticker`)
+        }
+      }
+      // RIGHT TICKER: Replace right ticker if it references a ticker list
+      else if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
         condition.rightTicker = substitutions[condition.rightTickerListId]
         appliedTickers.add(condition.rightTicker)
         delete (condition as any).rightTickerListId
@@ -320,7 +411,19 @@ function applyTickerSubstitutions(
     for (const item of node.numbered.items) {
       if (item.conditions && Array.isArray(item.conditions)) {
         for (const condition of item.conditions) {
-          if (condition.tickerListId && substitutions[condition.tickerListId]) {
+          // LEFT TICKER: Handle Auto mode
+          if (condition.conditionMode === 'match_indicator') {
+            const resolved = resolveAutoTicker(ancestorTickers)
+            if (resolved) {
+              condition.ticker = resolved
+              appliedTickers.add(resolved)
+              console.log(`[BranchGenerator] Auto mode: Resolved numbered item left ticker to ${resolved}`)
+            } else {
+              console.warn(`[BranchGenerator] Auto mode: Could not resolve numbered item left ticker`)
+            }
+          }
+          // LEFT TICKER: Replace ticker if it references a ticker list
+          else if (condition.tickerListId && substitutions[condition.tickerListId]) {
             condition.ticker = substitutions[condition.tickerListId]
             appliedTickers.add(condition.ticker)
             delete (condition as any).tickerListId
@@ -333,7 +436,19 @@ function applyTickerSubstitutions(
               appliedTickers.add(condition.ticker)
             }
           }
-          if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
+          // RIGHT TICKER: Handle Auto mode
+          if (condition.expanded && condition.rightConditionMode === 'match_indicator') {
+            const resolved = resolveAutoTicker(ancestorTickers)
+            if (resolved) {
+              condition.rightTicker = resolved
+              appliedTickers.add(resolved)
+              console.log(`[BranchGenerator] Auto mode: Resolved numbered item right ticker to ${resolved}`)
+            } else {
+              console.warn(`[BranchGenerator] Auto mode: Could not resolve numbered item right ticker`)
+            }
+          }
+          // RIGHT TICKER: Replace right ticker if it references a ticker list
+          else if (condition.rightTickerListId && substitutions[condition.rightTickerListId]) {
             condition.rightTicker = substitutions[condition.rightTickerListId]
             appliedTickers.add(condition.rightTicker)
             delete (condition as any).rightTickerListId
@@ -351,14 +466,19 @@ function applyTickerSubstitutions(
     }
   }
 
-  // Recursively apply to children (passing appliedTickers so descendants can use them)
+  // Recursively apply to children (passing appliedTickers AND ancestorTickers)
   if (node.children) {
     for (const slotKey in node.children) {
       const slot = node.children[slotKey as keyof typeof node.children]
       if (Array.isArray(slot)) {
         for (const child of slot) {
           if (child) {
-            applyTickerSubstitutions(child, substitutions, appliedTickers, extractedTickers)
+            // Build ancestry stack: current level tickers + parent ancestry
+            const childAncestry = [
+              ...Array.from(appliedTickers),  // Current level tickers
+              ...ancestorTickers              // Parent tickers
+            ]
+            applyTickerSubstitutions(child, substitutions, appliedTickers, extractedTickers, childAncestry)
           }
         }
       }

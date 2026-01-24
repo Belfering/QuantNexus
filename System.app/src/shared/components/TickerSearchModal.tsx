@@ -457,8 +457,8 @@ export function TickerSearchModal({
           {/* Lists mode */}
           {mode === 'lists' && (
             <>
-              {/* Special option: Match Indicator (only for position nodes) */}
-              {nodeKind === 'position' && (
+              {/* Special option: Match Indicator (for position and condition nodes) */}
+              {(nodeKind === 'position' || nodeKind === 'indicator' || nodeKind === 'numbered' || nodeKind === 'altExit') && (
                 <div
                   className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border"
                   onClick={() => {
@@ -467,9 +467,13 @@ export function TickerSearchModal({
                   }}
                 >
                   <div className="flex flex-col flex-1 min-w-0">
-                    <span className="font-bold">Match Indicator Ticker</span>
+                    <span className="font-bold">
+                      {nodeKind === 'position' ? 'Match Indicator Ticker' : 'Auto (Match Parent)'}
+                    </span>
                     <span className="text-xs text-muted-foreground">
-                      Auto-match tickers from conditions above
+                      {nodeKind === 'position'
+                        ? 'Auto-match tickers from conditions above'
+                        : 'Match ticker from parent condition or list'}
                     </span>
                   </div>
                   <div className="shrink-0 ml-2">
