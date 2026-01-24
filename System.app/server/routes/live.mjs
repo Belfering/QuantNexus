@@ -636,14 +636,24 @@ router.post('/live/dry-run', async (req, res) => {
     console.log(`[live] [DEBUG] Tickers: ${Array.from(allTickers).join(', ')}`)
 
     // ============================================================
-    // STEP 2: Fetch Tiingo current prices ONCE for all tickers
+    // STEP 2: Fetch current prices with Tiingo + Alpaca fallback
     // ============================================================
     console.log(`[live] [DEBUG] ===== STEP 2: Fetching current prices for ${allTickers.size} tickers =====`)
     const perfPriceFetchStart = Date.now()
-    const { fetchTiingoCurrentPrices } = await import('../live/tiingo-prices.mjs')
-    const currentPrices = await fetchTiingoCurrentPrices(Array.from(allTickers))
+    const { fetchCurrentPrices, getMetadataSummary } = await import('../live/price-authority.mjs')
+    const { prices: currentPrices, metadata: priceMetadata } = await fetchCurrentPrices(
+      Array.from(allTickers),
+      {
+        alpacaClient: client,
+        enableAlpacaFallback: true,
+        logDegradedMode: true,
+      }
+    )
     console.log(`[live] [PERF] Current price fetch: ${Date.now() - perfPriceFetchStart}ms`)
     console.log(`[live] [DEBUG] Fetched ${currentPrices.size} current prices`)
+
+    // Get price metadata summary for API response
+    const priceMetadataSummary = getMetadataSummary(priceMetadata)
 
     // ============================================================
     // STEP 3: Run backtests for each bot with current prices
@@ -972,6 +982,7 @@ router.post('/live/dry-run', async (req, res) => {
         allocationPercent: executionResult?.summary?.allocationPercent || 0,
         positionCount: validPositions.length,
       },
+      priceMetadata: priceMetadataSummary, // Price source quality info for frontend indicator
     })
   } catch (error) {
     console.error('[live] Error executing dry run:', error)

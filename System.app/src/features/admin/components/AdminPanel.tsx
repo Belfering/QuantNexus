@@ -187,6 +187,15 @@ export function AdminPanel({
   const [executionMode, setExecutionMode] = useState<'simulate' | 'execute-paper' | 'execute-live' | null>(null)
   const [showLiveConfirmation, setShowLiveConfirmation] = useState(false)
 
+  // Price data quality (for degraded mode indicator)
+  const [priceDataQuality, setPriceDataQuality] = useState<{
+    degradedMode: boolean
+    primaryCount: number
+    fallbackCount: number
+    emergencyCount: number
+    totalTickers: number
+  } | null>(null)
+
   // Registry tickers (all tickers from Tiingo master list)
   const [registryTickers, setRegistryTickers] = useState<string[]>([])
 
@@ -698,6 +707,11 @@ export function AdminPanel({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to execute trades')
       setDryRunResult(data)
+
+      // Update price data quality if present
+      if (data.priceMetadata) {
+        setPriceDataQuality(data.priceMetadata)
+      }
 
       // Show success message
       if (mode === 'execute-live') {
@@ -3444,6 +3458,35 @@ export function AdminPanel({
                   </select>
                 </div>
               </div>
+
+              {/* Price Data Quality Indicator */}
+              {priceDataQuality?.degradedMode && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 mt-4">
+                  <span className="text-yellow-500">⚠️</span>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-yellow-500">
+                      Degraded Data Mode
+                    </span>
+                    <span className="text-xs text-yellow-500/80">
+                      Using Alpaca fallback for {priceDataQuality.fallbackCount} of {priceDataQuality.totalTickers} tickers
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {priceDataQuality && priceDataQuality.emergencyCount > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 mt-4">
+                  <span className="text-red-500">🚨</span>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-red-500">
+                      Missing Price Data
+                    </span>
+                    <span className="text-xs text-red-500/80">
+                      {priceDataQuality.emergencyCount} ticker(s) have no price data - positions skipped
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-2 mt-5">
                 {/* Simulate button (no orders placed) */}
