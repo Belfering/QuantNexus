@@ -68,7 +68,7 @@ export interface ConditionEditorProps {
   /** Called to delete this condition */
   onDelete: () => void
   /** Optional function to open ticker search modal */
-  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string, nodeId?: string) => void
   /** Node kind for the ticker modal context */
   nodeKind?: BlockKind
   /** Parameter ranges for optimization */
@@ -261,7 +261,7 @@ export const ConditionEditor = ({
                       conditionMode: 'manual'
                     })
                   }
-                }, undefined, allowedModes, nodeKind, cond.ticker)
+                }, undefined, allowedModes, nodeKind, cond.ticker, nodeId)
               }}
             >
               {isLeftAuto ? '(Auto)' : formatTickerDisplay(cond.ticker, cond.tickerListName)}
@@ -444,7 +444,7 @@ export const ConditionEditor = ({
                           rightConditionMode: 'manual'
                         })
                       }
-                    }, undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY')
+                    }, undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY', nodeId)
                   }}
                 >
                   {isRightAuto ? '(Auto)' : formatTickerDisplay(cond.rightTicker ?? 'SPY', cond.rightTickerListName)}

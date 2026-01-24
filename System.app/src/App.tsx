@@ -266,6 +266,7 @@ function App() {
   const tickerModalModes = useUIStore(s => s.tickerModalModes)
   const tickerModalNodeKind = useUIStore(s => s.tickerModalNodeKind)
   const tickerModalInitialValue = useUIStore(s => s.tickerModalInitialValue)
+  const tickerModalNodeId = useUIStore(s => s.tickerModalNodeId)
   const setTickerModalOpen = useUIStore(s => s.setTickerModalOpen)
 
   // Ticker lists for Forge optimization (Phase 3)
@@ -1330,6 +1331,7 @@ function App() {
         nodeKind={tickerModalNodeKind}
         initialValue={tickerModalInitialValue}
         tickerLists={tickerLists}
+        nodeId={tickerModalNodeId}
       />
       <main className={`flex-1 overflow-hidden min-h-0 ${tab === 'Model' || tab === 'Forge' ? 'pb-4' : ''}`}>
         {tab === 'Dashboard' ? (

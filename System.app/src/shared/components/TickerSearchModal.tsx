@@ -64,6 +64,7 @@ export interface TickerSearchModalProps {
   initialValue?: string // Current ticker value to pre-populate (e.g., "JNK/XLP" for ratios)
   position?: 'center' | 'right' // Position modal center or right side
   tickerLists?: TickerList[] // Available ticker lists for Forge mode
+  nodeId?: string // Node ID to check for hardcoded Auto mode restrictions
 }
 
 export function TickerSearchModal({
@@ -78,7 +79,11 @@ export function TickerSearchModal({
   initialValue,
   position = 'center',
   tickerLists = [],
+  nodeId,
 }: TickerSearchModalProps) {
+  // Hardcoded: Don't show Auto for the first indicator node (node-2)
+  // This node is a direct child of the root and has no parent to match tickers from
+  const allowAutoMode = nodeId !== 'node-2'
   const [search, setSearch] = useState('')
   const [includeETFs, setIncludeETFs] = useState(true)
   const [includeStocks, setIncludeStocks] = useState(true)
@@ -458,7 +463,7 @@ export function TickerSearchModal({
           {mode === 'lists' && (
             <>
               {/* Special option: Match Indicator (for position and condition nodes) */}
-              {(nodeKind === 'position' || nodeKind === 'indicator' || nodeKind === 'numbered' || nodeKind === 'altExit') && (
+              {allowAutoMode && (nodeKind === 'position' || nodeKind === 'indicator' || nodeKind === 'numbered' || nodeKind === 'altExit') && (
                 <div
                   className="px-4 py-2 hover:bg-muted/50 cursor-pointer flex items-center justify-between border-b border-border"
                   onClick={() => {
@@ -764,17 +769,21 @@ export function TickerSearchModal({
 
           {mode === 'lists' && (
             <>
-              {/* Special option: Match Indicator (only for position nodes) */}
-              {nodeKind === 'position' && (
+              {/* Special option: Match Indicator (for position and condition nodes) */}
+              {allowAutoMode && (nodeKind === 'position' || nodeKind === 'indicator' || nodeKind === 'numbered' || nodeKind === 'altExit') && (
                 <div
                   onClick={() => onSelect('mode:match_indicator')}
                   className="px-4 py-3 hover:bg-muted cursor-pointer border-b border-border"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex flex-col min-w-0 flex-1">
-                      <span className="font-bold">Match Indicator Ticker</span>
+                      <span className="font-bold">
+                        {nodeKind === 'position' ? 'Match Indicator Ticker' : 'Auto (Match Parent)'}
+                      </span>
                       <span className="text-sm text-muted-foreground">
-                        Auto-match tickers from conditions above
+                        {nodeKind === 'position'
+                          ? 'Auto-match tickers from conditions above'
+                          : 'Match ticker from parent condition or list'}
                       </span>
                     </div>
                     <div className="shrink-0">
