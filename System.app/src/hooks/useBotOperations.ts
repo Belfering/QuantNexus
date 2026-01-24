@@ -220,22 +220,36 @@ export function useBotOperations({
 
       // Auto-run robustness analysis after successful backtest (fire and forget)
       const savedBotId = capturedBot.savedBotId
+      console.log('[Auto-Robustness] splitConfigToPass:', splitConfigToPass)
+      console.log('[Auto-Robustness] capturedBot.splitConfig:', capturedBot.splitConfig)
+      console.log('[Auto-Robustness] tab:', tab)
       setModelSanityReport({ status: 'loading' })
       const payload = JSON.stringify(ensureSlots(cloneNode(currentTree)))
       const robustnessUrl = savedBotId
         ? `${API_BASE}/bots/${savedBotId}/sanity-report`
         : `${API_BASE}/sanity-report`
       const robustnessBody = savedBotId
-        ? JSON.stringify({ mode: backtestMode, costBps: backtestCostBps })
-        : JSON.stringify({ payload, mode: backtestMode, costBps: backtestCostBps })
+        ? JSON.stringify({ mode: backtestMode, costBps: backtestCostBps, splitConfig: splitConfigToPass })
+        : JSON.stringify({ payload, mode: backtestMode, costBps: backtestCostBps, splitConfig: splitConfigToPass })
+      console.log('[Auto-Robustness] Request body:', robustnessBody)
       fetch(robustnessUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: robustnessBody,
       })
-        .then((res) => res.ok ? res.json() : Promise.reject(new Error('Sanity report failed')))
-        .then((report) => setModelSanityReport({ status: 'done', report }))
-        .catch(() => setModelSanityReport({ status: 'error', error: 'Failed to generate robustness report' }))
+        .then((res) => {
+          console.log('[Auto-Robustness] Response status:', res.status, 'ok:', res.ok)
+          return res.ok ? res.json() : Promise.reject(new Error('Sanity report failed'))
+        })
+        .then((data) => {
+          console.log('[Auto-Robustness] Response data keys:', Object.keys(data))
+          console.log('[Auto-Robustness] Full response data:', data)
+          setModelSanityReport({ status: 'done', report: data.report || data })
+        })
+        .catch((err) => {
+          console.error('[Auto-Robustness] Error:', err)
+          setModelSanityReport({ status: 'error', error: 'Failed to generate robustness report' })
+        })
     } catch (e) {
       if (isBacktestValidationError(e)) {
         updateBotBacktest(targetBotId, { errors: e.errors, status: 'error' })

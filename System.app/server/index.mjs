@@ -3387,12 +3387,15 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
     }
 
     // Run backtest to get daily returns using bot's stored settings
-    console.log(`[SanityReport] Running backtest for bot ${botId} (${botRow.name}) with mode=${botMode}, costBps=${botCostBps}...`)
+    // Extract splitConfig from request body if provided
+    const splitConfig = req.body.splitConfig || undefined
+    console.log(`[SanityReport] Running backtest for bot ${botId} (${botRow.name}) with mode=${botMode}, costBps=${botCostBps}, splitConfig=${JSON.stringify(splitConfig)}...`)
     const startTime = Date.now()
 
     const backtestResult = await runBacktest(decompressedPayload, {
       mode: botMode,
       costBps: botCostBps,
+      splitConfig,
     })
 
     if (!backtestResult.dailyReturns || backtestResult.dailyReturns.length < 50) {
@@ -3401,18 +3404,32 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
       })
     }
 
-    // Get SPY returns for beta/treynor calculation
+    // Construct dailyReturnsWithDates for IS/OOS splitting
+    const strategyDates = backtestResult.equityCurve.map(p => p.date)
+    const dailyReturnsWithDates = []
+    for (let i = 0; i < backtestResult.dailyReturns.length; i++) {
+      // The return at index i corresponds to the transition from strategyDates[i] to strategyDates[i+1]
+      // We associate it with strategyDates[i+1] (the end date of the return period)
+      if (i + 1 < strategyDates.length) {
+        dailyReturnsWithDates.push({
+          date: strategyDates[i + 1],
+          return: backtestResult.dailyReturns[i]
+        })
+      }
+    }
+
+    // Get SPY returns for beta/treynor calculation (with dates for IS/OOS splitting)
     let spyReturns = null
     if (loadedTickers.has('SPY')) {
       try {
-        spyReturns = await getTickerReturns('SPY')
+        spyReturns = await getTickerReturnsWithDates('SPY')
       } catch (e) {
         console.warn('[SanityReport] Failed to get SPY returns:', e.message)
       }
     }
 
     // Generate sanity report (uses default 200 iterations from sanity-report.mjs)
-    const report = generateSanityReport(backtestResult.dailyReturns, {
+    const report = generateSanityReport(dailyReturnsWithDates, {
       years: req.body.years || 5,
       blockSize: req.body.blockSize || 7,
       shards: req.body.shards || 10,
@@ -3420,17 +3437,19 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
       avgTurnover: backtestResult.avgTurnover,
       avgHoldings: backtestResult.avgHoldings,
       equityCurve: backtestResult.equityCurve,
+      oosStartDate: backtestResult.oosStartDate || null, // Pass OOS split date if available
     }, spyReturns)
 
-    // Compute strategy beta vs each benchmark ticker with proper date alignment
+    // Compute strategy beta vs each benchmark ticker AND benchmark metrics vs strategy
     const benchmarkTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
     const strategyBetas = {}
+    const benchmarkMetricsVsStrategy = {}
 
     // Build strategy returns map keyed by date
     // equityCurve has dates, dailyReturns is the return for each day
     // Note: equityCurve[0] is day 0, equityCurve[1] is day 1, etc.
     // dailyReturns[i] is the return from day i to day i+1
-    const strategyDates = backtestResult.equityCurve.map(p => p.date)
+    // (strategyDates already declared above at line 3405, reusing it)
     const strategyReturnsMap = new Map()
     for (let i = 0; i < backtestResult.dailyReturns.length; i++) {
       // The return at index i corresponds to the transition from strategyDates[i] to strategyDates[i+1]
@@ -3460,7 +3479,14 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
 
             // Compute beta with properly aligned data
             if (alignedStrategy.length >= 50) {
+              // Compute strategy beta vs benchmark
               strategyBetas[ticker] = computeBeta(alignedStrategy, alignedBench)
+
+              // Compute benchmark metrics with strategy as the market (for proper beta calculation)
+              const metrics = computeBenchmarkMetrics(alignedBench, alignedStrategy)
+              if (metrics) {
+                benchmarkMetricsVsStrategy[ticker] = metrics
+              }
             }
           }
         } catch (e) {
@@ -3469,6 +3495,81 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
       }
     }
     report.strategyBetas = strategyBetas
+    report.benchmarkMetrics = benchmarkMetricsVsStrategy
+
+    // If IS/OOS split was applied, compute separate benchmark metrics for each period
+    if (report.oosStartDate && backtestResult.equityCurve && backtestResult.dailyReturns) {
+      const isBenchmarkMetrics = {}
+      const oosBenchmarkMetrics = {}
+      const oosDate = report.oosStartDate
+
+      // Split strategy returns into IS and OOS (reusing strategyDates from above)
+      const isStrategyMap = new Map()
+      const oosStrategyMap = new Map()
+      for (let i = 0; i < backtestResult.dailyReturns.length; i++) {
+        if (i + 1 < strategyDates.length) {
+          const date = strategyDates[i + 1]
+          const ret = backtestResult.dailyReturns[i]
+          if (date < oosDate) {
+            isStrategyMap.set(date, ret)
+          } else {
+            oosStrategyMap.set(date, ret)
+          }
+        }
+      }
+
+      console.log(`[IS/OOS Benchmarks] Computing IS benchmarks (${isStrategyMap.size} days) and OOS benchmarks (${oosStrategyMap.size} days)`)
+
+      for (const ticker of benchmarkTickers) {
+        if (!loadedTickers.has(ticker)) continue
+        try {
+          const benchWithDates = await getTickerReturnsWithDates(ticker)
+          if (benchWithDates && benchWithDates.length > 0) {
+            const benchMap = new Map(benchWithDates.map(r => [r.date, r.return]))
+
+            // Align IS period
+            const isAlignedBench = []
+            const isAlignedStrategy = []
+            for (const [date, stratReturn] of isStrategyMap) {
+              if (benchMap.has(date)) {
+                isAlignedBench.push(benchMap.get(date))
+                isAlignedStrategy.push(stratReturn)
+              }
+            }
+
+            if (isAlignedBench.length >= 50) {
+              const isMetrics = computeBenchmarkMetrics(isAlignedBench, isAlignedStrategy)
+              if (isMetrics) {
+                isBenchmarkMetrics[ticker] = isMetrics
+              }
+            }
+
+            // Align OOS period
+            const oosAlignedBench = []
+            const oosAlignedStrategy = []
+            for (const [date, stratReturn] of oosStrategyMap) {
+              if (benchMap.has(date)) {
+                oosAlignedBench.push(benchMap.get(date))
+                oosAlignedStrategy.push(stratReturn)
+              }
+            }
+
+            if (oosAlignedBench.length >= 50) {
+              const oosMetrics = computeBenchmarkMetrics(oosAlignedBench, oosAlignedStrategy)
+              if (oosMetrics) {
+                oosBenchmarkMetrics[ticker] = oosMetrics
+              }
+            }
+          }
+        } catch (e) {
+          // Skip this ticker
+        }
+      }
+
+      report.isBenchmarkMetrics = isBenchmarkMetrics
+      report.oosBenchmarkMetrics = oosBenchmarkMetrics
+      console.log(`[IS/OOS Benchmarks] IS: ${Object.keys(isBenchmarkMetrics).length} tickers, OOS: ${Object.keys(oosBenchmarkMetrics).length} tickers`)
+    }
 
     // Store in cache
     backtestCache.setCachedSanityReport(botId, payloadHash, dataDate, report)
@@ -3490,7 +3591,10 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
 // POST /api/sanity-report - Generate sanity report from payload directly (for unsaved strategies)
 app.post('/api/sanity-report', async (req, res) => {
   try {
-    const { payload, mode = 'CC', costBps = 5, startDate, endDate } = req.body
+    const { payload, mode = 'CC', costBps = 5, startDate, endDate, splitConfig } = req.body
+
+    console.log('[SanityReport] Request body keys:', Object.keys(req.body))
+    console.log('[SanityReport] splitConfig from req.body:', splitConfig)
 
     if (!payload) {
       return res.status(400).json({ error: 'payload is required' })
@@ -3500,12 +3604,14 @@ app.post('/api/sanity-report', async (req, res) => {
 
     // Run backtest to get daily returns
     const dateRangeStr = startDate && endDate ? ` (${startDate} to ${endDate})` : ''
-    console.log(`[SanityReport] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}${dateRangeStr}...`)
+    const splitConfigStr = splitConfig ? ` splitConfig=${JSON.stringify(splitConfig)}` : ''
+    console.log(`[SanityReport] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}${dateRangeStr}${splitConfigStr}...`)
     const startTime = Date.now()
 
     const backtestResult = await runBacktest(payloadStr, {
       mode,
       costBps,
+      splitConfig,
     })
 
     if (!backtestResult.dailyReturns || backtestResult.dailyReturns.length < 50) {
@@ -3514,22 +3620,28 @@ app.post('/api/sanity-report', async (req, res) => {
       })
     }
 
+    // Construct dailyReturnsWithDates for IS/OOS splitting
+    const strategyDates = backtestResult.equityCurve.map(p => p.date)
+    const dailyReturnsWithDates = []
+    for (let i = 0; i < backtestResult.dailyReturns.length; i++) {
+      if (i + 1 < strategyDates.length) {
+        dailyReturnsWithDates.push({
+          date: strategyDates[i + 1],
+          return: backtestResult.dailyReturns[i]
+        })
+      }
+    }
+
     // Filter by date range if specified (for IS/OOS split analysis)
-    let filteredReturns = backtestResult.dailyReturns
+    let filteredReturns = dailyReturnsWithDates
     let filteredEquityCurve = backtestResult.equityCurve
     if (startDate || endDate) {
-      const filterIndices = []
-      for (let i = 0; i < backtestResult.equityCurve.length; i++) {
-        const pt = backtestResult.equityCurve[i]
-        if (pt.date) {
-          const include = (!startDate || pt.date >= startDate) && (!endDate || pt.date <= endDate)
-          if (include) {
-            filterIndices.push(i)
-          }
-        }
-      }
-      filteredReturns = filterIndices.map(i => backtestResult.dailyReturns[i])
-      filteredEquityCurve = filterIndices.map(i => backtestResult.equityCurve[i])
+      filteredReturns = dailyReturnsWithDates.filter(r => {
+        return (!startDate || r.date >= startDate) && (!endDate || r.date <= endDate)
+      })
+      filteredEquityCurve = backtestResult.equityCurve.filter(pt => {
+        return pt.date && (!startDate || pt.date >= startDate) && (!endDate || pt.date <= endDate)
+      })
       console.log(`[SanityReport] Filtered to ${filteredReturns.length} days (from ${filteredEquityCurve[0]?.date} to ${filteredEquityCurve[filteredEquityCurve.length - 1]?.date})`)
 
       if (filteredReturns.length < 50) {
@@ -3539,17 +3651,19 @@ app.post('/api/sanity-report', async (req, res) => {
       }
     }
 
-    // Get SPY returns for beta/treynor calculation
+    // Get SPY returns for beta/treynor calculation (with dates for IS/OOS splitting)
     let spyReturns = null
     if (loadedTickers.has('SPY')) {
       try {
-        spyReturns = await getTickerReturns('SPY')
+        spyReturns = await getTickerReturnsWithDates('SPY')
       } catch (e) {
         console.warn('[SanityReport] Failed to get SPY returns:', e.message)
       }
     }
 
     // Generate sanity report using filtered data
+    // Note: If startDate/endDate filtering was applied, we don't want to split again
+    // So only pass oosStartDate if no manual filtering was applied
     const report = generateSanityReport(filteredReturns, {
       years: req.body.years || 5,
       blockSize: req.body.blockSize || 7,
@@ -3558,11 +3672,13 @@ app.post('/api/sanity-report', async (req, res) => {
       avgTurnover: backtestResult.avgTurnover,
       avgHoldings: backtestResult.avgHoldings,
       equityCurve: filteredEquityCurve,
+      oosStartDate: (!startDate && !endDate) ? backtestResult.oosStartDate : null,
     }, spyReturns)
 
-    // Compute strategy beta vs each benchmark ticker
+    // Compute strategy beta vs each benchmark ticker AND benchmark metrics vs strategy
     const benchmarkTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
     const strategyBetas = {}
+    const benchmarkMetricsVsStrategy = {}
 
     // Build strategy returns map keyed by date (using filtered data)
     if (filteredEquityCurve && filteredReturns) {
@@ -3589,7 +3705,14 @@ app.post('/api/sanity-report', async (req, res) => {
               }
             }
             if (alignedStrategy.length >= 50) {
+              // Compute strategy beta vs benchmark
               strategyBetas[ticker] = computeBeta(alignedStrategy, alignedBench)
+
+              // Compute benchmark metrics with strategy as the market (for proper beta calculation)
+              const metrics = computeBenchmarkMetrics(alignedBench, alignedStrategy)
+              if (metrics) {
+                benchmarkMetricsVsStrategy[ticker] = metrics
+              }
             }
           }
         } catch (e) {
@@ -3598,6 +3721,80 @@ app.post('/api/sanity-report', async (req, res) => {
       }
     }
     report.strategyBetas = strategyBetas
+    report.benchmarkMetrics = benchmarkMetricsVsStrategy
+
+    // If IS/OOS split was applied, compute separate benchmark metrics for each period
+    if (report.oosStartDate && filteredEquityCurve && filteredReturns) {
+      const isBenchmarkMetrics = {}
+      const oosBenchmarkMetrics = {}
+      const oosDate = report.oosStartDate
+
+      // Split strategy returns into IS and OOS
+      const isStrategyMap = new Map()
+      const oosStrategyMap = new Map()
+      for (let i = 0; i < filteredEquityCurve.length && i < filteredReturns.length; i++) {
+        const pt = filteredEquityCurve[i]
+        if (pt.date) {
+          if (pt.date < oosDate) {
+            isStrategyMap.set(pt.date, filteredReturns[i])
+          } else {
+            oosStrategyMap.set(pt.date, filteredReturns[i])
+          }
+        }
+      }
+
+      console.log(`[IS/OOS Benchmarks] Computing IS benchmarks (${isStrategyMap.size} days) and OOS benchmarks (${oosStrategyMap.size} days)`)
+
+      for (const ticker of benchmarkTickers) {
+        if (!loadedTickers.has(ticker)) continue
+        try {
+          const benchWithDates = await getTickerReturnsWithDates(ticker)
+          if (benchWithDates && benchWithDates.length > 0) {
+            const benchMap = new Map(benchWithDates.map(r => [r.date, r.return]))
+
+            // Align IS period
+            const isAlignedBench = []
+            const isAlignedStrategy = []
+            for (const [date, stratReturn] of isStrategyMap) {
+              if (benchMap.has(date)) {
+                isAlignedBench.push(benchMap.get(date))
+                isAlignedStrategy.push(stratReturn)
+              }
+            }
+
+            if (isAlignedBench.length >= 50) {
+              const isMetrics = computeBenchmarkMetrics(isAlignedBench, isAlignedStrategy)
+              if (isMetrics) {
+                isBenchmarkMetrics[ticker] = isMetrics
+              }
+            }
+
+            // Align OOS period
+            const oosAlignedBench = []
+            const oosAlignedStrategy = []
+            for (const [date, stratReturn] of oosStrategyMap) {
+              if (benchMap.has(date)) {
+                oosAlignedBench.push(benchMap.get(date))
+                oosAlignedStrategy.push(stratReturn)
+              }
+            }
+
+            if (oosAlignedBench.length >= 50) {
+              const oosMetrics = computeBenchmarkMetrics(oosAlignedBench, oosAlignedStrategy)
+              if (oosMetrics) {
+                oosBenchmarkMetrics[ticker] = oosMetrics
+              }
+            }
+          }
+        } catch (e) {
+          // Skip this ticker
+        }
+      }
+
+      report.isBenchmarkMetrics = isBenchmarkMetrics
+      report.oosBenchmarkMetrics = oosBenchmarkMetrics
+      console.log(`[IS/OOS Benchmarks] IS: ${Object.keys(isBenchmarkMetrics).length} tickers, OOS: ${Object.keys(oosBenchmarkMetrics).length} tickers`)
+    }
 
     const elapsed = Date.now() - startTime
     console.log(`[SanityReport] Completed for unsaved strategy in ${elapsed}ms`)
@@ -4304,20 +4501,33 @@ app.post('/api/admin/cache/prewarm', authenticate, requireAdmin, async (req, res
             if (result.dailyReturns && result.dailyReturns.length >= 50) {
               console.log(`[Cache Prewarm] ${processed}/${allBots.length} - ${bot.name}: Running sanity report (200 MC + 200 K-Fold)...`)
 
-              // Get SPY returns for beta/treynor calculation
+              // Construct dailyReturnsWithDates for IS/OOS splitting
+              const strategyDates = result.equityCurve.map(p => p.date)
+              const dailyReturnsWithDates = []
+              for (let i = 0; i < result.dailyReturns.length; i++) {
+                if (i + 1 < strategyDates.length) {
+                  dailyReturnsWithDates.push({
+                    date: strategyDates[i + 1],
+                    return: result.dailyReturns[i]
+                  })
+                }
+              }
+
+              // Get SPY returns for beta/treynor calculation (with dates for IS/OOS splitting)
               let spyReturns = null
               if (loadedTickers.has('SPY')) {
                 try {
-                  spyReturns = await getTickerReturns('SPY')
+                  spyReturns = await getTickerReturnsWithDates('SPY')
                 } catch (e) {
                   // Continue without SPY
                 }
               }
 
-              const report = generateSanityReport(result.dailyReturns, {
+              const report = generateSanityReport(dailyReturnsWithDates, {
                 avgTurnover: result.avgTurnover,
                 avgHoldings: result.avgHoldings,
                 equityCurve: result.equityCurve,
+                oosStartDate: result.oosStartDate || null, // Pass OOS split date if available
               }, spyReturns)
 
               // Compute strategy beta vs each benchmark ticker

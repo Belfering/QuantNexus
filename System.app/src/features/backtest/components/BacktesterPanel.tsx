@@ -454,33 +454,43 @@ export function BacktesterPanel({
                   <div className="flex flex-col">
                     <div className="font-black mb-2 text-center">In-Sample Comparison</div>
                     <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
-                      {isBenchmarks.status === 'done' && isBenchmarks.data ? (
-                        renderBenchmarksTable(
-                          { ...result, metrics: result.isMetrics },
-                          isBenchmarks.data,
-                          modelSanityReport
+                      {(() => {
+                        // Use benchmark metrics from sanity report if available, otherwise use fetched data
+                        const isBench = (modelSanityReport?.report as { isBenchmarkMetrics?: Record<string, ComparisonMetrics> })?.isBenchmarkMetrics || isBenchmarks.data
+                        return isBench ? (
+                          renderBenchmarksTable(
+                            { ...result, metrics: result.isMetrics },
+                            isBench,
+                            modelSanityReport,
+                            'is'
+                          )
+                        ) : isBenchmarks.status === 'loading' || modelSanityReport?.status === 'loading' ? (
+                          <div className="text-muted text-center p-4">Loading IS benchmarks...</div>
+                        ) : (
+                          <div className="text-muted text-center p-4">Run backtest to load benchmarks</div>
                         )
-                      ) : isBenchmarks.status === 'loading' ? (
-                        <div className="text-muted text-center p-4">Loading IS benchmarks...</div>
-                      ) : (
-                        <div className="text-muted text-center p-4">Click Refresh to load benchmarks</div>
-                      )}
+                      })()}
                     </div>
                   </div>
                   <div className="flex flex-col">
                     <div className="font-black mb-2 text-center">Out-of-Sample Comparison</div>
                     <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
-                      {oosBenchmarks.status === 'done' && oosBenchmarks.data ? (
-                        renderBenchmarksTable(
-                          { ...result, metrics: result.oosMetrics },
-                          oosBenchmarks.data,
-                          modelSanityReport
+                      {(() => {
+                        // Use benchmark metrics from sanity report if available, otherwise use fetched data
+                        const oosBench = (modelSanityReport?.report as { oosBenchmarkMetrics?: Record<string, ComparisonMetrics> })?.oosBenchmarkMetrics || oosBenchmarks.data
+                        return oosBench ? (
+                          renderBenchmarksTable(
+                            { ...result, metrics: result.oosMetrics },
+                            oosBench,
+                            modelSanityReport,
+                            'oos'
+                          )
+                        ) : oosBenchmarks.status === 'loading' || modelSanityReport?.status === 'loading' ? (
+                          <div className="text-muted text-center p-4">Loading OOS benchmarks...</div>
+                        ) : (
+                          <div className="text-muted text-center p-4">Run backtest to load benchmarks</div>
                         )
-                      ) : oosBenchmarks.status === 'loading' ? (
-                        <div className="text-muted text-center p-4">Loading OOS benchmarks...</div>
-                      ) : (
-                        <div className="text-muted text-center p-4">Click Refresh to load benchmarks</div>
-                      )}
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -488,7 +498,15 @@ export function BacktesterPanel({
             ) : (
               // === FULL PERIOD VIEW (No IS/OOS split) ===
               <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
-                {renderBenchmarksTable(result, benchmarkMetrics.data, modelSanityReport)}
+                {(() => {
+                  // Use benchmark metrics from sanity report if available, otherwise use fetched data
+                  const benchData = (modelSanityReport?.report as { benchmarkMetrics?: Record<string, ComparisonMetrics> })?.benchmarkMetrics || benchmarkMetrics.data
+                  return benchData ? (
+                    renderBenchmarksTable(result, benchData, modelSanityReport)
+                  ) : (
+                    <div className="text-muted text-center p-4">Run backtest to load benchmarks</div>
+                  )
+                })()}
               </div>
             )}
           </>
@@ -500,7 +518,6 @@ export function BacktesterPanel({
   // Render Robustness Tab Content
   const renderRobustnessTab = () => {
     const sanityState = modelSanityReport ?? { status: 'idle' as const }
-    const hasIsOosSplit = !!(result?.isMetrics && result?.oosMetrics && result?.oosStartDate)
 
     const getLevelColor = (level: string) => {
       if (level === 'Low') return 'text-success'
@@ -520,35 +537,11 @@ export function BacktesterPanel({
 
     return (
       <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
-        <div className="flex items-center justify-between gap-2.5">
-          <div className="font-black">Robustness Analysis</div>
-          <Button
-            size="sm"
-            onClick={() => onFetchRobustness?.()}
-            disabled={sanityState.status === 'loading'}
-          >
-            {sanityState.status === 'loading' ? 'Running...' : sanityState.status === 'done' ? 'Re-run' : 'Generate'}
-          </Button>
-        </div>
-
-        {/* IS/OOS informational message */}
-        {hasIsOosSplit && sanityState.status === 'done' && (
-          <div className="text-muted text-sm p-3 border border-border rounded-xl bg-muted/10">
-            <div className="font-semibold mb-1">IS/OOS Robustness Analysis</div>
-            <div className="text-xs">
-              IS/OOS side-by-side robustness comparison is coming soon. The backend already supports date-range filtering via the `/api/sanity-report` endpoint (startDate/endDate parameters). Full implementation requires separate IS/OOS report state management in parent components.
-            </div>
-            <div className="text-xs mt-2">
-              Currently showing: Full period robustness analysis (all {result?.days.length || 0} days)
-            </div>
-          </div>
-        )}
+        <div className="font-black">Robustness Analysis</div>
 
         {sanityState.status === 'idle' && (
           <div className="text-muted text-sm p-4 border border-border rounded-xl text-center">
-            Click "Generate" to run bootstrap simulations and fragility analysis.
-            <br />
-            <span className="text-xs">Note: Save the bot first to run robustness analysis via the API.</span>
+            Robustness analysis will run automatically after backtest completes.
           </div>
         )}
 
@@ -566,80 +559,31 @@ export function BacktesterPanel({
         )}
 
         {sanityState.status === 'done' && sanityState.report && sanityState.report.fragility && sanityState.report.pathRisk && (
-          <div className="grid grid-cols-4 gap-3 w-full h-full">
-            {/* Left Card: Summary & Fragility */}
-            <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
-              <div>
-                <div className="text-xs font-bold mb-1.5 text-center">Summary</div>
-                {(sanityState.report.summary?.length ?? 0) > 0 ? (
-                  <ul className="text-xs space-y-0.5">
-                    {sanityState.report.summary?.map((s, i) => (
-                      <li key={i} className="flex items-start gap-1.5">
-                        <span className="text-warning">{'\u2022'}</span>
-                        <span>{s}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="text-xs text-muted">No major red flags detected.</div>
-                )}
-              </div>
+          <>
+            {/* Check if we have IS/OOS split data */}
+            {sanityState.report.oosStartDate && sanityState.report.pathRisk.isPathRisk && sanityState.report.pathRisk.oosPathRisk ? (
+              <div className="flex flex-col gap-4">
+                {/* In-Sample Section */}
+                <div>
+                  <div className="text-sm font-bold mb-2 text-center">
+                    In-Sample Robustness Analysis (Start - {sanityState.report.oosStartDate})
+                  </div>
+                  {renderRobustnessGrid(sanityState.report.pathRisk.isPathRisk, sanityState.report.fragility, sanityState.report.summary, getLevelColor, getLevelIcon, formatPctVal)}
+                </div>
 
-              <div>
-                <div className="text-xs font-bold mb-1.5 text-center">Fragility Fingerprints</div>
-                <div className="space-y-1">
-                  {[
-                    { name: 'Sub-Period', data: sanityState.report.fragility.subPeriodStability, tooltip: 'Consistency of returns across different time periods. Low = stable across all periods.' },
-                    { name: 'Profit Conc.', data: sanityState.report.fragility.profitConcentration, tooltip: 'How concentrated profits are in a few big days. Low = profits spread evenly.' },
-                    { name: 'Smoothness', data: sanityState.report.fragility.smoothnessScore, tooltip: 'How smooth the equity curve is. Normal = acceptable volatility in growth.' },
-                    { name: 'Thinning', data: sanityState.report.fragility.thinningFragility, tooltip: 'Sensitivity to removing random trades. Robust = performance holds when trades removed.' },
-                  ].map(({ name, data, tooltip }) => (
-                    <div key={name} className="flex items-center gap-2 text-xs" title={tooltip}>
-                      <span className="w-20 truncate text-muted cursor-help">{name}</span>
-                      <span className={cn("w-16", getLevelColor(data.level))}>
-                        {getLevelIcon(data.level)} {data.level}
-                      </span>
-                    </div>
-                  ))}
+                {/* Out-of-Sample Section */}
+                <div>
+                  <div className="text-sm font-bold mb-2 text-center">
+                    Out-of-Sample Robustness Analysis ({sanityState.report.oosStartDate} - End)
+                  </div>
+                  {renderRobustnessGrid(sanityState.report.pathRisk.oosPathRisk, sanityState.report.fragility, sanityState.report.summary, getLevelColor, getLevelIcon, formatPctVal)}
                 </div>
               </div>
-
-              <div>
-                <div className="text-xs font-bold mb-1.5 text-center">DD Probability</div>
-                <div className="space-y-0.5 text-xs">
-                  <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt20)}</span> chance of 20% DD</div>
-                  <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt30)}</span> chance of 30% DD</div>
-                  <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt40)}</span> chance of 40% DD</div>
-                  <div><span className="font-semibold">{formatPctVal(sanityState.report.pathRisk.drawdownProbabilities.gt50)}</span> chance of 50% DD</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Monte Carlo Card */}
-            <div className="border border-border rounded-xl p-3 flex flex-col h-full">
-              <div className="text-xs font-bold mb-2 text-center">Monte Carlo (2000 years)</div>
-              {renderDistributionBar('Max Drawdown Distribution', sanityState.report.pathRisk.monteCarlo.drawdowns, true, formatPctVal)}
-              {renderDistributionBar('CAGR Distribution', sanityState.report.pathRisk.monteCarlo.cagrs, false, formatPctVal)}
-              {sanityState.report.pathRisk.monteCarlo.sharpes && renderDistributionBar('Sharpe Distribution', sanityState.report.pathRisk.monteCarlo.sharpes, false, (v) => v?.toFixed(2) ?? '-')}
-              {sanityState.report.pathRisk.monteCarlo.volatilities && renderDistributionBar('Volatility Distribution', sanityState.report.pathRisk.monteCarlo.volatilities, true, formatPctVal)}
-            </div>
-
-            {/* Distribution Curves Card */}
-            <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
-              <div className="text-xs font-bold mb-1 text-center">Distribution Curves</div>
-              {renderHistogram('CAGR Distribution', sanityState.report.pathRisk.monteCarlo.cagrs.histogram, true)}
-              {renderHistogram('Max Drawdown Distribution', sanityState.report.pathRisk.monteCarlo.drawdowns.histogram, false)}
-            </div>
-
-            {/* K-Fold Card */}
-            <div className="border border-border rounded-xl p-3 flex flex-col h-full">
-              <div className="text-xs font-bold mb-2 text-center">K-Fold (200 Folds)</div>
-              {renderDistributionBar('Max Drawdown Distribution', sanityState.report.pathRisk.kfold.drawdowns, true, formatPctVal)}
-              {renderDistributionBar('CAGR Distribution', sanityState.report.pathRisk.kfold.cagrs, false, formatPctVal)}
-              {sanityState.report.pathRisk.kfold.sharpes && renderDistributionBar('Sharpe Distribution', sanityState.report.pathRisk.kfold.sharpes, false, (v) => v?.toFixed(2) ?? '-')}
-              {sanityState.report.pathRisk.kfold.volatilities && renderDistributionBar('Volatility Distribution', sanityState.report.pathRisk.kfold.volatilities, true, formatPctVal)}
-            </div>
-          </div>
+            ) : (
+              // Fallback: Single view (no split)
+              renderRobustnessGrid(sanityState.report.pathRisk, sanityState.report.fragility, sanityState.report.summary, getLevelColor, getLevelIcon, formatPctVal)
+            )}
+          </>
         )}
       </div>
     )
@@ -1392,7 +1336,8 @@ export function BacktesterPanel({
 function renderBenchmarksTable(
   result: NonNullable<BacktesterPanelProps['result']>,
   benchmarks: Record<string, ComparisonMetrics>,
-  modelSanityReport?: BacktesterPanelProps['modelSanityReport']
+  modelSanityReport?: BacktesterPanelProps['modelSanityReport'],
+  period?: 'is' | 'oos'
 ) {
   const strategyMetrics = result.metrics
 
@@ -1413,8 +1358,21 @@ function renderBenchmarksTable(
     return <span className={`${color} text-xs ml-1`}>({formatted})</span>
   }
 
-  const mcMetrics = modelSanityReport?.report?.pathRisk?.comparisonMetrics?.monteCarlo
-  const kfMetrics = modelSanityReport?.report?.pathRisk?.comparisonMetrics?.kfold
+  // Get MC/KF metrics based on period (IS/OOS or full)
+  let mcMetrics: ComparisonMetrics | undefined
+  let kfMetrics: ComparisonMetrics | undefined
+
+  if (period === 'is') {
+    mcMetrics = modelSanityReport?.report?.pathRisk?.isPathRisk?.comparisonMetrics?.monteCarlo
+    kfMetrics = modelSanityReport?.report?.pathRisk?.isPathRisk?.comparisonMetrics?.kfold
+  } else if (period === 'oos') {
+    mcMetrics = modelSanityReport?.report?.pathRisk?.oosPathRisk?.comparisonMetrics?.monteCarlo
+    kfMetrics = modelSanityReport?.report?.pathRisk?.oosPathRisk?.comparisonMetrics?.kfold
+  } else {
+    mcMetrics = modelSanityReport?.report?.pathRisk?.comparisonMetrics?.monteCarlo
+    kfMetrics = modelSanityReport?.report?.pathRisk?.comparisonMetrics?.kfold
+  }
+
   const strategyBetas: Record<string, number> = (modelSanityReport?.report as { strategyBetas?: Record<string, number> } | undefined)?.strategyBetas ?? {}
 
   type RowData = { label: string; metrics: ComparisonMetrics | undefined; isBaseline?: boolean; ticker?: string }
@@ -1498,6 +1456,93 @@ function renderBenchmarksTable(
         ))}
       </tbody>
     </table>
+  )
+}
+
+// Helper: Render 4-column robustness grid
+function renderRobustnessGrid(
+  pathRisk: any,
+  fragility: any,
+  summary: string[],
+  getLevelColor: (level: string) => string,
+  getLevelIcon: (level: string) => string,
+  formatPctVal: (v: number) => string
+) {
+  return (
+    <div className="grid grid-cols-4 gap-3 w-full h-full">
+      {/* Left Card: Summary & Fragility */}
+      <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
+        <div>
+          <div className="text-xs font-bold mb-1.5 text-center">Summary</div>
+          {(summary?.length ?? 0) > 0 ? (
+            <ul className="text-xs space-y-0.5">
+              {summary?.map((s, i) => (
+                <li key={i} className="flex items-start gap-1.5">
+                  <span className="text-warning">{'\u2022'}</span>
+                  <span>{s}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-xs text-muted">No major red flags detected.</div>
+          )}
+        </div>
+
+        <div>
+          <div className="text-xs font-bold mb-1.5 text-center">Fragility Fingerprints</div>
+          <div className="space-y-1">
+            {[
+              { name: 'Sub-Period', data: fragility.subPeriodStability, tooltip: 'Consistency of returns across different time periods. Low = stable across all periods.' },
+              { name: 'Profit Conc.', data: fragility.profitConcentration, tooltip: 'How concentrated profits are in a few big days. Low = profits spread evenly.' },
+              { name: 'Smoothness', data: fragility.smoothnessScore, tooltip: 'How smooth the equity curve is. Normal = acceptable volatility in growth.' },
+              { name: 'Thinning', data: fragility.thinningFragility, tooltip: 'Sensitivity to removing random trades. Robust = performance holds when trades removed.' },
+            ].map(({ name, data, tooltip }) => (
+              <div key={name} className="flex items-center gap-2 text-xs" title={tooltip}>
+                <span className="w-20 truncate text-muted cursor-help">{name}</span>
+                <span className={cn("w-16", getLevelColor(data.level))}>
+                  {getLevelIcon(data.level)} {data.level}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-bold mb-1.5 text-center">DD Probability</div>
+          <div className="space-y-0.5 text-xs">
+            <div><span className="font-semibold">{formatPctVal(pathRisk.drawdownProbabilities.gt20)}</span> chance of 20% DD</div>
+            <div><span className="font-semibold">{formatPctVal(pathRisk.drawdownProbabilities.gt30)}</span> chance of 30% DD</div>
+            <div><span className="font-semibold">{formatPctVal(pathRisk.drawdownProbabilities.gt40)}</span> chance of 40% DD</div>
+            <div><span className="font-semibold">{formatPctVal(pathRisk.drawdownProbabilities.gt50)}</span> chance of 50% DD</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Monte Carlo Card */}
+      <div className="border border-border rounded-xl p-3 flex flex-col h-full">
+        <div className="text-xs font-bold mb-2 text-center">Monte Carlo (2000 years)</div>
+        {renderDistributionBar('Max Drawdown Distribution', pathRisk.monteCarlo.drawdowns, true, formatPctVal)}
+        {renderDistributionBar('CAGR Distribution', pathRisk.monteCarlo.cagrs, false, formatPctVal)}
+        {pathRisk.monteCarlo.sharpes && renderDistributionBar('Sharpe Distribution', pathRisk.monteCarlo.sharpes, false, (v) => v?.toFixed(2) ?? '-')}
+        {pathRisk.monteCarlo.volatilities && renderDistributionBar('Volatility Distribution', pathRisk.monteCarlo.volatilities, true, formatPctVal)}
+      </div>
+
+      {/* Distribution Curves Card */}
+      <div className="border border-border rounded-xl p-3 flex flex-col gap-3 h-full">
+        <div className="text-xs font-bold mb-1 text-center">Distribution Curves</div>
+        {renderHistogram('CAGR Distribution', pathRisk.monteCarlo.cagrs.histogram, true)}
+        {renderHistogram('Max Drawdown Distribution', pathRisk.monteCarlo.drawdowns.histogram, false)}
+      </div>
+
+      {/* K-Fold Card */}
+      <div className="border border-border rounded-xl p-3 flex flex-col h-full">
+        <div className="text-xs font-bold mb-2 text-center">K-Fold (200 Folds)</div>
+        {renderDistributionBar('Max Drawdown Distribution', pathRisk.kfold.drawdowns, true, formatPctVal)}
+        {renderDistributionBar('CAGR Distribution', pathRisk.kfold.cagrs, false, formatPctVal)}
+        {pathRisk.kfold.sharpes && renderDistributionBar('Sharpe Distribution', pathRisk.kfold.sharpes, false, (v) => v?.toFixed(2) ?? '-')}
+        {pathRisk.kfold.volatilities && renderDistributionBar('Volatility Distribution', pathRisk.kfold.volatilities, true, formatPctVal)}
+      </div>
+    </div>
   )
 }
 
