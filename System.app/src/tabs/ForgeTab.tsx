@@ -188,6 +188,19 @@ export function ForgeTab({
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 
+  // Effect: Sync activeForgeBotId when switching Forge subtabs
+  useEffect(() => {
+    if (forgeSubtab === 'Shaping') {
+      const activeShapingBot = useBotStore.getState().activeShapingBotId
+      useBotStore.getState().setActiveForgeBotId(activeShapingBot)
+      console.log('[ForgeTab] Switched to Shaping, loading bot:', activeShapingBot)
+    } else if (forgeSubtab === 'Combine') {
+      const activeCombineBot = useBotStore.getState().activeCombineBotId
+      useBotStore.getState().setActiveForgeBotId(activeCombineBot)
+      console.log('[ForgeTab] Switched to Combine, loading bot:', activeCombineBot)
+    }
+  }, [forgeSubtab])
+
   // Flowchart scroll width for the horizontal scrollbar (updated by App.tsx)
   const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
 
@@ -2829,7 +2842,8 @@ export function ForgeTab({
                     callChains: [],
                     customIndicators: [],
                     parameterRanges: [],
-                    tabContext: 'Forge'
+                    tabContext: 'Forge',
+                    subtabContext: 'Combine' // Mark as Combine subtab bot
                     // Note: No savedBotId - this bot is unsaved until user clicks "Save to Watchlist"
                   })
 
@@ -2840,6 +2854,16 @@ export function ForgeTab({
 
                   // Set this bot as active in Forge tab
                   useBotStore.getState().setActiveForgeBotId(botId)
+                  useBotStore.getState().setActiveCombineBotId(botId) // Remember as Combine active bot
+
+                  // Close the initial "Forge System" bot if it exists
+                  const initialBot = useBotStore.getState().bots.find(
+                    b => b.tabContext === 'Forge' && b.history[0]?.title === 'Forge System'
+                  )
+                  if (initialBot) {
+                    useBotStore.getState().closeBot(initialBot.id)
+                    console.log('[ForgeTab] Closed initial "Forge System" bot')
+                  }
                 }}
               />
             </div>

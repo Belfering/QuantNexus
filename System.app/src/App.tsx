@@ -473,6 +473,8 @@ function App() {
   const setActiveForgeBotId = useBotStore(s => s.setActiveForgeBotId)
   const activeModelBotId = useBotStore(s => s.activeModelBotId)
   const setActiveModelBotId = useBotStore(s => s.setActiveModelBotId)
+  const setActiveShapingBotId = useBotStore(s => s.setActiveShapingBotId)
+  const setActiveCombineBotId = useBotStore(s => s.setActiveCombineBotId)
   // setClipboard, setCopiedNodeId moved to useBotOperations (Phase 2N-19)
   const isImporting = useBotStore(s => s.isImporting)
   const setIsImporting = useBotStore(s => s.setIsImporting)
@@ -1213,10 +1215,18 @@ function App() {
             </div>
           )}
         </div>
-        {/* Row 3: Algo tabs (only when Model or Forge tab active) */}
-        {(tab === 'Model' || tab === 'Forge') && (
+        {/* Row 3: Algo tabs (only when Model or Forge Combine/Shaping subtabs active) */}
+        {((tab === 'Model') || (tab === 'Forge' && (forgeSubtab === 'Combine' || forgeSubtab === 'Shaping'))) && (
           <div className="flex gap-2 py-2 px-2 border-t border-border">
-              {bots.filter(b => b.tabContext === tab).map((b) => {
+              {bots.filter(b => {
+                if (tab === 'Model') {
+                  return b.tabContext === 'Model'
+                } else if (tab === 'Forge') {
+                  // Filter by both tabContext and subtabContext for Forge tabs
+                  return b.tabContext === 'Forge' && b.subtabContext === forgeSubtab
+                }
+                return false
+              }).map((b) => {
                 const root = b.history[b.historyIndex] ?? b.history[0]
                 const label = root?.title || 'Untitled'
                 const isActive = (tab === 'Forge' && b.id === activeForgeBotId) || (tab === 'Model' && b.id === activeModelBotId)
@@ -1237,6 +1247,12 @@ function App() {
                       onClick={() => {
                         if (tab === 'Forge') {
                           setActiveForgeBotId(b.id)
+                          // Also update the subtab-specific active bot ID
+                          if (forgeSubtab === 'Shaping') {
+                            setActiveShapingBotId(b.id)
+                          } else if (forgeSubtab === 'Combine') {
+                            setActiveCombineBotId(b.id)
+                          }
                         } else {
                           setActiveModelBotId(b.id)
                         }

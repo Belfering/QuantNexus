@@ -120,6 +120,7 @@ export type BotSession = {
   branchGenerationJob?: BranchGenerationJob // Current branch generation job state
   rollingResult?: RollingOptimizationResult // Rolling optimization results
   tabContext: 'Forge' | 'Model' // Which tab this bot belongs to
+  subtabContext?: 'Shaping' | 'Combine' | 'Walk Forward' // Which Forge subtab this bot belongs to (only for Forge bots)
 }
 
 // API type for Nexus bots (no payload for IP protection)

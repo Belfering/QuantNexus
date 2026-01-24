@@ -27,12 +27,18 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
   const globalActiveBotId = useBotStore((s) => s.activeBotId)
   const activeForgeBotId = useBotStore((s) => s.activeForgeBotId)
   const activeModelBotId = useBotStore((s) => s.activeModelBotId)
+  const activeShapingBotId = useBotStore((s) => s.activeShapingBotId)
+  const activeCombineBotId = useBotStore((s) => s.activeCombineBotId)
   const bots = useBotStore((s) => s.bots)
   const setBots = useBotStore((s) => s.setBots)
 
-  // Determine which bot ID to use based on tab context
+  // Determine which bot ID to use based on tab context AND tree field
   const activeBotId = tabContext === 'Forge'
-    ? activeForgeBotId
+    ? treeField === 'splitTree'
+      ? activeShapingBotId
+      : treeField === 'combineTree'
+        ? activeCombineBotId
+        : activeForgeBotId  // Fallback for other tree fields (walkForwardTree, root)
     : tabContext === 'Model'
     ? activeModelBotId
     : globalActiveBotId

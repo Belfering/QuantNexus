@@ -17,6 +17,8 @@ interface BotState {
   activeBotId: string // Legacy - kept for compatibility
   activeForgeBotId: string
   activeModelBotId: string
+  activeShapingBotId: string // Active bot in Shaping subtab
+  activeCombineBotId: string // Active bot in Combine subtab
   clipboard: FlowNode | null
   copiedNodeId: string | null
   copiedCallChainId: string | null
@@ -42,6 +44,8 @@ interface BotState {
   setActiveBotId: (id: string) => void // Legacy - kept for compatibility
   setActiveForgeBotId: (id: string) => void
   setActiveModelBotId: (id: string) => void
+  setActiveShapingBotId: (id: string) => void
+  setActiveCombineBotId: (id: string) => void
   setClipboard: (node: FlowNode | null) => void
   setCopiedNodeId: (id: string | null) => void
   setCopiedCallChainId: (id: string | null) => void
@@ -132,14 +136,21 @@ function createInitialBotSession(title: string, tabContext: 'Forge' | 'Model'): 
 
 // Create initial bots for store initialization
 const initialForgeBot = createInitialBotSession('Forge System', 'Forge')
+initialForgeBot.subtabContext = 'Combine' // Mark as Combine subtab bot
+
+const initialShapingBot = createInitialBotSession('Shaping System', 'Forge')
+initialShapingBot.subtabContext = 'Shaping' // Mark as Shaping subtab bot
+
 const initialModelBot = createInitialBotSession('Algo Name Here', 'Model')
 
 export const useBotStore = create<BotState>()((set, get) => ({
   // Initial state - Bot sessions
-  bots: [initialForgeBot, initialModelBot],
+  bots: [initialForgeBot, initialShapingBot, initialModelBot],
   activeBotId: initialModelBot.id, // Legacy - defaults to Model tab
   activeForgeBotId: initialForgeBot.id,
   activeModelBotId: initialModelBot.id,
+  activeShapingBotId: initialShapingBot.id,
+  activeCombineBotId: initialForgeBot.id,
   clipboard: null,
   copiedNodeId: null,
   copiedCallChainId: null,
@@ -171,6 +182,8 @@ export const useBotStore = create<BotState>()((set, get) => ({
   setActiveBotId: (activeBotId) => set({ activeBotId }), // Legacy
   setActiveForgeBotId: (activeForgeBotId) => set({ activeForgeBotId, activeBotId: activeForgeBotId }),
   setActiveModelBotId: (activeModelBotId) => set({ activeModelBotId, activeBotId: activeModelBotId }),
+  setActiveShapingBotId: (activeShapingBotId) => set({ activeShapingBotId }),
+  setActiveCombineBotId: (activeCombineBotId) => set({ activeCombineBotId }),
   setClipboard: (clipboard) => set({ clipboard }),
   setCopiedNodeId: (copiedNodeId) => set({ copiedNodeId }),
   setCopiedCallChainId: (copiedCallChainId) => set({ copiedCallChainId }),
