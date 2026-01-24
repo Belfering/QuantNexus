@@ -70,17 +70,13 @@ export function OptimizationResultsPanel() {
 
   // Extract nodes from tree JSON
   const resultsWithNodes = useMemo(() => {
-    console.log('[OptimizationResultsPanel] Processing results:', filteredResults.length)
-    console.log('[OptimizationResultsPanel] First result:', filteredResults[0])
     return filteredResults.map(r => {
       if (!r.treeJson) {
-        console.log('[OptimizationResultsPanel] No treeJson for', r.branchId)
         return { ...r, nodes: [] }
       }
       try {
         const tree = JSON.parse(r.treeJson)
         const nodes = extractNodeParameters(tree)
-        console.log('[OptimizationResultsPanel] Extracted', nodes.length, 'nodes for', r.branchId)
         return { ...r, nodes }
       } catch (e) {
         console.error('Failed to parse tree JSON:', e)

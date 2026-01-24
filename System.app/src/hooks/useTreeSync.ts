@@ -73,7 +73,9 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
       treeField,
       activeBotId,
       activeBotTreeId: activeBotTree?.id,
+      activeBotTreeTitle: activeBotTree?.title,
       activeBotTreeUndefined: !activeBotTree,
+      activeBotTreeHasChildren: activeBotTree?.children ? Object.keys(activeBotTree.children).length : 0,
       isBotSwitch,
       isTreeFieldSwitch,
     })
@@ -91,6 +93,9 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
     console.log('[useTreeSync] Loaded tree into useTreeStore:', {
       treeField,
       treeId: activeBotTree.id,
+      treeTitle: activeBotTree.title,
+      hasChildren: activeBotTree.children ? Object.keys(activeBotTree.children).length : 0,
+      childrenKeys: activeBotTree.children ? Object.keys(activeBotTree.children) : [],
     })
 
     // Clear zundo history on bot/tree field switch for fresh undo/redo stack

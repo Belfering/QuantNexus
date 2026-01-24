@@ -188,22 +188,42 @@ export function ForgeTab({
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 
-  // Effect: Sync activeForgeBotId when switching Forge subtabs
+  // Get active bot IDs for each subtab from store
+  const activeShapingBotId = useBotStore(s => s.activeShapingBotId)
+  const activeCombineBotId = useBotStore(s => s.activeCombineBotId)
+  const activeWalkForwardBotId = useBotStore(s => s.activeWalkForwardBotId)
+
+  // Effect: Sync activeForgeBotId when switching Forge subtabs OR when active bot for current subtab changes
   useEffect(() => {
     if (forgeSubtab === 'Shaping') {
-      const activeShapingBot = useBotStore.getState().activeShapingBotId
-      useBotStore.getState().setActiveForgeBotId(activeShapingBot)
-      console.log('[ForgeTab] Switched to Shaping, loading bot:', activeShapingBot)
+      const bot = useBotStore.getState().bots.find(b => b.id === activeShapingBotId)
+      useBotStore.getState().setActiveForgeBotId(activeShapingBotId)
+      console.log('[ForgeTab] Switched to Shaping bot:', {
+        botId: activeShapingBotId,
+        botExists: !!bot,
+        hasSplitTree: !!bot?.splitTree,
+        splitTreeId: bot?.splitTree?.id,
+        splitTreeTitle: bot?.splitTree?.title,
+      })
     } else if (forgeSubtab === 'Combine') {
-      const activeCombineBot = useBotStore.getState().activeCombineBotId
-      useBotStore.getState().setActiveForgeBotId(activeCombineBot)
-      console.log('[ForgeTab] Switched to Combine, loading bot:', activeCombineBot)
+      useBotStore.getState().setActiveForgeBotId(activeCombineBotId)
+      console.log('[ForgeTab] Switched to Combine bot:', activeCombineBotId)
     } else if (forgeSubtab === 'Walk Forward') {
-      const activeWalkForwardBot = useBotStore.getState().activeWalkForwardBotId
-      useBotStore.getState().setActiveForgeBotId(activeWalkForwardBot)
-      console.log('[ForgeTab] Switched to Walk Forward, loading bot:', activeWalkForwardBot)
+      useBotStore.getState().setActiveForgeBotId(activeWalkForwardBotId)
+      console.log('[ForgeTab] Switched to Walk Forward bot:', activeWalkForwardBotId)
     }
-  }, [forgeSubtab])
+  }, [forgeSubtab, activeShapingBotId, activeCombineBotId, activeWalkForwardBotId])
+
+  // Debug: Log when current tree changes
+  useEffect(() => {
+    console.log('[ForgeTab] Current tree updated:', {
+      forgeSubtab,
+      treeField,
+      treeId: current?.id,
+      treeTitle: current?.title,
+      hasChildren: current?.children ? Object.keys(current.children).length : 0,
+    })
+  }, [current, forgeSubtab, treeField])
 
   // Flowchart scroll width for the horizontal scrollbar (updated by App.tsx)
   const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
