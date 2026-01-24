@@ -60,7 +60,7 @@ const BACKTEST_START_EPOCH = Math.floor(BACKTEST_START_DATE.getTime() / 1000)
 // ============================================
 // TICKER DATA CACHE - Pre-cache common tickers for instant access
 // ============================================
-const COMMON_TICKERS = ['SPY', 'QQQ', 'IWM', 'EEM', 'AGG', 'GLD', 'TLT', 'BIL', 'VTI', 'DIA']
+const COMMON_TICKERS = ['SPY', 'QQQ', 'IWM', 'EEM', 'AGG', 'GLD', 'TLT', 'BIL', 'VTI', 'DIA', 'DBC', 'DBO', 'BND', 'GBTC']
 const tickerDataCache = new Map()
 let cacheInitialized = false
 
@@ -4087,9 +4087,11 @@ export async function runBacktest(payload, options = {}) {
   const indicatorOverlays = options.indicatorOverlays || [] // Conditions to show as chart overlays
   const customIndicators = options.customIndicators || [] // FRD-035: Custom indicators
   const splitConfig = options.splitConfig // IS/OOS split configuration
+  let benchmarkTicker = options.benchmarkTicker || 'SPY' // Benchmark ticker for comparison (default: SPY, can fallback if data unavailable)
 
   // DEBUG: Log splitConfig to verify it's being received
   console.log(`[Backtest] >>> splitConfig:`, JSON.stringify(splitConfig))
+  console.log(`[Backtest] >>> benchmarkTicker:`, benchmarkTicker)
 
   // Parse payload if string
   const rawNode = typeof payload === 'string' ? JSON.parse(payload) : payload
@@ -4156,7 +4158,8 @@ export async function runBacktest(payload, options = {}) {
   console.log(`[Backtest] Tree compression: ${compressionStats.originalNodes} → ${compressionStats.compressedNodes} nodes (${compressionStats.nodesRemoved} removed, ${compressionStats.gateChainsMerged} gates merged) in ${compressionTime}ms`)
 
   if (!node) {
-    throw new Error('Strategy tree is empty')
+    // Tree was completely pruned - likely all position nodes are empty
+    throw new Error('Strategy tree contains no valid positions. Please add at least one ticker to a position node (e.g., SPY, QQQ, etc.) to run a backtest.')
   }
 
   // Collect all tickers from the strategy (positions + conditions + scaling + ratio components)
@@ -4169,12 +4172,12 @@ export async function runBacktest(payload, options = {}) {
   // These determine the date intersection since they need longer history for lookback
   const indicatorTickers = collectIndicatorTickers(node)
 
-  // Always include SPY for Treynor ratio and as fallback indicator ticker
-  if (!tickers.includes('SPY')) {
-    tickers.push('SPY')
+  // Always include benchmark ticker for Treynor ratio and as fallback indicator ticker
+  if (!tickers.includes(benchmarkTicker)) {
+    tickers.push(benchmarkTicker)
   }
-  if (!indicatorTickers.includes('SPY')) {
-    indicatorTickers.push('SPY')
+  if (!indicatorTickers.includes(benchmarkTicker)) {
+    indicatorTickers.push(benchmarkTicker)
   }
 
   // Add tickers from indicator overlays (conditions to display on chart)
@@ -4230,6 +4233,22 @@ export async function runBacktest(payload, options = {}) {
     if (priceDbCache.size > MAX_PRICE_DB_CACHE_SIZE) {
       const firstKey = priceDbCache.keys().next().value
       priceDbCache.delete(firstKey)
+    }
+  }
+
+  // Validate benchmark ticker has data, fallback to SPY if not
+  const hasBenchmarkData = db.open[benchmarkTicker] &&
+                           db.close[benchmarkTicker] &&
+                           db.adjClose[benchmarkTicker]
+
+  if (!hasBenchmarkData && benchmarkTicker !== 'SPY') {
+    console.warn(`[Backtest] Benchmark ticker ${benchmarkTicker} has no data, falling back to SPY`)
+    benchmarkTicker = 'SPY'
+
+    // Verify SPY data exists as final fallback
+    const hasSPYData = db.open['SPY'] && db.close['SPY'] && db.adjClose['SPY']
+    if (!hasSPYData) {
+      console.warn(`[Backtest] SPY fallback also has no data - benchmark curve will be empty`)
     }
   }
 
@@ -4333,7 +4352,7 @@ export async function runBacktest(payload, options = {}) {
   const startPointIndex = backtestMode === 'OC' ? Math.max(0, startTradeIndex - 1) : startTradeIndex
   const points = [{ time: db.dates[startPointIndex], value: 1 }]
   const returns = []
-  const spyReturns = [] // For Treynor ratio
+  const benchmarkReturns = [] // For Treynor ratio
   const dailyAllocations = [] // For allocations tab
   let totalTurnover = 0
   let turnoverCount = 0
@@ -4346,7 +4365,7 @@ export async function runBacktest(payload, options = {}) {
 
   let equity = 1
   let peak = 1
-  let spyEquity = 1  // For benchmark curve
+  let benchmarkEquity = 1  // For benchmark curve
   const benchmarkPoints = [{ time: db.dates[startPointIndex], value: 1 }]
   const startEnd = backtestMode === 'OC' ? startTradeIndex : startTradeIndex + 1
 
@@ -4407,36 +4426,36 @@ export async function runBacktest(payload, options = {}) {
       gross += w * (exit / entry - 1)
     }
 
-    // Calculate SPY return for Treynor ratio
-    const spyOpen = db.open['SPY']
-    const spyClose = db.close['SPY']
-    const spyAdjClose = db.adjClose['SPY']
-    let spyRet = 0
-    if (spyOpen && spyClose && spyAdjClose) {
-      let spyEntry, spyExit
+    // Calculate benchmark return for Treynor ratio
+    const benchOpen = db.open[benchmarkTicker]
+    const benchClose = db.close[benchmarkTicker]
+    const benchAdjClose = db.adjClose[benchmarkTicker]
+    let benchRet = 0
+    if (benchOpen && benchClose && benchAdjClose) {
+      let benchEntry, benchExit
       if (backtestMode === 'OO') {
-        spyEntry = spyOpen[start]
-        spyExit = spyOpen[end]
+        benchEntry = benchOpen[start]
+        benchExit = benchOpen[end]
       } else if (backtestMode === 'CC') {
         // CC mode: Use adjClose for dividend-adjusted benchmark
-        spyEntry = spyAdjClose[start]
-        spyExit = spyAdjClose[end]
+        benchEntry = benchAdjClose[start]
+        benchExit = benchAdjClose[end]
       } else if (backtestMode === 'CO') {
-        spyEntry = spyClose[start]
-        spyExit = spyOpen[end]
+        benchEntry = benchClose[start]
+        benchExit = benchOpen[end]
       } else { // OC
-        spyEntry = spyOpen[start]
-        spyExit = spyClose[start]
+        benchEntry = benchOpen[start]
+        benchExit = benchClose[start]
       }
-      if (spyEntry > 0 && spyExit > 0) {
-        spyRet = spyExit / spyEntry - 1
+      if (benchEntry > 0 && benchExit > 0) {
+        benchRet = benchExit / benchEntry - 1
       }
     }
-    spyReturns.push(spyRet)
+    benchmarkReturns.push(benchRet)
 
-    // Accumulate SPY equity for benchmark curve
-    spyEquity *= 1 + spyRet
-    benchmarkPoints.push({ time: db.dates[end], value: spyEquity })
+    // Accumulate benchmark equity for benchmark curve
+    benchmarkEquity *= 1 + benchRet
+    benchmarkPoints.push({ time: db.dates[end], value: benchmarkEquity })
 
     if (!Number.isFinite(gross)) gross = 0
 
@@ -4463,16 +4482,16 @@ export async function runBacktest(payload, options = {}) {
   // Compute Treynor ratio (beta-adjusted return) and Beta
   let treynorRatio = 0
   let beta = 0
-  if (spyReturns.length > 1 && returns.length > 1) {
+  if (benchmarkReturns.length > 1 && returns.length > 1) {
     const meanRet = returns.reduce((a, b) => a + b, 0) / returns.length
-    const meanSpy = spyReturns.reduce((a, b) => a + b, 0) / spyReturns.length
+    const meanBench = benchmarkReturns.reduce((a, b) => a + b, 0) / benchmarkReturns.length
     let cov = 0
-    let varSpy = 0
+    let varBench = 0
     for (let i = 0; i < returns.length; i++) {
-      cov += (returns[i] - meanRet) * (spyReturns[i] - meanSpy)
-      varSpy += (spyReturns[i] - meanSpy) ** 2
+      cov += (returns[i] - meanRet) * (benchmarkReturns[i] - meanBench)
+      varBench += (benchmarkReturns[i] - meanBench) ** 2
     }
-    beta = varSpy > 0 ? cov / varSpy : 0
+    beta = varBench > 0 ? cov / varBench : 0
     if (beta > 0) {
       treynorRatio = (metrics.cagr) / beta
     }
@@ -4535,7 +4554,7 @@ export async function runBacktest(payload, options = {}) {
     const isIndices = []
     const isEquityValues = []
     const isReturns = []
-    const isSpyReturns = []
+    const isBenchmarkReturns = []
     for (let i = 0; i < points.length; i++) {
       if (isDates.has(points[i].time)) {
         isIndices.push(i)
@@ -4543,7 +4562,7 @@ export async function runBacktest(payload, options = {}) {
         // Only push returns if they exist (returns array is 1 shorter than points)
         if (i < returns.length) {
           isReturns.push(returns[i])
-          isSpyReturns.push(spyReturns[i])
+          isBenchmarkReturns.push(benchmarkReturns[i])
         }
       }
     }
@@ -4553,7 +4572,7 @@ export async function runBacktest(payload, options = {}) {
     const oosIndices = []
     const oosEquityValues = []
     const oosReturns = []
-    const oosSpyReturns = []
+    const oosBenchmarkReturns = []
     for (let i = 0; i < points.length; i++) {
       if (oosDates.has(points[i].time)) {
         oosIndices.push(i)
@@ -4561,7 +4580,7 @@ export async function runBacktest(payload, options = {}) {
         // Only push returns if they exist (returns array is 1 shorter than points)
         if (i < returns.length) {
           oosReturns.push(returns[i])
-          oosSpyReturns.push(spyReturns[i])
+          oosBenchmarkReturns.push(benchmarkReturns[i])
         }
       }
     }
@@ -4577,16 +4596,16 @@ export async function runBacktest(payload, options = {}) {
       // Compute IS Treynor and Beta
       let isTreynor = 0
       let isBeta = 0
-      if (isSpyReturns.length > 1 && isReturns.length > 1) {
+      if (isBenchmarkReturns.length > 1 && isReturns.length > 1) {
         const meanRet = isReturns.reduce((a, b) => a + b, 0) / isReturns.length
-        const meanSpy = isSpyReturns.reduce((a, b) => a + b, 0) / isSpyReturns.length
+        const meanBench = isBenchmarkReturns.reduce((a, b) => a + b, 0) / isBenchmarkReturns.length
         let cov = 0
-        let varSpy = 0
+        let varBench = 0
         for (let i = 0; i < isReturns.length; i++) {
-          cov += (isReturns[i] - meanRet) * (isSpyReturns[i] - meanSpy)
-          varSpy += (isSpyReturns[i] - meanSpy) ** 2
+          cov += (isReturns[i] - meanRet) * (isBenchmarkReturns[i] - meanBench)
+          varBench += (isBenchmarkReturns[i] - meanBench) ** 2
         }
-        isBeta = varSpy > 0 ? cov / varSpy : 0
+        isBeta = varBench > 0 ? cov / varBench : 0
         if (isBeta > 0) {
           isTreynor = (isBaseMetrics.cagr) / isBeta
         }
@@ -4703,16 +4722,16 @@ export async function runBacktest(payload, options = {}) {
       // Compute OOS Treynor and Beta
       let oosTreynor = 0
       let oosBeta = 0
-      if (oosSpyReturns.length > 1 && oosReturns.length > 1) {
+      if (oosBenchmarkReturns.length > 1 && oosReturns.length > 1) {
         const meanRet = oosReturns.reduce((a, b) => a + b, 0) / oosReturns.length
-        const meanSpy = oosSpyReturns.reduce((a, b) => a + b, 0) / oosSpyReturns.length
+        const meanBench = oosBenchmarkReturns.reduce((a, b) => a + b, 0) / oosBenchmarkReturns.length
         let cov = 0
-        let varSpy = 0
+        let varBench = 0
         for (let i = 0; i < oosReturns.length; i++) {
-          cov += (oosReturns[i] - meanRet) * (oosSpyReturns[i] - meanSpy)
-          varSpy += (oosSpyReturns[i] - meanSpy) ** 2
+          cov += (oosReturns[i] - meanRet) * (oosBenchmarkReturns[i] - meanBench)
+          varBench += (oosBenchmarkReturns[i] - meanBench) ** 2
         }
-        oosBeta = varSpy > 0 ? cov / varSpy : 0
+        oosBeta = varBench > 0 ? cov / varBench : 0
         if (oosBeta > 0) {
           oosTreynor = (oosBaseMetrics.cagr) / oosBeta
         }

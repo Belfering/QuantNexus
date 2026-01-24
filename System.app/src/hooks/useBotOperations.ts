@@ -189,7 +189,10 @@ export function useBotOperations({
     if (!capturedBot) return
 
     const targetBotId = capturedBot.id
-    const currentTree = capturedBot.history[capturedBot.historyIndex]
+    // For Model tab, use bot.root field; for all other tabs, use existing history logic
+    const currentTree = tab === 'Model'
+      ? capturedBot.root
+      : capturedBot.history[capturedBot.historyIndex]
     if (!currentTree) return
 
     // Pass splitConfig to backend ONLY on Forge tab when explicitly enabled (for IS/OOS split visualization)
