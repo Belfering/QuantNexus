@@ -29,6 +29,7 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
   const activeModelBotId = useBotStore((s) => s.activeModelBotId)
   const activeShapingBotId = useBotStore((s) => s.activeShapingBotId)
   const activeCombineBotId = useBotStore((s) => s.activeCombineBotId)
+  const activeWalkForwardBotId = useBotStore((s) => s.activeWalkForwardBotId)
   const bots = useBotStore((s) => s.bots)
   const setBots = useBotStore((s) => s.setBots)
 
@@ -38,7 +39,9 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
       ? activeShapingBotId
       : treeField === 'combineTree'
         ? activeCombineBotId
-        : activeForgeBotId  // Fallback for other tree fields (walkForwardTree, root)
+        : treeField === 'walkForwardTree'
+          ? activeWalkForwardBotId
+          : activeForgeBotId  // Fallback for other tree fields (root)
     : tabContext === 'Model'
     ? activeModelBotId
     : globalActiveBotId

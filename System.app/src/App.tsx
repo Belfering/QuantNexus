@@ -475,6 +475,7 @@ function App() {
   const setActiveModelBotId = useBotStore(s => s.setActiveModelBotId)
   const setActiveShapingBotId = useBotStore(s => s.setActiveShapingBotId)
   const setActiveCombineBotId = useBotStore(s => s.setActiveCombineBotId)
+  const setActiveWalkForwardBotId = useBotStore(s => s.setActiveWalkForwardBotId)
   // setClipboard, setCopiedNodeId moved to useBotOperations (Phase 2N-19)
   const isImporting = useBotStore(s => s.isImporting)
   const setIsImporting = useBotStore(s => s.setIsImporting)
@@ -1215,8 +1216,8 @@ function App() {
             </div>
           )}
         </div>
-        {/* Row 3: Algo tabs (only when Model or Forge Combine/Shaping subtabs active) */}
-        {((tab === 'Model') || (tab === 'Forge' && (forgeSubtab === 'Combine' || forgeSubtab === 'Shaping'))) && (
+        {/* Row 3: Algo tabs (only when Model or Forge Combine subtabs active) */}
+        {((tab === 'Model') || (tab === 'Forge' && forgeSubtab === 'Combine')) && (
           <div className="flex gap-2 py-2 px-2 border-t border-border">
               {bots.filter(b => {
                 if (tab === 'Model') {
@@ -1252,6 +1253,8 @@ function App() {
                             setActiveShapingBotId(b.id)
                           } else if (forgeSubtab === 'Combine') {
                             setActiveCombineBotId(b.id)
+                          } else if (forgeSubtab === 'Walk Forward') {
+                            setActiveWalkForwardBotId(b.id)
                           }
                         } else {
                           setActiveModelBotId(b.id)

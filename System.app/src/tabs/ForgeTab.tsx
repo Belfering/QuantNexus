@@ -198,6 +198,10 @@ export function ForgeTab({
       const activeCombineBot = useBotStore.getState().activeCombineBotId
       useBotStore.getState().setActiveForgeBotId(activeCombineBot)
       console.log('[ForgeTab] Switched to Combine, loading bot:', activeCombineBot)
+    } else if (forgeSubtab === 'Walk Forward') {
+      const activeWalkForwardBot = useBotStore.getState().activeWalkForwardBotId
+      useBotStore.getState().setActiveForgeBotId(activeWalkForwardBot)
+      console.log('[ForgeTab] Switched to Walk Forward, loading bot:', activeWalkForwardBot)
     }
   }, [forgeSubtab])
 
