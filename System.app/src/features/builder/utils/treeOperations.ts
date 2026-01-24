@@ -397,6 +397,7 @@ export const addConditionLine = (
         rightWindow: last?.rightWindow ?? 0,
         rightMetric: (last?.rightMetric as MetricChoice) ?? 'Relative Strength Index',
         rightTicker: last?.rightTicker ?? 'SPY',
+        forDays: last?.forDays,
       },
     ]
     return { ...node, conditions: next }
@@ -421,6 +422,7 @@ export const addConditionLine = (
             rightWindow: last?.rightWindow ?? 0,
             rightMetric: (last?.rightMetric as MetricChoice) ?? 'Relative Strength Index',
             rightTicker: last?.rightTicker ?? 'SPY',
+            forDays: last?.forDays,
           },
         ],
       }
@@ -520,6 +522,7 @@ export const addEntryCondition = (node: FlowNode, id: string, type: 'and' | 'or'
         rightWindow: last?.rightWindow ?? 14,
         rightMetric: (last?.rightMetric as MetricChoice) ?? 'Relative Strength Index',
         rightTicker: last?.rightTicker ?? 'SPY',
+        forDays: last?.forDays,
       },
     ]
     return { ...node, entryConditions: next }
@@ -549,6 +552,7 @@ export const addExitCondition = (node: FlowNode, id: string, type: 'and' | 'or')
         rightWindow: last?.rightWindow ?? 14,
         rightMetric: (last?.rightMetric as MetricChoice) ?? 'Relative Strength Index',
         rightTicker: last?.rightTicker ?? 'SPY',
+        forDays: last?.forDays,
       },
     ]
     return { ...node, exitConditions: next }
