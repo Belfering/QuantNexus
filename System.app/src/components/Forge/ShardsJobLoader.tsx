@@ -339,7 +339,7 @@ export function ShardsJobLoader({
         const response = await fetch(endpoint, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ botName: renameValue.trim() })
+          body: JSON.stringify({ name: renameValue.trim() })
         })
 
         if (!response.ok) {
@@ -349,11 +349,11 @@ export function ShardsJobLoader({
         // Update in state
         if (jobType === 'chronological') {
           setChronologicalJobs(prev => prev.map(j =>
-            j.id === jobId ? { ...j, botName: renameValue.trim() } : j
+            j.id === jobId ? { ...j, name: renameValue.trim() } : j
           ))
         } else {
           setRollingJobs(prev => prev.map(j =>
-            j.id === jobId ? { ...j, botName: renameValue.trim() } : j
+            j.id === jobId ? { ...j, name: renameValue.trim() } : j
           ))
         }
       }
@@ -471,8 +471,12 @@ export function ShardsJobLoader({
               const isLoading = loadingJobId === numericId
               const isRenaming = renamingJobId === numericId
 
-              // Get the display name (saved shards use 'name', optimization jobs use 'botName')
-              const displayName = job.type === 'saved' ? (job as any).name : job.botName
+              // Get the display name
+              // For saved shards: use 'name'
+              // For optimization jobs: prefer 'name' (user-editable) over 'botName' (original)
+              const displayName = job.type === 'saved'
+                ? (job as any).name
+                : ((job as any).name || job.botName)
 
               return (
                 <div
