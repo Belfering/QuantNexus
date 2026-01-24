@@ -39,6 +39,7 @@ interface UIState {
   tickerModalNodeKind: BlockKind | undefined
   tickerModalInitialValue: string | undefined
   tickerModalNodeId: string | undefined
+  tickerModalNodeDepth: number | undefined
 
   // Save menu (from useSaveMenu)
   saveMenuOpen: boolean
@@ -83,7 +84,8 @@ interface UIState {
     modes?: TickerModalMode[],
     nodeKind?: BlockKind,
     initialValue?: string,
-    nodeId?: string
+    nodeId?: string,
+    nodeDepth?: number
   ) => void
   closeTickerModal: () => void
 
@@ -130,6 +132,7 @@ export const useUIStore = create<UIState>()((set) => ({
   tickerModalNodeKind: undefined,
   tickerModalInitialValue: undefined,
   tickerModalNodeId: undefined,
+  tickerModalNodeDepth: undefined,
 
   // Initial state - Save menu
   saveMenuOpen: false,
@@ -168,13 +171,14 @@ export const useUIStore = create<UIState>()((set) => ({
 
   // Actions - Ticker modal
   setTickerModalOpen: (tickerModalOpen) => set({ tickerModalOpen }),
-  openTickerModal: (onSelect, restrictTo, modes, nodeKind, initialValue, nodeId) => set({
+  openTickerModal: (onSelect, restrictTo, modes, nodeKind, initialValue, nodeId, nodeDepth) => set({
     tickerModalCallback: onSelect,
     tickerModalRestriction: restrictTo,
     tickerModalModes: modes || ['tickers'],
     tickerModalNodeKind: nodeKind,
     tickerModalInitialValue: initialValue,
     tickerModalNodeId: nodeId,
+    tickerModalNodeDepth: nodeDepth,
     tickerModalOpen: true,
   }),
   closeTickerModal: () => set({
@@ -185,6 +189,7 @@ export const useUIStore = create<UIState>()((set) => ({
     tickerModalNodeKind: undefined,
     tickerModalInitialValue: undefined,
     tickerModalNodeId: undefined,
+    tickerModalNodeDepth: undefined,
   }),
 
   // Actions - Save menu

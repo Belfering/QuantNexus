@@ -11,6 +11,7 @@ import type { ParameterRange } from '@/features/parameters/types'
 
 export interface AltExitBodyProps {
   node: FlowNode
+  depth: number
   enabledOverlays?: Set<string>
   onToggleOverlay?: (key: string) => void
   onAddEntryCondition: (nodeId: string, type: 'and' | 'or') => void
@@ -22,7 +23,7 @@ export interface AltExitBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
-  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string, nodeId?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
@@ -33,6 +34,7 @@ export interface AltExitBodyProps {
 
 export const AltExitBody = ({
   node,
+  depth,
   enabledOverlays,
   onToggleOverlay,
   onAddEntryCondition,
@@ -91,6 +93,7 @@ export const AltExitBody = ({
                 nodeKind={node.kind}
                 parameterRanges={parameterRanges}
                 nodeId={node.id}
+                nodeDepth={depth}
                 isForgeMode={isForgeMode}
                 onUpdateRange={onUpdateRange}
                 underRollingNode={underRollingNode}
@@ -185,6 +188,7 @@ export const AltExitBody = ({
                 nodeKind={node.kind}
                 parameterRanges={parameterRanges}
                 nodeId={node.id}
+                nodeDepth={depth}
                 onUpdateRange={onUpdateRange}
                 isForgeMode={isForgeMode}
                 underRollingNode={underRollingNode}

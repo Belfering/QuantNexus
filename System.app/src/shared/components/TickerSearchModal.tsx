@@ -65,6 +65,7 @@ export interface TickerSearchModalProps {
   position?: 'center' | 'right' // Position modal center or right side
   tickerLists?: TickerList[] // Available ticker lists for Forge mode
   nodeId?: string // Node ID to check for hardcoded Auto mode restrictions
+  nodeDepth?: number // Node depth in tree (for Auto mode availability)
 }
 
 export function TickerSearchModal({
@@ -80,10 +81,14 @@ export function TickerSearchModal({
   position = 'center',
   tickerLists = [],
   nodeId,
+  nodeDepth,
 }: TickerSearchModalProps) {
-  // Hardcoded: Don't show Auto for the first indicator node (node-2)
-  // This node is a direct child of the root and has no parent to match tickers from
-  const allowAutoMode = nodeId !== 'node-2'
+  // Don't show Auto for nodes at depth 1 (direct children of root)
+  // These nodes have no parent with tickers to match from
+  // Depth 0 = root, Depth 1 = first indicator (no Auto), Depth 2+ = nested indicators (has Auto)
+  console.log('[TickerSearchModal] nodeId:', nodeId, 'nodeDepth:', nodeDepth, 'nodeKind:', nodeKind)
+  const allowAutoMode = nodeDepth !== 1
+  console.log('[TickerSearchModal] allowAutoMode:', allowAutoMode)
   const [search, setSearch] = useState('')
   const [includeETFs, setIncludeETFs] = useState(true)
   const [includeStocks, setIncludeStocks] = useState(true)

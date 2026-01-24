@@ -75,6 +75,8 @@ export interface ConditionEditorProps {
   parameterRanges?: ParameterRange[]
   /** Node ID for building parameter IDs */
   nodeId?: string
+  /** Node depth in the tree (for Auto mode availability) */
+  nodeDepth?: number
   /** Callback for updating parameter ranges */
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
   /** Whether we're in Forge tab (enables ticker list features) */
@@ -94,6 +96,7 @@ export const ConditionEditor = ({
   nodeKind,
   parameterRanges = [],
   nodeId,
+  nodeDepth,
   onUpdateRange,
   isForgeMode,
   underRollingNode,
@@ -261,7 +264,7 @@ export const ConditionEditor = ({
                       conditionMode: 'manual'
                     })
                   }
-                }, undefined, allowedModes, nodeKind, cond.ticker, nodeId)
+                }, undefined, allowedModes, nodeKind, cond.ticker, nodeId, nodeDepth)
               }}
             >
               {isLeftAuto ? '(Auto)' : formatTickerDisplay(cond.ticker, cond.tickerListName)}
@@ -444,7 +447,7 @@ export const ConditionEditor = ({
                           rightConditionMode: 'manual'
                         })
                       }
-                    }, undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY', nodeId)
+                    }, undefined, allowedModes, nodeKind, cond.rightTicker ?? 'SPY', nodeId, nodeDepth)
                   }}
                 >
                   {isRightAuto ? '(Auto)' : formatTickerDisplay(cond.rightTicker ?? 'SPY', cond.rightTickerListName)}

@@ -32,6 +32,7 @@ const getLadderSlotLabel = (matchCount: number, totalConditions: number): string
 
 export interface NumberedBodyProps {
   node: FlowNode
+  depth: number
   onNumberedQuantifier: (nodeId: string, quantifier: NumberedQuantifier) => void
   onNumberedN: (nodeId: string, n: number) => void
   onAddNumberedItem: (nodeId: string) => void
@@ -47,7 +48,7 @@ export interface NumberedBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
-  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string, nodeId?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: SlotId, depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
@@ -58,6 +59,7 @@ export interface NumberedBodyProps {
 
 export const NumberedBody = ({
   node,
+  depth,
   onNumberedQuantifier,
   onNumberedN,
   onAddNumberedItem,
@@ -119,6 +121,7 @@ export const NumberedBody = ({
       nodeKind={node.kind}
       parameterRanges={parameterRanges}
       nodeId={node.id}
+      nodeDepth={depth}
       onUpdateRange={onUpdateRange}
       underRollingNode={underRollingNode}
     />

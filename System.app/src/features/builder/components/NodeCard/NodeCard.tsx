@@ -324,6 +324,7 @@ export const NodeCard = ({
         return (
           <IndicatorBody
             node={node}
+            depth={depth}
             enabledOverlays={enabledOverlays}
             onToggleOverlay={onToggleOverlay}
             onUpdateCondition={onUpdateCondition}
@@ -345,6 +346,7 @@ export const NodeCard = ({
         return (
           <NumberedBody
             node={node}
+            depth={depth}
             onNumberedQuantifier={onNumberedQuantifier}
             onNumberedN={onNumberedN}
             onAddNumberedItem={onAddNumberedItem}
@@ -368,6 +370,7 @@ export const NodeCard = ({
         return (
           <AltExitBody
             node={node}
+            depth={depth}
             enabledOverlays={enabledOverlays}
             onToggleOverlay={onToggleOverlay}
             onAddEntryCondition={onAddEntryCondition}

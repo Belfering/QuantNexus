@@ -159,7 +159,7 @@ export interface CardProps {
   onToggleOverlay?: (key: string) => void
 
   // Ticker search modal
-  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string, nodeId?: string, nodeDepth?: number) => void
 
   // Parameter ranges for optimization
   parameterRanges?: ParameterRange[]
@@ -204,7 +204,7 @@ export interface PositionBodyProps {
   onRemovePosition: (id: string, index: number) => void
   onChoosePosition: (id: string, index: number, choice: PositionChoice) => void
   onUpdatePositionMode?: (id: string, mode: 'manual' | 'ticker_list' | 'match_indicator') => void
-  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string, nodeId?: string, nodeDepth?: number) => void
   tickerLists?: TickerList[] // Forge-only: ticker lists for optimization
   isForgeMode?: boolean // Whether we're in Forge tab (enables ticker list features)
 }

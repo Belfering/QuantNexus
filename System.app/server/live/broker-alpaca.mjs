@@ -300,3 +300,27 @@ export async function getPortfolioHistory(client, period = '1M') {
     return []
   }
 }
+
+/**
+ * Get market calendar for a date range
+ * @param {Alpaca} client - Alpaca client instance
+ * @param {string} start - Start date (YYYY-MM-DD)
+ * @param {string} end - End date (YYYY-MM-DD)
+ * @returns {Promise<Array>} Array of calendar days with open/close times
+ */
+export async function getMarketCalendar(client, start, end) {
+  try {
+    const calendar = await client.getCalendar({
+      start,
+      end,
+    })
+    return calendar.map(day => ({
+      date: day.date,
+      open: day.open,
+      close: day.close,
+    }))
+  } catch (error) {
+    console.error('[alpaca] Failed to get market calendar:', error.message)
+    return []
+  }
+}

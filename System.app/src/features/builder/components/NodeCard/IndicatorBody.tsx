@@ -11,6 +11,7 @@ import type { ParameterRange } from '@/features/parameters/types'
 
 export interface IndicatorBodyProps {
   node: FlowNode
+  depth: number
   enabledOverlays?: Set<string>
   onToggleOverlay?: (key: string) => void
   onUpdateCondition: (nodeId: string, condId: string, updates: Partial<ConditionLine>) => void
@@ -19,7 +20,7 @@ export interface IndicatorBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
-  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string, nodeId?: string) => void
   tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
@@ -30,6 +31,7 @@ export interface IndicatorBodyProps {
 
 export const IndicatorBody = ({
   node,
+  depth,
   enabledOverlays,
   onToggleOverlay,
   onUpdateCondition,
@@ -89,6 +91,7 @@ export const IndicatorBody = ({
                 nodeKind={node.kind}
                 parameterRanges={parameterRanges}
                 nodeId={node.id}
+                nodeDepth={depth}
                 onUpdateRange={onUpdateRange}
                 isForgeMode={isForgeMode}
                 underRollingNode={underRollingNode}
