@@ -1,6 +1,7 @@
 // src/features/parameters/components/ParameterBoxPanel.tsx
 // Main container for colored parameter boxes
 
+import { useMemo } from 'react'
 import { Card } from '@/components/ui/card'
 import type { FlowNode } from '@/types/flowNode'
 import type { ParameterField, ParameterRange, StrategyParameter } from '../types'
@@ -8,6 +9,63 @@ import { useVisualParameters } from '../hooks/useVisualParameters'
 import { useHierarchicalParameters } from '../hooks/useHierarchicalParameters'
 import { NodeParameterGroup } from './NodeParameterGroup'
 import { HierarchicalParameterTree } from './HierarchicalParameterTree'
+
+/**
+ * Detect if a parameter range path is broken (contains only timestamps instead of full IDs)
+ * Broken: "node.conditions.1769272928876.window"
+ * Correct: "node-1769272928876-25-s5lide2a.conditions.node-1769272928876-26-s5lide2a.window"
+ */
+export function isBrokenPath(path: string): boolean {
+  const parts = path.split('.')
+  // Check if path has "conditions" segment
+  const conditionsIdx = parts.findIndex(p => p === 'conditions')
+  if (conditionsIdx === -1) return false
+
+  // Check if the segment after "conditions" is just a timestamp (all digits)
+  const conditionId = parts[conditionsIdx + 1]
+  return conditionId && /^\d+$/.test(conditionId)
+}
+
+/**
+ * Parse parameterId to extract correct full IDs and rebuild path
+ * Automatically fixes broken paths from old parameter ranges
+ */
+export function migrateParameterRange(range: ParameterRange): ParameterRange {
+  if (!isBrokenPath(range.path)) return range
+
+  // Parse parameterId: "node-{ts}-{counter}-{rand}-node-{ts}-{counter}-{rand}-{field}"
+  // OR: "node-{ts}-{counter}-{rand}-{field}" for non-condition parameters
+  const parts = range.id.split('-')
+
+  // Find second occurrence of 'node' (indicates condition parameter)
+  const secondNodeIdx = parts.findIndex((part, idx) => idx > 0 && part === 'node')
+
+  if (secondNodeIdx === -1) {
+    // Not a condition parameter, path is probably fine
+    return range
+  }
+
+  // Extract node ID and condition ID from parameterId
+  const nodeId = parts.slice(0, secondNodeIdx).join('-')
+  const conditionId = parts.slice(secondNodeIdx, parts.length - 1).join('-')
+  const field = parts[parts.length - 1]
+
+  // Rebuild path with correct full IDs
+  const newPath = `${nodeId}.conditions.${conditionId}.${field}`
+
+  console.log('[ParameterBoxPanel] Migrated parameter range:', {
+    oldPath: range.path,
+    newPath,
+    parameterId: range.id
+  })
+
+  return {
+    ...range,
+    path: newPath,
+    nodeId, // Also update nodeId to use full ID
+    conditionId // Also update conditionId to use full ID
+  }
+}
 
 interface ParameterBoxPanelProps {
   root: FlowNode | null
@@ -26,6 +84,25 @@ export function ParameterBoxPanel({
   onUpdateRanges,
   openTickerModal
 }: ParameterBoxPanelProps) {
+  // Automatically migrate broken parameter range paths on load
+  const migratedRanges = useMemo(() => {
+    const migrated = parameterRanges.map(migrateParameterRange)
+
+    // Check if any migrations occurred by comparing paths
+    const needsSave = migrated.some((r, i) => r.path !== parameterRanges[i].path)
+
+    // Save migrated ranges back to store if changed
+    if (needsSave && onUpdateRanges) {
+      console.log('[ParameterBoxPanel] Saving migrated parameter ranges')
+      // Schedule the save for next tick to avoid updating during render
+      setTimeout(() => {
+        onUpdateRanges(migrated)
+      }, 0)
+    }
+
+    return migrated
+  }, [parameterRanges, onUpdateRanges])
+
   // Extract all parameters grouped by node (legacy flat view)
   const parametersByNode = useVisualParameters(root)
 
@@ -42,7 +119,7 @@ export function ParameterBoxPanel({
   ) => {
     if (!onUpdateRanges) return
 
-    const updatedRanges = [...parameterRanges]
+    const updatedRanges = [...migratedRanges]
 
     if (enabled && range) {
       // Find or create parameter range
@@ -56,9 +133,32 @@ export function ParameterBoxPanel({
 
       if (parameter.type === 'condition') {
         field = parameter.field
-        path = `${nodeId}.conditions.${parameter.conditionId}.${field}`
+
+        // Parse paramId to extract correct nodeId and conditionId
+        // paramId format: node-{ts}-{counter}-{rand}-node-{ts}-{counter}-{rand}-{field}
+        // Example: node-1769273284518-25-2mi1c4ws-node-1769273284518-26-2mi1c4ws-window
+        const parts = paramId.split('-')
+
+        // Find the indices of 'node' occurrences
+        const firstNodeIndex = 0
+        const secondNodeIndex = parts.findIndex((part, idx) => idx > 0 && part === 'node')
+
+        if (secondNodeIndex > 0 && parts.length > secondNodeIndex + 4) {
+          // Extract full nodeId (from first 'node' to before second 'node')
+          const extractedNodeId = parts.slice(firstNodeIndex, secondNodeIndex).join('-')
+
+          // Extract full conditionId (from second 'node' to before field)
+          const extractedConditionId = parts.slice(secondNodeIndex, parts.length - 1).join('-')
+
+          path = `${extractedNodeId}.conditions.${extractedConditionId}.${field}`
+          condId = extractedConditionId
+        } else {
+          // Fallback to old logic if parsing fails
+          path = `${nodeId}.conditions.${parameter.conditionId}.${field}`
+          condId = parameter.conditionId
+        }
+
         type = field === 'window' || field === 'rightWindow' ? 'period' : 'threshold'
-        condId = parameter.conditionId
       } else if (parameter.type === 'numbered') {
         field = parameter.field
         path = `${nodeId}.numbered.${field}`
@@ -79,10 +179,20 @@ export function ParameterBoxPanel({
         type = field === 'window' || field === 'rightWindow' ? 'period' : 'threshold'
       }
 
+      // Extract correct nodeId from paramId for storage
+      let correctNodeId = nodeId
+      if (parameter.type === 'condition') {
+        const parts = paramId.split('-')
+        const secondNodeIndex = parts.findIndex((part, idx) => idx > 0 && part === 'node')
+        if (secondNodeIndex > 0) {
+          correctNodeId = parts.slice(0, secondNodeIndex).join('-')
+        }
+      }
+
       const parameterRange: ParameterRange = {
         id: paramId,
         type,
-        nodeId,
+        nodeId: correctNodeId,
         conditionId: condId,
         path,
         currentValue: range.min,
@@ -130,7 +240,7 @@ export function ParameterBoxPanel({
     parametersByNode.forEach((params, nodeId) => {
       const enrichedParams = params.map((param) => {
         // Find matching ParameterRange
-        const range = parameterRanges?.find((r) => r.id === param.id)
+        const range = migratedRanges?.find((r) => r.id === param.id)
         if (range) {
           return {
             ...param,
@@ -151,7 +261,7 @@ export function ParameterBoxPanel({
 
   // Calculate total branches from optimization ranges
   const calculateTotalBranches = () => {
-    const enabledRanges = parameterRanges.filter((r) => r.enabled)
+    const enabledRanges = migratedRanges.filter((r) => r.enabled)
     if (enabledRanges.length === 0) return 1
 
     let total = 1
@@ -182,7 +292,7 @@ export function ParameterBoxPanel({
           onUpdate={onHierarchicalUpdate}
           onEnableOptimization={handleEnableOptimization}
           openTickerModal={openTickerModal}
-          parameterRanges={parameterRanges}
+          migratedRanges={migratedRanges}
         />
       )}
 

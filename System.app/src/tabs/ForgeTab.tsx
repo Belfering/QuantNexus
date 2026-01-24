@@ -78,7 +78,7 @@ import { ShardsBranchFilter } from '@/components/Forge/ShardsBranchFilter'
 import { ShardsCombinedPreview } from '@/components/Forge/ShardsCombinedPreview'
 import { ShardsLibrary } from '@/components/Forge/ShardsLibrary'
 import { ForgeModelTab } from '@/components/Forge/ForgeModelTab'
-import { ParameterBoxPanel } from '@/features/parameters/components/ParameterBoxPanel'
+import { ParameterBoxPanel, isBrokenPath, migrateParameterRange } from '@/features/parameters/components/ParameterBoxPanel'
 import type { ParameterField, ParameterRange } from '@/features/parameters/types'
 import { loadCallChainsFromApi } from '@/features/auth'
 import { useAuthStore, useUIStore, useBotStore, useBacktestStore, useTreeStore } from '@/stores'
@@ -1145,9 +1145,29 @@ export function ForgeTab({
   const botStore = useBotStore()
   // Use correct parameter ranges based on active tab
   // Split tab uses parameterRanges (chronological), Walk Forward uses rollingParameterRanges
-  const parameterRanges = forgeSubtab === 'Walk Forward'
-    ? (activeBot?.rollingParameterRanges ?? [])
-    : (activeBot?.parameterRanges ?? [])  // Split tab / default
+  // Apply automatic migration to fix broken parameter range paths
+  const parameterRanges = useMemo(() => {
+    const rawRanges = forgeSubtab === 'Walk Forward'
+      ? (activeBot?.rollingParameterRanges ?? [])
+      : (activeBot?.parameterRanges ?? [])
+
+    // Migrate broken paths automatically
+    const migrated = rawRanges.map(migrateParameterRange)
+    const needsSave = migrated.some((r, i) => r.path !== rawRanges[i].path)
+
+    if (needsSave && activeBot) {
+      console.log('[ForgeTab] Migrating broken parameter ranges')
+      setTimeout(() => {
+        if (forgeSubtab === 'Walk Forward') {
+          botStore.setRollingParameterRanges(activeBot.id, migrated)
+        } else {
+          botStore.setParameterRanges(activeBot.id, migrated)
+        }
+      }, 0)
+    }
+
+    return migrated
+  }, [forgeSubtab, activeBot?.rollingParameterRanges, activeBot?.parameterRanges, activeBot?.id, botStore])
 
   // Track flowchart container position for floating scrollbar
   useEffect(() => {

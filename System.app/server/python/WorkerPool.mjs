@@ -258,12 +258,20 @@ export class WorkerPool {
    * Ported from branchGenerator.ts applyBranchToTree
    */
   applyBranchToTree(tree, combination, ranges, hasAutoMode) {
+    console.log('[WorkerPool] ===== applyBranchToTree START =====')
+    console.log('[WorkerPool] Tree root:', tree.id, 'kind:', tree.kind)
+    console.log('[WorkerPool] Tree children keys:', Object.keys(tree.children || {}))
+    console.log('[WorkerPool] First child:', tree.children?.next?.[0] ? tree.children.next[0].id : 'null')
+
     const extractedTickers = {}
     const substitutions = combination.tickerSubstitutions || {}
     const hasSubstitutions = Object.keys(substitutions).length > 0
     const needsTraversal = hasSubstitutions || hasAutoMode
 
+    console.log('[WorkerPool] needsTraversal:', needsTraversal, 'hasSubstitutions:', hasSubstitutions, 'hasAutoMode:', hasAutoMode)
+
     if (needsTraversal) {
+      console.log('[WorkerPool] BEFORE ticker substitutions - Tree:', JSON.stringify(tree, null, 2))
       this.applyTickerSubstitutions(tree, substitutions, new Set(), extractedTickers)
       if (extractedTickers.conditionTicker) {
         combination.conditionTicker = extractedTickers.conditionTicker
@@ -271,6 +279,7 @@ export class WorkerPool {
       if (extractedTickers.positionTicker) {
         combination.positionTicker = extractedTickers.positionTicker
       }
+      console.log('[WorkerPool] AFTER ticker substitutions - Tree children:', tree.children?.next?.[0] ? tree.children.next[0].id : 'null')
     }
 
     // Apply each parameter value from the combination
@@ -283,7 +292,8 @@ export class WorkerPool {
 
       const pathParts = range.path.split('.')
       let startIndex = 0
-      if (pathParts[0] === 'node') {
+      // Skip first part if it's a node ID (either 'node' or 'node-xxx-yyy-zzz')
+      if (pathParts[0] === 'node' || pathParts[0].startsWith('node-')) {
         startIndex = 1
       }
 
@@ -323,7 +333,7 @@ export class WorkerPool {
         if (findAndUpdateCondition(tree)) {
           continue
         } else {
-          console.warn(`[WorkerPool] Could not find condition with ID ${conditionId}`)
+          console.warn(`[WorkerPool] Could not find condition with ID ${conditionId} for parameter ${parameterId}`)
           continue
         }
       }
