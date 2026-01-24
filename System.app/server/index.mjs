@@ -3521,10 +3521,15 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
       console.log(`[IS/OOS Benchmarks] Computing IS benchmarks (${isStrategyMap.size} days) and OOS benchmarks (${oosStrategyMap.size} days)`)
 
       for (const ticker of benchmarkTickers) {
-        if (!loadedTickers.has(ticker)) continue
+        console.log(`[IS/OOS Beta Debug] Processing benchmark ${ticker}`)
+        if (!loadedTickers.has(ticker)) {
+          console.log(`[IS/OOS Beta Debug] ${ticker}: Not loaded, skipping`)
+          continue
+        }
         try {
           const benchWithDates = await getTickerReturnsWithDates(ticker)
           if (benchWithDates && benchWithDates.length > 0) {
+            console.log(`[IS/OOS Beta Debug] ${ticker}: Benchmark has ${benchWithDates.length} dates total`)
             const benchMap = new Map(benchWithDates.map(r => [r.date, r.return]))
 
             // Align IS period
@@ -3537,11 +3542,17 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
               }
             }
 
+            console.log(`[IS/OOS Beta Debug] ${ticker} IS: Found ${isAlignedBench.length} overlapping dates`)
             if (isAlignedBench.length >= 50) {
+              console.log(`[IS/OOS Beta Debug] ${ticker} IS: alignedStrategy sample:`, isAlignedStrategy.slice(0, 5))
+              console.log(`[IS/OOS Beta Debug] ${ticker} IS: alignedBench sample:`, isAlignedBench.slice(0, 5))
               const isMetrics = computeBenchmarkMetrics(isAlignedBench, isAlignedStrategy)
               if (isMetrics) {
                 isBenchmarkMetrics[ticker] = isMetrics
+                console.log(`[IS/OOS Beta Debug] ${ticker} IS: Computed beta = ${isMetrics.beta}`)
               }
+            } else {
+              console.log(`[IS/OOS Beta Debug] ${ticker} IS: Insufficient overlapping dates (${isAlignedBench.length} < 50), skipping`)
             }
 
             // Align OOS period
@@ -3554,15 +3565,23 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
               }
             }
 
+            console.log(`[IS/OOS Beta Debug] ${ticker} OOS: Found ${oosAlignedBench.length} overlapping dates`)
             if (oosAlignedBench.length >= 50) {
+              console.log(`[IS/OOS Beta Debug] ${ticker} OOS: alignedStrategy sample:`, oosAlignedStrategy.slice(0, 5))
+              console.log(`[IS/OOS Beta Debug] ${ticker} OOS: alignedBench sample:`, oosAlignedBench.slice(0, 5))
               const oosMetrics = computeBenchmarkMetrics(oosAlignedBench, oosAlignedStrategy)
               if (oosMetrics) {
                 oosBenchmarkMetrics[ticker] = oosMetrics
+                console.log(`[IS/OOS Beta Debug] ${ticker} OOS: Computed beta = ${oosMetrics.beta}`)
               }
+            } else {
+              console.log(`[IS/OOS Beta Debug] ${ticker} OOS: Insufficient overlapping dates (${oosAlignedBench.length} < 50), skipping`)
             }
+          } else {
+            console.log(`[IS/OOS Beta Debug] ${ticker}: No benchmark data available`)
           }
         } catch (e) {
-          // Skip this ticker
+          console.log(`[IS/OOS Beta Debug] ${ticker}: Error - ${e.message}`)
         }
       }
 
@@ -3686,14 +3705,21 @@ app.post('/api/sanity-report', async (req, res) => {
       for (let i = 0; i < filteredEquityCurve.length && i < filteredReturns.length; i++) {
         const pt = filteredEquityCurve[i]
         if (pt.date) {
-          strategyReturnsMap.set(pt.date, filteredReturns[i])
+          // Extract return value from object if needed
+          const returnValue = typeof filteredReturns[i] === 'object' ? filteredReturns[i].return : filteredReturns[i]
+          strategyReturnsMap.set(pt.date, returnValue)
         }
       }
 
       for (const ticker of benchmarkTickers) {
-        if (!loadedTickers.has(ticker)) continue
+        console.log(`[Beta Debug] Processing benchmark ${ticker}`)
+        if (!loadedTickers.has(ticker)) {
+          console.log(`[Beta Debug] ${ticker}: Ticker not loaded, skipping`)
+          continue
+        }
         try {
           const benchWithDates = await getTickerReturnsWithDates(ticker)
+          console.log(`[Beta Debug] ${ticker}: Strategy has ${strategyReturnsMap.size} dates, Benchmark has ${benchWithDates?.length || 0} dates`)
           if (benchWithDates && benchWithDates.length > 0) {
             const benchMap = new Map(benchWithDates.map(r => [r.date, r.return]))
             const alignedStrategy = []
@@ -3704,7 +3730,11 @@ app.post('/api/sanity-report', async (req, res) => {
                 alignedBench.push(benchMap.get(date))
               }
             }
+            console.log(`[Beta Debug] ${ticker}: Found ${alignedStrategy.length} overlapping dates`)
             if (alignedStrategy.length >= 50) {
+              console.log(`[Beta Debug] ${ticker}: alignedStrategy sample:`, alignedStrategy.slice(0, 5))
+              console.log(`[Beta Debug] ${ticker}: alignedBench sample:`, alignedBench.slice(0, 5))
+
               // Compute strategy beta vs benchmark
               strategyBetas[ticker] = computeBeta(alignedStrategy, alignedBench)
 
@@ -3713,10 +3743,13 @@ app.post('/api/sanity-report', async (req, res) => {
               if (metrics) {
                 benchmarkMetricsVsStrategy[ticker] = metrics
               }
+              console.log(`[Beta Debug] ${ticker}: Computed beta = ${strategyBetas[ticker]}, metrics.beta = ${metrics?.beta}`)
+            } else {
+              console.log(`[Beta Debug] ${ticker}: Insufficient overlapping dates (${alignedStrategy.length} < 50), skipping`)
             }
           }
         } catch (e) {
-          // Skip this ticker
+          console.log(`[Beta Debug] ${ticker}: Error - ${e.message}`)
         }
       }
     }
@@ -3735,10 +3768,12 @@ app.post('/api/sanity-report', async (req, res) => {
       for (let i = 0; i < filteredEquityCurve.length && i < filteredReturns.length; i++) {
         const pt = filteredEquityCurve[i]
         if (pt.date) {
+          // Extract return value from object if needed
+          const returnValue = typeof filteredReturns[i] === 'object' ? filteredReturns[i].return : filteredReturns[i]
           if (pt.date < oosDate) {
-            isStrategyMap.set(pt.date, filteredReturns[i])
+            isStrategyMap.set(pt.date, returnValue)
           } else {
-            oosStrategyMap.set(pt.date, filteredReturns[i])
+            oosStrategyMap.set(pt.date, returnValue)
           }
         }
       }
@@ -3746,10 +3781,15 @@ app.post('/api/sanity-report', async (req, res) => {
       console.log(`[IS/OOS Benchmarks] Computing IS benchmarks (${isStrategyMap.size} days) and OOS benchmarks (${oosStrategyMap.size} days)`)
 
       for (const ticker of benchmarkTickers) {
-        if (!loadedTickers.has(ticker)) continue
+        console.log(`[IS/OOS Beta Debug] Processing benchmark ${ticker}`)
+        if (!loadedTickers.has(ticker)) {
+          console.log(`[IS/OOS Beta Debug] ${ticker}: Not loaded, skipping`)
+          continue
+        }
         try {
           const benchWithDates = await getTickerReturnsWithDates(ticker)
           if (benchWithDates && benchWithDates.length > 0) {
+            console.log(`[IS/OOS Beta Debug] ${ticker}: Benchmark has ${benchWithDates.length} dates total`)
             const benchMap = new Map(benchWithDates.map(r => [r.date, r.return]))
 
             // Align IS period
@@ -3762,11 +3802,17 @@ app.post('/api/sanity-report', async (req, res) => {
               }
             }
 
+            console.log(`[IS/OOS Beta Debug] ${ticker} IS: Found ${isAlignedBench.length} overlapping dates`)
             if (isAlignedBench.length >= 50) {
+              console.log(`[IS/OOS Beta Debug] ${ticker} IS: alignedStrategy sample:`, isAlignedStrategy.slice(0, 5))
+              console.log(`[IS/OOS Beta Debug] ${ticker} IS: alignedBench sample:`, isAlignedBench.slice(0, 5))
               const isMetrics = computeBenchmarkMetrics(isAlignedBench, isAlignedStrategy)
               if (isMetrics) {
                 isBenchmarkMetrics[ticker] = isMetrics
+                console.log(`[IS/OOS Beta Debug] ${ticker} IS: Computed beta = ${isMetrics.beta}`)
               }
+            } else {
+              console.log(`[IS/OOS Beta Debug] ${ticker} IS: Insufficient overlapping dates (${isAlignedBench.length} < 50), skipping`)
             }
 
             // Align OOS period
@@ -3779,15 +3825,23 @@ app.post('/api/sanity-report', async (req, res) => {
               }
             }
 
+            console.log(`[IS/OOS Beta Debug] ${ticker} OOS: Found ${oosAlignedBench.length} overlapping dates`)
             if (oosAlignedBench.length >= 50) {
+              console.log(`[IS/OOS Beta Debug] ${ticker} OOS: alignedStrategy sample:`, oosAlignedStrategy.slice(0, 5))
+              console.log(`[IS/OOS Beta Debug] ${ticker} OOS: alignedBench sample:`, oosAlignedBench.slice(0, 5))
               const oosMetrics = computeBenchmarkMetrics(oosAlignedBench, oosAlignedStrategy)
               if (oosMetrics) {
                 oosBenchmarkMetrics[ticker] = oosMetrics
+                console.log(`[IS/OOS Beta Debug] ${ticker} OOS: Computed beta = ${oosMetrics.beta}`)
               }
+            } else {
+              console.log(`[IS/OOS Beta Debug] ${ticker} OOS: Insufficient overlapping dates (${oosAlignedBench.length} < 50), skipping`)
             }
+          } else {
+            console.log(`[IS/OOS Beta Debug] ${ticker}: No benchmark data available`)
           }
         } catch (e) {
-          // Skip this ticker
+          console.log(`[IS/OOS Beta Debug] ${ticker}: Error - ${e.message}`)
         }
       }
 

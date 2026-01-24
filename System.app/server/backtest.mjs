@@ -2405,8 +2405,8 @@ function simulateBranchEquity(ctx, branchNode) {
       hasValidReturn = true
     }
 
-    // Use NaN if no valid returns could be calculated (ticker data not available)
-    returns[i] = hasValidReturn ? portfolioReturn : NaN
+    // Use 0 if no valid returns (holding cash/Empty positions)
+    returns[i] = hasValidReturn ? portfolioReturn : 0
     currentEquity *= (1 + portfolioReturn)
     equity[i] = currentEquity
   }

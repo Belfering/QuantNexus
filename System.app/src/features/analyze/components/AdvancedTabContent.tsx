@@ -24,9 +24,26 @@ export function AdvancedTabContent(props: AdvancedTabContentProps) {
   } = props
 
   const sanityState = sanityReports[b.id]
-  const mcMetrics = sanityState?.report?.pathRisk?.comparisonMetrics?.monteCarlo
-  const kfMetrics = sanityState?.report?.pathRisk?.comparisonMetrics?.kfold
-  const benchmarks = benchmarkMetrics.data ?? {}
+  const hasISOOSSplit = !!(sanityState?.report?.oosStartDate &&
+                          sanityState?.report?.pathRisk?.isPathRisk &&
+                          sanityState?.report?.pathRisk?.oosPathRisk)
+
+  // Get IS/OOS specific metrics if available, otherwise fall back to full period
+  const isMcMetrics = sanityState?.report?.pathRisk?.isPathRisk?.comparisonMetrics?.monteCarlo ??
+                      sanityState?.report?.pathRisk?.comparisonMetrics?.monteCarlo
+  const isKfMetrics = sanityState?.report?.pathRisk?.isPathRisk?.comparisonMetrics?.kfold ??
+                      sanityState?.report?.pathRisk?.comparisonMetrics?.kfold
+
+  const oosMcMetrics = sanityState?.report?.pathRisk?.oosPathRisk?.comparisonMetrics?.monteCarlo ??
+                       sanityState?.report?.pathRisk?.comparisonMetrics?.monteCarlo
+  const oosKfMetrics = sanityState?.report?.pathRisk?.oosPathRisk?.comparisonMetrics?.kfold ??
+                       sanityState?.report?.pathRisk?.comparisonMetrics?.kfold
+
+  // Prefer benchmark metrics from sanity report (calculated vs strategy) over global benchmarks
+  const reportBenchmarks = (sanityState?.report as { benchmarkMetrics?: Record<string, ComparisonMetrics> })?.benchmarkMetrics
+  const isBenchmarks = (sanityState?.report as { isBenchmarkMetrics?: Record<string, ComparisonMetrics> })?.isBenchmarkMetrics
+  const oosBenchmarks = (sanityState?.report as { oosBenchmarkMetrics?: Record<string, ComparisonMetrics> })?.oosBenchmarkMetrics
+  const benchmarks = reportBenchmarks ?? benchmarkMetrics.data ?? {}
   // Strategy betas vs each benchmark ticker
   const strategyBetas: Record<string, number> = (sanityState?.report as { strategyBetas?: Record<string, number> })?.strategyBetas ?? {}
 
@@ -39,16 +56,9 @@ export function AdvancedTabContent(props: AdvancedTabContentProps) {
   }
 
   // Helper to format alpha difference with color
-  // MC is the baseline - shows how much better MC is vs the row
-  // For "higher is better" metrics (CAGR, Sharpe): if MC > row, green (strategy beats benchmark)
-  // For "lower is better" metrics (MaxDD, Volatility): if MC > row, green (less negative = better)
-  // Note: MaxDD values are negative, so MC -16% vs benchmark -18% gives diff +2%, which is better
   const fmtAlpha = (mcVal: number | undefined, rowVal: number | undefined, isPct = false, isHigherBetter = true) => {
     if (mcVal === undefined || rowVal === undefined || !Number.isFinite(mcVal) || !Number.isFinite(rowVal)) return null
-    const diff = mcVal - rowVal // MC minus row value
-    // For drawdown metrics (negative values where less negative is better), positive diff = MC is better
-    // For volatility/beta (positive values where lower is better), negative diff = MC is better
-    // Simplified: for "lower is better", flip the comparison for negative metrics like MaxDD
+    const diff = mcVal - rowVal
     const mcIsBetter = isHigherBetter ? diff > 0 : (mcVal < 0 ? diff > 0 : diff < 0)
     const color = mcIsBetter ? 'text-success' : diff === 0 ? 'text-muted' : 'text-danger'
     const sign = diff > 0 ? '+' : ''
@@ -56,7 +66,108 @@ export function AdvancedTabContent(props: AdvancedTabContentProps) {
     return <span className={`${color} text-xs ml-1`}>({formatted})</span>
   }
 
-  // Build row data - MC is baseline (no alpha), all others show alpha vs MC
+  // Define columns
+  const cols: { key: keyof ComparisonMetrics; label: string; isPct?: boolean; isRatio?: boolean; higherBetter?: boolean }[] = [
+    { key: 'cagr50', label: 'CAGR-50', isPct: true, higherBetter: true },
+    { key: 'maxdd50', label: 'MaxDD-DD50', isPct: true, higherBetter: false },
+    { key: 'maxdd95', label: 'Tail Risk-DD95', isPct: true, higherBetter: false },
+    { key: 'calmar50', label: 'Calmar Ratio-50', isRatio: true, higherBetter: true },
+    { key: 'calmar95', label: 'Calmar Ratio-95', isRatio: true, higherBetter: true },
+    { key: 'sharpe', label: 'Sharpe Ratio', isRatio: true, higherBetter: true },
+    { key: 'sortino', label: 'Sortino Ratio', isRatio: true, higherBetter: true },
+    { key: 'treynor', label: 'Treynor Ratio', isRatio: true, higherBetter: true },
+    { key: 'beta', label: 'Beta', isRatio: true, higherBetter: false },
+    { key: 'volatility', label: 'Volatility', isPct: true, higherBetter: false },
+    { key: 'winRate', label: 'Win Rate', isPct: true, higherBetter: true },
+  ]
+
+  return (
+    <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
+      <div className="flex items-center justify-between gap-2.5">
+        <div className="font-black">Benchmark Comparison</div>
+        <Button
+          size="sm"
+          onClick={() => {
+            runSanityReport(b)
+            fetchBenchmarkMetrics()
+          }}
+          disabled={sanityReports[b.id]?.status === 'loading' || benchmarkMetrics.status === 'loading'}
+        >
+          {sanityReports[b.id]?.status === 'loading' || benchmarkMetrics.status === 'loading' ? 'Running...' : 'Refresh'}
+        </Button>
+      </div>
+
+      {hasISOOSSplit ? (
+        // Two tables: IS and OOS
+        <div className="flex flex-col gap-4">
+          {/* In-Sample Comparison */}
+          <div>
+            <div className="font-black mb-2">In-Sample Comparison</div>
+            <ComparisonTable
+              mcMetrics={isMcMetrics}
+              kfMetrics={isKfMetrics}
+              benchmarks={isBenchmarks ?? benchmarks}
+              strategyBetas={strategyBetas}
+              cols={cols}
+              fmt={fmt}
+              fmtAlpha={fmtAlpha}
+            />
+          </div>
+
+          {/* Out-of-Sample Comparison */}
+          <div>
+            <div className="font-black mb-2">Out-of-Sample Comparison</div>
+            <ComparisonTable
+              mcMetrics={oosMcMetrics}
+              kfMetrics={oosKfMetrics}
+              benchmarks={oosBenchmarks ?? benchmarks}
+              strategyBetas={strategyBetas}
+              cols={cols}
+              fmt={fmt}
+              fmtAlpha={fmtAlpha}
+            />
+          </div>
+        </div>
+      ) : (
+        // Single table fallback
+        <>
+          <div className="font-black">Comparison Table</div>
+          <ComparisonTable
+            mcMetrics={isMcMetrics}
+            kfMetrics={isKfMetrics}
+            benchmarks={benchmarks}
+            strategyBetas={strategyBetas}
+            cols={cols}
+            fmt={fmt}
+            fmtAlpha={fmtAlpha}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+// Reusable comparison table component
+interface ComparisonTableProps {
+  mcMetrics: ComparisonMetrics | undefined
+  kfMetrics: ComparisonMetrics | undefined
+  benchmarks: Record<string, ComparisonMetrics>
+  strategyBetas: Record<string, number>
+  cols: { key: keyof ComparisonMetrics; label: string; isPct?: boolean; isRatio?: boolean; higherBetter?: boolean }[]
+  fmt: (v: number | undefined, isPct?: boolean, isRatio?: boolean) => string
+  fmtAlpha: (mcVal: number | undefined, rowVal: number | undefined, isPct?: boolean, isHigherBetter?: boolean) => JSX.Element | null
+}
+
+function ComparisonTable({
+  mcMetrics,
+  kfMetrics,
+  benchmarks,
+  strategyBetas,
+  cols,
+  fmt,
+  fmtAlpha,
+}: ComparisonTableProps) {
+  // Build row data
   type RowData = { label: string; metrics: ComparisonMetrics | undefined; isBaseline?: boolean; ticker?: string }
   const rowData: RowData[] = [
     { label: 'Monte Carlo Comparison', metrics: mcMetrics, isBaseline: true },
@@ -73,74 +184,42 @@ export function AdvancedTabContent(props: AdvancedTabContentProps) {
     { label: 'Benchmark GBTC', metrics: benchmarks['GBTC'], ticker: 'GBTC' },
   ]
 
-  // Define columns with "higher is better" flag for alpha coloring
-  const cols: { key: keyof ComparisonMetrics; label: string; isPct?: boolean; isRatio?: boolean; higherBetter?: boolean }[] = [
-    { key: 'cagr50', label: 'CAGR-50', isPct: true, higherBetter: true },
-    { key: 'maxdd50', label: 'MaxDD-DD50', isPct: true, higherBetter: false }, // Less negative is better
-    { key: 'maxdd95', label: 'Tail Risk-DD95', isPct: true, higherBetter: false },
-    { key: 'calmar50', label: 'Calmar Ratio-50', isRatio: true, higherBetter: true },
-    { key: 'calmar95', label: 'Calmar Ratio-95', isRatio: true, higherBetter: true },
-    { key: 'sharpe', label: 'Sharpe Ratio', isRatio: true, higherBetter: true },
-    { key: 'sortino', label: 'Sortino Ratio', isRatio: true, higherBetter: true },
-    { key: 'treynor', label: 'Treynor Ratio', isRatio: true, higherBetter: true },
-    { key: 'beta', label: 'Beta', isRatio: true, higherBetter: false }, // Lower beta = less volatile
-    { key: 'volatility', label: 'Volatility', isPct: true, higherBetter: false }, // Lower vol is better
-    { key: 'winRate', label: 'Win Rate', isPct: true, higherBetter: true },
-  ]
-
   return (
-    <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
-      <div className="flex items-center justify-between gap-2.5">
-        <div className="font-black">Advanced Stats</div>
-        <Button
-          size="sm"
-          onClick={() => {
-            // Run both sanity report (for MC/KF) and benchmark fetch
-            runSanityReport(b)
-            fetchBenchmarkMetrics()
-          }}
-          disabled={sanityReports[b.id]?.status === 'loading' || benchmarkMetrics.status === 'loading'}
-        >
-          {sanityReports[b.id]?.status === 'loading' || benchmarkMetrics.status === 'loading' ? 'Running...' : 'Run'}
-        </Button>
-      </div>
-      <div className="font-black">Comparison Table</div>
-      <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
-        <table className="analyze-compare-table">
-          <thead>
-            <tr>
-              <th>Comparison</th>
-              {cols.map((c) => (
-                <th key={c.key}>{c.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rowData.map((row) => (
-              <tr key={row.label}>
-                <td>{row.label}</td>
-                {cols.map((c) => {
-                  // For Beta column in benchmark rows, show strategy beta vs that ticker
-                  let val = row.metrics?.[c.key]
-                  if (c.key === 'beta' && row.ticker && strategyBetas[row.ticker] !== undefined) {
-                    val = strategyBetas[row.ticker]
-                  }
-                  // Show alpha vs MC for all non-baseline rows
-                  const showAlpha = !row.isBaseline && mcMetrics
-                  const mcVal = mcMetrics?.[c.key]
-                  const alpha = showAlpha ? fmtAlpha(mcVal, val, c.isPct ?? false, c.higherBetter ?? true) : null
-                  return (
-                    <td key={c.key}>
-                      {fmt(val, c.isPct ?? false, c.isRatio ?? false)}
-                      {alpha}
-                    </td>
-                  )
-                })}
-              </tr>
+    <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
+      <table className="analyze-compare-table">
+        <thead>
+          <tr>
+            <th>Comparison</th>
+            {cols.map((c) => (
+              <th key={c.key}>{c.label}</th>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          {rowData.map((row) => (
+            <tr key={row.label}>
+              <td>{row.label}</td>
+              {cols.map((c) => {
+                // For Beta column in benchmark rows, show strategy beta vs that ticker
+                let val = row.metrics?.[c.key]
+                if (c.key === 'beta' && row.ticker && strategyBetas[row.ticker] !== undefined) {
+                  val = strategyBetas[row.ticker]
+                }
+                // Show alpha vs MC for all non-baseline rows
+                const showAlpha = !row.isBaseline && mcMetrics
+                const mcVal = mcMetrics?.[c.key]
+                const alpha = showAlpha ? fmtAlpha(mcVal, val, c.isPct ?? false, c.higherBetter ?? true) : null
+                return (
+                  <td key={c.key}>
+                    {fmt(val, c.isPct ?? false, c.isRatio ?? false)}
+                    {alpha}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

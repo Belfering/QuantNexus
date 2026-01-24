@@ -113,6 +113,37 @@ function shuffleArray(arr, rng) {
 }
 
 /**
+ * Split daily returns into IS and OOS periods based on date
+ * @param {Array<{date: string, return: number}>} dailyReturns - Array of {date, return} objects
+ * @param {string} oosStartDate - ISO date string (YYYY-MM-DD) marking OOS start
+ * @returns {{is: number[], oos: number[], isDates: string[], oosDates: string[]}}
+ */
+function splitDailyReturns(dailyReturns, oosStartDate) {
+  if (!oosStartDate || !dailyReturns || dailyReturns.length === 0) {
+    const returns = dailyReturns.map(d => d.return)
+    const dates = dailyReturns.map(d => d.date)
+    return { is: returns, oos: [], isDates: dates, oosDates: [] }
+  }
+
+  const isDays = []
+  const oosDays = []
+  const isDates = []
+  const oosDates = []
+
+  for (const day of dailyReturns) {
+    if (day.date < oosStartDate) {
+      isDays.push(day.return)
+      isDates.push(day.date)
+    } else {
+      oosDays.push(day.return)
+      oosDates.push(day.date)
+    }
+  }
+
+  return { is: isDays, oos: oosDays, isDates, oosDates }
+}
+
+/**
  * Compute annualized volatility from daily returns
  */
 function computeVolatility(returns) {
@@ -196,12 +227,25 @@ export function computeBeta(strategyReturns, benchmarkReturns) {
  * @param {number[]} benchmarkReturns - Benchmark (SPY) returns, same length
  */
 function computeBetaTreynor(returns, benchmarkReturns) {
+  console.log(`[computeBetaTreynor] Input lengths: returns=${returns.length}, benchmark=${benchmarkReturns.length}`)
+
+  // Check for NaN values
+  const returnsNaN = returns.filter(r => !isFinite(r)).length
+  const benchmarkNaN = benchmarkReturns.filter(r => !isFinite(r)).length
+  console.log(`[computeBetaTreynor] NaN/Infinite values: returns=${returnsNaN}, benchmark=${benchmarkNaN}`)
+
+  // Check for sample values
+  console.log(`[computeBetaTreynor] Returns sample (first 10):`, returns.slice(0, 10))
+  console.log(`[computeBetaTreynor] Benchmark sample (first 10):`, benchmarkReturns.slice(0, 10))
+
   if (returns.length < 2 || benchmarkReturns.length < 2) {
+    console.log(`[computeBetaTreynor] Insufficient data, returning beta=0`)
     return { beta: 0, treynor: 0 }
   }
 
   // Align lengths
   const len = Math.min(returns.length, benchmarkReturns.length)
+  console.log(`[computeBetaTreynor] Aligned length: ${len}`)
   const r = returns.slice(0, len)
   const b = benchmarkReturns.slice(0, len)
 
@@ -220,6 +264,7 @@ function computeBetaTreynor(returns, benchmarkReturns) {
   varB /= (len - 1)
 
   const beta = varB > 0 ? covariance / varB : 0
+  console.log(`[computeBetaTreynor] Covariance=${covariance.toFixed(6)}, VarB=${varB.toFixed(6)}, Beta=${beta.toFixed(4)}`)
 
   // Treynor = (Return - Rf) / Beta, using annualized CAGR
   // Simplified: mean daily return * 252 / beta
@@ -304,12 +349,22 @@ function runMonteCarlo(returns, options = {}, spyReturns = null) {
       // Compute beta/treynor if SPY returns provided
       let beta = 0, treynor = 0
       if (spyReturns && spyReturns.length > 0) {
+        // Log every 50th simulation to avoid console spam
+        if (i % 50 === 0) {
+          console.log(`[MC Beta] Simulation ${i}: mcReturns.length=${mcReturns.length}, building SPY path...`)
+        }
         // Build corresponding SPY path using same seed/block selection
         const spyRng = mulberry32(seed + i) // Use same randomness pattern
         const spyMcReturns = buildMcPath(spyReturns, years, blockSize, spyRng)
+        if (i % 50 === 0) {
+          console.log(`[MC Beta] Simulation ${i}: spyMcReturns.length=${spyMcReturns.length}`)
+        }
         const bt = computeBetaTreynor(mcReturns, spyMcReturns)
         beta = bt.beta
         treynor = bt.treynor
+        if (i % 50 === 0) {
+          console.log(`[MC Beta] Simulation ${i}: beta=${beta}, treynor=${treynor}`)
+        }
       }
 
       results.push({ maxDd, cagr, sharpe, sortino, volatility, winRate, beta, treynor })
@@ -1033,9 +1088,10 @@ export function generateSummary(pathRisk, fragility) {
 
 /**
  * Generate complete sanity & risk report
- * @param {number[]} returns - Array of daily returns
+ * @param {number[] | Array<{date: string, return: number}>} returns - Array of daily returns or {date, return} objects
  * @param {Object} options - Configuration options
- * @param {number[]} [spyReturns] - SPY returns for beta/treynor calculation
+ * @param {string} [options.oosStartDate] - ISO date string (YYYY-MM-DD) for IS/OOS split
+ * @param {number[]} [spyReturns] - SPY returns for beta/treynor calculation (or {date, return} objects)
  */
 export function generateSanityReport(returns, options = {}, spyReturns = null) {
   const {
@@ -1047,30 +1103,107 @@ export function generateSanityReport(returns, options = {}, spyReturns = null) {
     seed = 42,
     avgTurnover,
     avgHoldings,
-    equityCurve
+    equityCurve,
+    oosStartDate
   } = options
 
-  // Compute original metrics for reference
-  const originalEquity = buildEquityCurve(returns)
-  const originalCagr = computeCagr(originalEquity, returns.length)
+  // Convert returns to proper format if needed (support both array of numbers and array of objects)
+  const returnsArray = Array.isArray(returns) && returns.length > 0 && typeof returns[0] === 'object'
+    ? returns.map(r => r.return)
+    : returns
+
+  // Convert spyReturns to array if needed
+  const spyReturnsArray = spyReturns && Array.isArray(spyReturns) && spyReturns.length > 0 && typeof spyReturns[0] === 'object'
+    ? spyReturns.map(r => r.return)
+    : spyReturns
+
+  // Compute original metrics for reference (full period)
+  const originalEquity = buildEquityCurve(returnsArray)
+  const originalCagr = computeCagr(originalEquity, returnsArray.length)
   const originalMaxDD = computeMaxDrawdown(originalEquity)
 
-  const pathRisk = computePathRisk(returns, {
+  // Compute full-period path risk
+  const pathRisk = computePathRisk(returnsArray, {
     mcSimulations,
     kfFolds,
     years,
     blockSize,
     shards,
     seed
-  }, spyReturns)
+  }, spyReturnsArray)
+
+  // If oosStartDate is provided, compute IS/OOS specific path risks
+  let isPathRisk = null
+  let oosPathRisk = null
+
+  if (oosStartDate && Array.isArray(returns) && returns.length > 0 && typeof returns[0] === 'object') {
+    console.log(`[IS/OOS Split] oosStartDate=${oosStartDate}, total days=${returns.length}`)
+
+    // Split returns into IS and OOS periods
+    const { is: isReturns, oos: oosReturns } = splitDailyReturns(returns, oosStartDate)
+
+    console.log(`[IS/OOS Split] IS period: ${isReturns.length} days, OOS period: ${oosReturns.length} days`)
+
+    // Split SPY returns if available
+    let isSpyReturns = null
+    let oosSpyReturns = null
+    if (spyReturns && Array.isArray(spyReturns) && spyReturns.length > 0 && typeof spyReturns[0] === 'object') {
+      const spySplit = splitDailyReturns(spyReturns, oosStartDate)
+      isSpyReturns = spySplit.is
+      oosSpyReturns = spySplit.oos
+      console.log(`[IS/OOS Split] SPY IS: ${isSpyReturns.length} days, SPY OOS: ${oosSpyReturns.length} days`)
+    }
+
+    // Compute IS path risk (only if we have enough data)
+    if (isReturns.length >= 50) {
+      console.log(`[IS MC/KF] Running Monte Carlo (${mcSimulations} sims) and K-Fold (${kfFolds} folds) on ${isReturns.length} IS days...`)
+      const startIS = Date.now()
+      isPathRisk = computePathRisk(isReturns, {
+        mcSimulations,
+        kfFolds,
+        years,
+        blockSize,
+        shards,
+        seed: seed + 1000 // Different seed for IS
+      }, isSpyReturns)
+      console.log(`[IS MC/KF] Completed in ${Date.now() - startIS}ms`)
+    } else {
+      console.log(`[IS MC/KF] Skipped - insufficient data (${isReturns.length} days, need 50+)`)
+    }
+
+    // Compute OOS path risk (only if we have enough data)
+    if (oosReturns.length >= 50) {
+      console.log(`[OOS MC/KF] Running Monte Carlo (${mcSimulations} sims) and K-Fold (${kfFolds} folds) on ${oosReturns.length} OOS days...`)
+      const startOOS = Date.now()
+      oosPathRisk = computePathRisk(oosReturns, {
+        mcSimulations,
+        kfFolds,
+        years,
+        blockSize,
+        shards,
+        seed: seed + 2000 // Different seed for OOS
+      }, oosSpyReturns)
+      console.log(`[OOS MC/KF] Completed in ${Date.now() - startOOS}ms`)
+    } else {
+      console.log(`[OOS MC/KF] Skipped - insufficient data (${oosReturns.length} days, need 50+)`)
+    }
+  }
+
+  // Add IS/OOS path risks to main pathRisk object
+  if (isPathRisk) {
+    pathRisk.isPathRisk = isPathRisk
+  }
+  if (oosPathRisk) {
+    pathRisk.oosPathRisk = oosPathRisk
+  }
 
   // Use provided equity curve or the computed one for fragility
   // Handle both {value} and {equity} formats from backtest result
   const equityForFragility = equityCurve?.map(p => p.equity ?? p.value) || originalEquity
 
-  const fragility = computeFragility(returns, {
+  const fragility = computeFragility(returnsArray, {
     seed,
-    tradingDays: returns.length,
+    tradingDays: returnsArray.length,
     avgTurnover,
     avgHoldings,
     equity: equityForFragility
@@ -1082,11 +1215,12 @@ export function generateSanityReport(returns, options = {}, spyReturns = null) {
     original: {
       cagr: originalCagr,
       maxDD: originalMaxDD,
-      tradingDays: returns.length
+      tradingDays: returnsArray.length
     },
     pathRisk,
     fragility,
     summary,
+    oosStartDate: oosStartDate || null,
     meta: {
       mcSimulations,
       kfFolds,
@@ -1109,7 +1243,10 @@ export function generateSanityReport(returns, options = {}, spyReturns = null) {
  * @param {number[]} [spyReturns] - SPY returns for beta/treynor (null if computing SPY itself)
  */
 export function computeBenchmarkMetrics(returns, spyReturns = null) {
+  console.log(`[computeBenchmarkMetrics] returns.length=${returns?.length}, spyReturns.length=${spyReturns?.length}`)
+
   if (!returns || returns.length < 50) {
+    console.log(`[computeBenchmarkMetrics] Insufficient returns data (${returns?.length}), returning null`)
     return null
   }
 
@@ -1123,9 +1260,13 @@ export function computeBenchmarkMetrics(returns, spyReturns = null) {
 
   let beta = 0, treynor = 0
   if (spyReturns && spyReturns.length > 0) {
+    console.log(`[computeBenchmarkMetrics] Computing beta with ${spyReturns.length} SPY returns`)
     const bt = computeBetaTreynor(returns, spyReturns)
     beta = bt.beta
     treynor = bt.treynor
+    console.log(`[computeBenchmarkMetrics] Result: beta=${beta}, treynor=${treynor}`)
+  } else {
+    console.log(`[computeBenchmarkMetrics] No SPY returns provided, beta remains 0`)
   }
 
   return {
