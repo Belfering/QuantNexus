@@ -186,11 +186,26 @@ export async function markTickersSynced(tickers, date) {
 
 /**
  * Mark a single ticker as synced (also reactivates if it was inactive)
+ * Creates the ticker if it doesn't exist
  */
 export async function markTickerSynced(ticker, date) {
-  await db.update(tickerRegistry)
-    .set({ lastSynced: date, isActive: true, updatedAt: new Date() })
-    .where(eq(tickerRegistry.ticker, ticker.toUpperCase()))
+  await db.insert(tickerRegistry)
+    .values({
+      ticker: ticker.toUpperCase(),
+      lastSynced: date,
+      isActive: true,
+      currency: 'USD',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: tickerRegistry.ticker,
+      set: {
+        lastSynced: date,
+        isActive: true,
+        updatedAt: new Date(),
+      },
+    })
 }
 
 /**
@@ -301,14 +316,28 @@ export async function searchTickers(query, options = {}) {
  */
 export async function updateTickerMetadata(ticker, metadata) {
   const { name, description } = metadata
-  const updates = { updatedAt: new Date() }
+  const tickerUpper = ticker.toUpperCase()
 
+  // Build the update object
+  const updates = { updatedAt: new Date() }
   if (name !== undefined) updates.name = name
   if (description !== undefined) updates.description = description
 
-  await db.update(tickerRegistry)
-    .set(updates)
-    .where(eq(tickerRegistry.ticker, ticker.toUpperCase()))
+  // Use UPSERT to create ticker if it doesn't exist
+  await db.insert(tickerRegistry)
+    .values({
+      ticker: tickerUpper,
+      name: name || null,
+      description: description || null,
+      currency: 'USD',
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: tickerRegistry.ticker,
+      set: updates,
+    })
 }
 
 /**

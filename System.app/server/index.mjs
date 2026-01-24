@@ -502,6 +502,130 @@ app.delete('/api/download/:jobId', async (req, res) => {
   }
 })
 
+// Backfill metadata for tickers that have parquet files but missing company names
+app.post('/api/admin/backfill-metadata', async (req, res) => {
+  const jobId = newJobId()
+  const startedAt = Date.now()
+
+  try {
+    // Get list of parquet tickers
+    const parquetTickers = await listParquetTickers()
+
+    // Get tickers that need metadata (have parquet but no name in DB)
+    await tickerRegistry.ensureTickerRegistryTable()
+    const tickersNeedingMetadata = await tickerRegistry.getTickersNeedingMetadata(20000)
+    const tickersWithParquet = tickersNeedingMetadata.filter(t =>
+      parquetTickers.includes(t.ticker)
+    )
+
+    if (tickersWithParquet.length === 0) {
+      return res.json({
+        jobId: null,
+        message: 'All parquet tickers already have metadata',
+        tickersToProcess: 0
+      })
+    }
+
+    // Write tickers to temp JSON file for Python script
+    const tickersJsonPath = path.join(TICKER_DATA_ROOT, `temp_metadata_${jobId}.json`)
+    await fs.writeFile(
+      tickersJsonPath,
+      JSON.stringify(tickersWithParquet.map(t => t.ticker))
+    )
+
+    // Get Tiingo API key
+    const tiingoApiKey = await getTiingoApiKey()
+    if (!tiingoApiKey) {
+      return res.status(400).json({ error: 'Tiingo API key not configured' })
+    }
+
+    // Spawn Python script to fetch metadata
+    const scriptPath = path.join(TICKER_DATA_ROOT, 'fetch_metadata.py')
+    const args = [
+      '-u',
+      scriptPath,
+      '--tickers-json', tickersJsonPath,
+      '--api-key', tiingoApiKey,
+      '--max-workers', '100'
+    ]
+
+    const job = {
+      id: jobId,
+      status: 'running',
+      startedAt,
+      finishedAt: null,
+      error: null,
+      config: { mode: 'metadata', tickerCount: tickersWithParquet.length },
+      events: [],
+      logs: [],
+      syncedTickers: []
+    }
+    jobs.set(jobId, job)
+
+    const child = spawn(PYTHON, args, { windowsHide: true })
+    job.pid = child.pid
+
+    const pushLog = (line) => {
+      const s = String(line || '').trimEnd()
+      if (!s) return
+      job.logs.push(s)
+      if (job.logs.length > 400) job.logs.splice(0, job.logs.length - 400)
+      try {
+        const ev = JSON.parse(s)
+        if (ev && typeof ev === 'object') {
+          job.events.push(ev)
+          if (job.events.length > 400) job.events.splice(0, job.events.length - 400)
+
+          // Handle metadata_fetched events
+          if (ev.type === 'metadata_fetched' && ev.ticker) {
+            job.syncedTickers.push(ev.ticker)
+            if (ev.name || ev.description) {
+              tickerRegistry.updateTickerMetadata(ev.ticker, {
+                name: ev.name,
+                description: ev.description
+              }).catch(() => {})
+            }
+          }
+        }
+      } catch {
+        // ignore non-JSON lines
+      }
+    }
+
+    child.stdout.on('data', (buf) => {
+      for (const line of String(buf).split(/\r?\n/)) pushLog(line)
+    })
+    child.stderr.on('data', (buf) => {
+      for (const line of String(buf).split(/\r?\n/)) pushLog(line)
+    })
+    child.on('error', (err) => {
+      job.finishedAt = Date.now()
+      job.status = 'error'
+      job.error = String(err?.message || err)
+    })
+
+    child.on('close', (code) => {
+      job.finishedAt = Date.now()
+      if (code === 0) {
+        job.status = 'done'
+      } else {
+        job.status = 'error'
+        job.error = `Metadata fetch exited with code ${code}`
+      }
+      // Clean up temp file
+      fs.unlink(tickersJsonPath).catch(() => {})
+    })
+
+    res.json({
+      jobId,
+      message: `Fetching metadata for ${tickersWithParquet.length} tickers`,
+      tickersToProcess: tickersWithParquet.length
+    })
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || error) })
+  }
+})
+
 app.get('/api/tickers', async (_req, res) => {
   try {
     let tickers = []
@@ -4257,6 +4381,11 @@ app.get('/api/admin/sync-schedule', authenticate, requireAdmin, async (req, res)
     const lastSync = await scheduler.getLastSyncInfo(database)
     const status = scheduler.getSchedulerStatus()
 
+    console.log('[GET /api/admin/sync-schedule] Returning config:', {
+      tiingo5d: config.tiingo5d,
+      tiingoFull: config.tiingoFull
+    })
+
     res.json({
       config,
       lastSync,
@@ -4275,19 +4404,47 @@ app.get('/api/admin/sync-schedule', authenticate, requireAdmin, async (req, res)
 app.put('/api/admin/sync-schedule', authenticate, requireAdmin, async (req, res) => {
   try {
     await ensureDbInitialized()
-    const { enabled, updateTime, batchSize, sleepSeconds } = req.body
+    const { enabled, updateTime, batchSize, sleepSeconds, tiingo5d, tiingoFull } = req.body
 
     const currentConfig = await scheduler.getScheduleConfig(database)
+
+    // Ensure tiingo5d and tiingoFull always have default values
+    const defaultTiingo5d = {
+      enabled: true,
+      updateTime: '18:00',
+      timezone: 'America/New_York'
+    }
+    const defaultTiingoFull = {
+      enabled: true,
+      updateTime: '18:00',
+      timezone: 'America/New_York',
+      dayOfMonth: 1
+    }
+
     const newConfig = {
       ...currentConfig,
       ...(enabled !== undefined && { enabled }),
       ...(updateTime !== undefined && { updateTime }),
       ...(batchSize !== undefined && { batchSize: Math.max(10, Math.min(500, Number(batchSize))) }),
       ...(sleepSeconds !== undefined && { sleepSeconds: Math.max(0.5, Math.min(30, Number(sleepSeconds))) }),
+      tiingo5d: tiingo5d !== undefined
+        ? { ...(currentConfig.tiingo5d || defaultTiingo5d), ...tiingo5d }
+        : (currentConfig.tiingo5d || defaultTiingo5d),
+      tiingoFull: tiingoFull !== undefined
+        ? { ...(currentConfig.tiingoFull || defaultTiingoFull), ...tiingoFull }
+        : (currentConfig.tiingoFull || defaultTiingoFull),
     }
 
+    console.log('[PUT /api/admin/sync-schedule] Saving config:', {
+      tiingo5d: newConfig.tiingo5d,
+      tiingoFull: newConfig.tiingoFull
+    })
     const success = await scheduler.saveScheduleConfig(database, newConfig)
     if (success) {
+      console.log('[PUT /api/admin/sync-schedule] Returning config:', {
+        tiingo5d: newConfig.tiingo5d,
+        tiingoFull: newConfig.tiingoFull
+      })
       res.json({ success: true, config: newConfig })
     } else {
       res.status(500).json({ error: 'Failed to save schedule config' })

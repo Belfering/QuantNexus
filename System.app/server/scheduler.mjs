@@ -13,8 +13,17 @@ import { fileURLToPath } from 'node:url'
 // Schedule configuration (stored in adminConfig table)
 const DEFAULT_SCHEDULE = {
   enabled: true,
-  updateTime: '18:00',  // 6:00 PM in 24h format
-  timezone: 'America/New_York',
+  tiingo5d: {
+    enabled: true,
+    updateTime: '18:00',  // Daily at 6:00 PM
+    timezone: 'America/New_York',
+  },
+  tiingoFull: {
+    enabled: true,
+    dayOfMonth: 1,  // 1st day of each month
+    updateTime: '18:00',  // At 6:00 PM
+    timezone: 'America/New_York',
+  },
   batchSize: 100,
   sleepSeconds: 2.0,       // yFinance pause between batches
   tiingoSleepSeconds: 0.2, // Tiingo pause between API calls (faster rate limit)
@@ -102,7 +111,22 @@ export async function getScheduleConfig(database) {
       .limit(1)
 
     if (row?.value) {
-      return { ...DEFAULT_SCHEDULE, ...JSON.parse(row.value) }
+      const storedConfig = JSON.parse(row.value)
+      // Deep merge: preserve nested objects from DEFAULT_SCHEDULE
+      const mergedConfig = {
+        ...DEFAULT_SCHEDULE,
+        ...storedConfig,
+        tiingo5d: {
+          ...DEFAULT_SCHEDULE.tiingo5d,
+          ...(storedConfig.tiingo5d || {})
+        },
+        tiingoFull: {
+          ...DEFAULT_SCHEDULE.tiingoFull,
+          ...(storedConfig.tiingoFull || {})
+        }
+      }
+      console.log('[scheduler] Loaded config with tiingo5d:', mergedConfig.tiingo5d?.updateTime, 'tiingoFull:', mergedConfig.tiingoFull?.updateTime)
+      return mergedConfig
     }
   } catch (e) {
     console.log('[scheduler] Using default config:', e.message)
@@ -141,7 +165,7 @@ export async function saveScheduleConfig(database, config) {
 /**
  * Get last sync info for a specific source or all sources
  * @param {object} database - Database connection
- * @param {string|null} source - 'yfinance', 'tiingo', or null for all
+ * @param {string|null} source - 'yfinance', 'tiingo', 'tiingo_5d', 'tiingo_full', or null for all
  */
 export async function getLastSyncInfo(database, source = null) {
   try {
@@ -162,17 +186,26 @@ export async function getLastSyncInfo(database, source = null) {
       return null
     }
 
-    // Get both sources
+    // Get all sources
     const rows = await database.db.select()
       .from(adminConfig)
       .where(like(adminConfig.key, 'ticker_sync_last_run_%'))
 
-    const result = { yfinance: null, tiingo: null }
+    const result = {
+      yfinance: null,
+      tiingo: null,
+      tiingo_5d: null,
+      tiingo_full: null
+    }
     for (const row of rows) {
       if (row.key === 'ticker_sync_last_run_yfinance' && row.value) {
         result.yfinance = JSON.parse(row.value)
       } else if (row.key === 'ticker_sync_last_run_tiingo' && row.value) {
         result.tiingo = JSON.parse(row.value)
+      } else if (row.key === 'ticker_sync_last_run_tiingo_5d' && row.value) {
+        result.tiingo_5d = JSON.parse(row.value)
+      } else if (row.key === 'ticker_sync_last_run_tiingo_full' && row.value) {
+        result.tiingo_full = JSON.parse(row.value)
       }
     }
 
@@ -195,19 +228,24 @@ export async function getLastSyncInfo(database, source = null) {
   } catch (e) {
     console.error('[scheduler] Error getting last sync info:', e)
   }
-  return { yfinance: null, tiingo: null }
+  return {
+    yfinance: null,
+    tiingo: null,
+    tiingo_5d: null,
+    tiingo_full: null
+  }
 }
 
 /**
  * Save last sync info for a specific source
  * @param {object} database - Database connection
- * @param {object} info - Sync info object (must include 'source' field)
+ * @param {object} info - Sync info object (must include 'trackingKey' field)
  */
 async function saveLastSyncInfo(database, info) {
   try {
     const { adminConfig } = await import('./db/schema.mjs')
-    const source = info.source || 'yfinance'
-    const key = `ticker_sync_last_run_${source}`
+    const trackingKey = info.trackingKey || info.source || 'yfinance'
+    const key = `ticker_sync_last_run_${trackingKey}`
 
     await database.db.insert(adminConfig)
       .values({
@@ -242,45 +280,83 @@ function isWeekday(timezone) {
 }
 
 /**
- * Check if it's time to run the scheduled sync
+ * Check if it's time to run a scheduled sync
+ * Returns { shouldRun: boolean, scheduleType: 'tiingo_5d' | 'tiingo_full' | null }
  */
-function isTimeToRun(config) {
-  if (!config.enabled) return false
+function isTimeToRun(config, lastSyncInfo) {
+  if (!config.enabled) return { shouldRun: false, scheduleType: null }
 
-  const timezone = config.timezone || 'America/New_York'
+  if (isRunning) return { shouldRun: false, scheduleType: null }
 
-  // Only run on weekdays (Mon-Fri) - markets are closed on weekends
-  if (!isWeekday(timezone)) {
-    return false
+  const now = new Date()
+
+  // Check Tiingo 5d (daily schedule)
+  if (config.tiingo5d?.enabled) {
+    const timezone = config.tiingo5d.timezone || 'America/New_York'
+
+    // Only run on weekdays
+    if (isWeekday(timezone)) {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+      const currentTime = formatter.format(now)
+
+      const dateFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+      const currentDate = dateFormatter.format(now)
+
+      const [schedHour, schedMinute] = config.tiingo5d.updateTime.split(':').map(Number)
+      const [curHour, curMinute] = currentTime.split(':').map(Number)
+
+      const isRightTime = curHour === schedHour && curMinute === schedMinute
+      const lastRun5d = lastSyncInfo?.tiingo_5d
+      const alreadyRanToday = lastRun5d?.date === now.toISOString().slice(0, 10)
+
+      if (isRightTime && !alreadyRanToday) {
+        return { shouldRun: true, scheduleType: 'tiingo_5d' }
+      }
+    }
   }
 
-  // Get current time in the configured timezone
-  const now = new Date()
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-  const currentTime = formatter.format(now)
+  // Check Tiingo Full (monthly on specific day)
+  if (config.tiingoFull?.enabled) {
+    const timezone = config.tiingoFull.timezone || 'America/New_York'
 
-  // Get current date in timezone
-  const dateFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const currentDate = dateFormatter.format(now)
+    const dateFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      day: 'numeric',
+    })
+    const dayOfMonth = parseInt(dateFormatter.format(now))
 
-  // Check if current time matches scheduled time (within 1 minute window)
-  const [schedHour, schedMinute] = config.updateTime.split(':').map(Number)
-  const [curHour, curMinute] = currentTime.split(':').map(Number)
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    const currentTime = formatter.format(now)
 
-  const isRightTime = curHour === schedHour && curMinute === schedMinute
-  const alreadyRanToday = lastRunDate === currentDate
+    const [schedHour, schedMinute] = config.tiingoFull.updateTime.split(':').map(Number)
+    const [curHour, curMinute] = currentTime.split(':').map(Number)
 
-  return isRightTime && !alreadyRanToday && !isRunning
+    const isRightDay = dayOfMonth === config.tiingoFull.dayOfMonth
+    const isRightTime = curHour === schedHour && curMinute === schedMinute
+    const lastRunFull = lastSyncInfo?.tiingo_full
+    const alreadyRanThisMonth = lastRunFull?.date?.slice(0, 7) === now.toISOString().slice(0, 7)
+
+    if (isRightDay && isRightTime && !alreadyRanThisMonth) {
+      return { shouldRun: true, scheduleType: 'tiingo_full' }
+    }
+  }
+
+  return { shouldRun: false, scheduleType: null }
 }
 
 /**
@@ -292,8 +368,9 @@ function isTimeToRun(config) {
  * @param {Object} database - Database instance
  * @param {Object} tickerRegistry - Ticker registry instance
  * @param {string} source - 'tiingo' or 'yfinance' (default: 'tiingo')
+ * @param {string} mode - 'full', 'recent', '5d' (for Tiingo 5d daily sync) - default: 'recent'
  */
-async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry, source = 'tiingo') {
+async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry, source = 'tiingo', mode = 'recent') {
   if (isRunning) {
     console.log('[scheduler] Sync already running, skipping')
     return
@@ -302,6 +379,11 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
   isRunning = true
   const startedAt = Date.now()
   const today = new Date().toISOString().slice(0, 10)
+
+  // Determine the tracking key based on source and mode
+  const trackingKey = source === 'tiingo' && (mode === '5d' || mode === 'full')
+    ? `tiingo_${mode}`
+    : source
 
   // Set preliminary currentJob immediately so UI shows progress
   currentJob = {
@@ -312,6 +394,8 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
     stderrBuffer: '',
     phase: 'preparing', // Show user we're preparing
     source,
+    mode,
+    trackingKey,
   }
 
   console.log('[scheduler] Starting scheduled ticker sync...')
@@ -343,7 +427,9 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       }).format(new Date())
 
       await saveLastSyncInfo(database, {
+        trackingKey,
         source,
+        mode,
         date: today,
         status: 'skipped',
         message: 'All tickers already synced',
@@ -379,9 +465,16 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
     const sleepSecs = source === 'tiingo'
       ? (config.tiingoSleepSeconds ?? 0.2)
       : (config.sleepSeconds ?? 2.0)
+
+    // Determine download mode and recent days
+    let downloadMode = mode === 'full' ? 'full' : 'recent'
+    let recentDays = mode === '5d' ? 5 : 10  // Default to 10 days for 'recent' mode
+
     const args = [
       '-u',
       scriptPath,
+      '--mode',
+      downloadMode,
       '--tickers-json',
       tempTickersPath,
       '--out-dir',
@@ -395,6 +488,11 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       '--skip-metadata-json',
       skipMetadataPath,
     ]
+
+    // Add recent-days for non-full mode
+    if (downloadMode === 'recent') {
+      args.push('--recent-days', String(recentDays))
+    }
 
     // Add Tiingo API key from environment (only for tiingo source)
     if (source === 'tiingo') {
@@ -491,7 +589,9 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       if (code === 0) {
         console.log(`[scheduler] Sync completed successfully in ${duration}s`)
         await saveLastSyncInfo(database, {
+          trackingKey,
           source,
+          mode,
           date: today,
           status: 'success',
           tickerCount: tickers.length,
@@ -504,7 +604,9 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
         console.error(`[scheduler] Sync failed with code ${code}`)
         console.error(`[scheduler] stderr output:\n${stderrOutput}`)
         await saveLastSyncInfo(database, {
+          trackingKey,
           source,
+          mode,
           date: today,
           status: 'error',
           error: `Process exited with code ${code}. stderr: ${stderrOutput.slice(0, 500)}`,
@@ -531,7 +633,9 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
     child.on('error', async (err) => {
       console.error('[scheduler] Process error:', err)
       await saveLastSyncInfo(database, {
+        trackingKey,
         source,
+        mode,
         date: today,
         status: 'error',
         error: String(err?.message || err),
@@ -545,7 +649,9 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
   } catch (e) {
     console.error('[scheduler] Error starting sync:', e)
     await saveLastSyncInfo(database, {
+      trackingKey,
       source,
+      mode,
       date: today,
       status: 'error',
       error: String(e?.message || e),
@@ -569,10 +675,14 @@ export function startScheduler(options) {
   schedulerInterval = setInterval(async () => {
     try {
       const config = await getScheduleConfig(database)
+      const lastSyncInfo = await getLastSyncInfo(database)
 
-      if (isTimeToRun(config)) {
-        console.log('[scheduler] Scheduled time reached, starting sync...')
-        await runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry)
+      const { shouldRun, scheduleType } = isTimeToRun(config, lastSyncInfo)
+
+      if (shouldRun && scheduleType) {
+        console.log(`[scheduler] Scheduled time reached for ${scheduleType}, starting sync...`)
+        const mode = scheduleType === 'tiingo_5d' ? '5d' : scheduleType === 'tiingo_full' ? 'full' : 'recent'
+        await runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry, 'tiingo', mode)
       }
     } catch (e) {
       console.error('[scheduler] Error in scheduler loop:', e)
@@ -583,35 +693,71 @@ export function startScheduler(options) {
   setTimeout(async () => {
     try {
       const config = await getScheduleConfig(database)
-      const timezone = config.timezone || 'America/New_York'
+      const lastSyncInfo = await getLastSyncInfo(database)
+      const today = new Date().toISOString().slice(0, 10)
+      const now = new Date()
 
-      // Skip weekends - no need for catchup sync on Sat/Sun
-      if (!isWeekday(timezone)) {
-        console.log('[scheduler] Weekend - skipping startup catchup check')
-        return
+      // Check Tiingo 5d (daily) catchup
+      if (config.tiingo5d?.enabled) {
+        const timezone = config.tiingo5d.timezone || 'America/New_York'
+
+        // Skip weekends for daily sync
+        if (!isWeekday(timezone)) {
+          console.log('[scheduler] Weekend - skipping Tiingo 5d catchup check')
+        } else {
+          const lastRun5d = lastSyncInfo?.tiingo_5d
+          const needsRun = !lastRun5d || lastRun5d.date !== today
+
+          if (needsRun) {
+            const formatter = new Intl.DateTimeFormat('en-US', {
+              timeZone: timezone,
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            })
+            const currentTime = formatter.format(now)
+            const [schedHour, schedMinute] = config.tiingo5d.updateTime.split(':').map(Number)
+            const [curHour, curMinute] = currentTime.split(':').map(Number)
+
+            const isPastTime = curHour > schedHour || (curHour === schedHour && curMinute > schedMinute)
+            if (isPastTime) {
+              console.log('[scheduler] Missed Tiingo 5d scheduled time, running catchup sync...')
+              await runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry, 'tiingo', '5d')
+            }
+          }
+        }
       }
 
-      const lastSync = await getLastSyncInfo(database)
-      const today = new Date().toISOString().slice(0, 10)
-
-      // If enabled and we haven't run today, and it's past the scheduled time
-      if (config.enabled && lastSync?.date !== today) {
-        const now = new Date()
-        const formatter = new Intl.DateTimeFormat('en-US', {
+      // Check Tiingo Full (monthly) catchup
+      if (config.tiingoFull?.enabled) {
+        const timezone = config.tiingoFull.timezone || 'America/New_York'
+        const dateFormatter = new Intl.DateTimeFormat('en-US', {
           timeZone: timezone,
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
+          day: 'numeric',
         })
-        const currentTime = formatter.format(now)
-        const [schedHour, schedMinute] = config.updateTime.split(':').map(Number)
-        const [curHour, curMinute] = currentTime.split(':').map(Number)
+        const dayOfMonth = parseInt(dateFormatter.format(now))
 
-        // If past scheduled time, run now
-        const isPastTime = curHour > schedHour || (curHour === schedHour && curMinute > schedMinute)
-        if (isPastTime) {
-          console.log('[scheduler] Missed scheduled time, running catchup sync...')
-          await runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry)
+        const lastRunFull = lastSyncInfo?.tiingo_full
+        const currentMonth = now.toISOString().slice(0, 7)
+        const needsRun = dayOfMonth === config.tiingoFull.dayOfMonth &&
+                        (!lastRunFull || lastRunFull.date?.slice(0, 7) !== currentMonth)
+
+        if (needsRun) {
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          })
+          const currentTime = formatter.format(now)
+          const [schedHour, schedMinute] = config.tiingoFull.updateTime.split(':').map(Number)
+          const [curHour, curMinute] = currentTime.split(':').map(Number)
+
+          const isPastTime = curHour > schedHour || (curHour === schedHour && curMinute > schedMinute)
+          if (isPastTime) {
+            console.log('[scheduler] Missed Tiingo Full scheduled time, running catchup sync...')
+            await runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, database, tickerRegistry, 'tiingo', 'full')
+          }
         }
       }
     } catch (e) {

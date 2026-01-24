@@ -20,6 +20,7 @@ import {
 } from '@/types'
 import { AdminDataPanel } from './AdminDataPanel'
 import { useAuthStore, useUIStore, useBotStore } from '@/stores'
+import { TickerSearchModal, type TickerMetadata } from '@/shared/components/TickerSearchModal'
 
 export interface AdminPanelProps {
   // Callbacks
@@ -45,6 +46,7 @@ export function AdminPanel({
   const [, setStatus] = useState<AdminStatus | null>(null)
   const [, setTickers] = useState<string[]>([])
   const [parquetTickers, setParquetTickers] = useState<string[]>([])
+  const [tickerMetadataMap, setTickerMetadataMap] = useState<Map<string, TickerMetadata>>(new Map())
   const [error, setError] = useState<string | null>(null)
 
   // Atlas Overview state
@@ -73,8 +75,8 @@ export function AdminPanel({
   const [registryStats, setRegistryStats] = useState<{ total: number; active: number; syncedToday: number; pending: number; lastSync: string | null } | null>(null)
   const [registrySyncing, setRegistrySyncing] = useState(false)
   const [registryMsg, setRegistryMsg] = useState<string | null>(null)
-  const [runningDownloadJobs, setRunningDownloadJobs] = useState<{ full?: string; recent?: string; prices?: string }>({})
-  const [jobLogs, setJobLogs] = useState<{ full?: string[]; recent?: string[]; prices?: string[] }>({})
+  const [runningDownloadJobs, setRunningDownloadJobs] = useState<{ full?: string; recent?: string; prices?: string; metadata?: string }>({})
+  const [jobLogs, setJobLogs] = useState<{ full?: string[]; recent?: string[]; prices?: string[]; metadata?: string[] }>({})
 
   // Tiingo API Key state
   const [tiingoKeyStatus, setTiingoKeyStatus] = useState<{ hasKey: boolean; loading: boolean }>({ hasKey: false, loading: true })
@@ -83,11 +85,47 @@ export function AdminPanel({
 
   // Sync Schedule state (for simplified admin panel)
   const [syncSchedule, setSyncSchedule] = useState<{
-    config: { enabled: boolean; updateTime: string; timezone: string; batchSize?: number; sleepSeconds?: number; tiingoSleepSeconds?: number }
-    lastSync: { date: string; status: string; syncedCount?: number; tickerCount?: number; timestamp?: string } | null
-    status: { isRunning: boolean; schedulerActive: boolean; currentJob?: { pid: number | null; syncedCount: number; tickerCount: number; startedAt: number; phase?: string; source?: string } }
+    config: {
+      enabled: boolean
+      updateTime?: string
+      timezone?: string
+      batchSize?: number
+      sleepSeconds?: number
+      tiingoSleepSeconds?: number
+      tiingo5d?: {
+        enabled: boolean
+        updateTime: string
+        timezone: string
+      }
+      tiingoFull?: {
+        enabled: boolean
+        updateTime: string
+        timezone: string
+        dayOfMonth: number
+      }
+    }
+    lastSync: {
+      yfinance?: { date: string; status: string; syncedCount?: number; tickerCount?: number; timestamp?: string } | null
+      tiingo?: { date: string; status: string; syncedCount?: number; tickerCount?: number; timestamp?: string } | null
+      tiingo_5d?: { date: string; status: string; syncedCount?: number; tickerCount?: number; timestamp?: string } | null
+      tiingo_full?: { date: string; status: string; syncedCount?: number; tickerCount?: number; timestamp?: string } | null
+    } | null
+    status: { isRunning: boolean; schedulerActive: boolean; currentJob?: { pid: number | null; syncedCount: number; tickerCount: number; startedAt: number; phase?: string; source?: string; mode?: string } }
   } | null>(null)
   const [syncKilling, setSyncKilling] = useState(false)
+
+  // Time picker menu state
+  const [timePickerOpen, setTimePickerOpen] = useState<'5d' | 'full' | null>(null)
+  const [tempTime5d, setTempTime5d] = useState('18:00')
+  const [tempTimeFull, setTempTimeFull] = useState('18:00')
+
+  // Helper function to format time (24h to 12h AM/PM)
+  const formatTime = (time24: string): string => {
+    const [hours, minutes] = time24.split(':').map(Number)
+    const period = hours >= 12 ? 'PM' : 'AM'
+    const hours12 = hours % 12 || 12
+    return `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`
+  }
 
   // Trading Control state (broker credentials, dry run, live trading)
   // Paper Trading credentials
@@ -146,7 +184,7 @@ export function AdminPanel({
     usedLivePrices?: boolean
   } | null>(null)
   const [dryRunRunning, setDryRunRunning] = useState(false)
-  const [executionMode, setExecutionMode] = useState<'execute-paper' | 'execute-live' | null>(null)
+  const [executionMode, setExecutionMode] = useState<'simulate' | 'execute-paper' | 'execute-live' | null>(null)
   const [showLiveConfirmation, setShowLiveConfirmation] = useState(false)
 
   // Registry tickers (all tickers from Tiingo master list)
@@ -213,6 +251,22 @@ export function AdminPanel({
     // Compare sanitized registry tickers against parquet filenames
     return registryTickers.filter(t => !parquetSet.has(sanitizeTickerForFilename(t))).sort()
   }, [registryTickers, parquetTickers])
+
+  // Click-away listener to close time picker menu
+  useEffect(() => {
+    if (!timePickerOpen) return
+
+    const handleClickAway = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Close if clicking outside the time picker menu
+      if (!target.closest('.time-picker-menu') && !target.closest('.time-picker-trigger')) {
+        setTimePickerOpen(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickAway)
+    return () => document.removeEventListener('mousedown', handleClickAway)
+  }, [timePickerOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -305,7 +359,7 @@ export function AdminPanel({
         // Ignore schedule errors
       }
 
-      // Fetch all registry tickers (for missing tickers calculation)
+      // Fetch all registry tickers (for missing tickers calculation) and metadata
       try {
         const regMetaRes = await fetch('/api/tickers/registry/metadata', {
           headers: { Authorization: `Bearer ${getAuthToken()}` }
@@ -314,6 +368,19 @@ export function AdminPanel({
           const data = await regMetaRes.json()
           if (data.tickers) {
             setRegistryTickers(data.tickers.map((t: { ticker: string }) => t.ticker))
+
+            // Build metadata map for ticker search modal
+            const metadataMap = new Map<string, TickerMetadata>()
+            for (const ticker of data.tickers) {
+              if (ticker.name || ticker.assetType || ticker.exchange) {
+                metadataMap.set(ticker.ticker.toUpperCase(), {
+                  name: ticker.name,
+                  assetType: ticker.assetType,
+                  exchange: ticker.exchange,
+                })
+              }
+            }
+            setTickerMetadataMap(metadataMap)
           }
         }
       } catch {
@@ -330,6 +397,10 @@ export function AdminPanel({
         })
         if (schedRes.ok) {
           const data = await schedRes.json()
+          console.log('[Polling] Fetched schedule:', {
+            tiingo5d: data.config?.tiingo5d?.updateTime,
+            tiingoFull: data.config?.tiingoFull?.updateTime
+          })
           setSyncSchedule(data)
           // Also refresh registry stats if job is running
           if (data.status?.isRunning) {
@@ -606,10 +677,11 @@ export function AdminPanel({
     }
   }, [adminConfig, savedBots, onRefreshNexusBots, userId])
 
-  // Execute trades now (Paper or Live)
-  const executeNow = useCallback(async (mode: 'execute-paper' | 'execute-live') => {
+  // Execute trades now (Simulate, Paper, or Live)
+  const executeNow = useCallback(async (mode: 'simulate' | 'execute-paper' | 'execute-live') => {
     setDryRunRunning(true)
-    setBrokerError(null)
+    setPaperError(null)
+    setLiveError(null)
     setDryRunResult(null)
     setExecutionMode(mode)
 
@@ -630,11 +702,18 @@ export function AdminPanel({
       // Show success message
       if (mode === 'execute-live') {
         console.log('✅ Live execution completed:', data.positions?.length, 'orders')
+      } else if (mode === 'simulate') {
+        console.log('✅ Simulation completed:', data.positions?.length, 'positions (no orders placed)')
       } else {
         console.log('✅ Paper execution completed:', data.positions?.length, 'orders')
       }
     } catch (e) {
-      setBrokerError(String((e as Error)?.message || e))
+      const errorMsg = String((e as Error)?.message || e)
+      if (mode === 'execute-live') {
+        setLiveError(errorMsg)
+      } else {
+        setPaperError(errorMsg)
+      }
       console.error('Execution failed:', e)
     } finally {
       setDryRunRunning(false)
@@ -826,8 +905,6 @@ export function AdminPanel({
   // Trading Settings Card Component
   const TradingSettingsCard = useCallback(() => {
     const [settings, setSettings] = useState({
-      orderType: 'limit' as 'limit' | 'market',
-      limitPercent: 1.0,
       maxAllocationPercent: 99.0,
       fallbackTicker: 'SGOV',
       cashReserveMode: 'dollars' as 'dollars' | 'percent',
@@ -835,6 +912,7 @@ export function AdminPanel({
       minutesBeforeClose: 10,
       pairedTickers: [] as string[][],
       enabled: false,
+      marketHoursCheckHour: 4,
     })
     const [schedulerStatus, setSchedulerStatus] = useState<{
       isRunning: boolean
@@ -848,6 +926,7 @@ export function AdminPanel({
     const [settingsError, setSettingsError] = useState<string | null>(null)
     const [manualExecuting, setManualExecuting] = useState(false)
     const [newPair, setNewPair] = useState(['', ''])
+    const [tickerModalOpen, setTickerModalOpen] = useState(false)
 
     // Fetch settings and scheduler status on mount
     useEffect(() => {
@@ -863,8 +942,6 @@ export function AdminPanel({
             const data = await settingsRes.json()
             if (!cancelled) {
               setSettings({
-                orderType: data.orderType || 'limit',
-                limitPercent: data.limitPercent ?? 1.0,
                 maxAllocationPercent: data.maxAllocationPercent ?? 99.0,
                 fallbackTicker: data.fallbackTicker || 'SGOV',
                 cashReserveMode: data.cashReserveMode || 'dollars',
@@ -872,6 +949,7 @@ export function AdminPanel({
                 minutesBeforeClose: data.minutesBeforeClose ?? 10,
                 pairedTickers: data.pairedTickers || [],
                 enabled: data.enabled ?? false,
+                marketHoursCheckHour: data.marketHoursCheckHour ?? 4,
               })
             }
           }
@@ -1013,24 +1091,52 @@ export function AdminPanel({
 
         {/* Enable Toggle */}
         <div className="mb-6 flex items-center gap-4">
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex items-center gap-2 cursor-pointer" title="When enabled, the scheduler automatically executes trades for all invested bots at the configured time">
             <input
               type="checkbox"
               checked={settings.enabled}
               onChange={(e) => setSettings(prev => ({ ...prev, enabled: e.target.checked }))}
               className="w-4 h-4"
             />
-            <span className="text-sm font-medium">Enable Automated Trading</span>
+            <span className="text-sm font-medium">
+              Enable Automated Trading
+              <span className="ml-1 cursor-help text-muted-foreground/60">ⓘ</span>
+            </span>
           </label>
           <span className="text-xs text-muted-foreground">
             (When enabled, trades execute automatically at scheduled time)
           </span>
         </div>
 
+        {/* Market Hours Check Time */}
+        <div className="mb-4">
+          <label className="text-sm text-muted-foreground mb-1 block" title="What time (hour in ET) to check Alpaca API for today's market hours (handles early close days and holidays)">
+            Market Hours Check Time (ET)
+            <span className="ml-1 cursor-help text-muted-foreground/60">ⓘ</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={settings.marketHoursCheckHour}
+              onChange={(e) => setSettings(prev => ({ ...prev, marketHoursCheckHour: parseInt(e.target.value) || 4 }))}
+              min={0}
+              max={23}
+              className="w-24 px-3 py-2 rounded border border-border bg-background text-sm"
+              title="Hour (0-23) in Eastern Time when to fetch today's market hours from Alpaca (default: 4 AM)"
+            />
+            <span className="text-sm text-muted-foreground">
+              :00 (checks daily for early close days and holidays)
+            </span>
+          </div>
+        </div>
+
         {/* Settings Grid */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-4 gap-4 mb-6">
           <div>
-            <label className="text-sm text-muted-foreground mb-1 block">Minutes Before Close</label>
+            <label className="text-sm text-muted-foreground mb-1 block" title="How many minutes before market close (4:00 PM ET) to execute trades automatically">
+              Minutes Before Close
+              <span className="ml-1 cursor-help text-muted-foreground/60">ⓘ</span>
+            </label>
             <input
               type="number"
               value={settings.minutesBeforeClose}
@@ -1038,59 +1144,44 @@ export function AdminPanel({
               min={1}
               max={60}
               className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
+              title="Trades execute at 3:50 PM ET if set to 10 minutes"
             />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground mb-1 block">Order Type</label>
-            <select
-              value={settings.orderType}
-              onChange={(e) => setSettings(prev => ({ ...prev, orderType: e.target.value as 'limit' | 'market' }))}
-              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
-            >
-              <option value="limit">Limit (Safer)</option>
-              <option value="market">Market (Faster)</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground mb-1 block">Limit Price Buffer %</label>
-            <input
-              type="number"
-              value={settings.limitPercent}
-              onChange={(e) => setSettings(prev => ({ ...prev, limitPercent: parseFloat(e.target.value) || 1.0 }))}
-              min={0}
-              max={5}
-              step={0.1}
-              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
-              disabled={settings.orderType !== 'limit'}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div>
-            <label className="text-sm text-muted-foreground mb-1 block">Max Allocation %</label>
+            <label className="text-sm text-muted-foreground mb-1 block" title="Maximum percentage of equity to deploy (remainder stays as cash buffer)">
+              Max Allocation %
+              <span className="ml-1 cursor-help text-muted-foreground/60">ⓘ</span>
+            </label>
             <input
               type="number"
               value={settings.maxAllocationPercent}
-              onChange={(e) => setSettings(prev => ({ ...prev, maxAllocationPercent: parseFloat(e.target.value) || 99 }))}
+              onChange={(e) => setSettings(prev => ({ ...prev, maxAllocationPercent: parseFloat(e.target.value) || 100 }))}
               min={50}
               max={100}
               step={0.5}
               className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
+              title="Set to 95% to keep 5% in cash as a buffer"
             />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground mb-1 block">Fallback Ticker</label>
-            <input
-              type="text"
-              value={settings.fallbackTicker}
-              onChange={(e) => setSettings(prev => ({ ...prev, fallbackTicker: e.target.value.toUpperCase() }))}
-              placeholder="SGOV"
-              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
-            />
+            <label className="text-sm text-muted-foreground mb-1 block" title="Ticker to buy if a target ticker is unavailable (404 or other error)">
+              Fallback Ticker
+              <span className="ml-1 cursor-help text-muted-foreground/60">ⓘ</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setTickerModalOpen(true)}
+              className="w-full px-3 py-2 rounded border border-border bg-background text-sm text-left hover:bg-muted/50 transition-colors font-mono"
+              title="Click to search for a fallback ticker"
+            >
+              {settings.fallbackTicker || 'SGOV'}
+            </button>
           </div>
           <div>
-            <label className="text-sm text-muted-foreground mb-1 block">Cash Reserve</label>
+            <label className="text-sm text-muted-foreground mb-1 block" title="Cash to reserve before calculating allocations (won't be invested)">
+              Cash Reserve
+              <span className="ml-1 cursor-help text-muted-foreground/60">ⓘ</span>
+            </label>
             <div className="flex gap-2">
               <input
                 type="number"
@@ -1098,11 +1189,13 @@ export function AdminPanel({
                 onChange={(e) => setSettings(prev => ({ ...prev, cashReserveAmount: parseFloat(e.target.value) || 0 }))}
                 min={0}
                 className="flex-1 px-3 py-2 rounded border border-border bg-background text-sm"
+                title={settings.cashReserveMode === 'dollars' ? 'Fixed dollar amount to keep as cash' : 'Percentage of equity to keep as cash'}
               />
               <select
                 value={settings.cashReserveMode}
                 onChange={(e) => setSettings(prev => ({ ...prev, cashReserveMode: e.target.value as 'dollars' | 'percent' }))}
                 className="w-16 px-2 py-2 rounded border border-border bg-background text-sm"
+                title="Choose between fixed dollar amount ($) or percentage (%)"
               >
                 <option value="dollars">$</option>
                 <option value="percent">%</option>
@@ -1113,8 +1206,10 @@ export function AdminPanel({
 
         {/* Paired Tickers */}
         <div className="mb-6">
-          <label className="text-sm text-muted-foreground mb-2 block">
-            Paired Tickers (e.g., SPY-SH: if both present, keep higher allocation, remove lower)
+          <label className="text-sm text-muted-foreground mb-2 block" title="If both tickers in a pair appear in allocations, only the one with higher allocation is kept (e.g., SPY-SH means if both are present, only buy the one with higher %, skip the other)">
+            Paired Tickers
+            <span className="ml-1 cursor-help text-muted-foreground/60">ⓘ</span>
+            <span className="text-xs ml-2 opacity-75">(e.g., SPY-SH: if both present, keep higher allocation, remove lower)</span>
           </label>
           <div className="flex flex-wrap gap-2 mb-2">
             {settings.pairedTickers.map((pair, i) => (
@@ -1159,6 +1254,19 @@ export function AdminPanel({
             {manualExecuting ? 'Executing...' : 'Execute Now'}
           </Button>
         </div>
+
+        {/* Ticker Search Modal for Fallback Ticker */}
+        <TickerSearchModal
+          open={tickerModalOpen}
+          onClose={() => setTickerModalOpen(false)}
+          onSelect={(ticker) => {
+            setSettings(prev => ({ ...prev, fallbackTicker: ticker }))
+            setTickerModalOpen(false)
+          }}
+          tickerOptions={parquetTickers}
+          tickerMetadata={tickerMetadataMap}
+          allowedModes={['tickers']}
+        />
       </Card>
     )
   }, [])
@@ -2279,6 +2387,67 @@ export function AdminPanel({
                   Cancel
                 </Button>
               )}
+
+              {/* Button 4: Fetch Metadata - Backfill company names for existing tickers */}
+              <Button
+                variant="outline"
+                disabled={!tiingoKeyStatus.hasKey || syncSchedule?.status?.isRunning || !!runningDownloadJobs.metadata}
+                onClick={async () => {
+                  if (!confirm(`Fetch company names for tickers missing metadata?\n\nThis only fetches metadata (no data download).\nEstimated time: 2-3 minutes for ~12,000 tickers`)) return
+                  setRegistryMsg('Fetching company names...')
+                  try {
+                    const res = await fetch('/api/admin/backfill-metadata', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' }
+                    })
+                    const data = await res.json()
+                    if (res.ok) {
+                      if (data.jobId) {
+                        setRunningDownloadJobs(prev => ({ ...prev, metadata: data.jobId }))
+                        setJobLogs(prev => ({ ...prev, metadata: [`Fetching metadata for ${data.tickersToProcess} tickers...`] }))
+                        setRegistryMsg(`Metadata backfill started (${data.tickersToProcess} tickers)`)
+                        console.log('[Metadata] Job started:', data.jobId)
+                      } else {
+                        setRegistryMsg(data.message || 'All tickers already have metadata')
+                      }
+                    } else {
+                      setRegistryMsg(`Error: ${data.error}`)
+                    }
+                  } catch (e) {
+                    setRegistryMsg(`Error: ${e}`)
+                  }
+                }}
+                title={!tiingoKeyStatus.hasKey ? 'Configure Tiingo API key first' : 'Fetch company names for tickers that have parquet files but missing metadata. Much faster than re-downloading data (~2-3 minutes for 12,000 tickers).'}
+              >
+                Fetch Metadata
+              </Button>
+
+              {/* Cancel button for Metadata */}
+              {runningDownloadJobs.metadata && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={async () => {
+                    if (!confirm('Cancel metadata fetch?')) return
+                    try {
+                      const res = await fetch(`/api/download/${runningDownloadJobs.metadata}`, {
+                        method: 'DELETE'
+                      })
+                      const data = await res.json()
+                      if (res.ok) {
+                        setRunningDownloadJobs(prev => ({ ...prev, metadata: undefined }))
+                        setRegistryMsg('Metadata fetch cancelled')
+                      } else {
+                        setRegistryMsg(`Cancel failed: ${data.error}`)
+                      }
+                    } catch (e) {
+                      setRegistryMsg(`Cancel error: ${e}`)
+                    }
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
             </div>
 
             {/* Job Progress/Logs Display */}
@@ -2461,11 +2630,16 @@ export function AdminPanel({
                     try {
                       const res = await fetch('/api/admin/sync-schedule', {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${getAuthToken()}`
+                        },
                         body: JSON.stringify({ enabled: e.target.checked })
                       })
                       if (res.ok) {
-                        const schedRes = await fetch('/api/admin/sync-schedule')
+                        const schedRes = await fetch('/api/admin/sync-schedule', {
+                          headers: { Authorization: `Bearer ${getAuthToken()}` }
+                        })
                         if (schedRes.ok) setSyncSchedule(await schedRes.json())
                         setRegistryMsg(e.target.checked ? 'Schedule enabled' : 'Schedule disabled')
                       }
@@ -2478,35 +2652,244 @@ export function AdminPanel({
                 <span className="text-sm">{syncSchedule?.config?.enabled ? 'Enabled' : 'Disabled'}</span>
               </label>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-muted-foreground">Daily at:</label>
-                <input
-                  type="time"
-                  value={syncSchedule?.config?.updateTime ?? '18:00'}
-                  onChange={async (e) => {
-                    const newTime = e.target.value
-                    try {
-                      const res = await fetch('/api/admin/sync-schedule', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ updateTime: newTime })
-                      })
-                      if (res.ok) {
-                        const schedRes = await fetch('/api/admin/sync-schedule')
-                        if (schedRes.ok) setSyncSchedule(await schedRes.json())
-                        setRegistryMsg(`Schedule updated to ${newTime}`)
+
+            {/* Tiingo 5d Schedule */}
+            <div className="mb-3 p-3 rounded bg-background/50 border border-border/50">
+              <div className="font-semibold text-sm mb-2">Tiingo 5d</div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={syncSchedule?.config?.tiingo5d?.enabled ?? true}
+                    onChange={(e) => {
+                      if (syncSchedule) {
+                        setSyncSchedule({
+                          ...syncSchedule,
+                          config: {
+                            ...syncSchedule.config,
+                            tiingo5d: {
+                              ...syncSchedule.config.tiingo5d,
+                              enabled: e.target.checked,
+                              updateTime: syncSchedule.config.tiingo5d?.updateTime ?? '18:00',
+                              timezone: syncSchedule.config.tiingo5d?.timezone ?? 'America/New_York'
+                            }
+                          }
+                        })
                       }
-                    } catch {
-                      setRegistryMsg('Error updating schedule time')
-                    }
-                  }}
-                  className="px-2 py-1 rounded border border-border bg-background text-sm"
-                />
+                    }}
+                    className="w-4 h-4 cursor-pointer"
+                  />
+                  <span className="text-xs">{(syncSchedule?.config?.tiingo5d?.enabled ?? true) ? 'Enabled' : 'Disabled'}</span>
+                </label>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  {syncSchedule?.config?.tiingo5d?.timezone ?? 'America/New_York'} (weekdays only)
+                </span>
               </div>
-              <span className="text-xs text-muted-foreground">
-                {syncSchedule?.config?.timezone ?? 'America/New_York'} (weekdays only)
-              </span>
+              <div className="flex items-center gap-2 mb-2 relative">
+                <label className="text-sm text-muted-foreground w-20">Daily at:</label>
+                <div
+                  onClick={() => {
+                    setTempTime5d(syncSchedule?.config?.tiingo5d?.updateTime ?? '18:00')
+                    setTimePickerOpen(timePickerOpen === '5d' ? null : '5d')
+                  }}
+                  className="time-picker-trigger px-2 py-1 rounded border border-border bg-background text-sm cursor-pointer hover:bg-accent/50 min-w-[100px]"
+                >
+                  {formatTime(syncSchedule?.config?.tiingo5d?.updateTime ?? '18:00')}
+                </div>
+
+                {/* Dropdown menu */}
+                {timePickerOpen === '5d' && (
+                  <div className="time-picker-menu absolute top-full left-20 mt-1 p-3 rounded border border-border bg-popover shadow-lg z-50 flex flex-col gap-2">
+                    <input
+                      type="time"
+                      value={tempTime5d}
+                      onChange={(e) => setTempTime5d(e.target.value)}
+                      className="px-2 py-1 rounded border border-border bg-background text-sm"
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/admin/sync-schedule', {
+                              method: 'PUT',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${getAuthToken()}`
+                              },
+                              body: JSON.stringify({
+                                tiingo5d: {
+                                  enabled: syncSchedule?.config?.tiingo5d?.enabled ?? true,
+                                  updateTime: tempTime5d,
+                                  timezone: syncSchedule?.config?.tiingo5d?.timezone ?? 'America/New_York'
+                                }
+                              })
+                            })
+                            if (res.ok) {
+                              const data = await res.json()
+                              console.log('[Tiingo 5d Save] Response data:', data)
+                              console.log('[Tiingo 5d Save] New updateTime:', data.config?.tiingo5d?.updateTime)
+                              setRegistryMsg(`Tiingo 5d schedule saved to ${tempTime5d}`)
+                              setTimePickerOpen(null)
+                              // Update state with the saved config from the response
+                              if (syncSchedule && data.config) {
+                                const newSchedule = {
+                                  ...syncSchedule,
+                                  config: data.config
+                                }
+                                console.log('[Tiingo 5d Save] Setting new schedule:', newSchedule)
+                                setSyncSchedule(newSchedule)
+                              }
+                            } else {
+                              const error = await res.text()
+                              console.error('[Tiingo 5d Save] Error response:', error)
+                              setRegistryMsg('Error saving Tiingo 5d schedule')
+                            }
+                          } catch (err) {
+                            console.error('[Tiingo 5d Save] Exception:', err)
+                            setRegistryMsg('Error saving Tiingo 5d schedule')
+                          }
+                        }}
+                        className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setTimePickerOpen(null)}
+                        className="px-3 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/90"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Last ran at {syncSchedule?.lastSync?.tiingo_5d?.timestamp
+                  ? new Date(syncSchedule.lastSync.tiingo_5d.timestamp).toLocaleString()
+                  : '(Never)'}
+              </div>
+            </div>
+
+            {/* Tiingo Full Schedule */}
+            <div className="p-3 rounded bg-background/50 border border-border/50">
+              <div className="font-semibold text-sm mb-2">Tiingo Full</div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={syncSchedule?.config?.tiingoFull?.enabled ?? true}
+                    onChange={(e) => {
+                      if (syncSchedule) {
+                        setSyncSchedule({
+                          ...syncSchedule,
+                          config: {
+                            ...syncSchedule.config,
+                            tiingoFull: {
+                              ...syncSchedule.config.tiingoFull,
+                              enabled: e.target.checked,
+                              updateTime: syncSchedule.config.tiingoFull?.updateTime ?? '18:00',
+                              timezone: syncSchedule.config.tiingoFull?.timezone ?? 'America/New_York',
+                              dayOfMonth: syncSchedule.config.tiingoFull?.dayOfMonth ?? 1
+                            }
+                          }
+                        })
+                      }
+                    }}
+                    className="w-4 h-4 cursor-pointer"
+                  />
+                  <span className="text-xs">{(syncSchedule?.config?.tiingoFull?.enabled ?? true) ? 'Enabled' : 'Disabled'}</span>
+                </label>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  {syncSchedule?.config?.tiingoFull?.timezone ?? 'America/New_York'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mb-2 relative">
+                <label className="text-sm text-muted-foreground w-20">Monthly at:</label>
+                <div
+                  onClick={() => {
+                    setTempTimeFull(syncSchedule?.config?.tiingoFull?.updateTime ?? '18:00')
+                    setTimePickerOpen(timePickerOpen === 'full' ? null : 'full')
+                  }}
+                  className="time-picker-trigger px-2 py-1 rounded border border-border bg-background text-sm cursor-pointer hover:bg-accent/50 min-w-[100px]"
+                >
+                  {formatTime(syncSchedule?.config?.tiingoFull?.updateTime ?? '18:00')}
+                </div>
+                <span className="text-xs text-muted-foreground">on day 1</span>
+
+                {/* Dropdown menu */}
+                {timePickerOpen === 'full' && (
+                  <div className="time-picker-menu absolute top-full left-20 mt-1 p-3 rounded border border-border bg-popover shadow-lg z-50 flex flex-col gap-2">
+                    <input
+                      type="time"
+                      value={tempTimeFull}
+                      onChange={(e) => setTempTimeFull(e.target.value)}
+                      className="px-2 py-1 rounded border border-border bg-background text-sm"
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/admin/sync-schedule', {
+                              method: 'PUT',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${getAuthToken()}`
+                              },
+                              body: JSON.stringify({
+                                tiingoFull: {
+                                  enabled: syncSchedule?.config?.tiingoFull?.enabled ?? true,
+                                  updateTime: tempTimeFull,
+                                  timezone: syncSchedule?.config?.tiingoFull?.timezone ?? 'America/New_York',
+                                  dayOfMonth: syncSchedule?.config?.tiingoFull?.dayOfMonth ?? 1
+                                }
+                              })
+                            })
+                            if (res.ok) {
+                              const data = await res.json()
+                              console.log('[Tiingo Full Save] Response data:', data)
+                              console.log('[Tiingo Full Save] New updateTime:', data.config?.tiingoFull?.updateTime)
+                              setRegistryMsg(`Tiingo Full schedule saved to ${tempTimeFull}`)
+                              setTimePickerOpen(null)
+                              // Update state with the saved config from the response
+                              if (syncSchedule && data.config) {
+                                const newSchedule = {
+                                  ...syncSchedule,
+                                  config: data.config
+                                }
+                                console.log('[Tiingo Full Save] Setting new schedule:', newSchedule)
+                                setSyncSchedule(newSchedule)
+                              }
+                            } else {
+                              const error = await res.text()
+                              console.error('[Tiingo Full Save] Error response:', error)
+                              setRegistryMsg('Error saving Tiingo Full schedule')
+                            }
+                          } catch (err) {
+                            console.error('[Tiingo Full Save] Exception:', err)
+                            setRegistryMsg('Error saving Tiingo Full schedule')
+                          }
+                        }}
+                        className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setTimePickerOpen(null)}
+                        className="px-3 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/90"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Last ran at {syncSchedule?.lastSync?.tiingo_full?.timestamp
+                  ? new Date(syncSchedule.lastSync.tiingo_full.timestamp).toLocaleString()
+                  : '(Never)'}
+              </div>
             </div>
           </div>
 
@@ -2691,7 +3074,7 @@ export function AdminPanel({
                           // Poll for job status
                           const poll = setInterval(async () => {
                             try {
-                              const jobRes = await fetch(`/api/jobs/${data.jobId}`)
+                              const jobRes = await fetch(`/api/download/${data.jobId}`)
                               if (jobRes.ok) {
                                 const job = await jobRes.json()
                                 const saved = job.syncedTickers?.length ?? 0
@@ -3038,18 +3421,23 @@ export function AdminPanel({
 
             <div className="flex items-center gap-4 mb-4">
               <div>
-                <label className="text-sm text-muted-foreground mb-1 block">Cash Reserve</label>
+                <label className="text-sm text-muted-foreground mb-1 block" title="Amount of cash to reserve before calculating trade allocations">
+                  Cash Reserve
+                  <span className="ml-1 cursor-help text-muted-foreground/60">ⓘ</span>
+                </label>
                 <div className="flex gap-2">
                   <input
                     type="number"
                     value={dryRunCashReserve}
                     onChange={(e) => setDryRunCashReserve(parseFloat(e.target.value) || 0)}
                     className="w-24 px-2 py-2 rounded border border-border bg-background text-sm"
+                    title={dryRunCashMode === 'dollars' ? 'Fixed dollar amount to keep as cash' : 'Percentage of equity to keep as cash'}
                   />
                   <select
                     value={dryRunCashMode}
                     onChange={(e) => setDryRunCashMode(e.target.value as 'dollars' | 'percent')}
                     className="px-2 py-2 rounded border border-border bg-background text-sm"
+                    title="Choose between fixed dollar amount ($) or percentage (%)"
                   >
                     <option value="dollars">$</option>
                     <option value="percent">%</option>
@@ -3058,6 +3446,21 @@ export function AdminPanel({
               </div>
 
               <div className="flex gap-2 mt-5">
+                {/* Simulate button (no orders placed) */}
+                <Button
+                  onClick={() => {
+                    setExecutionMode('simulate')
+                    executeNow('simulate')
+                  }}
+                  disabled={dryRunRunning || !brokerCredentials?.hasCredentials}
+                  variant="outline"
+                  title="Preview what trades would be executed without placing any real orders"
+                >
+                  {dryRunRunning && executionMode === 'simulate'
+                    ? '⏳ Simulating...'
+                    : '🔍 Simulate (Preview Only)'}
+                </Button>
+
                 {/* Paper button */}
                 <Button
                   onClick={() => {
@@ -3066,6 +3469,7 @@ export function AdminPanel({
                   }}
                   disabled={dryRunRunning || !brokerCredentials?.hasCredentials}
                   variant="default"
+                  title="Execute trades immediately on your paper (simulated) account for testing"
                 >
                   {dryRunRunning && executionMode === 'execute-paper'
                     ? '⏳ Executing on Paper...'
@@ -3080,6 +3484,7 @@ export function AdminPanel({
                   }}
                   disabled={dryRunRunning || !brokerCredentials?.hasCredentials}
                   variant="destructive"
+                  title="Execute trades immediately on your LIVE account with REAL MONEY - requires confirmation"
                 >
                   {dryRunRunning && executionMode === 'execute-live'
                     ? '⏳ Executing on Live...'
@@ -3165,17 +3570,15 @@ export function AdminPanel({
                   </div>
                 </div>
 
-                {/* Live Price Indicator */}
-                {dryRunResult.usedLivePrices && (
-                  <div className="flex items-center gap-2 text-sm text-green-600">
-                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                    Using live prices from Alpaca for signal calculation
-                  </div>
-                )}
-                {!dryRunResult.usedLivePrices && dryRunResult.botBreakdown && (
+                {/* Data Source Indicator */}
+                <div className="flex items-center gap-2 text-sm text-blue-600">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                  Using Tiingo data for signals, Alpaca prices for execution
+                </div>
+                {dryRunResult.botBreakdown && dryRunResult.botBreakdown.length === 0 && (
                   <div className="flex items-center gap-2 text-sm text-yellow-600">
                     <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                    Using historical close prices (market may be closed)
+                    No bot allocations available
                   </div>
                 )}
 
@@ -3249,8 +3652,8 @@ export function AdminPanel({
                         <TableHead>Ticker</TableHead>
                         <TableHead className="text-right">Target %</TableHead>
                         <TableHead className="text-right">Price</TableHead>
-                        <TableHead className="text-right">Limit Price</TableHead>
-                        <TableHead className="text-right">Shares</TableHead>
+                        <TableHead className="text-right">Notional Amount</TableHead>
+                        <TableHead className="text-right">Est. Shares</TableHead>
                         <TableHead className="text-right">Value</TableHead>
                         <TableHead>Order ID</TableHead>
                         <TableHead>Status</TableHead>
@@ -3262,9 +3665,9 @@ export function AdminPanel({
                           <TableCell className="font-medium">{pos.ticker}</TableCell>
                           <TableCell className="text-right">{pos.targetPercent.toFixed(2)}%</TableCell>
                           <TableCell className="text-right">{pos.price ? `$${pos.price.toFixed(2)}` : '-'}</TableCell>
-                          <TableCell className="text-right">{pos.limitPrice ? `$${pos.limitPrice.toFixed(2)}` : '-'}</TableCell>
-                          <TableCell className="text-right">{pos.shares}</TableCell>
-                          <TableCell className="text-right">${pos.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="text-right">{pos.notional ? `$${pos.notional.toFixed(2)}` : '-'}</TableCell>
+                          <TableCell className="text-right">{pos.estimatedShares ? pos.estimatedShares.toFixed(4) : '0.0000'}</TableCell>
+                          <TableCell className="text-right">${(pos.value || pos.notional || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                           <TableCell>
                             {pos.orderId ? (
                               <span className="text-xs font-mono text-muted-foreground">{pos.orderId.slice(0, 8)}...</span>

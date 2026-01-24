@@ -11,7 +11,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
-import { createAlpacaClient, getAccountInfo, getPositions } from './broker-alpaca.mjs'
+import { createAlpacaClient, getAccountInfo, getPositions, getMarketCalendar } from './broker-alpaca.mjs'
 import { executeDryRun, executeLiveTrades } from './trade-executor.mjs'
 import { computeFinalAllocations } from './backtest-allocator.mjs'
 
@@ -20,15 +20,19 @@ const __dirname = path.dirname(__filename)
 
 // Constants
 const DEFAULT_MINUTES_BEFORE_CLOSE = 10
-const NYSE_CLOSE_HOUR = 16  // 4:00 PM Eastern
+const NYSE_CLOSE_HOUR = 16  // 4:00 PM Eastern (fallback)
 const NYSE_CLOSE_MINUTE = 0
+const MARKET_HOURS_CHECK_TIME = 4  // 4 AM Eastern - when to refresh market hours daily
 
 // State
 let schedulerInterval = null
+let marketHoursCheckInterval = null
 let lastExecutionDate = null
 let isExecuting = false
 let currentExecution = null
 let db = null
+let cachedMarketHours = null  // Stores today's market open/close times
+let lastMarketHoursCheck = null
 
 // Encryption (same as in live.mjs)
 const ENCRYPTION_KEY = process.env.BROKER_ENCRYPTION_KEY || 'dev-encryption-key-32-chars-long!'
@@ -90,18 +94,126 @@ function getEasternDate() {
 }
 
 /**
+ * Get current date in ISO format (YYYY-MM-DD) in Eastern timezone
+ */
+function getEasternDateISO() {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const parts = formatter.formatToParts(now)
+  const year = parts.find(p => p.type === 'year').value
+  const month = parts.find(p => p.type === 'month').value
+  const day = parts.find(p => p.type === 'day').value
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Fetch and cache today's market hours from Alpaca calendar API
+ * Returns market open/close times or null if market is closed
+ */
+async function fetchMarketHours() {
+  try {
+    const today = getEasternDateISO()
+    console.log(`[trading-scheduler] Fetching market calendar for ${today}`)
+
+    // Get any user's paper credentials to make the API call
+    const users = getUsersWithTradingEnabled()
+    if (users.length === 0) {
+      console.warn('[trading-scheduler] No enabled users found for calendar check')
+      return null
+    }
+
+    const userId = users[0].user_id
+    const credentials = getDecryptedCredentials(userId, 'paper')
+    if (!credentials) {
+      console.warn('[trading-scheduler] No credentials available for calendar check')
+      return null
+    }
+
+    const client = createAlpacaClient(credentials)
+    const calendar = await getMarketCalendar(client, today, today)
+
+    if (!calendar || calendar.length === 0) {
+      console.log(`[trading-scheduler] Market is CLOSED on ${today}`)
+      cachedMarketHours = null
+      lastMarketHoursCheck = today
+      return null
+    }
+
+    const marketDay = calendar[0]
+    const [closeHour, closeMinute] = marketDay.close.split(':').map(Number)
+
+    cachedMarketHours = {
+      date: today,
+      open: marketDay.open,
+      close: marketDay.close,
+      closeHour,
+      closeMinute,
+      isEarlyClose: closeHour < 16,  // Market normally closes at 4:00 PM
+    }
+
+    lastMarketHoursCheck = today
+    console.log(`[trading-scheduler] Market hours for ${today}:`, {
+      open: cachedMarketHours.open,
+      close: cachedMarketHours.close,
+      isEarlyClose: cachedMarketHours.isEarlyClose,
+    })
+
+    return cachedMarketHours
+  } catch (error) {
+    console.error('[trading-scheduler] Error fetching market calendar:', error)
+    // Fall back to default hours on error
+    return {
+      date: getEasternDateISO(),
+      close: '16:00',
+      closeHour: NYSE_CLOSE_HOUR,
+      closeMinute: NYSE_CLOSE_MINUTE,
+      isEarlyClose: false,
+      error: error.message,
+    }
+  }
+}
+
+/**
+ * Get market close time for today
+ * Uses cached value if available and current, otherwise fetches from API
+ */
+async function getMarketCloseTime() {
+  const today = getEasternDateISO()
+
+  // Return cached hours if already fetched today
+  if (cachedMarketHours && cachedMarketHours.date === today) {
+    return cachedMarketHours
+  }
+
+  // Fetch new market hours
+  return await fetchMarketHours()
+}
+
+/**
  * Check if it's time to execute trades
  * Triggers X minutes before market close (default: 10 minutes = 3:50 PM ET)
+ * Now checks actual market hours from Alpaca calendar API
  */
-function isTimeToExecute(minutesBeforeClose = DEFAULT_MINUTES_BEFORE_CLOSE) {
-  if (!isTradingDay()) return false
+async function isTimeToExecute(minutesBeforeClose = DEFAULT_MINUTES_BEFORE_CLOSE) {
+  // Get actual market hours for today
+  const marketHours = await getMarketCloseTime()
+
+  // If market is closed today (holiday), don't execute
+  if (!marketHours) {
+    return false
+  }
 
   const { hour, minute } = getEasternTime()
   const currentDate = getEasternDate()
 
-  // Calculate execution time (X minutes before 4:00 PM)
-  let execHour = NYSE_CLOSE_HOUR
-  let execMinute = NYSE_CLOSE_MINUTE - minutesBeforeClose
+  // Calculate execution time using actual market close time
+  let execHour = marketHours.closeHour
+  let execMinute = marketHours.closeMinute - minutesBeforeClose
 
   // Handle minute underflow
   if (execMinute < 0) {
@@ -112,6 +224,13 @@ function isTimeToExecute(minutesBeforeClose = DEFAULT_MINUTES_BEFORE_CLOSE) {
   // Check if current time matches (within 1 minute window)
   const isRightTime = hour === execHour && minute === execMinute
   const alreadyRanToday = lastExecutionDate === currentDate
+
+  if (isRightTime && !alreadyRanToday && !isExecuting) {
+    console.log(`[trading-scheduler] Execution time reached: ${hour}:${String(minute).padStart(2, '0')} ET (${minutesBeforeClose} min before ${marketHours.close})`)
+    if (marketHours.isEarlyClose) {
+      console.log(`[trading-scheduler] ⚠️  Early close day detected - market closes at ${marketHours.close}`)
+    }
+  }
 
   return isRightTime && !alreadyRanToday && !isExecuting
 }
@@ -149,7 +268,7 @@ function getUsersWithTradingEnabled() {
   return db.prepare(`
     SELECT user_id, minutes_before_close, order_type, limit_percent,
            max_allocation_percent, fallback_ticker, cash_reserve_mode,
-           cash_reserve_amount, paired_tickers
+           cash_reserve_amount, paired_tickers, market_hours_check_hour
     FROM trading_settings
     WHERE enabled = 1
   `).all()
@@ -368,15 +487,25 @@ async function runScheduledExecution() {
  * @param {Object} options - { dbPath: string }
  */
 export function startTradingScheduler(options = {}) {
-  const dbPath = options.dbPath || process.env.ATLAS_DB_PATH
-    ? path.join(path.dirname(process.env.ATLAS_DB_PATH), 'atlas.db')
-    : path.join(__dirname, '../data/atlas.db')
+  let dbPath
+  if (options.dbPath) {
+    dbPath = options.dbPath
+  } else if (process.env.ATLAS_DB_PATH) {
+    dbPath = path.join(path.dirname(process.env.ATLAS_DB_PATH), 'atlas.db')
+  } else {
+    dbPath = path.join(__dirname, '../data/atlas.db')
+  }
 
   db = new Database(dbPath)
 
   console.log('[trading-scheduler] Starting trading scheduler...')
 
-  // Check every minute
+  // Fetch initial market hours on startup
+  fetchMarketHours().catch(err => {
+    console.error('[trading-scheduler] Failed to fetch initial market hours:', err)
+  })
+
+  // Check every minute for trade execution and market hours refresh
   schedulerInterval = setInterval(async () => {
     try {
       // Get the minimum minutes_before_close from all enabled users
@@ -387,12 +516,34 @@ export function startTradingScheduler(options = {}) {
       // Use the first enabled user's setting (could be improved to run each at their own time)
       const minutesBeforeClose = users[0]?.minutes_before_close || DEFAULT_MINUTES_BEFORE_CLOSE
 
-      if (isTimeToExecute(minutesBeforeClose)) {
+      if (await isTimeToExecute(minutesBeforeClose)) {
         console.log('[trading-scheduler] Scheduled execution time reached')
         await runScheduledExecution()
       }
     } catch (error) {
       console.error('[trading-scheduler] Error in scheduler loop:', error)
+    }
+  }, 60 * 1000)  // Check every minute
+
+  // Separate interval for daily market hours refresh at configured time (default 4 AM ET)
+  marketHoursCheckInterval = setInterval(async () => {
+    try {
+      const { hour } = getEasternTime()
+      const today = getEasternDateISO()
+
+      // Get configured check time from first enabled user's settings (or use default)
+      const users = getUsersWithTradingEnabled()
+      const checkHour = users.length > 0 && users[0].market_hours_check_hour != null
+        ? users[0].market_hours_check_hour
+        : MARKET_HOURS_CHECK_TIME
+
+      // Refresh at configured hour if not already done today
+      if (hour === checkHour && lastMarketHoursCheck !== today) {
+        console.log(`[trading-scheduler] ${checkHour}:00 ET check: Refreshing market hours for the day`)
+        await fetchMarketHours()
+      }
+    } catch (error) {
+      console.error('[trading-scheduler] Error in market hours check:', error)
     }
   }, 60 * 1000)  // Check every minute
 
@@ -409,6 +560,12 @@ export function stopTradingScheduler() {
     console.log('[trading-scheduler] Trading scheduler stopped')
   }
 
+  if (marketHoursCheckInterval) {
+    clearInterval(marketHoursCheckInterval)
+    marketHoursCheckInterval = null
+    console.log('[trading-scheduler] Market hours check interval stopped')
+  }
+
   if (db) {
     db.close()
     db = null
@@ -422,10 +579,11 @@ export function getTradingSchedulerStatus() {
   const users = db ? getUsersWithTradingEnabled() : []
   const minutesBeforeClose = users[0]?.minutes_before_close || DEFAULT_MINUTES_BEFORE_CLOSE
 
-  // Calculate next execution time
-  const { hour, minute } = getEasternTime()
-  let execHour = NYSE_CLOSE_HOUR
-  let execMinute = NYSE_CLOSE_MINUTE - minutesBeforeClose
+  // Use cached market hours if available
+  let execHour = cachedMarketHours?.closeHour || NYSE_CLOSE_HOUR
+  let execMinute = (cachedMarketHours?.closeMinute || NYSE_CLOSE_MINUTE) - minutesBeforeClose
+
+  // Handle minute underflow
   if (execMinute < 0) {
     execMinute += 60
     execHour -= 1
@@ -438,7 +596,9 @@ export function getTradingSchedulerStatus() {
     schedulerActive: schedulerInterval !== null,
     enabledUserCount: users.length,
     nextExecutionTime: `${String(execHour).padStart(2, '0')}:${String(execMinute).padStart(2, '0')} ET`,
-    isTradingDay: isTradingDay(),
+    isTradingDay: cachedMarketHours !== null,  // Use cached hours instead of basic weekday check
+    marketClose: cachedMarketHours?.close,
+    isEarlyClose: cachedMarketHours?.isEarlyClose,
   }
 }
 

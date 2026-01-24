@@ -19,3 +19,9 @@ export {
   useSellUnallocated,
   type SellOrder,
 } from './useSellUnallocated'
+
+export {
+  useBotPositions,
+  type BotPosition,
+  type BotPositionsResult,
+} from './useBotPositions'
