@@ -2817,6 +2817,7 @@ export function ForgeTab({
                     id: botId,
                     history: [tree],
                     historyIndex: 0,
+                    combineTree: tree, // Combine tab displays this tree
                     backtest: {
                       status: 'idle',
                       result: null,

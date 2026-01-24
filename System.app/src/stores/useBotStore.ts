@@ -91,13 +91,13 @@ function createInitialBotSession(title: string, tabContext: 'Forge' | 'Model'): 
   root.title = title
 
   const splitTree = ensureSlots(createNode('basic'))
-  splitTree.title = title
+  splitTree.title = tabContext === 'Forge' ? 'Shape System' : title
 
   const walkForwardTree = ensureSlots(createNode('basic'))
-  walkForwardTree.title = title
+  walkForwardTree.title = tabContext === 'Forge' ? 'Walk Forward System' : title
 
   const combineTree = ensureSlots(createNode('basic'))
-  combineTree.title = title
+  combineTree.title = tabContext === 'Forge' ? 'Combined System' : title
 
   console.log('[BotStore] Creating bot with 4 independent trees:', {
     title,
