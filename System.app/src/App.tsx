@@ -1232,7 +1232,16 @@ function App() {
                 }
                 return false
               }).map((b) => {
-                const root = b.history[b.historyIndex] ?? b.history[0]
+                // Get the correct tree based on tab/subtab context
+                const root = b.tabContext === 'Model'
+                  ? (b.root ?? b.history[b.historyIndex] ?? b.history[0])
+                  : b.tabContext === 'Forge' && b.subtabContext === 'Shaping'
+                    ? (b.splitTree ?? b.history[b.historyIndex] ?? b.history[0])
+                    : b.tabContext === 'Forge' && b.subtabContext === 'Combine'
+                      ? (b.combineTree ?? b.history[b.historyIndex] ?? b.history[0])
+                      : b.tabContext === 'Forge' && b.subtabContext === 'Walk Forward'
+                        ? (b.walkForwardTree ?? b.history[b.historyIndex] ?? b.history[0])
+                        : (b.history[b.historyIndex] ?? b.history[0])
                 const label = root?.title || 'Untitled'
                 const isActive = (tab === 'Forge' && b.id === activeForgeBotId) || (tab === 'Model' && b.id === activeModelBotId)
                 // Look up backtestMode from saved bot if this session is linked to one
