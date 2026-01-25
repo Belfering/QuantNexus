@@ -4042,8 +4042,9 @@ const collectAllTickers = (node) => {
 
 const computeMetrics = (equity, returns) => {
   const days = returns.length
+  const start = equity.length ? equity[0] : 1
   const final = equity.length ? equity[equity.length - 1] : 1
-  const cagr = days > 0 && final > 0 ? Math.pow(final, 252 / days) - 1 : 0
+  const cagr = days > 0 && start > 0 && final > 0 ? Math.pow(final / start, 252 / days) - 1 : 0
 
   let peak = -Infinity
   let maxDd = 0
