@@ -369,10 +369,12 @@ export function useBotOperations({
       setBots((prev) =>
         prev.map((b) => {
           if (b.id !== currentModelBotId) return b
+          const ensuredPayload = ensureSlots(payload)
           const trimmed = b.history.slice(0, b.historyIndex + 1)
-          trimmed.push(ensureSlots(payload))
+          trimmed.push(ensuredPayload)
           return {
             ...b,
+            root: ensuredPayload, // Set root field for Model tab
             history: trimmed,
             historyIndex: trimmed.length - 1,
             savedBotId: botId,
@@ -437,6 +439,7 @@ export function useBotOperations({
 
       const session: BotSession = {
         id: `bot-${newId()}`,
+        root: clonedPayload, // Set root field for Model tab
         history: [clonedPayload],
         historyIndex: 0,
         savedBotId: newBot.id,
@@ -485,6 +488,7 @@ export function useBotOperations({
       const payload = ensureSlots(cloneNode(bot.payload))
       const session: BotSession = {
         id: `bot-${newId()}`,
+        root: payload, // Set root field for Model tab
         history: [payload],
         historyIndex: 0,
         savedBotId: bot.id,
@@ -601,6 +605,9 @@ export function useBotOperations({
             const newHistory = [...b.history.slice(0, b.historyIndex + 1), ensured]
             return {
               ...b,
+              // For Model tab, update root field directly
+              root: b.tabContext === 'Model' ? ensured : b.root,
+              // Keep history for backward compatibility
               history: newHistory,
               historyIndex: newHistory.length - 1,
               backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },

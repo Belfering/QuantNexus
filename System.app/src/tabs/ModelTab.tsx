@@ -36,8 +36,6 @@ import {
   updateWeight,
   updateCappedFallback,
   updateVolWindow,
-  updateMinCap,
-  updateMaxCap,
   updateCollapse,
   setCollapsedBelow,
   updateColor,

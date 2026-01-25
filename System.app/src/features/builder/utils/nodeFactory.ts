@@ -41,6 +41,12 @@ export const createNode = (kind: BlockKind): FlowNode => {
     volWindow: undefined,
     volWindowThen: undefined,
     volWindowElse: undefined,
+    minCap: undefined,
+    maxCap: undefined,
+    minCapThen: undefined,
+    maxCapThen: undefined,
+    minCapElse: undefined,
+    maxCapElse: undefined,
     bgColor: undefined,
     conditions:
       kind === 'indicator'
