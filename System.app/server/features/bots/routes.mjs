@@ -80,6 +80,7 @@ const createBotSchema = {
     tags: z.array(z.string()).optional(),
     fundSlot: z.string().optional(),
     id: z.string().optional(), // Client-provided ID
+    isDraft: z.boolean().optional(), // Support draft bots for auto-save
   }),
 }
 
@@ -88,7 +89,7 @@ const createBotSchema = {
  */
 router.post('/', validate(createBotSchema), asyncHandler(async (req, res) => {
   await ensureDbInitialized()
-  const { ownerId, name, payload, visibility, tags, fundSlot, id: clientId } = req.body
+  const { ownerId, name, payload, visibility, tags, fundSlot, id: clientId, isDraft } = req.body
 
   const id = await database.createBot({
     id: clientId,
@@ -98,9 +99,10 @@ router.post('/', validate(createBotSchema), asyncHandler(async (req, res) => {
     visibility,
     tags,
     fundSlot,
+    isDraft, // Include draft flag for auto-save
   })
 
-  logger.info('Bot created', { id, ownerId, name })
+  logger.info('Bot created', { id, ownerId, name, isDraft: isDraft || false })
   res.json({ id })
 }))
 
@@ -115,6 +117,7 @@ const updateBotSchema = {
     visibility: z.enum(['private', 'nexus']).optional(),
     tags: z.array(z.string()).optional(),
     fundSlot: z.string().optional(),
+    isDraft: z.boolean().optional(), // Support draft bots for auto-save
   }),
 }
 
@@ -123,10 +126,11 @@ const updateBotSchema = {
  */
 router.put('/:id', validate(updateBotSchema), asyncHandler(async (req, res) => {
   await ensureDbInitialized()
-  const { ownerId, name, payload, visibility, tags, fundSlot } = req.body
+  const { ownerId, name, payload, visibility, tags, fundSlot, isDraft } = req.body
 
   const result = await database.updateBot(req.params.id, ownerId, {
     name,
+    isDraft, // Include draft flag
     payload: payload ? (typeof payload === 'string' ? payload : JSON.stringify(payload)) : undefined,
     visibility,
     tags,

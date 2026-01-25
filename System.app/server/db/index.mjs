@@ -1167,6 +1167,7 @@ export async function createBot(data) {
     fundSlot: data.fundSlot,
     backtestMode: data.backtestMode || 'CC',
     backtestCostBps: data.backtestCostBps ?? 5,
+    isDraft: data.isDraft ? 1 : 0, // Support draft bots for auto-save
     createdAt: now,
     updatedAt: now,
   })
@@ -1192,6 +1193,7 @@ export async function updateBot(id, ownerId, data) {
   if (data.fundSlot !== undefined) updateData.fundSlot = data.fundSlot
   if (data.backtestMode !== undefined) updateData.backtestMode = data.backtestMode
   if (data.backtestCostBps !== undefined) updateData.backtestCostBps = data.backtestCostBps
+  if (data.isDraft !== undefined) updateData.isDraft = data.isDraft ? 1 : 0
 
   await db.update(schema.bots)
     .set(updateData)
