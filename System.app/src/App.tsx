@@ -557,6 +557,11 @@ function App() {
 
     const saveToLocalStorage = () => {
       try {
+        // Skip auto-save if recovery modal is open (user is deciding what to do)
+        if (recoveryModalOpen) {
+          return
+        }
+
         // Filter for unsaved bots (no savedBotId or has unsaved changes)
         const unsavedBots = bots.filter(bot => !bot.savedBotId || bot.hasUnsavedChanges)
 
@@ -606,7 +611,7 @@ function App() {
 
     // Cleanup on unmount
     return () => clearInterval(intervalId)
-  }, [bots, userId])
+  }, [bots, userId, recoveryModalOpen])
 
   // Check for crash recovery data on mount
   useEffect(() => {
@@ -956,12 +961,15 @@ function App() {
       const restoredBots = recoveryData.bots.map(bot => ({
         ...bot,
         backtest: { status: 'idle' as const, errors: [], result: null, focusNodeId: null },
+        // Mark as no longer having unsaved changes (since we're restoring from backup)
+        hasUnsavedChanges: false,
+        isDraft: false,
       }))
 
       setBots((prev) => [...prev, ...restoredBots])
       console.log('[Recovery] Restored', restoredBots.length, 'bot(s)')
 
-      // Clear localStorage after successful restore
+      // Clear localStorage and recovery state
       localStorage.removeItem(`unsaved_bots_${userId}`)
       setRecoveryModalOpen(false)
       setRecoveryData(null)
@@ -981,9 +989,18 @@ function App() {
         if (!currentTree) continue
 
         const payload = ensureSlots(cloneNode(currentTree))
+
+        // Get a meaningful name from the bot
+        let botName = 'Untitled System'
+        if (payload && payload.title) {
+          botName = payload.title
+        } else if (bot.root && bot.root.title) {
+          botName = bot.root.title
+        }
+
         const draftBot: SavedBot = {
           id: `draft-discard-${Date.now()}-${bot.id}`,
-          name: payload.title || 'Untitled System',
+          name: botName,
           builderId: userId,
           payload,
           visibility: 'private',
@@ -998,12 +1015,13 @@ function App() {
         if (draftId) {
           const { deleteBotFromApi } = await import('@/features/bots')
           await deleteBotFromApi(userId, draftId, false)
+          console.log('[Recovery] Moved bot to trash:', botName, draftId)
         }
       }
 
       console.log('[Recovery] Moved', recoveryData.bots.length, 'bot(s) to trash')
 
-      // Clear localStorage after discarding
+      // Clear localStorage and recovery state
       localStorage.removeItem(`unsaved_bots_${userId}`)
       setRecoveryModalOpen(false)
       setRecoveryData(null)
