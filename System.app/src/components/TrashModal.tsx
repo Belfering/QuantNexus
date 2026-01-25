@@ -10,6 +10,7 @@ import type { SavedBot } from '@/types/bot'
 
 interface DeletedBot extends SavedBot {
   deletedAt: number
+  isDraft?: boolean // True if bot was never saved to watchlist (unsaved work)
 }
 
 interface DeletedShard {
@@ -236,7 +237,14 @@ export function TrashModal({ open, onClose, userId, context, onBotRestored, onSh
                         className="flex items-center justify-between p-3 border border-border rounded hover:bg-muted/50"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{bot.name}</div>
+                          <div className="font-medium truncate flex items-center gap-2">
+                            <span>{bot.name}</span>
+                            {bot.isDraft && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 whitespace-nowrap">
+                                Unsaved
+                              </span>
+                            )}
+                          </div>
                           {bot.description && (
                             <div className="text-sm text-muted-foreground truncate">
                               {bot.description}

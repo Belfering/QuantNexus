@@ -30,20 +30,20 @@ export function AdvancedTabContent(props: AdvancedTabContentProps) {
 
   // Get IS/OOS specific metrics if available, otherwise fall back to full period
   const isMcMetrics = sanityState?.report?.pathRisk?.isPathRisk?.comparisonMetrics?.monteCarlo ??
-                      sanityState?.report?.pathRisk?.comparisonMetrics?.monteCarlo
+                      sanityState?.report?.pathRisk?.comparisonMetrics?.monteCarlo ?? null
   const isKfMetrics = sanityState?.report?.pathRisk?.isPathRisk?.comparisonMetrics?.kfold ??
-                      sanityState?.report?.pathRisk?.comparisonMetrics?.kfold
+                      sanityState?.report?.pathRisk?.comparisonMetrics?.kfold ?? null
 
   const oosMcMetrics = sanityState?.report?.pathRisk?.oosPathRisk?.comparisonMetrics?.monteCarlo ??
-                       sanityState?.report?.pathRisk?.comparisonMetrics?.monteCarlo
+                       sanityState?.report?.pathRisk?.comparisonMetrics?.monteCarlo ?? null
   const oosKfMetrics = sanityState?.report?.pathRisk?.oosPathRisk?.comparisonMetrics?.kfold ??
-                       sanityState?.report?.pathRisk?.comparisonMetrics?.kfold
+                       sanityState?.report?.pathRisk?.comparisonMetrics?.kfold ?? null
 
   // Prefer benchmark metrics from sanity report (calculated vs strategy) over global benchmarks
   const reportBenchmarks = (sanityState?.report as { benchmarkMetrics?: Record<string, ComparisonMetrics> })?.benchmarkMetrics
   const isBenchmarks = (sanityState?.report as { isBenchmarkMetrics?: Record<string, ComparisonMetrics> })?.isBenchmarkMetrics
   const oosBenchmarks = (sanityState?.report as { oosBenchmarkMetrics?: Record<string, ComparisonMetrics> })?.oosBenchmarkMetrics
-  const benchmarks = reportBenchmarks ?? benchmarkMetrics.data ?? {}
+  const benchmarks = reportBenchmarks ?? benchmarkMetrics?.data ?? {}
   // Strategy betas vs each benchmark ticker
   const strategyBetas: Record<string, number> = (sanityState?.report as { strategyBetas?: Record<string, number> })?.strategyBetas ?? {}
 

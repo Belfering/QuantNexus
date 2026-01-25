@@ -462,6 +462,19 @@ export function initializeDatabase() {
     // Columns might already exist
   }
 
+  // Migration: Add is_draft column to bots table (for auto-save unsaved work feature)
+  try {
+    const botsCols = sqlite.prepare("PRAGMA table_info(bots)").all()
+    const hasIsDraft = botsCols.some(c => c.name === 'is_draft')
+    if (!hasIsDraft) {
+      console.log('[DB] Migrating bots table: adding is_draft column for unsaved work tracking...')
+      sqlite.exec("ALTER TABLE bots ADD COLUMN is_draft INTEGER DEFAULT 0")
+      console.log('[DB] Migration complete: is_draft column added')
+    }
+  } catch (e) {
+    // Column might already exist
+  }
+
   // Migration: Add auth columns to users table
   try {
     const userCols = sqlite.prepare("PRAGMA table_info(users)").all()
@@ -1253,6 +1266,7 @@ export async function getDeletedBotsByOwner(ownerId) {
       createdAt: bot.created_at,
       updatedAt: bot.updated_at,
       deletedAt: bot.deleted_at,
+      isDraft: Boolean(bot.is_draft), // Include draft flag for frontend
       metrics: metricsRow || null,
     }
   }))

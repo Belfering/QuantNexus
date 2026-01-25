@@ -121,6 +121,9 @@ export type BotSession = {
   rollingResult?: RollingOptimizationResult // Rolling optimization results
   tabContext: 'Forge' | 'Model' // Which tab this bot belongs to
   subtabContext?: 'Shaping' | 'Combine' | 'Walk Forward' // Which Forge subtab this bot belongs to (only for Forge bots)
+  isDraft?: boolean // True if bot has never been saved to a watchlist (unsaved work)
+  hasUnsavedChanges?: boolean // True if bot has changes since last save to watchlist
+  lastSavedHistoryIndex?: number // History index at last save (for tracking unsaved changes)
 }
 
 // API type for Nexus bots (no payload for IP protection)

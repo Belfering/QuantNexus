@@ -1229,6 +1229,8 @@ h1 {
 /* Insert menu dropdown portal (rendered at body level with position: fixed) */
 .insert-menu-portal {
   position: fixed;
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 8px;

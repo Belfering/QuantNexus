@@ -148,6 +148,22 @@ export async function getActiveUSTickers() {
 }
 
 /**
+ * Get all active US ETFs only (excludes stocks and mutual funds)
+ */
+export async function getActiveUSETFs() {
+  const rows = await db.select({ ticker: tickerRegistry.ticker })
+    .from(tickerRegistry)
+    .where(
+      and(
+        eq(tickerRegistry.isActive, true),
+        eq(tickerRegistry.currency, 'USD'),
+        eq(tickerRegistry.assetType, 'ETF')
+      )
+    )
+  return rows.map(r => r.ticker)
+}
+
+/**
  * Get tickers that need syncing (haven't been synced today)
  * Only returns active US Stocks and ETFs (excludes mutual funds)
  * @param {string} today - Today's date in YYYY-MM-DD format

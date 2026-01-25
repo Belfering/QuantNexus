@@ -1232,9 +1232,16 @@ function App() {
               <Button
                 onClick={() => useUIStore.getState().setForgeSubtab('Combine')}
                 variant={forgeSubtab === 'Combine' ? 'accent' : 'secondary'}
-                className="flex-1 rounded-none h-10"
+                className="flex-1 rounded-none border-r border-border h-10"
               >
                 Combine
+              </Button>
+              <Button
+                onClick={() => handleOpenTrash('forge')}
+                variant="secondary"
+                className="flex-1 rounded-none h-10"
+              >
+                Trash
               </Button>
             </div>
           )}
@@ -1297,7 +1304,21 @@ function App() {
                         // Note: DO NOT set activeBotId here - Forge and Model tabs are independent
                       }}
                     >
-                      {label}
+                      <span className="truncate">{label}</span>
+                      {/* Save status badge */}
+                      {!b.savedBotId ? (
+                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 whitespace-nowrap">
+                          Unsaved
+                        </span>
+                      ) : b.hasUnsavedChanges ? (
+                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                          *
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400 whitespace-nowrap">
+                          Saved
+                        </span>
+                      )}
                     </Button>
                     <div className="flex gap-1 mt-1 justify-center items-center flex-wrap">
                       <BacktestModeTag mode={botBacktestMode} />

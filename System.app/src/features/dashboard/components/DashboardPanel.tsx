@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { BacktestModeTag } from '@/components/ui/BacktestModeTag'
 import { cn } from '@/lib/utils'
 import { formatPct, formatUsd, formatSignedUsd } from '@/shared/utils'
 import { EquityChart, DrawdownChart } from '@/features/backtest'
@@ -180,7 +181,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
   // Portfolio mode from UI state (persisted)
   const portfolioMode: PortfolioMode = uiState.portfolioMode || 'simulated'
   const setPortfolioMode = (mode: PortfolioMode) => {
-    setUiState((prev) => ({ ...prev, portfolioMode: mode }))
+    setUiState((prev) => ({ ...(prev || {}), portfolioMode: mode }))
   }
 
   // Alpaca/Paper Trading hook - always enabled so we can check if credentials exist
@@ -559,7 +560,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   ? '#94a3b8' // slate-400
                                   : BOT_CHART_COLORS[(idx - 1) % BOT_CHART_COLORS.length] // Offset by 1 since unallocated takes first slot
 
-                                const isExpanded = dashboardBotExpanded[inv.botId] ?? false
+                                const isExpanded = dashboardBotExpanded?.[inv.botId] ?? false
                                 const isBuyingMore = dashboardBuyMoreBotId === inv.botId
                                 const analyzeState = analyzeBacktests[inv.botId]
                                 const wlTags = watchlistsByBotId.get(inv.botId) ?? []
@@ -619,7 +620,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                                 const toggleCollapse = () => {
                                   const next = !isExpanded
-                                  setDashboardBotExpanded((prev) => ({ ...prev, [inv.botId]: next }))
+                                  setDashboardBotExpanded((prev) => ({ ...(prev || {}), [inv.botId]: next }))
                                   // Run backtest if expanding and not already done (not for synthetic)
                                   if (next && b && !isSyntheticUnallocated) {
                                     if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
@@ -635,6 +636,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                 <Button variant="ghost" size="sm" onClick={toggleCollapse}>
                                   {isExpanded ? 'Collapse' : 'Expand'}
                                 </Button>
+                                {!isSyntheticUnallocated && b?.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
                                 <div className="font-black">{displayName}</div>
 
                                 {isSyntheticUnallocated ? (
@@ -1103,7 +1105,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                 ) : (
                   <div className="flex flex-col gap-2.5">
                     {dashboardInvestmentsWithPnl.map((inv, idx) => {
-                      const isExpanded = dashboardBotExpanded[inv.botId] ?? false
+                      const isExpanded = dashboardBotExpanded?.[inv.botId] ?? false
                       const isSelling = dashboardSellBotId === inv.botId
                       const isBuyingMore = dashboardBuyMoreBotId === inv.botId
                       const botColor = BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length]
@@ -1116,7 +1118,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                       const toggleCollapse = () => {
                         const next = !isExpanded
-                        setDashboardBotExpanded((prev) => ({ ...prev, [inv.botId]: next }))
+                        setDashboardBotExpanded((prev) => ({ ...(prev || {}), [inv.botId]: next }))
                         // Run backtest if expanding and not already done
                         if (next && b) {
                           if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
@@ -1141,6 +1143,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                             <Button variant="ghost" size="sm" onClick={toggleCollapse}>
                               {isExpanded ? 'Collapse' : 'Expand'}
                             </Button>
+                            {b?.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
                             <div className="font-black">{displayName}</div>
                             <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
                               {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
@@ -1652,7 +1655,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                 // Calculate total gains from all funds
                 const fundGains = ([1, 2, 3, 4, 5] as const).map(n => {
                   const fundKey = `fund${n}` as keyof FundZones
-                  const botId = uiState.fundZones[fundKey]
+                  const botId = uiState.fundZones?.[fundKey]
                   if (!botId) return 0
                   const investment = dashboardPortfolio.investments.find(inv => inv.botId === botId)
                   if (!investment) return 0
@@ -1703,7 +1706,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
             <div className="grid grid-cols-5 gap-3">
               {([1, 2, 3, 4, 5] as const).map(n => {
                 const fundKey = `fund${n}` as keyof FundZones
-                const botId = uiState.fundZones[fundKey]
+                const botId = uiState.fundZones?.[fundKey]
                 const bot = botId ? savedBots.find(b => b.id === botId) : null
 
                 // Calculate fund gains
@@ -1734,8 +1737,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                           onClick={async () => {
                             // Remove from fund, re-evaluate eligibility
                             setUiState(prev => ({
-                              ...prev,
-                              fundZones: { ...prev.fundZones, [fundKey]: null }
+                              ...(prev || {}),
+                              fundZones: { ...(prev?.fundZones || {}), [fundKey]: null }
                             }))
                             // Change tag from Nexus back to Private + Nexus Eligible, clear fundSlot
                             const baseTags = (bot.tags || []).filter(t => t !== 'Nexus' && t !== 'Private' && t !== 'Nexus Eligible')
@@ -1786,16 +1789,17 @@ export function DashboardPanel(props: DashboardPanelProps) {
                 return (
                   <div className="flex flex-col gap-2.5">
                     {eligibleBotsList.map(b => {
-                      const collapsed = uiState.communityCollapsedByBotId[b.id] ?? true
+                      const collapsed = uiState.communityCollapsedByBotId?.[b.id] ?? true
                       const analyzeState = analyzeBacktests[b.id]
-                      const isInFund = Object.values(uiState.fundZones).includes(b.id)
+                      const fundZonesForCheck = uiState.fundZones || {}
+                      const isInFund = Object.values(fundZonesForCheck).includes(b.id)
                       const wlTags = watchlistsByBotId.get(b.id) ?? []
 
                       const toggleCollapse = () => {
                         const next = !collapsed
                         setUiState(prev => ({
-                          ...prev,
-                          communityCollapsedByBotId: { ...prev.communityCollapsedByBotId, [b.id]: next }
+                          ...(prev || {}),
+                          communityCollapsedByBotId: { ...(prev?.communityCollapsedByBotId || {}), [b.id]: next }
                         }))
                         if (!next && (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error')) {
                           runAnalyzeBacktest(b)
@@ -1808,6 +1812,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                             <Button variant="ghost" size="sm" onClick={toggleCollapse}>
                               {collapsed ? 'Expand' : 'Collapse'}
                             </Button>
+                            {b.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
                             <div className="font-black">{b.name}</div>
                             <Badge variant={b.tags?.includes('Nexus') ? 'default' : b.tags?.includes('Atlas') ? 'default' : 'accent'}>
                               {b.tags?.includes('Nexus') ? 'Nexus' : b.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
@@ -1836,8 +1841,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                     // Extract fund number from key (e.g., 'fund1' -> 1)
                                     const fundNum = parseInt(fundKey.replace('fund', '')) as 1 | 2 | 3 | 4 | 5
                                     setUiState(prev => ({
-                                      ...prev,
-                                      fundZones: { ...prev.fundZones, [fundKey]: b.id }
+                                      ...(prev || {}),
+                                      fundZones: { ...(prev?.fundZones || {}), [fundKey]: b.id }
                                     }))
                                     // Remove Private, Nexus Eligible; add Nexus (keep other tags like Atlas if any)
                                     const baseTags = (b.tags || []).filter(t => t !== 'Private' && t !== 'Nexus Eligible' && t !== 'Nexus')
@@ -1849,7 +1854,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   <option value="">Add to Fund...</option>
                                   {([1, 2, 3, 4, 5] as const).map(n => {
                                     const fundKey = `fund${n}` as keyof FundZones
-                                    const isEmpty = !uiState.fundZones[fundKey]
+                                    const isEmpty = !uiState.fundZones?.[fundKey]
                                     return (
                                       <option key={n} value={fundKey} disabled={!isEmpty}>
                                         Fund #{n} {isEmpty ? '' : '(occupied)'}
@@ -1884,8 +1889,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   size="sm"
                                   variant={(uiState.analyzeBotCardTab[b.id] ?? 'overview') === 'overview' ? 'default' : 'outline'}
                                   onClick={() => setUiState((prev) => ({
-                                    ...prev,
-                                    analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'overview' },
+                                    ...(prev || {}),
+                                    analyzeBotCardTab: { ...(prev?.analyzeBotCardTab || {}), [b.id]: 'overview' },
                                   }))}
                                 >
                                   Overview
@@ -1894,8 +1899,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   size="sm"
                                   variant={(uiState.analyzeBotCardTab[b.id] ?? 'overview') === 'advanced' ? 'default' : 'outline'}
                                   onClick={() => setUiState((prev) => ({
-                                    ...prev,
-                                    analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'advanced' },
+                                    ...(prev || {}),
+                                    analyzeBotCardTab: { ...(prev?.analyzeBotCardTab || {}), [b.id]: 'advanced' },
                                   }))}
                                 >
                                   Benchmarks
@@ -1904,8 +1909,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   size="sm"
                                   variant={(uiState.analyzeBotCardTab[b.id] ?? 'overview') === 'robustness' ? 'default' : 'outline'}
                                   onClick={() => setUiState((prev) => ({
-                                    ...prev,
-                                    analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'robustness' },
+                                    ...(prev || {}),
+                                    analyzeBotCardTab: { ...(prev?.analyzeBotCardTab || {}), [b.id]: 'robustness' },
                                   }))}
                                 >
                                   Robustness

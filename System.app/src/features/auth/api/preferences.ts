@@ -32,6 +32,7 @@ export const loadPreferencesFromApi = async (userId: UserId): Promise<UserUiStat
       communityWatchlistSlot1Id: parsed.communityWatchlistSlot1Id ?? null,
       communityWatchlistSlot2Id: parsed.communityWatchlistSlot2Id ?? null,
       fundZones: parsed.fundZones || { fund1: null, fund2: null, fund3: null, fund4: null, fund5: null },
+      portfolioMode: parsed.portfolioMode || 'simulated',
     }
   } catch (err) {
     console.warn('[API] Failed to load preferences:', err)

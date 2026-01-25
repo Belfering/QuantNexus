@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { BacktestModeTag } from '@/components/ui/BacktestModeTag'
 import { cn } from '@/lib/utils'
 import { formatPct, formatUsd } from '@/shared/utils'
 import { EquityChart } from '@/features/backtest'
@@ -337,8 +338,8 @@ export function NexusPanel(props: NexusPanelProps) {
     const toggleCollapse = () => {
       const next = !collapsed
       setUiState((prev) => ({
-        ...prev,
-        communityCollapsedByBotId: { ...prev.communityCollapsedByBotId, [r.id]: next },
+        ...(prev || {}),
+        communityCollapsedByBotId: { ...(prev?.communityCollapsedByBotId || {}), [r.id]: next },
       }))
       if (!next && b) {
         if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
@@ -361,6 +362,7 @@ export function NexusPanel(props: NexusPanelProps) {
           <Button variant="ghost" size="sm" onClick={toggleCollapse}>
             {collapsed ? 'Expand' : 'Collapse'}
           </Button>
+          {b.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
           <div className="font-black">{displayName}</div>
           <Badge variant={b.tags?.includes('Nexus') ? 'default' : b.tags?.includes('Atlas') ? 'default' : 'accent'}>
             {b.tags?.includes('Nexus') ? 'Nexus' : b.tags?.includes('Atlas') ? 'Atlas' : 'Private'}

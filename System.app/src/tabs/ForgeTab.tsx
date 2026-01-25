@@ -2744,26 +2744,18 @@ export function ForgeTab({
         {forgeSubtab === 'Shards' && (
           <>
             {/* Shards Sub-Subtabs */}
-            <div className="flex gap-2 justify-between shrink-0 mb-4 px-6 pt-6">
-              <div className="flex gap-2">
-                <Button
-                  variant={shardsSubtab === 'shards' ? 'accent' : 'secondary'}
-                  onClick={() => setShardsSubtab('shards')}
-                >
-                  Shards
-                </Button>
-                <Button
-                  variant={shardsSubtab === 'results' ? 'accent' : 'secondary'}
-                  onClick={() => setShardsSubtab('results')}
-                >
-                  Run Results
-                </Button>
-              </div>
+            <div className="flex gap-2 shrink-0 mb-4 px-6 pt-6">
               <Button
-                variant="secondary"
-                onClick={() => onOpenTrash?.('forge')}
+                variant={shardsSubtab === 'shards' ? 'accent' : 'secondary'}
+                onClick={() => setShardsSubtab('shards')}
               >
-                Trash
+                Shards
+              </Button>
+              <Button
+                variant={shardsSubtab === 'results' ? 'accent' : 'secondary'}
+                onClick={() => setShardsSubtab('results')}
+              >
+                Run Results
               </Button>
             </div>
 

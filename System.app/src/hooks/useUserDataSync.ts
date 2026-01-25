@@ -196,7 +196,6 @@ export function useUserDataSync({
     loadPreferencesFromApi(userId).then((apiPrefs) => {
       if (apiPrefs) {
         setUiState(apiPrefs)
-        console.log('[Preferences] Loaded from API:', apiPrefs.theme, apiPrefs.colorTheme)
       } else {
         // No API prefs yet, check localStorage for migration
         const localData = loadUserData(userId)

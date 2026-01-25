@@ -162,6 +162,11 @@ export function useWatchlistCallbacks({
       if (!savedBotId) {
         // Create new bot - save to API first
         savedBotId = `saved-${newId()}`
+
+        // CRITICAL FIX: Set savedBotId in BotSession IMMEDIATELY to prevent duplicate saves
+        // This prevents race condition where multiple rapid clicks all see savedBotId as undefined
+        setBots((prev) => prev.map((b) => (b.id === activeBotId ? { ...b, savedBotId } : b)))
+
         // Admin bots get 'Atlas Eligible' tag by default, others get 'Private'
         const defaultTags = isAdmin ? ['Private', 'Atlas Eligible'] : ['Private']
         // Auto-tag with "ETFs Only" if all positions are ETFs
@@ -183,9 +188,10 @@ export function useWatchlistCallbacks({
         if (createdId) {
           savedBotId = createdId // Use server-assigned ID if different
           entry.id = createdId
+          // Update BotSession with server-assigned ID if different from generated one
+          setBots((prev) => prev.map((b) => (b.id === activeBotId ? { ...b, savedBotId: createdId } : b)))
         }
         setSavedBots((prev) => [entry, ...prev])
-        setBots((prev) => prev.map((b) => (b.id === activeBotId ? { ...b, savedBotId } : b)))
       } else {
         // Update existing bot - save to API first
         const existingBot = savedBots.find((b) => b.id === savedBotId)

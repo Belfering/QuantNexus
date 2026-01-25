@@ -129,7 +129,7 @@ export function HelpTab({
                 <Select
                   className="h-8 text-xs"
                   value={colorTheme}
-                  onChange={(e) => setUiState((prev) => ({ ...prev, colorTheme: e.target.value as ColorTheme }))}
+                  onChange={(e) => setUiState((prev) => ({ ...(prev || {}), colorTheme: e.target.value as ColorTheme }))}
                   title="Select color theme"
                 >
                   {COLOR_THEMES.map((t) => (
@@ -139,7 +139,7 @@ export function HelpTab({
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={() => setUiState((prev) => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
+                  onClick={() => setUiState((prev) => ({ ...(prev || {}), theme: prev?.theme === 'dark' ? 'light' : 'dark' }))}
                   title="Toggle light/dark mode"
                 >
                   {theme === 'dark' ? 'Light mode' : 'Dark mode'}

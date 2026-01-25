@@ -38,6 +38,13 @@ export function BacktestModeDropdown({
     }
   }, [open])
 
+  // Clear hoveredMode when dropdown closes
+  useEffect(() => {
+    if (!open) {
+      setHoveredMode(null)
+    }
+  }, [open])
+
   const modes: BacktestMode[] = ['CC', 'OO', 'OC', 'CO']
 
   return (
@@ -79,7 +86,7 @@ export function BacktestModeDropdown({
       )}
       {hoveredMode && (
         <div
-          className="fixed z-[9999] bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md shadow-xl p-2.5 min-w-[240px] max-w-[300px]"
+          className="fixed z-[9999] bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md shadow-xl p-2.5 min-w-[240px] max-w-[300px] pointer-events-none"
           style={{ left: tooltipPos.x, top: tooltipPos.y, transform: 'translateY(-50%)' }}
         >
           <div className="text-xs font-semibold mb-1.5 text-zinc-900 dark:text-zinc-100">{BACKTEST_MODE_INFO[hoveredMode].label}</div>
