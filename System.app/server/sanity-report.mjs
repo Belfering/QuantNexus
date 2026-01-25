@@ -227,25 +227,12 @@ export function computeBeta(strategyReturns, benchmarkReturns) {
  * @param {number[]} benchmarkReturns - Benchmark (SPY) returns, same length
  */
 function computeBetaTreynor(returns, benchmarkReturns) {
-  console.log(`[computeBetaTreynor] Input lengths: returns=${returns.length}, benchmark=${benchmarkReturns.length}`)
-
-  // Check for NaN values
-  const returnsNaN = returns.filter(r => !isFinite(r)).length
-  const benchmarkNaN = benchmarkReturns.filter(r => !isFinite(r)).length
-  console.log(`[computeBetaTreynor] NaN/Infinite values: returns=${returnsNaN}, benchmark=${benchmarkNaN}`)
-
-  // Check for sample values
-  console.log(`[computeBetaTreynor] Returns sample (first 10):`, returns.slice(0, 10))
-  console.log(`[computeBetaTreynor] Benchmark sample (first 10):`, benchmarkReturns.slice(0, 10))
-
   if (returns.length < 2 || benchmarkReturns.length < 2) {
-    console.log(`[computeBetaTreynor] Insufficient data, returning beta=0`)
     return { beta: 0, treynor: 0 }
   }
 
   // Align lengths
   const len = Math.min(returns.length, benchmarkReturns.length)
-  console.log(`[computeBetaTreynor] Aligned length: ${len}`)
   const r = returns.slice(0, len)
   const b = benchmarkReturns.slice(0, len)
 
@@ -264,7 +251,6 @@ function computeBetaTreynor(returns, benchmarkReturns) {
   varB /= (len - 1)
 
   const beta = varB > 0 ? covariance / varB : 0
-  console.log(`[computeBetaTreynor] Covariance=${covariance.toFixed(6)}, VarB=${varB.toFixed(6)}, Beta=${beta.toFixed(4)}`)
 
   // Treynor = (Return - Rf) / Beta, using annualized CAGR
   // Simplified: mean daily return * 252 / beta
@@ -1156,8 +1142,6 @@ export function generateSanityReport(returns, options = {}, spyReturns = null) {
 
     // Compute IS path risk (only if we have enough data)
     if (isReturns.length >= 50) {
-      console.log(`[IS MC/KF] Running Monte Carlo (${mcSimulations} sims) and K-Fold (${kfFolds} folds) on ${isReturns.length} IS days...`)
-      const startIS = Date.now()
       isPathRisk = computePathRisk(isReturns, {
         mcSimulations,
         kfFolds,
@@ -1166,15 +1150,10 @@ export function generateSanityReport(returns, options = {}, spyReturns = null) {
         shards,
         seed: seed + 1000 // Different seed for IS
       }, isSpyReturns)
-      console.log(`[IS MC/KF] Completed in ${Date.now() - startIS}ms`)
-    } else {
-      console.log(`[IS MC/KF] Skipped - insufficient data (${isReturns.length} days, need 50+)`)
     }
 
     // Compute OOS path risk (only if we have enough data)
     if (oosReturns.length >= 50) {
-      console.log(`[OOS MC/KF] Running Monte Carlo (${mcSimulations} sims) and K-Fold (${kfFolds} folds) on ${oosReturns.length} OOS days...`)
-      const startOOS = Date.now()
       oosPathRisk = computePathRisk(oosReturns, {
         mcSimulations,
         kfFolds,
@@ -1183,9 +1162,6 @@ export function generateSanityReport(returns, options = {}, spyReturns = null) {
         shards,
         seed: seed + 2000 // Different seed for OOS
       }, oosSpyReturns)
-      console.log(`[OOS MC/KF] Completed in ${Date.now() - startOOS}ms`)
-    } else {
-      console.log(`[OOS MC/KF] Skipped - insufficient data (${oosReturns.length} days, need 50+)`)
     }
   }
 

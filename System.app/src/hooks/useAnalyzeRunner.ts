@@ -169,7 +169,7 @@ export function useAnalyzeRunner({
           // Convert server allocations to frontend format
           const allocations: BacktestAllocationRow[] = (serverAllocations || []).map((a) => ({
             date: a.date,
-            entries: Object.entries(a.alloc)
+            entries: Object.entries(a.alloc || {})
               .filter(([, w]) => w > 0)
               .map(([ticker, weight]) => ({ ticker, weight })),
           }))
@@ -222,21 +222,38 @@ export function useAnalyzeRunner({
             ...prev,
             [bot.id]: { status: 'done', result },
           }))
+          console.log('[Backtest] ✅ Backtest state set to DONE - result saved for bot:', bot.id)
 
           // Auto eligibility tagging (for all logged-in users)
           if (userId && result?.metrics) {
-            console.log('[Eligibility] Checking bot:', bot.name, 'userId:', userId, 'isAdmin:', isAdmin)
+            console.log('[Eligibility] ═══════════════════════════════════════════════════')
+            console.log('[Eligibility] Starting eligibility check for bot:', bot.name)
+            console.log('[Eligibility] User ID:', userId, '| isAdmin:', isAdmin)
+            console.log('[Eligibility] Backtest Metrics:', {
+              cagr: (result.metrics.cagr * 100).toFixed(2) + '%',
+              sharpe: result.metrics.sharpe?.toFixed(2),
+              maxDD: (result.metrics.maxDrawdown * 100).toFixed(2) + '%',
+              calmar: result.metrics.calmar?.toFixed(2),
+              days: result.metrics.days
+            })
             try {
               // Fetch eligibility requirements
               const eligRes = await fetch('/api/admin/eligibility')
-              console.log('[Eligibility] Fetch status:', eligRes.status)
               if (eligRes.ok) {
                 const { eligibilityRequirements } = await eligRes.json() as { eligibilityRequirements: EligibilityRequirement[] }
-                console.log('[Eligibility] Requirements:', eligibilityRequirements)
 
                 // Check if bot is already in a Fund zone
-                const isInFundZone = Object.values(uiState.fundZones).includes(bot.id)
-                console.log('[Eligibility] isInFundZone:', isInFundZone)
+                console.log('[Eligibility] 🔍 CRITICAL FIX CHECK - uiState analysis:')
+                console.log('[Eligibility]   - typeof uiState:', typeof uiState)
+                console.log('[Eligibility]   - uiState === null:', uiState === null)
+                console.log('[Eligibility]   - uiState === undefined:', uiState === undefined)
+                console.log('[Eligibility]   - uiState?.fundZones:', uiState?.fundZones)
+                const fundZonesValue = uiState?.fundZones || {}
+                console.log('[Eligibility] ✅ Fix worked! fundZonesValue =', fundZonesValue)
+                console.log('[Eligibility]   - Object.keys(fundZonesValue):', Object.keys(fundZonesValue))
+                const fundZonesArray = Object.values(fundZonesValue)
+                const isInFundZone = fundZonesArray.includes(bot.id)
+                console.log('[Eligibility]   - isInFundZone:', isInFundZone)
 
                 // Check live months requirement
                 const liveMonthsReq = eligibilityRequirements.find(r => r.type === 'live_months')
@@ -269,13 +286,13 @@ export function useAnalyzeRunner({
                 if (isStaleRef) {
                   // Clear the stale fund zone reference
                   setUiState(prev => {
-                    const newFundZones = { ...prev.fundZones }
+                    const newFundZones = { ...(prev?.fundZones || {}) }
                     for (const key of Object.keys(newFundZones) as (keyof FundZones)[]) {
                       if (newFundZones[key] === bot.id) {
                         newFundZones[key] = null
                       }
                     }
-                    return { ...prev, fundZones: newFundZones }
+                    return { ...(prev || {}), fundZones: newFundZones }
                   })
                 }
 
@@ -315,8 +332,15 @@ export function useAnalyzeRunner({
                   updateBotInApi(userId, updatedBotForSync).catch(err => console.warn('[API] Failed to sync bot tags:', err))
                 }
               }
+              console.log('[Eligibility] ✅ Eligibility check COMPLETED SUCCESSFULLY')
+              console.log('[Eligibility] ═══════════════════════════════════════════════════')
             } catch (eligErr) {
-              console.warn('Failed to check eligibility:', eligErr)
+              console.error('[Eligibility] ❌ Eligibility check FAILED:', eligErr)
+              console.error('[Eligibility] Error details:', {
+                message: (eligErr as Error)?.message,
+                stack: (eligErr as Error)?.stack?.split('\n').slice(0, 3)
+              })
+              console.log('[Eligibility] ═══════════════════════════════════════════════════')
             }
           }
 
@@ -337,6 +361,7 @@ export function useAnalyzeRunner({
             }).catch((err) => console.warn('[API] Failed to sync metrics:', err))
           }
 
+          console.log('[Backtest] 🎉 runAnalyzeBacktest COMPLETED SUCCESSFULLY for bot:', bot.name)
           return // Success - exit early
         }
 

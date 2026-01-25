@@ -50,13 +50,26 @@ export function buildShardTree(
       const result = branch as OptimizationResult
 
       // Try to parse the tree JSON from the database
-      // Note: The tree is stored in the database but not always included in the API response
-      // We'll need to fetch the full result with tree data
+      // Note: The tree is stored in the database as a JSON string in treeJson field
       const branchData = (result as any)
 
-      if (branchData.tree) {
-        // If we have the full tree object
-        branchTree = branchData.tree
+      if (branchData.treeJson) {
+        // Parse the tree JSON string
+        try {
+          branchTree = JSON.parse(branchData.treeJson)
+        } catch (err) {
+          console.warn('[ShardTree] Failed to parse treeJson for branch:', result.branchId, err)
+          // Fall through to placeholder creation
+          branchTree = createNode('basic')
+          branchTree.title = result.parameterLabel || `Branch ${result.branchId}`
+
+          // Add a position node as a child to make it functional
+          const posNode = createNode('position')
+          posNode.title = 'Placeholder'
+          posNode.positions = ['SPY']
+
+          branchTree.children = { next: [posNode] }
+        }
       } else {
         // Fallback: create a basic node with parameter label
         branchTree = createNode('basic')

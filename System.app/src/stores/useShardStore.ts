@@ -1627,8 +1627,10 @@ export const useShardStore = create<ShardState>((set, get) => ({
                 prefixedTree.window = shardCappedPercent
               }
               return prefixedTree
-            } catch {
-              // Fall back to basic node
+            } catch (err) {
+              // Log error and fall through to fallback code below
+              console.warn('[ShardStore] Failed to parse treeJson for branch, using fallback:', branch.branchId, err)
+              // NOTE: Don't return here - let execution continue to fallback code
             }
           }
 
