@@ -2326,6 +2326,7 @@ import batchBacktestRoutes from './routes/batchBacktest.mjs'
 import tickerListsRoutes from './routes/tickerLists.mjs'
 import { shardsRoutes } from './features/shards/index.mjs'
 import { botsRoutes } from './features/bots/index.mjs'
+import { watchlistRoutes } from './features/watchlist/index.mjs'
 
 // ============================================================================
 // Global API Debug Middleware
@@ -2357,6 +2358,7 @@ app.use('/api/batch-backtest', batchBacktestRoutes)
 app.use('/api/ticker-lists', tickerListsRoutes)
 app.use('/api/shards', shardsRoutes)
 app.use('/api/bots', botsRoutes)
+app.use('/api/watchlists', watchlistRoutes)
 
 // Initialize database on startup
 let dbInitialized = false
@@ -2771,90 +2773,90 @@ app.put('/api/atlas/bots/:id/metrics', authenticate, requireMainAdmin, async (re
 })
 
 // ============================================================================
-// Watchlist Endpoints
+// Watchlist Endpoints (COMMENTED OUT - Now using features/watchlist routes)
 // ============================================================================
 
-// GET /api/watchlists - Get user's watchlists
-app.get('/api/watchlists', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const userId = req.query.userId
-    if (!userId) {
-      return res.status(400).json({ error: 'userId query parameter required' })
-    }
-    const watchlists = await database.getWatchlistsByOwner(userId)
-    res.json({ watchlists })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
+// // GET /api/watchlists - Get user's watchlists
+// app.get('/api/watchlists', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const userId = req.query.userId
+//     if (!userId) {
+//       return res.status(400).json({ error: 'userId query parameter required' })
+//     }
+//     const watchlists = await database.getWatchlistsByOwner(userId)
+//     res.json({ watchlists })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
-// POST /api/watchlists/:id/bots - Add bot to watchlist
-app.post('/api/watchlists/:id/bots', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const { botId } = req.body
-    if (!botId) {
-      return res.status(400).json({ error: 'botId is required' })
-    }
-    const success = await database.addBotToWatchlist(req.params.id, botId)
-    res.json({ success })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
+// // POST /api/watchlists/:id/bots - Add bot to watchlist
+// app.post('/api/watchlists/:id/bots', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const { botId } = req.body
+//     if (!botId) {
+//       return res.status(400).json({ error: 'botId is required' })
+//     }
+//     const success = await database.addBotToWatchlist(req.params.id, botId)
+//     res.json({ success })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
-// DELETE /api/watchlists/:id/bots/:botId - Remove bot from watchlist
-app.delete('/api/watchlists/:id/bots/:botId', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const success = await database.removeBotFromWatchlist(req.params.id, req.params.botId)
-    res.json({ success })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
+// // DELETE /api/watchlists/:id/bots/:botId - Remove bot from watchlist
+// app.delete('/api/watchlists/:id/bots/:botId', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const success = await database.removeBotFromWatchlist(req.params.id, req.params.botId)
+//     res.json({ success })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
-// POST /api/watchlists - Create a new watchlist
-app.post('/api/watchlists', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const { userId, name } = req.body
-    if (!userId || !name) {
-      return res.status(400).json({ error: 'userId and name are required' })
-    }
-    const watchlist = await database.createWatchlist(userId, name)
-    res.json({ watchlist })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
+// // POST /api/watchlists - Create a new watchlist
+// app.post('/api/watchlists', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const { userId, name } = req.body
+//     if (!userId || !name) {
+//       return res.status(400).json({ error: 'userId and name are required' })
+//     }
+//     const watchlist = await database.createWatchlist(userId, name)
+//     res.json({ watchlist })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
-// PUT /api/watchlists/:id - Update a watchlist
-app.put('/api/watchlists/:id', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const { name } = req.body
-    if (!name) {
-      return res.status(400).json({ error: 'name is required' })
-    }
-    await database.updateWatchlist(req.params.id, { name })
-    res.json({ success: true })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
+// // PUT /api/watchlists/:id - Update a watchlist
+// app.put('/api/watchlists/:id', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const { name } = req.body
+//     if (!name) {
+//       return res.status(400).json({ error: 'name is required' })
+//     }
+//     await database.updateWatchlist(req.params.id, { name })
+//     res.json({ success: true })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
-// DELETE /api/watchlists/:id - Delete a watchlist
-app.delete('/api/watchlists/:id', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    await database.deleteWatchlist(req.params.id)
-    res.json({ success: true })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
+// // DELETE /api/watchlists/:id - Delete a watchlist
+// app.delete('/api/watchlists/:id', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     await database.deleteWatchlist(req.params.id)
+//     res.json({ success: true })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
 // ============================================================================
 // Call Chain Endpoints
