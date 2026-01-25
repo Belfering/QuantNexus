@@ -1242,7 +1242,7 @@ function App() {
                   <div
                     key={b.id}
                     className={cn(
-                      'flex flex-col border rounded-lg p-2 min-w-[120px] max-w-[200px]',
+                      'flex flex-col border rounded-lg p-2 w-[200px]',
                       isActive
                         ? 'bg-accent-bg border-accent-border text-accent-text'
                         : 'bg-surface border-border'
@@ -1251,7 +1251,7 @@ function App() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="w-full justify-center font-medium truncate"
+                      className="w-full justify-start font-medium truncate"
                       onClick={() => {
                         if (tab === 'Forge') {
                           setActiveForgeBotId(b.id)
