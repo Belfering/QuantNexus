@@ -61,7 +61,7 @@ export function useBacktestRunner({ callChainsById, customIndicators = [] }: Use
         }
 
         // Ensure all tickers are available in cache
-        await ensureTickersAvailable(Array.from(allTickers), 5000)
+        await ensureTickersAvailable(Array.from(allTickers), 15000)
       } catch (err) {
         console.warn('[Backtest] Failed to pre-fetch ticker data:', err)
         // Continue anyway - server has the data even if client cache fails
