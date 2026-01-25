@@ -20,6 +20,8 @@ import {
   computeMonthlyReturns,
   normalizeNodeForBacktest,
 } from '@/features/backtest'
+import { collectBacktestInputs } from '@/features/backtest/utils/inputCollection'
+import { ensureTickersAvailable } from '@/features/data/api'
 import { useBacktestStore } from '@/stores'
 
 const API_BASE = '/api'
@@ -38,13 +40,33 @@ interface UseBacktestRunnerOptions {
  * All backtests are now routed through the server for IP protection
  * and consistent results across all environments.
  */
-export function useBacktestRunner({ callChainsById: _callChainsById, customIndicators = [] }: UseBacktestRunnerOptions) {
+export function useBacktestRunner({ callChainsById, customIndicators = [] }: UseBacktestRunnerOptions) {
   const backtestMode = useBacktestStore((s) => s.backtestMode)
   const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
   const backtestBenchmark = useBacktestStore((s) => s.backtestBenchmark)
 
   const runBacktestForNode = useCallback(
     async (node: FlowNode, splitConfig?: import('@/types').ISOOSSplitConfig, shardOosDate?: string): Promise<BacktestRunResult> => {
+      // ========================================================================
+      // PRE-FLIGHT: Ensure all required ticker data is cached locally
+      // ========================================================================
+      try {
+        // Collect all tickers from the tree (includes positions, indicators, scaling, etc.)
+        const { tickers } = collectBacktestInputs(node, callChainsById)
+        const allTickers = new Set(tickers)
+
+        // Add benchmark ticker
+        if (backtestBenchmark && backtestBenchmark !== 'Empty') {
+          allTickers.add(backtestBenchmark)
+        }
+
+        // Ensure all tickers are available in cache
+        await ensureTickersAvailable(Array.from(allTickers), 5000)
+      } catch (err) {
+        console.warn('[Backtest] Failed to pre-fetch ticker data:', err)
+        // Continue anyway - server has the data even if client cache fails
+      }
+
       // ========================================================================
       // SERVER-SIDE BACKTEST - All backtests are now routed through the server
       // for IP protection and consistent results across all environments.
@@ -284,7 +306,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
         },
       }
     },
-    [backtestMode, backtestCostBps, customIndicators, backtestBenchmark]
+    [backtestMode, backtestCostBps, customIndicators, backtestBenchmark, callChainsById]
   )
 
   return { runBacktestForNode }

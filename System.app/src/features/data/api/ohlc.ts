@@ -134,3 +134,72 @@ export const fetchOhlcSeriesBatch = async (
 
   return results
 }
+
+/**
+ * Pre-cache all ETFs for faster subsequent backtests
+ * Called on login to populate cache with all ETF tickers
+ * Takes ~10-20 seconds to cache ~4600 ETFs
+ */
+export const preCacheAllETFs = async (
+  limit: number = 5000,
+  onProgress?: (loaded: number, total: number) => void
+): Promise<void> => {
+  console.log('[OHLC Cache] Pre-caching all ETFs...')
+
+  try {
+    // Fetch available tickers from server
+    const response = await fetch('/api/parquet-tickers')
+    if (!response.ok) {
+      throw new Error('Failed to fetch ticker list')
+    }
+
+    const data = (await response.json()) as { tickers: string[] }
+    const allTickers = data.tickers || []
+
+    // Filter out 'Empty' placeholder
+    const etfTickers = allTickers.filter((t) => t !== 'Empty')
+
+    console.log(`[OHLC Cache] Found ${etfTickers.length} tickers to pre-cache`)
+
+    // Batch fetch in chunks (fetchOhlcSeriesBatch handles 500 per request internally)
+    const results = await fetchOhlcSeriesBatch(etfTickers, limit)
+
+    console.log(`[OHLC Cache] Successfully pre-cached ${results.size}/${etfTickers.length} tickers`)
+
+    if (onProgress) {
+      onProgress(results.size, etfTickers.length)
+    }
+  } catch (err) {
+    console.warn('[OHLC Cache] Failed to pre-cache ETFs:', err)
+    // Don't throw - pre-caching is optional optimization
+  }
+}
+
+/**
+ * Ensure all required tickers are cached before backtest
+ * Fetches missing tickers from server if needed
+ */
+export const ensureTickersAvailable = async (tickers: string[], limit: number = 5000): Promise<void> => {
+  const missing: string[] = []
+  const now = Date.now()
+
+  // Check which tickers are missing or stale in cache
+  for (const ticker of tickers) {
+    if (ticker === 'Empty') continue // Skip empty positions
+
+    const key = getSeriesKey(ticker)
+    const cached = ohlcDataCache.get(key)
+
+    if (!cached || cached.limit < limit || now - cached.timestamp >= OHLC_CACHE_TTL) {
+      missing.push(ticker)
+    }
+  }
+
+  // Fetch missing tickers
+  if (missing.length > 0) {
+    console.log(`[OHLC Cache] Fetching ${missing.length} missing tickers before backtest:`, missing)
+    await fetchOhlcSeriesBatch(missing, limit)
+  } else {
+    console.log('[OHLC Cache] All required tickers already cached')
+  }
+}

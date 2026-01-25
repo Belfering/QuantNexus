@@ -25,6 +25,7 @@ import {
   savePreferencesToApi,
 } from '@/features/auth'
 import { ensureDefaultWatchlist } from './useWatchlistCallbacks'
+import { preCacheAllETFs } from '@/features/data/api'
 
 interface UseUserDataSyncOptions {
   userId: UserId | null
@@ -262,6 +263,21 @@ export function useUserDataSync({
   useEffect(() => {
     void refreshAllNexusBots()
   }, [refreshAllNexusBots])
+
+  // Pre-cache all ETFs when user logs in for faster backtests (~10-20 seconds)
+  // Runs in background and doesn't block UI
+  useEffect(() => {
+    if (!userId) return
+
+    // Run pre-caching in background (don't block login)
+    void preCacheAllETFs(5000)
+      .then(() => {
+        console.log('[Pre-cache] ETF pre-caching complete')
+      })
+      .catch((err) => {
+        console.warn('[Pre-cache] Failed to pre-cache ETFs on login:', err)
+      })
+  }, [userId])
 
   return {
     refreshAllNexusBots,

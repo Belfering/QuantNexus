@@ -6,4 +6,6 @@ export {
   ohlcDataCache,
   fetchOhlcSeries,
   fetchOhlcSeriesBatch,
+  preCacheAllETFs,
+  ensureTickersAvailable,
 } from './ohlc'
