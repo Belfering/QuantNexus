@@ -10,7 +10,6 @@ const WEIGHTING_OPTIONS: { value: WeightMode; label: string }[] = [
   { value: 'equal', label: 'Equal Weight' },
   { value: 'inverse', label: 'Inverse Volatility' },
   { value: 'pro', label: 'Pro Volatility' },
-  { value: 'capped', label: 'Capped' },
 ]
 
 interface ShardsLibraryProps {
@@ -117,23 +116,6 @@ export function ShardsLibrary({
           {shardWeighting === 'equal' && totalStrategyBranches > 0 && (
             <div className="text-sm text-muted-foreground px-1">
               Each branch: {equalWeightPercent}% ({totalStrategyBranches} branches)
-            </div>
-          )}
-
-          {/* Capped percentage input - only show when Capped is selected */}
-          {shardWeighting === 'capped' && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Cap %:</span>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                step={1}
-                value={shardCappedPercent}
-                onChange={(e) => onSetShardCappedPercent(Number(e.target.value))}
-                className="h-8 text-sm w-20"
-              />
-              <span className="text-sm text-muted-foreground">max per position</span>
             </div>
           )}
         </div>

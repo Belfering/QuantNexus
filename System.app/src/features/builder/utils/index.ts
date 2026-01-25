@@ -22,6 +22,8 @@ export {
   updateWeight,
   updateCappedFallback,
   updateVolWindow,
+  updateMinCap,
+  updateMaxCap,
   updateCollapse,
   setAllCollapsed,
   setCollapsedBelow,

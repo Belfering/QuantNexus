@@ -101,6 +101,8 @@ export interface CardProps {
   onWeightChange: (id: string, weight: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (id: string, choice: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (id: string, days: number, branch?: 'then' | 'else') => void
+  onUpdateMinCap: (id: string, value: number, branch?: 'then' | 'else') => void
+  onUpdateMaxCap: (id: string, value: number, branch?: 'then' | 'else') => void
   onColorChange: (id: string, color?: string) => void
   onToggleCollapse: (id: string, collapsed: boolean) => void
   onExpandAllBelow: (id: string, collapsed: boolean) => void

@@ -41,6 +41,7 @@ interface UseBacktestRunnerOptions {
 export function useBacktestRunner({ callChainsById: _callChainsById, customIndicators = [] }: UseBacktestRunnerOptions) {
   const backtestMode = useBacktestStore((s) => s.backtestMode)
   const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
+  const backtestBenchmark = useBacktestStore((s) => s.backtestBenchmark)
 
   const runBacktestForNode = useCallback(
     async (node: FlowNode, splitConfig?: import('@/types').ISOOSSplitConfig, shardOosDate?: string): Promise<BacktestRunResult> => {
@@ -93,6 +94,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
           costBps: backtestCostBps,
           customIndicators,
           splitConfig, // Pass splitConfig to backend for IS/OOS split calculation
+          benchmarkTicker: backtestBenchmark,
         }),
       })
 
@@ -354,7 +356,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
         },
       }
     },
-    [backtestMode, backtestCostBps, customIndicators]
+    [backtestMode, backtestCostBps, customIndicators, backtestBenchmark]
   )
 
   return { runBacktestForNode }

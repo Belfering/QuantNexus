@@ -58,6 +58,12 @@ export type FlowNode = {
   volWindow?: number
   volWindowThen?: number
   volWindowElse?: number
+  minCap?: number
+  maxCap?: number
+  minCapThen?: number
+  maxCapThen?: number
+  minCapElse?: number
+  maxCapElse?: number
   bgColor?: string
   collapsed?: boolean
   conditions?: ConditionLine[]

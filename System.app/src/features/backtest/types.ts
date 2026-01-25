@@ -51,6 +51,9 @@ export type SanityReportPathRisk = {
   }
   drawdownProbabilities: { gt20: number; gt30: number; gt40: number; gt50: number }
   comparisonMetrics?: { monteCarlo: ComparisonMetrics; kfold: ComparisonMetrics }
+  // IS/OOS specific path risk (only present when split is enabled)
+  isPathRisk?: SanityReportPathRisk
+  oosPathRisk?: SanityReportPathRisk
 }
 
 /**
@@ -76,6 +79,7 @@ export type SanityReport = {
   pathRisk: SanityReportPathRisk
   fragility: SanityReportFragility
   summary: string[]
+  oosStartDate?: string // ISO date string (YYYY-MM-DD) if IS/OOS split was applied
   meta: { mcSimulations: number; kfFolds: number; generatedAt: string }
 }
 

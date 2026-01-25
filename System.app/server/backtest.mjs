@@ -2974,7 +2974,14 @@ const getSlotConfig = (node, slot) => {
   const volWindow = Math.floor(Number(node[volKey] ?? 20))
   const fallbackKey = slot === 'then' ? 'thenCappedFallback' : slot === 'else' ? 'elseCappedFallback' : 'cappedFallback'
   const cappedFallback = node[fallbackKey] || 'BIL'
-  return { mode, volWindow, cappedFallback }
+
+  // Extract min/max caps (convert from percentage to decimal)
+  const minCapKey = slot === 'then' ? 'minCapThen' : slot === 'else' ? 'minCapElse' : 'minCap'
+  const maxCapKey = slot === 'then' ? 'maxCapThen' : slot === 'else' ? 'maxCapElse' : 'maxCap'
+  const minCap = Number(node[minCapKey] ?? 0) / 100
+  const maxCap = Number(node[maxCapKey] ?? 100) / 100
+
+  return { mode, volWindow, cappedFallback, minCap, maxCap }
 }
 
 // ============================================
@@ -3732,7 +3739,7 @@ function evaluateNode(ctx, node) {
 const evaluateChildren = (ctx, node, slot, children) => {
   if (children.length === 0) return {}
 
-  const { mode, volWindow } = getSlotConfig(node, slot)
+  const { mode, volWindow, cappedFallback, minCap, maxCap } = getSlotConfig(node, slot)
   const childAllocs = children.map((c) => evaluateNode(ctx, c))
 
   // Filter to only active children (those with non-empty allocations)
@@ -3787,6 +3794,62 @@ const evaluateChildren = (ctx, node, slot, children) => {
   } else {
     weights = active.map(() => 1 / active.length)
   }
+
+  // ========== Apply min/max caps ==========
+  if (mode === 'capped' || mode === 'inverse' || mode === 'pro') {
+    // Step 1: Apply caps to each weight
+    let cappedWeights = weights.map(w => Math.max(minCap, Math.min(maxCap, w)))
+    let cappedTotal = cappedWeights.reduce((a, b) => a + b, 0)
+
+    // Step 2: Handle min cap overflow (normalize down if total > 100%)
+    if (cappedTotal > 1.0) {
+      cappedWeights = cappedWeights.map(w => w / cappedTotal)
+      cappedTotal = 1.0
+    }
+
+    if (mode === 'capped') {
+      // Capped mode: excess goes to fallback ticker
+      const excess = 1 - cappedTotal
+      weights = cappedWeights
+
+      if (excess > 0.001 && cappedFallback && cappedFallback !== 'Empty') {
+        // Add fallback allocation and early return
+        const combined = {}
+        for (let i = 0; i < active.length; i++) {
+          const alloc = active[i].alloc
+          const weight = weights[i]
+          for (const [ticker, w] of Object.entries(alloc)) {
+            combined[ticker] = (combined[ticker] || 0) + w * weight
+          }
+        }
+        combined[cappedFallback] = (combined[cappedFallback] || 0) + excess
+        return combined
+      }
+    } else {
+      // Inverse/Pro mode: redistribute excess proportionally among uncapped positions
+      if (cappedTotal < 0.999) {
+        // Find positions that can still grow (not at max cap yet)
+        const canGrow = weights.map((w, i) => {
+          const isCapped = cappedWeights[i] >= maxCap - 0.0001 // Allow small epsilon
+          return !isCapped ? i : -1
+        }).filter(i => i >= 0)
+
+        if (canGrow.length > 0) {
+          const excess = 1 - cappedTotal
+          const growthTotal = canGrow.reduce((sum, i) => sum + weights[i], 0)
+
+          // Distribute excess proportionally
+          canGrow.forEach(i => {
+            const share = excess * (weights[i] / growthTotal)
+            cappedWeights[i] = Math.min(maxCap, cappedWeights[i] + share)
+          })
+        }
+        // Note: If all positions are maxed out and total < 100%, the shortfall becomes cash
+      }
+      weights = cappedWeights
+    }
+  }
+  // ========== END: Apply min/max caps ==========
 
   // Combine allocations from active children only
   const combined = {}

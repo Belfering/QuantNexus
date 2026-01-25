@@ -20,8 +20,9 @@ export interface IndicatorBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode, branch?: 'then' | 'else') => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
+  onUpdateMinCap: (nodeId: string, value: number, branch?: 'then' | 'else') => void
+  onUpdateMaxCap: (nodeId: string, value: number, branch?: 'then' | 'else') => void
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string, nodeId?: string) => void
-  tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
@@ -40,8 +41,9 @@ export const IndicatorBody = ({
   onWeightChange,
   onUpdateCappedFallback,
   onUpdateVolWindow,
+  onUpdateMinCap,
+  onUpdateMaxCap,
   openTickerModal,
-  tickerDatalistId,
   renderSlot,
   parameterRanges,
   onUpdateRange,
@@ -54,10 +56,14 @@ export const IndicatorBody = ({
   // Calculate detail chip props for Then branch
   const thenCappedFallback = node.cappedFallbackThen ?? node.cappedFallback ?? 'Empty'
   const thenVolWindow = node.volWindowThen ?? node.volWindow ?? 20
+  const thenMinCap = node.minCapThen ?? node.minCap ?? 0
+  const thenMaxCap = node.maxCapThen ?? node.maxCap ?? 100
 
   // Calculate detail chip props for Else branch
   const elseCappedFallback = node.cappedFallbackElse ?? node.cappedFallback ?? 'Empty'
   const elseVolWindow = node.volWindowElse ?? node.volWindow ?? 20
+  const elseMinCap = node.minCapElse ?? node.minCap ?? 0
+  const elseMaxCap = node.maxCapElse ?? node.maxCap ?? 100
 
   return (
     <>
@@ -143,9 +149,13 @@ export const IndicatorBody = ({
           mode={weightingThen}
           cappedFallback={thenCappedFallback}
           volWindow={thenVolWindow}
-          tickerDatalistId={tickerDatalistId}
+          minCap={thenMinCap}
+          maxCap={thenMaxCap}
           onUpdateCappedFallback={(v) => onUpdateCappedFallback(node.id, v, 'then')}
           onUpdateVolWindow={(v) => onUpdateVolWindow(node.id, v, 'then')}
+          onUpdateMinCap={(v) => onUpdateMinCap(node.id, v, 'then')}
+          onUpdateMaxCap={(v) => onUpdateMaxCap(node.id, v, 'then')}
+          openTickerModal={openTickerModal}
         />
       </div>
       {renderSlot('then', 3 * 14)}
@@ -165,9 +175,13 @@ export const IndicatorBody = ({
           mode={weightingElse}
           cappedFallback={elseCappedFallback}
           volWindow={elseVolWindow}
-          tickerDatalistId={tickerDatalistId}
+          minCap={elseMinCap}
+          maxCap={elseMaxCap}
           onUpdateCappedFallback={(v) => onUpdateCappedFallback(node.id, v, 'else')}
           onUpdateVolWindow={(v) => onUpdateVolWindow(node.id, v, 'else')}
+          onUpdateMinCap={(v) => onUpdateMinCap(node.id, v, 'else')}
+          onUpdateMaxCap={(v) => onUpdateMaxCap(node.id, v, 'else')}
+          openTickerModal={openTickerModal}
         />
       </div>
       {renderSlot('else', 3 * 14)}

@@ -24,7 +24,8 @@ interface UseBatchBacktestResult {
     botId: string,
     botName: string,
     mode?: string,
-    costBps?: number
+    costBps?: number,
+    benchmarkTicker?: string
   ) => Promise<void>
   cancelJob: () => void
 }
@@ -49,7 +50,8 @@ export function useBatchBacktest(): UseBatchBacktestResult {
     botId: string,
     botName: string,
     mode: string = 'CC',
-    costBps: number = 5
+    costBps: number = 5,
+    benchmarkTicker: string = 'SPY'
   ) => {
     // Helper to update job in store
     const updateJob = (updater: (prev: BranchGenerationJob | undefined) => BranchGenerationJob | undefined) => {
@@ -108,7 +110,8 @@ export function useBatchBacktest(): UseBatchBacktestResult {
             options: {
               mode,
               costBps,
-              splitConfig
+              splitConfig,
+              benchmarkTicker
             }
           }),
           signal: abortController.signal
@@ -320,7 +323,8 @@ export function useBatchBacktest(): UseBatchBacktestResult {
                 payload: modifiedTree,
                 mode,
                 costBps,
-                splitConfig
+                splitConfig,
+                benchmarkTicker
               }),
               signal: abortController.signal
             })

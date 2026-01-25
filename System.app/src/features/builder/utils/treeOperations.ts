@@ -162,18 +162,42 @@ export const updateWeight = (
     if ((node.kind === 'indicator' || node.kind === 'numbered') && branch) {
       if (branch === 'then') {
         const next: FlowNode = { ...node, weightingThen: weighting }
-        if (weighting === 'capped' && !next.cappedFallbackThen) next.cappedFallbackThen = 'Empty'
-        if ((weighting === 'inverse' || weighting === 'pro') && !next.volWindowThen) next.volWindowThen = 20
+        if (weighting === 'capped') {
+          if (!next.cappedFallbackThen) next.cappedFallbackThen = 'Empty'
+          if (next.minCapThen === undefined) next.minCapThen = 0
+          if (next.maxCapThen === undefined) next.maxCapThen = 100
+        }
+        if (weighting === 'inverse' || weighting === 'pro') {
+          if (!next.volWindowThen) next.volWindowThen = 20
+          if (next.minCapThen === undefined) next.minCapThen = 0
+          if (next.maxCapThen === undefined) next.maxCapThen = 100
+        }
         return next
       }
       const next: FlowNode = { ...node, weightingElse: weighting }
-      if (weighting === 'capped' && !next.cappedFallbackElse) next.cappedFallbackElse = 'Empty'
-      if ((weighting === 'inverse' || weighting === 'pro') && !next.volWindowElse) next.volWindowElse = 20
+      if (weighting === 'capped') {
+        if (!next.cappedFallbackElse) next.cappedFallbackElse = 'Empty'
+        if (next.minCapElse === undefined) next.minCapElse = 0
+        if (next.maxCapElse === undefined) next.maxCapElse = 100
+      }
+      if (weighting === 'inverse' || weighting === 'pro') {
+        if (!next.volWindowElse) next.volWindowElse = 20
+        if (next.minCapElse === undefined) next.minCapElse = 0
+        if (next.maxCapElse === undefined) next.maxCapElse = 100
+      }
       return next
     }
     const next: FlowNode = { ...node, weighting }
-    if (weighting === 'capped' && !next.cappedFallback) next.cappedFallback = 'Empty'
-    if ((weighting === 'inverse' || weighting === 'pro') && !next.volWindow) next.volWindow = 20
+    if (weighting === 'capped') {
+      if (!next.cappedFallback) next.cappedFallback = 'Empty'
+      if (next.minCap === undefined) next.minCap = 0
+      if (next.maxCap === undefined) next.maxCap = 100
+    }
+    if (weighting === 'inverse' || weighting === 'pro') {
+      if (!next.volWindow) next.volWindow = 20
+      if (next.minCap === undefined) next.minCap = 0
+      if (next.maxCap === undefined) next.maxCap = 100
+    }
     return next
   }
   const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
@@ -219,6 +243,46 @@ export const updateVolWindow = (
   getAllSlotsForNode(node).forEach((s) => {
     const arr = node.children[s]
     children[s] = arr ? arr.map((c) => (c ? updateVolWindow(c, id, days, branch) : c)) : arr
+  })
+  return { ...node, children }
+}
+
+export const updateMinCap = (
+  node: FlowNode,
+  id: string,
+  value: number,
+  branch?: 'then' | 'else'
+): FlowNode => {
+  if (node.id === id) {
+    const normalized = Math.max(0, Math.min(100, Math.floor(Number(value) || 0)))
+    if (branch === 'then') return { ...node, minCapThen: normalized }
+    if (branch === 'else') return { ...node, minCapElse: normalized }
+    return { ...node, minCap: normalized }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  getAllSlotsForNode(node).forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? updateMinCap(c, id, value, branch) : c)) : arr
+  })
+  return { ...node, children }
+}
+
+export const updateMaxCap = (
+  node: FlowNode,
+  id: string,
+  value: number,
+  branch?: 'then' | 'else'
+): FlowNode => {
+  if (node.id === id) {
+    const normalized = Math.max(0, Math.min(100, Math.floor(Number(value) || 0)))
+    if (branch === 'then') return { ...node, maxCapThen: normalized }
+    if (branch === 'else') return { ...node, maxCapElse: normalized }
+    return { ...node, maxCap: normalized }
+  }
+  const children: Partial<Record<SlotId, Array<FlowNode | null>>> = {}
+  getAllSlotsForNode(node).forEach((s) => {
+    const arr = node.children[s]
+    children[s] = arr ? arr.map((c) => (c ? updateMaxCap(c, id, value, branch) : c)) : arr
   })
   return { ...node, children }
 }

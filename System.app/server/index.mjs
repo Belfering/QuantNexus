@@ -3152,17 +3152,18 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
     }
 
     // FRD-014: Calculate payload hash and get current data date
-    // Include mode and costBps in hash so different settings create different cache entries
+    // Include mode, costBps, and benchmarkTicker in hash so different settings create different cache entries
     const mode = req.body.mode || 'CC'
     const costBps = req.body.costBps ?? 5
-    const payloadHash = backtestCache.hashPayload(bot.payload, { mode, costBps })
+    const benchmarkTicker = req.body.benchmarkTicker || 'SPY'
+    const payloadHash = backtestCache.hashPayload(bot.payload, { mode, costBps, benchmarkTicker })
     const dataDate = await getLatestTickerDataDate()
 
     // FRD-014: Check cache first (unless force refresh requested)
     if (!forceRefresh) {
       const cached = backtestCache.getCachedBacktest(botId, payloadHash, dataDate)
       if (cached) {
-        console.log(`[Backtest] Cache hit for bot ${botId} (${bot.name}) mode=${mode} costBps=${costBps}`)
+        console.log(`[Backtest] Cache hit for bot ${botId} (${bot.name}) mode=${mode} costBps=${costBps} benchmarkTicker=${benchmarkTicker}`)
 
         // Still update metrics in main DB (in case they were cleared)
         await database.updateBotMetrics(botId, cached.metrics)
@@ -3179,11 +3180,11 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
       }
     }
 
-    console.log(`[Backtest] Running backtest for bot ${botId} (${bot.name}) mode=${mode} costBps=${costBps}${forceRefresh ? ' (force refresh)' : ''}...`)
+    console.log(`[Backtest] Running backtest for bot ${botId} (${bot.name}) mode=${mode} costBps=${costBps} benchmarkTicker=${benchmarkTicker}${forceRefresh ? ' (force refresh)' : ''}...`)
     const startTime = Date.now()
 
     // Run backtest on server
-    const result = await runBacktest(bot.payload, { mode, costBps })
+    const result = await runBacktest(bot.payload, { mode, costBps, benchmarkTicker })
 
     const elapsed = Date.now() - startTime
     console.log(`[Backtest] Completed in ${elapsed}ms - CAGR: ${(result.metrics.cagr * 100).toFixed(2)}%`)
@@ -3219,7 +3220,7 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
 // Routes all backtests through server to ensure consistent results
 app.post('/api/backtest', async (req, res) => {
   try {
-    const { payload, mode = 'CC', costBps = 5, customIndicators = [], splitConfig } = req.body
+    const { payload, mode = 'CC', costBps = 5, customIndicators = [], splitConfig, benchmarkTicker = 'SPY' } = req.body
 
     if (!payload) {
       return res.status(400).json({ error: 'payload is required' })
@@ -3228,10 +3229,10 @@ app.post('/api/backtest', async (req, res) => {
     const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload)
 
     const splitMsg = splitConfig?.enabled ? ` split=${splitConfig.strategy}` : ''
-    console.log(`[Backtest] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}, customIndicators=${customIndicators.length}${splitMsg}...`)
+    console.log(`[Backtest] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}, customIndicators=${customIndicators.length}${splitMsg}, benchmarkTicker=${benchmarkTicker}...`)
     const startTime = Date.now()
 
-    const result = await runBacktest(payloadStr, { mode, costBps, customIndicators, splitConfig })
+    const result = await runBacktest(payloadStr, { mode, costBps, customIndicators, splitConfig, benchmarkTicker })
 
     const elapsed = Date.now() - startTime
     console.log(`[Backtest] Completed in ${elapsed}ms - CAGR: ${(result.metrics.cagr * 100).toFixed(2)}%`)
@@ -3371,8 +3372,11 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
     // Decompress payload if it was compressed (must do before hashing for consistent cache keys)
     const decompressedPayload = await database.decompressPayload(botRow.payload)
 
-    // Check cache first - include mode/costBps in hash since daily returns depend on them
-    const payloadHash = backtestCache.hashPayload(decompressedPayload, { mode: botMode, costBps: botCostBps })
+    // Extract benchmarkTicker from request body (default: SPY)
+    const benchmarkTicker = req.body.benchmarkTicker || 'SPY'
+
+    // Check cache first - include mode/costBps/benchmarkTicker in hash since daily returns depend on them
+    const payloadHash = backtestCache.hashPayload(decompressedPayload, { mode: botMode, costBps: botCostBps, benchmarkTicker })
     const dataDate = await getLatestTickerDataDate()
 
     const cached = backtestCache.getCachedSanityReport(botId, payloadHash, dataDate)
@@ -3389,13 +3393,14 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
     // Run backtest to get daily returns using bot's stored settings
     // Extract splitConfig from request body if provided
     const splitConfig = req.body.splitConfig || undefined
-    console.log(`[SanityReport] Running backtest for bot ${botId} (${botRow.name}) with mode=${botMode}, costBps=${botCostBps}, splitConfig=${JSON.stringify(splitConfig)}...`)
+    console.log(`[SanityReport] Running backtest for bot ${botId} (${botRow.name}) with mode=${botMode}, costBps=${botCostBps}, benchmarkTicker=${benchmarkTicker}, splitConfig=${JSON.stringify(splitConfig)}...`)
     const startTime = Date.now()
 
     const backtestResult = await runBacktest(decompressedPayload, {
       mode: botMode,
       costBps: botCostBps,
       splitConfig,
+      benchmarkTicker,
     })
 
     if (!backtestResult.dailyReturns || backtestResult.dailyReturns.length < 50) {
@@ -3610,7 +3615,7 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
 // POST /api/sanity-report - Generate sanity report from payload directly (for unsaved strategies)
 app.post('/api/sanity-report', async (req, res) => {
   try {
-    const { payload, mode = 'CC', costBps = 5, startDate, endDate, splitConfig } = req.body
+    const { payload, mode = 'CC', costBps = 5, startDate, endDate, splitConfig, benchmarkTicker = 'SPY' } = req.body
 
     console.log('[SanityReport] Request body keys:', Object.keys(req.body))
     console.log('[SanityReport] splitConfig from req.body:', splitConfig)
@@ -3624,13 +3629,14 @@ app.post('/api/sanity-report', async (req, res) => {
     // Run backtest to get daily returns
     const dateRangeStr = startDate && endDate ? ` (${startDate} to ${endDate})` : ''
     const splitConfigStr = splitConfig ? ` splitConfig=${JSON.stringify(splitConfig)}` : ''
-    console.log(`[SanityReport] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}${dateRangeStr}${splitConfigStr}...`)
+    console.log(`[SanityReport] Running backtest for unsaved strategy with mode=${mode}, costBps=${costBps}, benchmarkTicker=${benchmarkTicker}${dateRangeStr}${splitConfigStr}...`)
     const startTime = Date.now()
 
     const backtestResult = await runBacktest(payloadStr, {
       mode,
       costBps,
       splitConfig,
+      benchmarkTicker,
     })
 
     if (!backtestResult.dailyReturns || backtestResult.dailyReturns.length < 50) {

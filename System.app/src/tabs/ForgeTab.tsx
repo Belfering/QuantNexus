@@ -188,42 +188,22 @@ export function ForgeTab({
   const { undo, redo } = useTreeUndo()
   const treeStore = useTreeStore()
 
-  // Get active bot IDs for each subtab from store
-  const activeShapingBotId = useBotStore(s => s.activeShapingBotId)
-  const activeCombineBotId = useBotStore(s => s.activeCombineBotId)
-  const activeWalkForwardBotId = useBotStore(s => s.activeWalkForwardBotId)
-
-  // Effect: Sync activeForgeBotId when switching Forge subtabs OR when active bot for current subtab changes
+  // Effect: Sync activeForgeBotId when switching Forge subtabs
   useEffect(() => {
     if (forgeSubtab === 'Shaping') {
-      const bot = useBotStore.getState().bots.find(b => b.id === activeShapingBotId)
-      useBotStore.getState().setActiveForgeBotId(activeShapingBotId)
-      console.log('[ForgeTab] Switched to Shaping bot:', {
-        botId: activeShapingBotId,
-        botExists: !!bot,
-        hasSplitTree: !!bot?.splitTree,
-        splitTreeId: bot?.splitTree?.id,
-        splitTreeTitle: bot?.splitTree?.title,
-      })
+      const activeShapingBot = useBotStore.getState().activeShapingBotId
+      useBotStore.getState().setActiveForgeBotId(activeShapingBot)
+      console.log('[ForgeTab] Switched to Shaping, loading bot:', activeShapingBot)
     } else if (forgeSubtab === 'Combine') {
-      useBotStore.getState().setActiveForgeBotId(activeCombineBotId)
-      console.log('[ForgeTab] Switched to Combine bot:', activeCombineBotId)
+      const activeCombineBot = useBotStore.getState().activeCombineBotId
+      useBotStore.getState().setActiveForgeBotId(activeCombineBot)
+      console.log('[ForgeTab] Switched to Combine, loading bot:', activeCombineBot)
     } else if (forgeSubtab === 'Walk Forward') {
-      useBotStore.getState().setActiveForgeBotId(activeWalkForwardBotId)
-      console.log('[ForgeTab] Switched to Walk Forward bot:', activeWalkForwardBotId)
+      const activeWalkForwardBot = useBotStore.getState().activeWalkForwardBotId
+      useBotStore.getState().setActiveForgeBotId(activeWalkForwardBot)
+      console.log('[ForgeTab] Switched to Walk Forward, loading bot:', activeWalkForwardBot)
     }
-  }, [forgeSubtab, activeShapingBotId, activeCombineBotId, activeWalkForwardBotId])
-
-  // Debug: Log when current tree changes
-  useEffect(() => {
-    console.log('[ForgeTab] Current tree updated:', {
-      forgeSubtab,
-      treeField,
-      treeId: current?.id,
-      treeTitle: current?.title,
-      hasChildren: current?.children ? Object.keys(current.children).length : 0,
-    })
-  }, [current, forgeSubtab, treeField])
+  }, [forgeSubtab])
 
   // Flowchart scroll width for the horizontal scrollbar (updated by App.tsx)
   const flowchartScrollWidth = useUIStore(s => s.flowchartScrollWidth)
@@ -352,6 +332,12 @@ export function ForgeTab({
   }
   const handleUpdateVolWindow = (id: string, days: number, branch?: 'then' | 'else') => {
     treeStore.updateVolWindow(id, days, branch)
+  }
+  const handleUpdateMinCap = (id: string, value: number, branch?: 'then' | 'else') => {
+    treeStore.updateMinCap(id, value, branch)
+  }
+  const handleUpdateMaxCap = (id: string, value: number, branch?: 'then' | 'else') => {
+    treeStore.updateMaxCap(id, value, branch)
   }
   const handleColorChange = (id: string, color?: string) => {
     treeStore.updateColor(id, color)
@@ -1385,8 +1371,8 @@ export function ForgeTab({
       minWarmUpYears: activeBot.splitConfig?.minWarmUpYears ?? 3
     }
 
-    const mode = 'CC' // Default mode
-    const costBps = 5 // Default cost
+    const mode = backtestMode // Use mode from store
+    const costBps = backtestCostBps // Use cost from store
 
     // DEBUG: Log config to verify
     console.log(`[ForgeTab] Starting ${isWalkForward ? 'rolling' : 'chronological'} optimization from ${forgeSubtab} tab`)
@@ -1574,7 +1560,7 @@ export function ForgeTab({
       console.log('[ForgeTab] Using parameter ranges for chronological:', parameterRanges.length)
 
       // Use requirements from the tab-aware variable (already set to chronological at top)
-      await runBatchBacktest(current, parameterRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps)
+      await runBatchBacktest(current, parameterRanges, splitConfig, requirements, activeBot.id, botName, mode, costBps, backtestBenchmark)
     }
   }
 
@@ -1994,6 +1980,8 @@ export function ForgeTab({
                   onWeightChange={handleWeightChange}
                   onUpdateCappedFallback={handleUpdateCappedFallback}
                   onUpdateVolWindow={handleUpdateVolWindow}
+                  onUpdateMinCap={handleUpdateMinCap}
+                  onUpdateMaxCap={handleUpdateMaxCap}
                   onColorChange={handleColorChange}
                   onToggleCollapse={handleToggleCollapse}
                   onNumberedQuantifier={handleNumberedQuantifier}
@@ -2587,6 +2575,8 @@ export function ForgeTab({
                   onWeightChange={handleWeightChange}
                   onUpdateCappedFallback={handleUpdateCappedFallback}
                   onUpdateVolWindow={handleUpdateVolWindow}
+                  onUpdateMinCap={handleUpdateMinCap}
+                  onUpdateMaxCap={handleUpdateMaxCap}
                   onColorChange={handleColorChange}
                   onToggleCollapse={handleToggleCollapse}
                   onNumberedQuantifier={handleNumberedQuantifier}

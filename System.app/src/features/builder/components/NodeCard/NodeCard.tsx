@@ -57,6 +57,8 @@ export const NodeCard = ({
   onWeightChange,
   onUpdateCappedFallback,
   onUpdateVolWindow,
+  onUpdateMinCap,
+  onUpdateMaxCap,
   onColorChange,
   onToggleCollapse,
   onExpandAllBelow,
@@ -333,6 +335,8 @@ export const NodeCard = ({
             onWeightChange={onWeightChange}
             onUpdateCappedFallback={onUpdateCappedFallback}
             onUpdateVolWindow={onUpdateVolWindow}
+            onUpdateMinCap={onUpdateMinCap}
+            onUpdateMaxCap={onUpdateMaxCap}
             openTickerModal={openTickerModal}
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
@@ -357,6 +361,8 @@ export const NodeCard = ({
             onWeightChange={onWeightChange}
             onUpdateCappedFallback={onUpdateCappedFallback}
             onUpdateVolWindow={onUpdateVolWindow}
+            onUpdateMinCap={onUpdateMinCap}
+            onUpdateMaxCap={onUpdateMaxCap}
             openTickerModal={openTickerModal}
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
@@ -382,6 +388,8 @@ export const NodeCard = ({
             onWeightChange={onWeightChange}
             onUpdateCappedFallback={onUpdateCappedFallback}
             onUpdateVolWindow={onUpdateVolWindow}
+            onUpdateMinCap={onUpdateMinCap}
+            onUpdateMaxCap={onUpdateMaxCap}
             openTickerModal={openTickerModal}
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
@@ -401,6 +409,8 @@ export const NodeCard = ({
             onWeightChange={onWeightChange}
             onUpdateCappedFallback={onUpdateCappedFallback}
             onUpdateVolWindow={onUpdateVolWindow}
+            onUpdateMinCap={onUpdateMinCap}
+            onUpdateMaxCap={onUpdateMaxCap}
             openTickerModal={openTickerModal}
             renderSlot={renderSlot}
             parameterRanges={parameterRanges}
@@ -428,6 +438,8 @@ export const NodeCard = ({
             onWeightChange={onWeightChange}
             onUpdateCappedFallback={onUpdateCappedFallback}
             onUpdateVolWindow={onUpdateVolWindow}
+            onUpdateMinCap={onUpdateMinCap}
+            onUpdateMaxCap={onUpdateMaxCap}
             onFunctionWindow={onFunctionWindow}
             onFunctionMetric={onFunctionMetric}
             onFunctionRank={onFunctionRank}
@@ -436,6 +448,7 @@ export const NodeCard = ({
             parameterRanges={parameterRanges}
             onUpdateRange={onUpdateRange}
             underRollingNode={underRollingNode}
+            openTickerModal={openTickerModal}
           />
         )
     }

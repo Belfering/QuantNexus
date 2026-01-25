@@ -538,7 +538,7 @@ export function TickerSearchModal({
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-surface border border-border rounded-lg shadow-2xl w-[500px] max-h-[70vh] flex flex-col">
+      <div className="relative bg-surface border border-border rounded-lg shadow-2xl w-[500px] h-[70vh] flex flex-col">
         {/* Header with search */}
         <div className="p-4 border-b border-border">
           {mode === 'tickers' && (

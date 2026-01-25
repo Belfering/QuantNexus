@@ -10,8 +10,9 @@ import { RangeConfigPopover } from '@/features/parameters/components/RangeConfig
 import { WeightPicker } from '../WeightPicker'
 import { WeightDetailChip } from '../WeightDetailChip'
 import { IndicatorDropdown } from '../IndicatorDropdown'
-import type { FlowNode, WeightMode, MetricChoice, RankChoice, SlotId, PositionChoice } from '../../../../types'
+import type { FlowNode, WeightMode, MetricChoice, RankChoice, SlotId, PositionChoice, BlockKind } from '../../../../types'
 import type { ParameterRange, VisualParameter } from '@/features/parameters/types'
+import type { TickerModalMode } from '@/shared/components'
 import { isWindowlessIndicator } from '../../../../constants'
 
 // Line types from buildLines
@@ -38,15 +39,17 @@ export interface DefaultBodyProps {
   onWeightChange: (nodeId: string, mode: WeightMode) => void
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice) => void
   onUpdateVolWindow: (nodeId: string, value: number) => void
+  onUpdateMinCap: (nodeId: string, value: number) => void
+  onUpdateMaxCap: (nodeId: string, value: number) => void
   onFunctionWindow: (nodeId: string, value: number) => void
   onFunctionMetric: (nodeId: string, metric: MetricChoice) => void
   onFunctionRank: (nodeId: string, rank: RankChoice) => void
   onFunctionBottom: (nodeId: string, value: number) => void
-  tickerDatalistId?: string
   renderSlot: (slot: SlotId, depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
   underRollingNode?: boolean
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
 }
 
 export const DefaultBody = ({
@@ -55,15 +58,17 @@ export const DefaultBody = ({
   onWeightChange,
   onUpdateCappedFallback,
   onUpdateVolWindow,
+  onUpdateMinCap,
+  onUpdateMaxCap,
   onFunctionWindow,
   onFunctionMetric,
   onFunctionRank,
   onFunctionBottom,
-  tickerDatalistId,
   renderSlot,
   parameterRanges = [],
   onUpdateRange,
   underRollingNode,
+  openTickerModal,
 }: DefaultBodyProps) => {
   const [showWindowConfig, setShowWindowConfig] = useState(false)
   const [showBottomConfig, setShowBottomConfig] = useState(false)
@@ -91,9 +96,13 @@ export const DefaultBody = ({
                     mode={node.weighting}
                     cappedFallback={cappedFallback}
                     volWindow={volWindow}
-                    tickerDatalistId={tickerDatalistId}
+                    minCap={node.minCap}
+                    maxCap={node.maxCap}
                     onUpdateCappedFallback={(v) => onUpdateCappedFallback(node.id, v)}
                     onUpdateVolWindow={(v) => onUpdateVolWindow(node.id, v)}
+                    onUpdateMinCap={(v) => onUpdateMinCap(node.id, v)}
+                    onUpdateMaxCap={(v) => onUpdateMaxCap(node.id, v)}
+                    openTickerModal={openTickerModal}
                   />
                 </div>
               ) : isFunctionDesc ? (

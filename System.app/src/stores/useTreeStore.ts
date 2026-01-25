@@ -23,6 +23,8 @@ import {
   updateWeight,
   updateCappedFallback,
   updateVolWindow,
+  updateMinCap,
+  updateMaxCap,
   updateCollapse,
   setAllCollapsed,
   setCollapsedBelow,
@@ -71,6 +73,8 @@ interface TreeState {
   updateWeight: (nodeId: string, weighting: WeightMode, branch?: 'then' | 'else') => void
   updateCappedFallback: (nodeId: string, choice: PositionChoice, branch?: 'then' | 'else') => void
   updateVolWindow: (nodeId: string, days: number, branch?: 'then' | 'else') => void
+  updateMinCap: (nodeId: string, value: number, branch?: 'then' | 'else') => void
+  updateMaxCap: (nodeId: string, value: number, branch?: 'then' | 'else') => void
   toggleCollapse: (nodeId: string, collapsed: boolean) => void
   collapseAll: (collapsed: boolean) => void
   collapseBelow: (targetId: string, collapsed: boolean) => void
@@ -227,6 +231,16 @@ export const useTreeStore = create<TreeState>()(
       updateVolWindow: (nodeId, days, branch) =>
         set((state) => ({
           root: updateVolWindow(state.root, nodeId, days, branch),
+        })),
+
+      updateMinCap: (nodeId, value, branch) =>
+        set((state) => ({
+          root: updateMinCap(state.root, nodeId, value, branch),
+        })),
+
+      updateMaxCap: (nodeId, value, branch) =>
+        set((state) => ({
+          root: updateMaxCap(state.root, nodeId, value, branch),
         })),
 
       toggleCollapse: (nodeId, collapsed) =>

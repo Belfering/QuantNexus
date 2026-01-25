@@ -129,8 +129,7 @@
       "Bash(wc:*)",
       "Bash(if [ -d \"C:\\\\Users\\\\Trader\\\\Desktop\\\\test\" ])",
       "Bash(then ls -la \"C:\\\\Users\\\\Trader\\\\Desktop\\\\test\")",
-      "Bash(else echo \"Directory does not exist\")",
-      "Bash(git log:*)"
+      "Bash(else echo \"Directory does not exist\")"
     ]
   }
 }

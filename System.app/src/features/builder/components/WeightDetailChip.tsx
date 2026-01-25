@@ -1,10 +1,10 @@
 // src/features/builder/components/WeightDetailChip.tsx
-// Shows additional weight configuration: capped fallback or volatility window
+// Shows additional weight configuration: min/max caps, capped fallback, or volatility window
 
-import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import type { WeightMode, PositionChoice } from '../../../types'
+import type { WeightMode, PositionChoice, BlockKind } from '../../../types'
+import type { TickerModalMode } from '@/shared/components'
 
 export interface WeightDetailChipProps {
   mode: WeightMode
@@ -12,21 +12,30 @@ export interface WeightDetailChipProps {
   cappedFallback?: PositionChoice
   /** For inverse/pro mode: the volatility window in days */
   volWindow?: number
-  /** Datalist ID for ticker autocomplete */
-  tickerDatalistId?: string
-  onUpdateCappedFallback: (value: PositionChoice) => void
-  onUpdateVolWindow: (value: number) => void
+  /** Min cap percentage (0-100) */
+  minCap?: number
+  /** Max cap percentage (0-100) */
+  maxCap?: number
+  onUpdateCappedFallback?: (value: PositionChoice) => void
+  onUpdateVolWindow?: (value: number) => void
+  onUpdateMinCap?: (value: number) => void
+  onUpdateMaxCap?: (value: number) => void
+  /** Ticker modal opener */
+  openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string) => void
 }
 
 export const WeightDetailChip = ({
   mode,
   cappedFallback = 'Empty',
   volWindow = 20,
-  tickerDatalistId,
+  minCap = 0,
+  maxCap = 100,
   onUpdateCappedFallback,
   onUpdateVolWindow,
+  onUpdateMinCap,
+  onUpdateMaxCap,
+  openTickerModal,
 }: WeightDetailChipProps) => {
-  const [draft, setDraft] = useState<string | undefined>(undefined)
 
   // Only show for relevant modes
   if (mode !== 'capped' && mode !== 'inverse' && mode !== 'pro') {
@@ -34,63 +43,135 @@ export const WeightDetailChip = ({
   }
 
   if (mode === 'capped') {
-    const shown = draft ?? cappedFallback
-
-    const commit = (raw: string) => {
-      const normalized = String(raw || '').trim().toUpperCase()
-      const next = !normalized ? 'Empty' : normalized === 'EMPTY' ? 'Empty' : normalized
-      onUpdateCappedFallback(next)
-    }
-
     return (
-      <Badge variant="default" className="gap-1.5 py-1 px-2.5">
-        <span>Fallback</span>
-        <Input
-          list={tickerDatalistId}
-          value={shown}
-          onClick={(e) => e.stopPropagation()}
-          onFocus={(e) => {
-            e.stopPropagation()
-            e.currentTarget.select()
-            if ((draft ?? cappedFallback) === 'Empty') {
-              setDraft('')
-            }
-          }}
-          onChange={(e) => {
-            e.stopPropagation()
-            setDraft(e.target.value)
-          }}
-          onBlur={(e) => {
-            e.stopPropagation()
-            commit(e.target.value)
-            setDraft(undefined)
-          }}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
-            if (e.key === 'Escape') setDraft(undefined)
-          }}
-          placeholder="Ticker"
-          spellCheck={false}
-          className="w-[120px] h-7 px-1.5 inline-flex"
-        />
-      </Badge>
+      <>
+        {/* Min Cap Badge */}
+        <Badge
+          variant="default"
+          className="gap-1.5 py-1 px-2.5"
+          title="Minimum allocation percentage per child. If total exceeds 100%, all allocations are scaled down proportionally."
+        >
+          <span>Min</span>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            value={minCap}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onUpdateMinCap?.(Number(e.target.value))}
+            className="w-[60px] h-7 px-1.5 inline-flex"
+          />
+          <span>%</span>
+        </Badge>
+
+        {/* Max Cap Badge */}
+        <Badge
+          variant="default"
+          className="gap-1.5 py-1 px-2.5"
+          title="Maximum allocation percentage per child. Excess allocation goes to the Fallback ticker."
+        >
+          <span>Max</span>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            value={maxCap}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onUpdateMaxCap?.(Number(e.target.value))}
+            className="w-[60px] h-7 px-1.5 inline-flex"
+          />
+          <span>%</span>
+        </Badge>
+
+        {/* Fallback Badge */}
+        <Badge
+          variant="default"
+          className="gap-1.5 py-1 px-2.5"
+          title="Ticker that receives excess allocation when children are capped at max%. Enter 'Empty' for cash."
+        >
+          <span>Fallback</span>
+          <button
+            className="h-7 px-2 mx-1 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+            onClick={(e) => {
+              e.stopPropagation()
+              openTickerModal?.(
+                (ticker) => {
+                  const normalized = String(ticker || '').trim().toUpperCase()
+                  const next = !normalized ? 'Empty' : normalized === 'EMPTY' ? 'Empty' : normalized
+                  onUpdateCappedFallback?.(next)
+                },
+                undefined,
+                ['tickers'],
+                'basic',
+                cappedFallback
+              )
+            }}
+          >
+            {cappedFallback}
+          </button>
+        </Badge>
+      </>
     )
   }
 
   // inverse or pro volatility
   return (
-    <Badge variant="default" className="gap-1.5 py-1 px-2.5">
-      <span>of the last</span>
-      <Input
-        type="number"
-        value={volWindow}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => onUpdateVolWindow(Number(e.target.value))}
-        className="w-[70px] h-7 px-1.5 inline-flex"
-        min={1}
-      />
-      <span>days</span>
-    </Badge>
+    <>
+      {/* Volatility Window Badge */}
+      <Badge
+        variant="default"
+        className="gap-1.5 py-1 px-2.5"
+        title={`Calculate ${mode === 'inverse' ? 'inverse' : 'pro'} volatility weights using this lookback period in days`}
+      >
+        <span>of the last</span>
+        <Input
+          type="number"
+          value={volWindow}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onUpdateVolWindow?.(Number(e.target.value))}
+          className="w-[70px] h-7 px-1.5 inline-flex"
+          min={1}
+        />
+        <span>days</span>
+      </Badge>
+
+      {/* Min Cap Badge */}
+      <Badge
+        variant="default"
+        className="gap-1.5 py-1 px-2.5"
+        title="Minimum allocation percentage per child. If total exceeds 100%, all allocations are scaled down proportionally."
+      >
+        <span>Min</span>
+        <Input
+          type="number"
+          min={0}
+          max={100}
+          value={minCap}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onUpdateMinCap?.(Number(e.target.value))}
+          className="w-[60px] h-7 px-1.5 inline-flex"
+        />
+        <span>%</span>
+      </Badge>
+
+      {/* Max Cap Badge */}
+      <Badge
+        variant="default"
+        className="gap-1.5 py-1 px-2.5"
+        title="Maximum allocation percentage per child. Excess allocation is redistributed to uncapped positions."
+      >
+        <span>Max</span>
+        <Input
+          type="number"
+          min={0}
+          max={100}
+          value={maxCap}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onUpdateMaxCap?.(Number(e.target.value))}
+          className="w-[60px] h-7 px-1.5 inline-flex"
+        />
+        <span>%</span>
+      </Badge>
+    </>
   )
 }

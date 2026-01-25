@@ -24,7 +24,6 @@ export interface AltExitBodyProps {
   onUpdateCappedFallback: (nodeId: string, value: PositionChoice, branch?: 'then' | 'else') => void
   onUpdateVolWindow: (nodeId: string, value: number, branch?: 'then' | 'else') => void
   openTickerModal?: (onSelect: (ticker: string) => void, restrictTo?: string[], modes?: TickerModalMode[], nodeKind?: BlockKind, initialValue?: string, nodeId?: string) => void
-  tickerDatalistId?: string
   renderSlot: (slot: 'then' | 'else', depthPx: number) => React.ReactNode
   parameterRanges?: ParameterRange[]
   onUpdateRange?: (paramId: string, enabled: boolean, range?: { min: number; max: number; step: number }) => void
@@ -47,7 +46,6 @@ export const AltExitBody = ({
   onUpdateCappedFallback,
   onUpdateVolWindow,
   openTickerModal,
-  tickerDatalistId,
   renderSlot,
   parameterRanges,
   onUpdateRange,
@@ -145,9 +143,9 @@ export const AltExitBody = ({
           mode={weightingThen}
           cappedFallback={thenCappedFallback}
           volWindow={thenVolWindow}
-          tickerDatalistId={tickerDatalistId}
           onUpdateCappedFallback={(v) => onUpdateCappedFallback(node.id, v, 'then')}
           onUpdateVolWindow={(v) => onUpdateVolWindow(node.id, v, 'then')}
+          openTickerModal={openTickerModal}
         />
       </div>
       {renderSlot('then', 3 * 14)}
@@ -240,9 +238,9 @@ export const AltExitBody = ({
           mode={weightingElse}
           cappedFallback={elseCappedFallback}
           volWindow={elseVolWindow}
-          tickerDatalistId={tickerDatalistId}
           onUpdateCappedFallback={(v) => onUpdateCappedFallback(node.id, v, 'else')}
           onUpdateVolWindow={(v) => onUpdateVolWindow(node.id, v, 'else')}
+          openTickerModal={openTickerModal}
         />
       </div>
       {renderSlot('else', 3 * 14)}

@@ -46,6 +46,7 @@ interface UseAnalyzeRunnerOptions {
   // For runModelRobustness - the active bot context
   activeBot?: {
     savedBotId?: string
+    splitConfig?: import('@/types').ISOOSSplitConfig
   }
   current: FlowNode
 }
@@ -68,6 +69,7 @@ export function useAnalyzeRunner({
   // Backtest settings from store
   const backtestMode = useBacktestStore((s) => s.backtestMode)
   const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
+  const backtestBenchmark = useBacktestStore((s) => s.backtestBenchmark)
   const benchmarkMetrics = useBacktestStore((s) => s.benchmarkMetrics)
 
   // State setters from store
@@ -92,7 +94,7 @@ export function useAnalyzeRunner({
         const res = await fetch(`${API_BASE}/bots/${bot.id}/run-backtest`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: bot.backtestMode || 'CC', costBps: bot.backtestCostBps ?? 5, forceRefresh }),
+          body: JSON.stringify({ mode: bot.backtestMode || 'CC', costBps: bot.backtestCostBps ?? 5, forceRefresh, benchmarkTicker: backtestBenchmark }),
         })
 
         if (res.ok) {
@@ -369,7 +371,7 @@ export function useAnalyzeRunner({
         const res = await fetch(`${API_BASE}/bots/${bot.id}/sanity-report`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: bot.backtestMode || 'CC', costBps: bot.backtestCostBps ?? 5 }),
+          body: JSON.stringify({ mode: bot.backtestMode || 'CC', costBps: bot.backtestCostBps ?? 5, benchmarkTicker: backtestBenchmark }),
         })
 
         if (res.ok) {
@@ -423,6 +425,33 @@ export function useAnalyzeRunner({
   const runModelRobustness = useCallback(async () => {
     const savedBotId = activeBot?.savedBotId
 
+    // Get oosStartDate and splitConfig from the appropriate backtest result
+    // Check forgeBacktestResult first (Forge tab), then modelBacktestResult (Model tab)
+    const backtestResult = savedBotId
+      ? savedBots.find(b => b.id === savedBotId)?.backtest?.result
+      : (useBacktestStore.getState().forgeBacktestResult || useBacktestStore.getState().modelBacktestResult)
+
+    const oosStartDate = backtestResult?.oosStartDate || null
+
+    // Get splitConfig from activeBot
+    const splitConfig = activeBot?.splitConfig || undefined
+
+    console.log('[runModelRobustness] DEBUG activeBot:', {
+      exists: !!activeBot,
+      id: activeBot?.id,
+      savedBotId: activeBot?.savedBotId,
+      hasSplitConfig: !!activeBot?.splitConfig,
+      splitConfig: activeBot?.splitConfig,
+      tabContext: (activeBot as any)?.tabContext,
+      subtabContext: (activeBot as any)?.subtabContext,
+    })
+    console.log('[runModelRobustness] oosStartDate:', oosStartDate)
+    console.log('[runModelRobustness] splitConfig (extracted):', splitConfig)
+    console.log('[runModelRobustness] backtestResult has IS/OOS?', {
+      hasIS: !!backtestResult?.isMetrics,
+      hasOOS: !!backtestResult?.oosMetrics,
+    })
+
     setModelSanityReport({ status: 'loading' })
 
     try {
@@ -433,7 +462,7 @@ export function useAnalyzeRunner({
         res = await fetch(`${API_BASE}/bots/${savedBotId}/sanity-report`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: backtestMode, costBps: backtestCostBps }),
+          body: JSON.stringify({ mode: backtestMode, costBps: backtestCostBps, oosStartDate, splitConfig, benchmarkTicker: backtestBenchmark }),
         })
       } else {
         // Use direct payload endpoint for unsaved strategies
@@ -441,12 +470,16 @@ export function useAnalyzeRunner({
         res = await fetch(`${API_BASE}/sanity-report`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ payload, mode: backtestMode, costBps: backtestCostBps }),
+          body: JSON.stringify({ payload, mode: backtestMode, costBps: backtestCostBps, oosStartDate, splitConfig, benchmarkTicker: backtestBenchmark }),
         })
       }
 
       if (res.ok) {
         const data = await res.json() as { success: boolean; report: SanityReport; cached: boolean; cachedAt?: number }
+        console.log('[runModelRobustness] Report received, has IS/OOS?', {
+          hasISPathRisk: !!data.report.pathRisk.isPathRisk,
+          hasOOSPathRisk: !!data.report.pathRisk.oosPathRisk,
+        })
         setModelSanityReport({ status: 'done', report: data.report })
       } else {
         const errorData = await res.json().catch(() => ({ error: 'Server sanity report failed' }))
@@ -456,7 +489,7 @@ export function useAnalyzeRunner({
       const message = String((err as Error)?.message || err)
       setModelSanityReport({ status: 'error', error: message })
     }
-  }, [activeBot?.savedBotId, current, backtestMode, backtestCostBps, setModelSanityReport])
+  }, [activeBot?.savedBotId, current, backtestMode, backtestCostBps, savedBots, setModelSanityReport])
 
   /**
    * Run ticker contribution analysis

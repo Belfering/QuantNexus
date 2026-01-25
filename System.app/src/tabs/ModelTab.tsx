@@ -36,6 +36,8 @@ import {
   updateWeight,
   updateCappedFallback,
   updateVolWindow,
+  updateMinCap,
+  updateMaxCap,
   updateCollapse,
   setCollapsedBelow,
   updateColor,
@@ -187,6 +189,12 @@ export function ModelTab({
   }
   const handleUpdateVolWindow = (id: string, days: number, branch?: 'then' | 'else') => {
     treeStore.updateVolWindow(id, days, branch)
+  }
+  const handleUpdateMinCap = (id: string, value: number, branch?: 'then' | 'else') => {
+    treeStore.updateMinCap(id, value, branch)
+  }
+  const handleUpdateMaxCap = (id: string, value: number, branch?: 'then' | 'else') => {
+    treeStore.updateMaxCap(id, value, branch)
   }
   const handleColorChange = (id: string, color?: string) => {
     treeStore.updateColor(id, color)
@@ -1237,6 +1245,8 @@ export function ModelTab({
                   onWeightChange={handleWeightChange}
                   onUpdateCappedFallback={handleUpdateCappedFallback}
                   onUpdateVolWindow={handleUpdateVolWindow}
+                  onUpdateMinCap={handleUpdateMinCap}
+                  onUpdateMaxCap={handleUpdateMaxCap}
                   onColorChange={handleColorChange}
                   onToggleCollapse={handleToggleCollapse}
                   onNumberedQuantifier={handleNumberedQuantifier}

@@ -29,7 +29,7 @@ const activeBatchJobs = new Map()
  *   combinations: BranchCombination[],
  *   parameterRanges: ParameterRange[],
  *   hasAutoMode: boolean,
- *   options: { mode, costBps, splitConfig },
+ *   options: { mode, costBps, splitConfig, benchmarkTicker },
  *   parquetDir?: string
  * }
  */
