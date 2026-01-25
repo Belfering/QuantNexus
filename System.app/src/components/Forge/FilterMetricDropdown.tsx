@@ -198,7 +198,7 @@ export function FilterMetricDropdown({ value, onChange, className, disabled }: F
       </button>
 
       {open && !disabled && (
-        <div className="absolute z-[200] mt-1 bg-background border border-border rounded shadow-lg w-full max-h-[400px] overflow-y-auto">
+        <div className="absolute z-[200] mt-1 bg-background border border-border rounded shadow-lg min-w-full w-max max-h-[400px] overflow-y-auto">
           {allMetrics.map((metric) => (
             <div
               key={metric}
