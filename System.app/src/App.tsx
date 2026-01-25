@@ -1533,20 +1533,6 @@ function App() {
                       }}
                     >
                       <span className="truncate">{label}</span>
-                      {/* Save status badge */}
-                      {!b.savedBotId ? (
-                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 whitespace-nowrap">
-                          Unsaved
-                        </span>
-                      ) : b.hasUnsavedChanges ? (
-                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                          *
-                        </span>
-                      ) : (
-                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400 whitespace-nowrap">
-                          Saved
-                        </span>
-                      )}
                     </Button>
                     <div className="flex gap-1 mt-1 justify-center items-center flex-wrap">
                       <BacktestModeTag mode={botBacktestMode} />
@@ -1574,6 +1560,29 @@ function App() {
                       >
                         Close
                       </Button>
+                      {/* Save status indicator bubble */}
+                      {!b.savedBotId ? (
+                        <div
+                          className="w-5 h-5 rounded-full bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 flex items-center justify-center text-xs font-semibold cursor-help"
+                          title="Unsaved work"
+                        >
+                          ?
+                        </div>
+                      ) : b.hasUnsavedChanges ? (
+                        <div
+                          className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-semibold cursor-help"
+                          title="Unsaved changes"
+                        >
+                          *
+                        </div>
+                      ) : (
+                        <div
+                          className="w-5 h-5 rounded-full bg-green-500/20 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-semibold cursor-help"
+                          title="Saved"
+                        >
+                          ✓
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
