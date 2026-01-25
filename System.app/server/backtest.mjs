@@ -4091,10 +4091,10 @@ const calculateTIM = (dailyAllocations) => {
   if (dailyAllocations.length === 0) return 0
 
   let daysInMarket = 0
-  for (const { alloc } of dailyAllocations) {
+  for (const { entries } of dailyAllocations) {
     // Check if any non-cash position has weight
     let hasMarketPosition = false
-    for (const [ticker, weight] of Object.entries(alloc)) {
+    for (const { ticker, weight } of entries) {
       // Consider invested if ticker is not BIL, Empty, or has 0 weight
       const normalizedTicker = ticker.toUpperCase().trim()
       if (weight > 0 && normalizedTicker !== 'BIL' && normalizedTicker !== 'EMPTY') {
@@ -4454,7 +4454,11 @@ export async function runBacktest(payload, options = {}) {
 
     // Store daily allocation for allocations tab (use start date = entry/holding date, matching QuantMage)
     const dateStr = safeIsoDate(db.dates[start])
-    dailyAllocations.push({ date: dateStr, alloc: { ...alloc } })
+    // Transform alloc object to entries array for frontend
+    const entries = Object.entries(alloc)
+      .filter(([_, weight]) => weight > 0)
+      .map(([ticker, weight]) => ({ ticker, weight }))
+    dailyAllocations.push({ date: dateStr, entries })
 
     let gross = 0
     for (const [ticker, w] of Object.entries(alloc)) {

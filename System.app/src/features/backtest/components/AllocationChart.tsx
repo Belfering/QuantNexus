@@ -259,10 +259,6 @@ export function AllocationChart({
                     <span className="font-medium">{s.name}</span>
                   </div>
                 ))}
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="w-3 h-3 rounded flex-shrink-0" style={{ background: '#64748b' }} />
-                  <span className="font-medium">Cash</span>
-                </div>
               </div>
             </>
           )}
