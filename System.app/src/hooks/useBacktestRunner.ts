@@ -243,25 +243,10 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
       let isMonthly = undefined
       let oosMonthly = undefined
 
-      if (serverResult.isAllocations) {
-        // Transform from backend format { date, alloc } to frontend format { date, entries }
-        isAllocations = (serverResult.isAllocations || []).map((a: { date: string; alloc: Record<string, number> }) => ({
-          date: a.date,
-          entries: Object.entries(a.alloc || {})
-            .filter(([_, w]) => (w as number) > 0)
-            .map(([ticker, weight]) => ({ ticker, weight: weight as number }))
-            .sort((x, y) => y.weight - x.weight),
-        }))
-      }
-      if (serverResult.oosAllocations) {
-        // Transform from backend format { date, alloc } to frontend format { date, entries }
-        oosAllocations = (serverResult.oosAllocations || []).map((a: { date: string; alloc: Record<string, number> }) => ({
-          date: a.date,
-          entries: Object.entries(a.alloc || {})
-            .filter(([_, w]) => (w as number) > 0)
-            .map(([ticker, weight]) => ({ ticker, weight: weight as number }))
-            .sort((x, y) => y.weight - x.weight),
-        }))
+      // Split allocations on frontend (same approach as allocation charts)
+      if (oosStartDate && allocations.length > 0) {
+        isAllocations = allocations.filter(a => a.date < oosStartDate)
+        oosAllocations = allocations.filter(a => a.date >= oosStartDate)
       }
 
       // Compute monthly returns for IS/OOS periods from filtered days
