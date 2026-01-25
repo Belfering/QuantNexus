@@ -23,6 +23,7 @@
     "clsx": "^2.1.1",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.1",
     "duckdb": "^1.3.2",
     "express": "^4.21.2",

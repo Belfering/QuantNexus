@@ -147,21 +147,41 @@ const deleteBotSchema = {
   }),
   query: z.object({
     ownerId: z.string().min(1),
+    hardDelete: z.enum(['true', 'false']).optional(),
   }),
 }
 
 /**
- * DELETE /api/bots/:id - Delete a bot (soft delete)
+ * DELETE /api/bots/:id - Delete a bot (soft or hard depending on hardDelete param)
  */
 router.delete('/:id', validate(deleteBotSchema), asyncHandler(async (req, res) => {
   await ensureDbInitialized()
-  const result = await database.deleteBot(req.params.id, req.query.ownerId)
+
+  const { id } = req.params
+  const { ownerId, hardDelete } = req.query
+
+  let result
+  try {
+    if (hardDelete === 'true') {
+      // Hard delete (for Nexus/Atlas bots)
+      result = await database.hardDeleteBot(id, ownerId)
+    } else {
+      // Soft delete (for user-created bots)
+      result = await database.deleteBot(id, ownerId)
+    }
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
 
   if (!result) {
     return res.status(404).json({ error: 'Bot not found or not owned by user' })
   }
 
-  logger.info('Bot deleted', { id: req.params.id, ownerId: req.query.ownerId })
+  logger.info('Bot deleted', {
+    id,
+    ownerId,
+    type: hardDelete === 'true' ? 'hard' : 'soft'
+  })
   res.json({ success: true })
 }))
 
@@ -213,6 +233,73 @@ router.get('/:id/metrics', asyncHandler(async (req, res) => {
       sortinoRatio: bot.sortinoRatio,
     }
   })
+}))
+
+// ============================================
+// TRASH OPERATIONS
+// ============================================
+
+const trashQuerySchema = {
+  query: z.object({
+    userId: z.string().min(1),
+  }),
+}
+
+/**
+ * GET /api/bots/trash - Get deleted bots for trash view
+ */
+router.get('/trash', validate(trashQuerySchema), asyncHandler(async (req, res) => {
+  await ensureDbInitialized()
+  const deletedBots = await database.getDeletedBotsByOwner(req.query.userId)
+  res.json({ bots: deletedBots })
+}))
+
+const restoreBotSchema = {
+  params: z.object({
+    id: z.string().min(1),
+  }),
+  query: z.object({
+    ownerId: z.string().min(1),
+  }),
+}
+
+/**
+ * POST /api/bots/:id/restore - Restore a deleted bot
+ */
+router.post('/:id/restore', validate(restoreBotSchema), asyncHandler(async (req, res) => {
+  await ensureDbInitialized()
+  const result = await database.restoreBot(req.params.id, req.query.ownerId)
+
+  if (!result) {
+    return res.status(404).json({ error: 'Bot not found in trash or not owned by user' })
+  }
+
+  logger.info('Bot restored from trash', { id: req.params.id, ownerId: req.query.ownerId })
+  res.json({ success: true })
+}))
+
+const permanentDeleteBotSchema = {
+  params: z.object({
+    id: z.string().min(1),
+  }),
+  query: z.object({
+    ownerId: z.string().min(1),
+  }),
+}
+
+/**
+ * DELETE /api/bots/:id/permanent - Permanently delete a bot from trash
+ */
+router.delete('/:id/permanent', validate(permanentDeleteBotSchema), asyncHandler(async (req, res) => {
+  await ensureDbInitialized()
+  const result = await database.permanentlyDeleteBot(req.params.id, req.query.ownerId)
+
+  if (!result) {
+    return res.status(404).json({ error: 'Bot not found in trash or not owned by user' })
+  }
+
+  logger.info('Bot permanently deleted', { id: req.params.id, ownerId: req.query.ownerId })
+  res.json({ success: true })
 }))
 
 // Re-export ensureDbInitialized for use by other features

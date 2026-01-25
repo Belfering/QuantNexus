@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { BacktestModeTag } from '@/components/ui/BacktestModeTag'
 import {
   type SanityReportState,
   type BenchmarkMetricsState,
@@ -178,6 +179,9 @@ export function AnalyzePanel(props: AnalyzePanelProps) {
     benchmarkMetrics,
   } = useBacktestStore()
 
+  // --- Local state ---
+  const [confirmNexusDelete, setConfirmNexusDelete] = useState<string | null>(null)
+
   // --- Computed values ---
   // Map watchlists by botId for quick lookup
   const watchlistsByBotId = useMemo(() => {
@@ -228,7 +232,7 @@ export function AnalyzePanel(props: AnalyzePanelProps) {
             <Select
               value={uiState.analyzeFilterWatchlistId ?? ''}
               onChange={(e) =>
-                setUiState((prev) => ({ ...prev, analyzeFilterWatchlistId: e.target.value ? e.target.value : null }))
+                setUiState((prev) => ({ ...(prev || {}), analyzeFilterWatchlistId: e.target.value ? e.target.value : null }))
               }
             >
               <option value="">All watchlists</option>
@@ -1068,7 +1072,7 @@ function BotCard(props: BotCardProps) {
     normalizeNodeForBacktest,
   } = props
 
-  const collapsed = uiState.analyzeCollapsedByBotId[b.id] ?? true
+  const collapsed = uiState.analyzeCollapsedByBotId?.[b.id] ?? true
   const analyzeState = analyzeBacktests[b.id]
   const tags = watchlistsByBotId.get(b.id) ?? []
 
@@ -1086,16 +1090,17 @@ function BotCard(props: BotCardProps) {
           variant="ghost"
           size="sm"
           onClick={() => {
-            const next = !(uiState.analyzeCollapsedByBotId[b.id] ?? true)
+            const next = !(uiState.analyzeCollapsedByBotId?.[b.id] ?? true)
             setUiState((prev) => ({
-              ...prev,
-              analyzeCollapsedByBotId: { ...prev.analyzeCollapsedByBotId, [b.id]: next },
+              ...(prev || {}),
+              analyzeCollapsedByBotId: { ...(prev?.analyzeCollapsedByBotId || {}), [b.id]: next },
             }))
             if (!next) runAnalyzeBacktest(b)
           }}
         >
           {collapsed ? 'Expand' : 'Collapse'}
         </Button>
+        {b.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
         <div className="font-black">{b.name}</div>
         <Badge variant={b.tags?.includes('Nexus') ? 'default' : b.tags?.includes('Atlas') ? 'default' : 'accent'}>
           {b.tags?.includes('Nexus') ? 'Nexus' : b.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
@@ -1129,9 +1134,52 @@ function BotCard(props: BotCardProps) {
           {b.builderId === userId && b.visibility !== 'community' && (
             <Button size="sm" onClick={() => handleCopySaved(b)}>Copy JSON</Button>
           )}
-          {/* Only show Delete for bot owners - but NOT for published systems */}
-          {b.builderId === userId && !(b.tags?.includes('Nexus') || b.tags?.includes('Atlas')) && (
-            <Button variant="destructive" size="sm" onClick={() => handleDeleteSaved(b.id)}>Delete</Button>
+          {/* Show Delete for bot owners (including Nexus/Atlas with confirmation) */}
+          {b.builderId === userId && (
+            <>
+              {(b.tags?.includes('Nexus') || b.tags?.includes('Atlas')) ? (
+                // Nexus/Atlas bot - show confirmation
+                confirmNexusDelete === b.id ? (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        handleDeleteSaved(b.id, true) // hardDelete=true
+                        setConfirmNexusDelete(null)
+                      }}
+                    >
+                      Confirm
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setConfirmNexusDelete(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setConfirmNexusDelete(b.id)}
+                    title="This will permanently delete the system. You can re-download it from Nexus tab."
+                  >
+                    Delete
+                  </Button>
+                )
+              ) : (
+                // Regular bot - soft delete (goes to trash)
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDeleteSaved(b.id)}
+                >
+                  Delete
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1236,7 +1284,7 @@ function BotCardContent(props: BotCardContentProps) {
     removeBotFromWatchlist,
   } = props
 
-  const currentTab = uiState.analyzeBotCardTab[b.id] ?? 'overview'
+  const currentTab = uiState.analyzeBotCardTab?.[b.id] ?? 'overview'
 
   return (
     <div className="flex flex-col gap-2.5 w-full">
@@ -1266,8 +1314,8 @@ function BotCardContent(props: BotCardContentProps) {
           size="sm"
           variant={currentTab === 'overview' ? 'default' : 'outline'}
           onClick={() => setUiState((prev) => ({
-            ...prev,
-            analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'overview' },
+            ...(prev || {}),
+            analyzeBotCardTab: { ...(prev?.analyzeBotCardTab || {}), [b.id]: 'overview' },
           }))}
         >
           Overview
@@ -1276,8 +1324,8 @@ function BotCardContent(props: BotCardContentProps) {
           size="sm"
           variant={currentTab === 'advanced' ? 'default' : 'outline'}
           onClick={() => setUiState((prev) => ({
-            ...prev,
-            analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'advanced' },
+            ...(prev || {}),
+            analyzeBotCardTab: { ...(prev?.analyzeBotCardTab || {}), [b.id]: 'advanced' },
           }))}
         >
           Benchmarks
@@ -1286,8 +1334,8 @@ function BotCardContent(props: BotCardContentProps) {
           size="sm"
           variant={currentTab === 'robustness' ? 'default' : 'outline'}
           onClick={() => setUiState((prev) => ({
-            ...prev,
-            analyzeBotCardTab: { ...prev.analyzeBotCardTab, [b.id]: 'robustness' },
+            ...(prev || {}),
+            analyzeBotCardTab: { ...(prev?.analyzeBotCardTab || {}), [b.id]: 'robustness' },
           }))}
         >
           Robustness

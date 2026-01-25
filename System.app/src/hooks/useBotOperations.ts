@@ -447,9 +447,9 @@ export function useBotOperations({
   /**
    * Delete a saved bot
    */
-  const handleDeleteSaved = useCallback(async (id: string) => {
+  const handleDeleteSaved = useCallback(async (id: string, hardDelete = false) => {
     if (userId) {
-      await deleteBotFromApi(userId, id)
+      await deleteBotFromApi(userId, id, hardDelete)
     }
     setSavedBots((prev) => prev.filter((b) => b.id !== id))
     setWatchlists((prev) => prev.map((w) => ({ ...w, botIds: w.botIds.filter((x) => x !== id) })))

@@ -24,6 +24,7 @@ import { Card } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { LoginScreen } from '@/components/LoginScreen'
 import { BacktestModeTag } from '@/components/ui/BacktestModeTag'
+import { TrashModal } from '@/components/TrashModal'
 import { cn } from '@/lib/utils'
 import type {
   FlowNode,
@@ -67,6 +68,7 @@ import { useCorrelation } from './features/nexus'
 // AdminSubtab, DatabasesSubtab types now used via useUIStore
 import {
   // fetchNexusBotsFromApi, loadBotsFromApi, createBotInApi - moved to useUserDataSync (Phase 2N-21)
+  loadBotsFromApi, // Re-imported for trash modal restore callback
   updateBotInApi,
   // loadWatchlistsFromApi, createWatchlistInApi, addBotToWatchlistInApi - moved to useUserDataSync (Phase 2N-21)
   // removeBotFromWatchlistInApi - moved to useWatchlistCallbacks (Phase 2N-20)
@@ -259,6 +261,8 @@ const getEligibleBots = (allBots: SavedBot[], userId: UserId): SavedBot[] => {
 
 function App() {
   const [deviceTheme] = useState<ThemeMode>(() => loadDeviceThemeMode())
+  const [trashModalOpen, setTrashModalOpen] = useState(false)
+  const [trashModalContext, setTrashModalContext] = useState<'model' | 'forge'>('model')
 
   // Ticker search modal hook
   // UI Store - ticker modal
@@ -785,6 +789,20 @@ function App() {
     setIsImporting,
   })
 
+  // Handler for opening trash modal
+  const handleOpenTrash = (context: 'model' | 'forge') => {
+    setTrashModalContext(context)
+    setTrashModalOpen(true)
+  }
+
+  // Handler for when a bot is restored from trash
+  const handleBotRestored = () => {
+    // Refresh the saved bots list in Analyze tab
+    if (userId) {
+      loadBotsFromApi(userId).then(setSavedBots)
+    }
+  }
+
   // Dashboard investment logic
   // Combine savedBots + allNexusBots (de-duped) for eligible bots
   const eligibleBots = useMemo(() => {
@@ -1171,6 +1189,7 @@ function App() {
                 ) : null}
               </div>
               <Button onClick={() => setTab('Analyze')} className="flex-1 rounded-none border-r border-border h-10">Open</Button>
+              <Button onClick={() => handleOpenTrash('model')} className="flex-1 rounded-none border-r border-border h-10">Trash</Button>
               <Button onClick={handleImport} disabled={isImporting} className="flex-1 rounded-none border-r border-border h-10">
                 {isImporting ? 'Importing...' : 'Import'}
               </Button>
@@ -1419,6 +1438,8 @@ function App() {
               // Refs
               flowchartScrollRef={flowchartScrollRef}
               floatingScrollRef={floatingScrollRef}
+              // Trash modal callback
+              onOpenTrash={handleOpenTrash}
             />
           </Suspense>
         ) : tab === 'Model' ? (
@@ -1530,6 +1551,15 @@ function App() {
           </Suspense>
         ) : null}
       </main>
+
+      {/* Trash Modal */}
+      <TrashModal
+        open={trashModalOpen}
+        onClose={() => setTrashModalOpen(false)}
+        userId={userId}
+        context={trashModalContext}
+        onBotRestored={handleBotRestored}
+      />
     </div>
   )
 }

@@ -166,4 +166,68 @@ router.delete('/:id', validate(deleteShardSchema), asyncHandler(async (req, res)
   res.json({ success: true })
 }))
 
+// ============================================
+// TRASH OPERATIONS
+// ============================================
+
+const trashQuerySchema = {
+  query: z.object({
+    userId: z.string().min(1),
+  }),
+}
+
+/**
+ * GET /api/shards/trash - Get deleted shards for trash view
+ */
+router.get('/trash', validate(trashQuerySchema), asyncHandler(async (req, res) => {
+  const deletedShards = await database.getDeletedShardsByUser(req.query.userId)
+  res.json({ shards: deletedShards })
+}))
+
+const restoreShardSchema = {
+  params: z.object({
+    id: z.string().min(1),
+  }),
+  query: z.object({
+    ownerId: z.string().min(1),
+  }),
+}
+
+/**
+ * POST /api/shards/:id/restore - Restore a deleted shard
+ */
+router.post('/:id/restore', validate(restoreShardSchema), asyncHandler(async (req, res) => {
+  const result = await database.restoreShard(req.params.id, req.query.ownerId)
+
+  if (!result) {
+    return res.status(404).json({ error: 'Shard not found in trash or not owned by user' })
+  }
+
+  logger.info('Shard restored from trash', { id: req.params.id, ownerId: req.query.ownerId })
+  res.json({ success: true })
+}))
+
+const permanentDeleteShardSchema = {
+  params: z.object({
+    id: z.string().min(1),
+  }),
+  query: z.object({
+    ownerId: z.string().min(1),
+  }),
+}
+
+/**
+ * DELETE /api/shards/:id/permanent - Permanently delete a shard from trash
+ */
+router.delete('/:id/permanent', validate(permanentDeleteShardSchema), asyncHandler(async (req, res) => {
+  const result = await database.permanentlyDeleteShard(req.params.id, req.query.ownerId)
+
+  if (!result) {
+    return res.status(404).json({ error: 'Shard not found in trash or not owned by user' })
+  }
+
+  logger.info('Shard permanently deleted', { id: req.params.id, ownerId: req.query.ownerId })
+  res.json({ success: true })
+}))
+
 export default router

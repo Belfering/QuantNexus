@@ -193,9 +193,13 @@ export const updateBotInApi = async (userId: UserId, bot: SavedBot): Promise<boo
 /**
  * Delete a bot from the database
  */
-export const deleteBotFromApi = async (userId: UserId, botId: string): Promise<boolean> => {
+export const deleteBotFromApi = async (userId: UserId, botId: string, hardDelete = false): Promise<boolean> => {
   try {
-    const res = await fetch(`${API_BASE}/bots/${botId}?ownerId=${userId}`, {
+    const queryParams = new URLSearchParams({ ownerId: userId })
+    if (hardDelete) {
+      queryParams.set('hardDelete', 'true')
+    }
+    const res = await fetch(`${API_BASE}/bots/${botId}?${queryParams}`, {
       method: 'DELETE',
     })
     return res.ok

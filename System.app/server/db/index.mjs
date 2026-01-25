@@ -1195,6 +1195,99 @@ export async function deleteBot(id, ownerId) {
   return result.changes > 0
 }
 
+/**
+ * Hard delete a Nexus/Atlas bot (immediate permanent deletion)
+ * @param {string} id - Bot ID
+ * @param {string} ownerId - User ID (for ownership verification)
+ * @returns {Promise<boolean>} True if deleted
+ */
+export async function hardDeleteBot(id, ownerId) {
+  // Verify bot has Nexus or Atlas tag before hard delete
+  const bot = sqlite.prepare(`
+    SELECT tags FROM bots WHERE id = ? AND owner_id = ?
+  `).get(id, ownerId)
+
+  if (!bot) return false
+
+  const tags = JSON.parse(bot.tags || '[]')
+  const isNexusOrAtlas = tags.includes('Nexus') || tags.includes('Atlas')
+
+  if (!isNexusOrAtlas) {
+    throw new Error('Only Nexus/Atlas bots can be hard deleted')
+  }
+
+  const result = sqlite.prepare(`
+    DELETE FROM bots WHERE id = ? AND owner_id = ?
+  `).run(id, ownerId)
+
+  return result.changes > 0
+}
+
+/**
+ * Get deleted bots for a user (trash view)
+ * @param {string} ownerId - User ID
+ * @returns {Promise<Array>} Array of deleted user-created bots with deletion timestamp
+ */
+export async function getDeletedBotsByOwner(ownerId) {
+  const bots = sqlite.prepare(`
+    SELECT * FROM bots
+    WHERE owner_id = ? AND deleted_at IS NOT NULL
+    ORDER BY deleted_at DESC
+  `).all(ownerId)
+
+  // Decompress payloads and attach metrics
+  const botsWithMetrics = await Promise.all(bots.map(async (bot) => {
+    const metricsRow = sqlite.prepare('SELECT * FROM bot_metrics WHERE bot_id = ?').get(bot.id)
+    if (bot.payload) {
+      bot.payload = await decompressPayload(bot.payload)
+    }
+    const tags = bot.tags ? JSON.parse(bot.tags) : []
+    return {
+      id: bot.id,
+      name: bot.name,
+      description: bot.description,
+      builderId: bot.owner_id,
+      payload: bot.payload,
+      tags,
+      backtestMode: bot.backtest_mode,
+      createdAt: bot.created_at,
+      updatedAt: bot.updated_at,
+      deletedAt: bot.deleted_at,
+      metrics: metricsRow || null,
+    }
+  }))
+
+  // Filter out Nexus/Atlas bots (they shouldn't be in trash)
+  return botsWithMetrics.filter(b => !b.tags.includes('Nexus') && !b.tags.includes('Atlas'))
+}
+
+/**
+ * Restore a deleted bot (set deleted_at = NULL)
+ * @param {string} id - Bot ID
+ * @param {string} ownerId - User ID (for ownership verification)
+ * @returns {Promise<boolean>} True if restored
+ */
+export async function restoreBot(id, ownerId) {
+  const result = sqlite.prepare(`
+    UPDATE bots SET deleted_at = NULL
+    WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL
+  `).run(id, ownerId)
+  return result.changes > 0
+}
+
+/**
+ * Permanently delete a bot (actual DELETE)
+ * @param {string} id - Bot ID
+ * @param {string} ownerId - User ID (for ownership verification)
+ * @returns {Promise<boolean>} True if deleted
+ */
+export async function permanentlyDeleteBot(id, ownerId) {
+  const result = sqlite.prepare(`
+    DELETE FROM bots WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL
+  `).run(id, ownerId)
+  return result.changes > 0
+}
+
 export async function updateBotMetrics(botId, metrics) {
   const existing = await db.query.botMetrics.findFirst({
     where: eq(schema.botMetrics.botId, botId),
@@ -1884,6 +1977,82 @@ export async function deleteShard(id, userId) {
   const now = Date.now()
   const result = sqlite.prepare('UPDATE saved_shards SET deleted_at = ? WHERE id = ? AND owner_id = ? AND deleted_at IS NULL').run(now, id, userId)
   return result.changes > 0
+}
+
+/**
+ * Get deleted shards for a user (trash view)
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} Array of deleted shards
+ */
+export async function getDeletedShardsByUser(userId) {
+  const shards = sqlite.prepare(`
+    SELECT id, name, description, source_job_ids, loaded_job_type,
+           branch_count, filter_summary, created_at, updated_at, deleted_at
+    FROM saved_shards
+    WHERE owner_id = ? AND deleted_at IS NOT NULL
+    ORDER BY deleted_at DESC
+  `).all(userId)
+
+  return shards.map(shard => ({
+    id: shard.id,
+    name: shard.name,
+    description: shard.description,
+    sourceJobIds: JSON.parse(shard.source_job_ids || '[]'),
+    loadedJobType: shard.loaded_job_type,
+    branchCount: shard.branch_count,
+    filterSummary: shard.filter_summary,
+    createdAt: shard.created_at,
+    updatedAt: shard.updated_at,
+    deletedAt: shard.deleted_at,
+  }))
+}
+
+/**
+ * Restore a deleted shard (set deleted_at = NULL)
+ * @param {string} id - Shard ID
+ * @param {string} userId - User ID (for ownership verification)
+ * @returns {Promise<boolean>} True if restored
+ */
+export async function restoreShard(id, userId) {
+  const result = sqlite.prepare(`
+    UPDATE saved_shards SET deleted_at = NULL
+    WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL
+  `).run(id, userId)
+  return result.changes > 0
+}
+
+/**
+ * Permanently delete a shard (actual DELETE)
+ * @param {string} id - Shard ID
+ * @param {string} userId - User ID (for ownership verification)
+ * @returns {Promise<boolean>} True if deleted
+ */
+export async function permanentlyDeleteShard(id, userId) {
+  const result = sqlite.prepare(`
+    DELETE FROM saved_shards WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL
+  `).run(id, userId)
+  return result.changes > 0
+}
+
+/**
+ * Auto-cleanup: Delete items older than 90 days
+ * @returns {Promise<{deletedBots: number, deletedShards: number}>}
+ */
+export async function cleanupOldDeletedItems() {
+  const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000)
+
+  const botsResult = sqlite.prepare(`
+    DELETE FROM bots WHERE deleted_at IS NOT NULL AND deleted_at < ?
+  `).run(ninetyDaysAgo)
+
+  const shardsResult = sqlite.prepare(`
+    DELETE FROM saved_shards WHERE deleted_at IS NOT NULL AND deleted_at < ?
+  `).run(ninetyDaysAgo)
+
+  return {
+    deletedBots: botsResult.changes,
+    deletedShards: shardsResult.changes,
+  }
 }
 
 // Export the raw sqlite connection for advanced queries

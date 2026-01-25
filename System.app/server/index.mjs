@@ -661,9 +661,34 @@ app.put('/api/tickers', async (req, res) => {
   }
 })
 
-app.get('/api/parquet-tickers', async (_req, res) => {
+app.get('/api/parquet-tickers', async (req, res) => {
   try {
-    res.json({ tickers: await listParquetTickers() })
+    const assetType = req.query.assetType // 'ETF', 'Stock', or undefined for all
+
+    // If filtering by asset type, query ticker registry for matching tickers
+    if (assetType === 'ETF') {
+      await tickerRegistry.ensureTickerRegistryTable()
+      const etfTickers = await tickerRegistry.getActiveUSETFs()
+      // Filter to only tickers that have parquet files
+      const allParquetTickers = await listParquetTickers()
+      const parquetSet = new Set(allParquetTickers)
+      const filtered = etfTickers.filter(t => parquetSet.has(t))
+      res.json({ tickers: filtered })
+    } else if (assetType === 'Stock') {
+      await tickerRegistry.ensureTickerRegistryTable()
+      const allActive = await tickerRegistry.getActiveUSTickers()
+      const etfTickers = await tickerRegistry.getActiveUSETFs()
+      const etfSet = new Set(etfTickers)
+      const stockTickers = allActive.filter(t => !etfSet.has(t))
+      // Filter to only tickers that have parquet files
+      const allParquetTickers = await listParquetTickers()
+      const parquetSet = new Set(allParquetTickers)
+      const filtered = stockTickers.filter(t => parquetSet.has(t))
+      res.json({ tickers: filtered })
+    } else {
+      // Return all parquet tickers
+      res.json({ tickers: await listParquetTickers() })
+    }
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) })
   }
@@ -4902,6 +4927,25 @@ app.listen(PORT, async () => {
 
   // Seed admin user if ADMIN_EMAIL and ADMIN_PASSWORD are set
   await seedAdminUser()
+
+  // Run cleanup of old deleted items on server startup
+  database.cleanupOldDeletedItems()
+    .then(result => {
+      console.log('[Cleanup] Removed old deleted items:', result)
+    })
+    .catch(err => {
+      console.error('[Cleanup] Error during cleanup:', err)
+    })
+
+  // Schedule daily cleanup (runs every 24 hours)
+  setInterval(async () => {
+    try {
+      const result = await database.cleanupOldDeletedItems()
+      console.log('[Cleanup] Daily cleanup completed:', result)
+    } catch (err) {
+      console.error('[Cleanup] Daily cleanup error:', err)
+    }
+  }, 24 * 60 * 60 * 1000) // 24 hours
 
   // NOTE: Full memory preload disabled - we now query parquet files directly from disk
   // However, we pre-cache common tickers (SPY, QQQ, etc.) for instant access

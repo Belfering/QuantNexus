@@ -132,6 +132,9 @@ export interface ForgeTabProps {
   // Scroll refs for floating scrollbar sync
   flowchartScrollRef: RefObject<HTMLDivElement | null>
   floatingScrollRef: RefObject<HTMLDivElement | null>
+
+  // Trash modal callback
+  onOpenTrash?: (context: 'model' | 'forge') => void
 }
 
 export function ForgeTab({
@@ -169,6 +172,8 @@ export function ForgeTab({
   // Refs
   flowchartScrollRef,
   floatingScrollRef,
+  // Trash modal callback
+  onOpenTrash,
 }: ForgeTabProps) {
   // --- Tree state from useTreeStore (Phase 2N-15c) ---
   // Get forgeSubtab first to determine which tree field to sync
@@ -2739,18 +2744,26 @@ export function ForgeTab({
         {forgeSubtab === 'Shards' && (
           <>
             {/* Shards Sub-Subtabs */}
-            <div className="flex gap-2 shrink-0 mb-4 px-6 pt-6">
+            <div className="flex gap-2 justify-between shrink-0 mb-4 px-6 pt-6">
+              <div className="flex gap-2">
+                <Button
+                  variant={shardsSubtab === 'shards' ? 'accent' : 'secondary'}
+                  onClick={() => setShardsSubtab('shards')}
+                >
+                  Shards
+                </Button>
+                <Button
+                  variant={shardsSubtab === 'results' ? 'accent' : 'secondary'}
+                  onClick={() => setShardsSubtab('results')}
+                >
+                  Run Results
+                </Button>
+              </div>
               <Button
-                variant={shardsSubtab === 'shards' ? 'accent' : 'secondary'}
-                onClick={() => setShardsSubtab('shards')}
+                variant="secondary"
+                onClick={() => onOpenTrash?.('forge')}
               >
-                Shards
-              </Button>
-              <Button
-                variant={shardsSubtab === 'results' ? 'accent' : 'secondary'}
-                onClick={() => setShardsSubtab('results')}
-              >
-                Run Results
+                Trash
               </Button>
             </div>
 
