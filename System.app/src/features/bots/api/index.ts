@@ -164,7 +164,11 @@ export const createBotInApi = async (userId: UserId, bot: SavedBot, isDraft = fa
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error('[API] Failed to create bot. Status:', res.status, 'Error:', errorText)
+      return null
+    }
     const { id } = await res.json() as { id: string }
     return id
   } catch (err) {

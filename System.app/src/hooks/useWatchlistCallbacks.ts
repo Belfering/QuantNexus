@@ -190,8 +190,14 @@ export function useWatchlistCallbacks({
           entry.id = createdId
           // Update BotSession with server-assigned ID if different from generated one
           setBots((prev) => prev.map((b) => (b.id === activeBotId ? { ...b, savedBotId: createdId } : b)))
+          setSavedBots((prev) => [entry, ...prev])
+        } else {
+          // Bot creation failed - don't add to watchlist or savedBots
+          console.error('[Save] Bot creation failed, aborting save operation')
+          // Clear the optimistic savedBotId we set earlier
+          setBots((prev) => prev.map((b) => (b.id === activeBotId ? { ...b, savedBotId: undefined } : b)))
+          return
         }
-        setSavedBots((prev) => [entry, ...prev])
       } else {
         // Update existing bot - save to API first
         const existingBot = savedBots.find((b) => b.id === savedBotId)
