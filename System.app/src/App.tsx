@@ -71,6 +71,7 @@ import {
   loadBotsFromApi, // Re-imported for trash modal restore callback
   createBotInApi, // Re-imported for auto-save draft functionality
   updateBotInApi,
+  deleteBotFromApi, // Re-imported for auto-discard to trash functionality
   // loadWatchlistsFromApi, createWatchlistInApi, addBotToWatchlistInApi - moved to useUserDataSync (Phase 2N-21)
   // removeBotFromWatchlistInApi - moved to useWatchlistCallbacks (Phase 2N-20)
 } from './features/bots'
@@ -629,6 +630,17 @@ function App() {
               if (!currentTree) continue
 
               const payload = ensureSlots(cloneNode(currentTree))
+
+              // Skip default empty systems (never modified)
+              const isDefaultEmpty = (
+                (payload.title === 'Forge System' || payload.title === 'Algo Name Here' || payload.title === 'Shaping System' || payload.title === 'Walk Forward System' || payload.title === 'Combined System') &&
+                payload.kind === 'basic' &&
+                (!payload.children.next || payload.children.next.every(n => n === null))
+              )
+              if (isDefaultEmpty) {
+                console.log('[Recovery] Skipping default empty system:', payload.title)
+                continue
+              }
 
               // Get a meaningful name from the bot
               let botName = 'Untitled System'
