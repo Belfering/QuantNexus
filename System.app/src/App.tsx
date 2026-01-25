@@ -1298,13 +1298,13 @@ function App() {
                         variant="ghost"
                         size="sm"
                         className="text-danger px-2 h-6 text-xs"
-                        title="Close"
+                        title="Close this bot tab"
                         onClick={(e) => {
                           e.stopPropagation()
                           handleCloseBot(b.id)
                         }}
                       >
-                        ✕
+                        Close
                       </Button>
                     </div>
                   </div>
