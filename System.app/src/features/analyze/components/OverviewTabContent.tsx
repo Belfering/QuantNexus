@@ -303,11 +303,9 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
         )}
       </div>
 
-      <div className="saved-item flex flex-col gap-2.5 h-full min-w-0">
-        <div className="font-black">Information</div>
-        <div className="text-xs text-muted font-extrabold">Placeholder text: Information, tickers, etc</div>
-        <div className="font-black mt-1.5">Tickers</div>
-        <div className="flex-1 overflow-auto border border-border rounded-xl max-w-full">
+      <div className="saved-item flex flex-col gap-2.5 min-w-0">
+        <div className="font-black">Tickers</div>
+        <div className="max-h-[800px] overflow-y-auto border border-border rounded-xl max-w-full">
           {(() => {
             try {
               if (analyzeState?.status !== 'done' || !analyzeState.result) {
