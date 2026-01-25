@@ -130,7 +130,7 @@ export const loadBotsFromApi = async (userId: UserId): Promise<SavedBot[]> => {
 /**
  * Save a new bot to the database
  */
-export const createBotInApi = async (userId: UserId, bot: SavedBot): Promise<string | null> => {
+export const createBotInApi = async (userId: UserId, bot: SavedBot, isDraft = false): Promise<string | null> => {
   try {
     const payload = JSON.stringify(bot.payload)
     const tags = bot.tags || []
@@ -149,6 +149,7 @@ export const createBotInApi = async (userId: UserId, bot: SavedBot): Promise<str
         fundSlot: bot.fundSlot,
         backtestMode: bot.backtestMode || 'CC',
         backtestCostBps: bot.backtestCostBps ?? 5,
+        isDraft, // Support draft bots for auto-save
       }),
     })
     if (!res.ok) return null

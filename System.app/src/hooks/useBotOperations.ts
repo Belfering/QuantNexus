@@ -110,20 +110,78 @@ export function useBotOperations({
   }, [tab, setActiveBotId, setActiveForgeBotId, setActiveModelBotId])
 
   /**
-   * Update tree in store
+   * Update tree in store and mark as unsaved
    */
   const push = useCallback(
     (next: FlowNode) => {
       useTreeStore.getState().setRoot(next)
+
+      // Mark active bot as having unsaved changes
+      if (activeBot) {
+        setBots((prev) =>
+          prev.map((b) =>
+            b.id === activeBot.id
+              ? { ...b, hasUnsavedChanges: true }
+              : b
+          )
+        )
+      }
     },
-    [],
+    [activeBot, setBots],
   )
 
   /**
    * Close a bot tab
    */
   const handleCloseBot = useCallback(
-    (botId: string) => {
+    async (botId: string) => {
+      const bot = bots.find((b) => b.id === botId)
+      if (!bot) return
+
+      // Check if bot has unsaved changes
+      const isUnsaved = !bot.savedBotId
+      // Get current tree based on tab context
+      const currentTree = bot.tabContext === 'Model'
+        ? bot.root
+        : bot.history[bot.historyIndex]
+      const hasContent = Boolean(currentTree)
+
+      // If bot is unsaved and has content, warn user before closing
+      if (isUnsaved && hasContent && userId) {
+        const confirmed = window.confirm(
+          "This bot hasn't been saved to a watchlist yet. " +
+          "Closing will move it to Trash. Continue?"
+        )
+        if (!confirmed) return // User cancelled, keep bot open
+
+        // Auto-save as draft to trash
+        try {
+          const payload = ensureSlots(cloneNode(currentTree))
+          const draftBot: SavedBot = {
+            id: `draft-${newId()}`,
+            name: payload.title || 'Untitled System',
+            builderId: userId,
+            payload,
+            visibility: 'private',
+            tags: ['Private'],
+            createdAt: Date.now(),
+            backtestMode: backtestMode,
+            backtestCostBps: backtestCostBps,
+          }
+
+          // Create draft in database
+          const draftId = await createBotInApi(userId, draftBot, true)
+          if (draftId) {
+            // Immediately soft-delete it (moves to trash)
+            await deleteBotFromApi(userId, draftId, false)
+            console.log('[Auto-Save] Unsaved bot moved to trash:', draftId)
+          }
+        } catch (err) {
+          console.error('[Auto-Save] Failed to save draft to trash:', err)
+        }
+      }
+
+      // Proceed with closing the bot
       setBots((prev) => {
         const filtered = prev.filter((b) => b.id !== botId)
         if (filtered.length === 0) {
@@ -143,7 +201,7 @@ export function useBotOperations({
         return filtered
       })
     },
-    [tab, activeBotId, activeForgeBotId, activeModelBotId, createBotSession, setActiveBot, setBots, setClipboard, setCopiedNodeId],
+    [bots, tab, activeBotId, activeForgeBotId, activeModelBotId, userId, backtestMode, backtestCostBps, createBotSession, setActiveBot, setBots, setClipboard, setCopiedNodeId],
   )
 
   /**

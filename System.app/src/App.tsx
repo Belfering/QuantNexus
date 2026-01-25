@@ -67,8 +67,9 @@ import {
 import { useCorrelation } from './features/nexus'
 // AdminSubtab, DatabasesSubtab types now used via useUIStore
 import {
-  // fetchNexusBotsFromApi, loadBotsFromApi, createBotInApi - moved to useUserDataSync (Phase 2N-21)
+  // fetchNexusBotsFromApi, loadBotsFromApi - moved to useUserDataSync (Phase 2N-21)
   loadBotsFromApi, // Re-imported for trash modal restore callback
+  createBotInApi, // Re-imported for auto-save draft functionality
   updateBotInApi,
   // loadWatchlistsFromApi, createWatchlistInApi, addBotToWatchlistInApi - moved to useUserDataSync (Phase 2N-21)
   // removeBotFromWatchlistInApi - moved to useWatchlistCallbacks (Phase 2N-20)
@@ -263,6 +264,10 @@ function App() {
   const [deviceTheme] = useState<ThemeMode>(() => loadDeviceThemeMode())
   const [trashModalOpen, setTrashModalOpen] = useState(false)
   const [trashModalContext, setTrashModalContext] = useState<'model' | 'forge'>('model')
+
+  // Crash recovery modal state
+  const [recoveryModalOpen, setRecoveryModalOpen] = useState(false)
+  const [recoveryData, setRecoveryData] = useState<{timestamp: number, bots: any[]} | null>(null)
 
   // Ticker search modal hook
   // UI Store - ticker modal
@@ -492,6 +497,141 @@ function App() {
   useEffect(() => {
     setIsImporting(false)
   }, [setIsImporting])
+
+  // Auto-save drafts for unsaved bots on first edit
+  useEffect(() => {
+    if (!userId) return
+
+    bots.forEach(async (bot) => {
+      // Check if bot needs auto-save as draft:
+      // 1. Not saved to watchlist yet (!savedBotId)
+      // 2. Has unsaved changes (hasUnsavedChanges = true)
+      // 3. Not already saved as draft (!isDraft)
+      const needsDraftSave = !bot.savedBotId && bot.hasUnsavedChanges && !bot.isDraft
+
+      if (needsDraftSave) {
+        try {
+          // Get current tree based on tab context
+          const currentTree = bot.tabContext === 'Model'
+            ? bot.root
+            : bot.history[bot.historyIndex]
+
+          if (!currentTree) return
+
+          const payload = ensureSlots(cloneNode(currentTree))
+          const draftBot: SavedBot = {
+            id: `draft-${Date.now()}-${bot.id}`,
+            name: payload.title || 'Untitled System',
+            builderId: userId,
+            payload,
+            visibility: 'private',
+            tags: ['Private'],
+            createdAt: Date.now(),
+            backtestMode: backtestMode,
+            backtestCostBps: backtestCostBps,
+          }
+
+          const draftId = await createBotInApi(userId, draftBot, true)
+
+          if (draftId) {
+            // Mark this bot session as having a draft saved
+            setBots((prev) => prev.map((b) =>
+              b.id === bot.id ? { ...b, isDraft: true, savedBotId: draftId } : b
+            ))
+            console.log('[Auto-Save] Draft created for unsaved bot:', draftId)
+          }
+        } catch (err) {
+          console.error('[Auto-Save] Failed to create draft:', err)
+        }
+      }
+    })
+  }, [bots, userId, backtestMode, backtestCostBps, setBots])
+
+  // Periodic localStorage auto-save for crash recovery (every 30 seconds)
+  useEffect(() => {
+    if (!userId) return
+
+    const saveToLocalStorage = () => {
+      try {
+        // Filter for unsaved bots (no savedBotId or has unsaved changes)
+        const unsavedBots = bots.filter(bot => !bot.savedBotId || bot.hasUnsavedChanges)
+
+        if (unsavedBots.length > 0) {
+          const backupData = {
+            timestamp: Date.now(),
+            bots: unsavedBots.map(bot => ({
+              id: bot.id,
+              tabContext: bot.tabContext,
+              subtabContext: bot.subtabContext,
+              root: bot.root,
+              splitTree: bot.splitTree,
+              walkForwardTree: bot.walkForwardTree,
+              combineTree: bot.combineTree,
+              history: bot.history,
+              historyIndex: bot.historyIndex,
+              savedBotId: bot.savedBotId,
+              isDraft: bot.isDraft,
+              callChains: bot.callChains,
+              customIndicators: bot.customIndicators,
+              parameterRanges: bot.parameterRanges,
+              rollingParameterRanges: bot.rollingParameterRanges,
+              chronologicalRequirements: bot.chronologicalRequirements,
+              rollingRequirements: bot.rollingRequirements,
+              splitConfig: bot.splitConfig,
+              branchGenerationJob: bot.branchGenerationJob,
+              rollingResult: bot.rollingResult,
+            })),
+          }
+
+          localStorage.setItem(`unsaved_bots_${userId}`, JSON.stringify(backupData))
+          console.log('[Auto-Save] Saved', unsavedBots.length, 'bot(s) to localStorage')
+        } else {
+          // Clear localStorage if no unsaved bots
+          localStorage.removeItem(`unsaved_bots_${userId}`)
+        }
+      } catch (err) {
+        console.error('[Auto-Save] Failed to save to localStorage:', err)
+      }
+    }
+
+    // Initial save
+    saveToLocalStorage()
+
+    // Set up interval for periodic saves (every 30 seconds)
+    const intervalId = setInterval(saveToLocalStorage, 30000)
+
+    // Cleanup on unmount
+    return () => clearInterval(intervalId)
+  }, [bots, userId])
+
+  // Check for crash recovery data on mount
+  useEffect(() => {
+    if (!userId) return
+
+    try {
+      const storageKey = `unsaved_bots_${userId}`
+      const storedData = localStorage.getItem(storageKey)
+
+      if (storedData) {
+        const parsed = JSON.parse(storedData)
+        const recoveryAge = Date.now() - parsed.timestamp
+
+        // Only show recovery dialog if data is less than 24 hours old
+        const MAX_RECOVERY_AGE = 24 * 60 * 60 * 1000 // 24 hours
+        if (recoveryAge < MAX_RECOVERY_AGE && parsed.bots && parsed.bots.length > 0) {
+          setRecoveryData(parsed)
+          setRecoveryModalOpen(true)
+          console.log('[Recovery] Found', parsed.bots.length, 'unsaved bot(s) from', new Date(parsed.timestamp).toLocaleString())
+        } else {
+          // Clear stale recovery data
+          localStorage.removeItem(storageKey)
+        }
+      }
+    } catch (err) {
+      console.error('[Recovery] Failed to load recovery data:', err)
+    }
+  }, [userId])
+
   // UI Store - tabs and navigation
   const tab = useUIStore(s => s.tab)
   const setTab = useUIStore(s => s.setTab)
@@ -802,6 +942,72 @@ function App() {
       loadBotsFromApi(userId).then(setSavedBots)
     }
   }
+
+  // Handlers for crash recovery dialog
+  const handleRestoreUnsavedBots = useCallback(() => {
+    if (!recoveryData || !userId) return
+
+    try {
+      // Add recovered bots to current bots array
+      const restoredBots = recoveryData.bots.map(bot => ({
+        ...bot,
+        backtest: { status: 'idle' as const, errors: [], result: null, focusNodeId: null },
+      }))
+
+      setBots((prev) => [...prev, ...restoredBots])
+      console.log('[Recovery] Restored', restoredBots.length, 'bot(s)')
+
+      // Clear localStorage after successful restore
+      localStorage.removeItem(`unsaved_bots_${userId}`)
+      setRecoveryModalOpen(false)
+      setRecoveryData(null)
+    } catch (err) {
+      console.error('[Recovery] Failed to restore bots:', err)
+      alert('Failed to restore unsaved work')
+    }
+  }, [recoveryData, userId, setBots])
+
+  const handleDiscardUnsavedBots = useCallback(async () => {
+    if (!recoveryData || !userId) return
+
+    try {
+      // Move unsaved bots to trash (save as drafts with deleted_at set)
+      for (const bot of recoveryData.bots) {
+        const currentTree = bot.tabContext === 'Model' ? bot.root : bot.history[bot.historyIndex]
+        if (!currentTree) continue
+
+        const payload = ensureSlots(cloneNode(currentTree))
+        const draftBot: SavedBot = {
+          id: `draft-discard-${Date.now()}-${bot.id}`,
+          name: payload.title || 'Untitled System',
+          builderId: userId,
+          payload,
+          visibility: 'private',
+          tags: ['Private'],
+          createdAt: Date.now(),
+          backtestMode: backtestMode,
+          backtestCostBps: backtestCostBps,
+        }
+
+        // Save as draft and immediately soft-delete (moves to trash)
+        const draftId = await createBotInApi(userId, draftBot, true)
+        if (draftId) {
+          const { deleteBotFromApi } = await import('@/features/bots')
+          await deleteBotFromApi(userId, draftId, false)
+        }
+      }
+
+      console.log('[Recovery] Moved', recoveryData.bots.length, 'bot(s) to trash')
+
+      // Clear localStorage after discarding
+      localStorage.removeItem(`unsaved_bots_${userId}`)
+      setRecoveryModalOpen(false)
+      setRecoveryData(null)
+    } catch (err) {
+      console.error('[Recovery] Failed to discard bots:', err)
+      alert('Failed to move unsaved work to trash')
+    }
+  }, [recoveryData, userId, backtestMode, backtestCostBps])
 
   // Dashboard investment logic
   // Combine savedBots + allNexusBots (de-duped) for eligible bots
@@ -1581,6 +1787,38 @@ function App() {
         context={trashModalContext}
         onBotRestored={handleBotRestored}
       />
+
+      {/* Crash Recovery Modal */}
+      {recoveryModalOpen && recoveryData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md p-6 space-y-4">
+            <h2 className="text-lg font-semibold">Unsaved Work Found</h2>
+            <Alert>
+              <AlertDescription>
+                Found {recoveryData.bots.length} unsaved bot{recoveryData.bots.length > 1 ? 's' : ''} from{' '}
+                {new Date(recoveryData.timestamp).toLocaleString()}.
+                <br />
+                <br />
+                Would you like to restore or discard them?
+              </AlertDescription>
+            </Alert>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="secondary"
+                onClick={handleDiscardUnsavedBots}
+              >
+                Move to Trash
+              </Button>
+              <Button
+                variant="default"
+                onClick={handleRestoreUnsavedBots}
+              >
+                Restore
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

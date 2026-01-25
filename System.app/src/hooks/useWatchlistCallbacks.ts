@@ -225,6 +225,8 @@ export function useWatchlistCallbacks({
       if (savedBotId) {
         setAnalyzeBacktests((prev) => ({ ...prev, [savedBotId]: { status: 'idle' } }))
       }
+      // Clear hasUnsavedChanges flag after successful save
+      setBots((prev) => prev.map((b) => (b.id === activeBotId ? { ...b, hasUnsavedChanges: false } : b)))
       // Show visual feedback
       setJustSavedFeedback(true)
       setTimeout(() => setJustSavedFeedback(false), 1500)
