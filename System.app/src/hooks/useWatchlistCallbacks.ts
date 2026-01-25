@@ -97,26 +97,48 @@ export function useWatchlistCallbacks({
   }, [callChainsById, tickerMetadata])
 
   const resolveWatchlistId = useCallback(
-    (watchlistNameOrId: string): string => {
+    async (watchlistNameOrId: string): Promise<string> => {
       const raw = String(watchlistNameOrId || '').trim()
+      console.log('[resolveWatchlistId] Input:', raw)
+      console.log('[resolveWatchlistId] Available watchlists:', watchlists.map(w => ({ id: w.id, name: w.name })))
+
       if (!raw) return watchlists.find((w) => w.name === 'Default')?.id ?? watchlists[0]?.id ?? `wl-${newId()}`
+
       const byId = watchlists.find((w) => w.id === raw)
-      if (byId) return byId.id
-      const byName = watchlists.find((w) => w.name.toLowerCase() === raw.toLowerCase())
-      if (byName) return byName.id
-      // Create new watchlist with temporary local ID
-      const tempId = `wl-${newId()}`
-      setWatchlists((prev) => ensureDefaultWatchlist([{ id: tempId, name: raw, botIds: [] }, ...prev]))
-      // Create in database asynchronously (will use different ID, but local state works for now)
-      if (userId) {
-        createWatchlistInApi(userId, raw).then(serverId => {
-          if (serverId && serverId !== tempId) {
-            // Update local state with server-assigned ID
-            setWatchlists((prev) => prev.map(w => w.id === tempId ? { ...w, id: serverId } : w))
-          }
-        }).catch(err => console.warn('[API] Failed to create watchlist:', err))
+      if (byId) {
+        console.log('[resolveWatchlistId] Found by ID:', byId.id, byId.name)
+        return byId.id
       }
-      return tempId
+
+      const byName = watchlists.find((w) => w.name.toLowerCase() === raw.toLowerCase())
+      if (byName) {
+        console.log('[resolveWatchlistId] Found by name:', byName.id, byName.name)
+        return byName.id
+      }
+
+      // Create new watchlist and WAIT for database creation to complete
+      console.log('[resolveWatchlistId] NOT FOUND - Creating new watchlist with name:', raw)
+
+      if (!userId) {
+        const tempId = `wl-${newId()}`
+        setWatchlists((prev) => ensureDefaultWatchlist([{ id: tempId, name: raw, botIds: [] }, ...prev]))
+        return tempId
+      }
+
+      // Create in database first and wait for the real ID
+      const serverId = await createWatchlistInApi(userId, raw)
+      if (serverId) {
+        console.log('[resolveWatchlistId] Watchlist created with server ID:', serverId)
+        // Add to local state with the real database ID
+        setWatchlists((prev) => ensureDefaultWatchlist([{ id: serverId, name: raw, botIds: [] }, ...prev]))
+        return serverId
+      } else {
+        console.error('[resolveWatchlistId] Failed to create watchlist in database')
+        // Fallback to temp ID if database creation fails
+        const tempId = `wl-${newId()}`
+        setWatchlists((prev) => ensureDefaultWatchlist([{ id: tempId, name: raw, botIds: [] }, ...prev]))
+        return tempId
+      }
     },
     [watchlists, userId, setWatchlists],
   )
@@ -153,7 +175,7 @@ export function useWatchlistCallbacks({
     async (watchlistNameOrId: string) => {
       if (!current) return
       if (!userId) return
-      const watchlistId = resolveWatchlistId(watchlistNameOrId)
+      const watchlistId = await resolveWatchlistId(watchlistNameOrId)
       const payload = ensureSlots(cloneNode(current))
       const now = Date.now()
 
