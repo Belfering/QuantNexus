@@ -1244,9 +1244,9 @@ function App() {
                         : (b.history[b.historyIndex] ?? b.history[0])
                 const label = root?.title || 'Untitled'
                 const isActive = (tab === 'Forge' && b.id === activeForgeBotId) || (tab === 'Model' && b.id === activeModelBotId)
-                // Look up backtestMode from saved bot if this session is linked to one
+                // Look up backtestMode from saved bot if this session is linked to one, otherwise use global
                 const savedBot = b.savedBotId ? savedBots.find(sb => sb.id === b.savedBotId) : null
-                const backtestMode = savedBot?.backtestMode
+                const botBacktestMode = savedBot?.backtestMode || backtestMode
                 return (
                   <div
                     key={b.id}
@@ -1281,7 +1281,7 @@ function App() {
                       {label}
                     </Button>
                     <div className="flex gap-1 mt-1 justify-center items-center flex-wrap">
-                      {backtestMode && <BacktestModeTag mode={backtestMode} />}
+                      <BacktestModeTag mode={botBacktestMode} />
                       <Button
                         variant="ghost"
                         size="sm"
