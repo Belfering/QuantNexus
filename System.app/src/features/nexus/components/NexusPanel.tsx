@@ -1,7 +1,7 @@
 // src/features/nexus/components/NexusPanel.tsx
 // Nexus tab component - displays community bots, top performers, and search
 
-import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +22,7 @@ import type {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CommunitySortKey = 'name' | 'tags' | 'oosCagr' | 'oosMaxdd' | 'oosSharpe'
+export type CommunitySortKey = 'name' | 'tags' | 'oosCagr' | 'oosMaxdd' | 'oosSharpe' | 'calmar' | 'sortino' | 'treynor' | 'cagrCalmar'
 export type SortDir = 'asc' | 'desc'
 export type CommunitySort = { key: CommunitySortKey; dir: SortDir }
 
@@ -33,7 +33,10 @@ export type CommunityBotRow = {
   oosCagr: number
   oosMaxdd: number
   oosSharpe: number
+  oosSortino?: number
+  oosTreynor?: number
   calmar?: number
+  cagrCalmar?: number
 }
 
 export type CommunitySearchFilter = {
@@ -91,6 +94,9 @@ export function NexusPanel(props: NexusPanelProps) {
     getFundSlotForBot,
   } = props
 
+  // ─── Local State ──────────────────────────────────────────────────────────────
+  const [nexusSelectMetric, setNexusSelectMetric] = useState<'cagrCalmar' | 'oosCagr' | 'oosSharpe' | 'calmar' | 'oosSortino' | 'oosTreynor' | 'oosMaxdd'>('cagrCalmar')
+
   // ─── Stores ───────────────────────────────────────────────────────────────────
   const { userId, userDisplayName, isAdmin } = useAuthStore()
   const {
@@ -141,13 +147,20 @@ export function NexusPanel(props: NexusPanelProps) {
       const displayName = fundSlot
         ? `${builderName}'s Fund #${fundSlot}`
         : `${builderName}'s Fund`
+      const cagr = metrics?.cagr ?? 0
+      const maxdd = metrics?.maxDrawdown ?? 0
+      const calmar = maxdd !== 0 ? Math.abs(cagr / maxdd) : 0
       return {
         id: bot.id,
         name: displayName,
         tags,
-        oosCagr: metrics?.cagr ?? 0,
-        oosMaxdd: metrics?.maxDrawdown ?? 0,
+        oosCagr: cagr,
+        oosMaxdd: maxdd,
         oosSharpe: metrics?.sharpe ?? 0,
+        oosSortino: metrics?.sortino ?? 0,
+        oosTreynor: metrics?.treynor ?? 0,
+        calmar,
+        cagrCalmar: cagr * 100 * calmar,
       }
     })
   }, [allNexusBots, watchlistsByBotId, userId, userDisplayName, analyzeBacktests, getFundSlotForBot])
@@ -160,35 +173,67 @@ export function NexusPanel(props: NexusPanelProps) {
         const tagNames = (watchlistsByBotId.get(bot.id) ?? []).map((w) => w.name)
         const tags = ['Atlas', 'Sponsored', ...tagNames]
         const metrics = analyzeBacktests[bot.id]?.result?.metrics ?? bot.backtestResult
+        const cagr = metrics?.cagr ?? 0
+        const maxdd = metrics?.maxDrawdown ?? 0
+        const calmar = maxdd !== 0 ? Math.abs(cagr / maxdd) : 0
         return {
           id: bot.id,
           name: bot.name,
           tags,
-          oosCagr: metrics?.cagr ?? 0,
-          oosMaxdd: metrics?.maxDrawdown ?? 0,
+          oosCagr: cagr,
+          oosMaxdd: maxdd,
           oosSharpe: metrics?.sharpe ?? 0,
+          oosSortino: metrics?.sortino ?? 0,
+          oosTreynor: metrics?.treynor ?? 0,
+          calmar,
+          cagrCalmar: cagr * 100 * calmar,
         }
       })
   }, [allNexusBots, watchlistsByBotId, analyzeBacktests])
 
-  // Top lists
-  const topByCagr = useMemo(() =>
-    [...communityBotRows].sort((a, b) => b.oosCagr - a.oosCagr).slice(0, 100),
-    [communityBotRows]
-  )
+  // Top community systems - sortable by selected metric
+  const topCommunitySystemsByMetric = useMemo(() => {
+    const sorted = [...communityBotRows].sort((a, b) => {
+      let aVal = 0
+      let bVal = 0
 
-  const topByCalmar = useMemo(() =>
-    communityBotRows
-      .map((r) => ({ ...r, calmar: r.oosMaxdd !== 0 ? Math.abs(r.oosCagr / r.oosMaxdd) : 0 }))
-      .sort((a, b) => b.calmar - a.calmar)
-      .slice(0, 100),
-    [communityBotRows]
-  )
+      switch (nexusSelectMetric) {
+        case 'cagrCalmar':
+          aVal = a.cagrCalmar ?? 0
+          bVal = b.cagrCalmar ?? 0
+          break
+        case 'oosCagr':
+          aVal = a.oosCagr
+          bVal = b.oosCagr
+          break
+        case 'oosSharpe':
+          aVal = a.oosSharpe
+          bVal = b.oosSharpe
+          break
+        case 'calmar':
+          aVal = a.calmar ?? 0
+          bVal = b.calmar ?? 0
+          break
+        case 'oosSortino':
+          aVal = a.oosSortino ?? 0
+          bVal = b.oosSortino ?? 0
+          break
+        case 'oosTreynor':
+          aVal = a.oosTreynor ?? 0
+          bVal = b.oosTreynor ?? 0
+          break
+        case 'oosMaxdd':
+          // For maxdd, lower (less negative) is better, so reverse the comparison
+          aVal = -(a.oosMaxdd)
+          bVal = -(b.oosMaxdd)
+          break
+      }
 
-  const topBySharpe = useMemo(() =>
-    [...communityBotRows].sort((a, b) => b.oosSharpe - a.oosSharpe).slice(0, 100),
-    [communityBotRows]
-  )
+      return bVal - aVal // Descending order (higher is better)
+    })
+
+    return sorted.slice(0, 100)
+  }, [communityBotRows, nexusSelectMetric])
 
   // Builder names for autocomplete
   const allBuilderIds = useMemo(() =>
@@ -269,6 +314,11 @@ export function NexusPanel(props: NexusPanelProps) {
       else if (sort.key === 'tags') cmp = a.tags.join(',').localeCompare(b.tags.join(','))
       else if (sort.key === 'oosCagr') cmp = a.oosCagr - b.oosCagr
       else if (sort.key === 'oosMaxdd') cmp = a.oosMaxdd - b.oosMaxdd
+      else if (sort.key === 'oosSharpe') cmp = a.oosSharpe - b.oosSharpe
+      else if (sort.key === 'sortino') cmp = (a.oosSortino ?? 0) - (b.oosSortino ?? 0)
+      else if (sort.key === 'treynor') cmp = (a.oosTreynor ?? 0) - (b.oosTreynor ?? 0)
+      else if (sort.key === 'calmar') cmp = (a.calmar ?? 0) - (b.calmar ?? 0)
+      else if (sort.key === 'cagrCalmar') cmp = (a.cagrCalmar ?? 0) - (b.cagrCalmar ?? 0)
       else cmp = a.oosSharpe - b.oosSharpe
       return dir * (cmp || a.id.localeCompare(b.id))
     })
@@ -739,32 +789,29 @@ export function NexusPanel(props: NexusPanelProps) {
       {/* Right Column - Nexus Select Zone */}
       <Card className="flex flex-col p-4">
         <div className="font-black text-center mb-4">Nexus Select Zone</div>
-        <div className="flex flex-col gap-4 flex-1">
-          <Card className="flex-1 flex flex-col p-3 border-2">
-            <div className="font-bold text-center mb-2">Top Systems by CAGR</div>
-            <div className="flex-1 overflow-auto max-h-[400px]">
-              {renderBotCards(topByCagr, communityTopSort, setCommunityTopSort, {
-                emptyMessage: 'No Nexus systems with backtest data.',
-              })}
-            </div>
-          </Card>
-          <Card className="flex-1 flex flex-col p-3 border-2">
-            <div className="font-bold text-center mb-2">Top Systems by Calmar Ratio</div>
-            <div className="flex-1 overflow-auto max-h-[400px]">
-              {renderBotCards(topByCalmar, communityTopSort, setCommunityTopSort, {
-                emptyMessage: 'No Nexus systems with backtest data.',
-              })}
-            </div>
-          </Card>
-          <Card className="flex-1 flex flex-col p-3 border-2">
-            <div className="font-bold text-center mb-2">Top Systems by Sharpe Ratio</div>
-            <div className="flex-1 overflow-auto max-h-[400px]">
-              {renderBotCards(topBySharpe, communityTopSort, setCommunityTopSort, {
-                emptyMessage: 'No Nexus systems with backtest data.',
-              })}
-            </div>
-          </Card>
-        </div>
+        <Card className="flex-1 flex flex-col p-3 border-2">
+          <div className="flex items-center justify-between mb-3">
+            <div className="font-bold">Top Community Systems by</div>
+            <Select
+              className="h-8 px-2 text-sm"
+              value={nexusSelectMetric}
+              onChange={(e) => setNexusSelectMetric(e.target.value as typeof nexusSelectMetric)}
+            >
+              <option value="cagrCalmar">CAGR x Calmar</option>
+              <option value="oosCagr">CAGR</option>
+              <option value="calmar">Calmar Ratio</option>
+              <option value="oosSharpe">Sharpe Ratio</option>
+              <option value="oosSortino">Sortino Ratio</option>
+              <option value="oosTreynor">Treynor Ratio</option>
+              <option value="oosMaxdd">Max Drawdown (Low to High)</option>
+            </Select>
+          </div>
+          <div className="flex-1 overflow-auto">
+            {renderBotCards(topCommunitySystemsByMetric, communityTopSort, setCommunityTopSort, {
+              emptyMessage: 'No Nexus systems with backtest data.',
+            })}
+          </div>
+        </Card>
       </Card>
     </div>
   )
