@@ -1534,7 +1534,7 @@ function App() {
                     >
                       <span className="truncate">{label}</span>
                     </Button>
-                    <div className="flex gap-1 mt-1 justify-center items-center flex-wrap">
+                    <div className="flex gap-1 mt-1 justify-center items-center">
                       <BacktestModeTag mode={botBacktestMode} />
                       <Button
                         variant="ghost"
@@ -1563,21 +1563,21 @@ function App() {
                       {/* Save status indicator bubble */}
                       {!b.savedBotId ? (
                         <div
-                          className="w-5 h-5 rounded-full bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 flex items-center justify-center text-xs font-semibold cursor-help"
+                          className="w-5 h-5 rounded-full bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 flex items-center justify-center text-xs font-semibold cursor-help shrink-0"
                           title="Unsaved work"
                         >
                           ?
                         </div>
                       ) : b.hasUnsavedChanges ? (
                         <div
-                          className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-semibold cursor-help"
+                          className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-semibold cursor-help shrink-0"
                           title="Unsaved changes"
                         >
                           *
                         </div>
                       ) : (
                         <div
-                          className="w-5 h-5 rounded-full bg-green-500/20 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-semibold cursor-help"
+                          className="w-5 h-5 rounded-full bg-green-500/20 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-semibold cursor-help shrink-0"
                           title="Saved"
                         >
                           ✓
