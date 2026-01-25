@@ -31,7 +31,7 @@ interface TrashModalProps {
   onClose: () => void
   userId: string | null
   context: 'model' | 'forge'
-  onBotRestored?: () => void
+  onBotRestored?: (bot: DeletedBot) => void
   onShardRestored?: () => void
 }
 
@@ -80,13 +80,28 @@ export function TrashModal({ open, onClose, userId, context, onBotRestored, onSh
     if (!userId) return
 
     try {
+      // First, get the bot data before restoring (to know which tab it was from)
+      const bot = deletedBots.find(b => b.id === botId)
+
+      console.log('[TrashModal] Restoring bot:', {
+        botId,
+        found: !!bot,
+        isDraft: bot?.isDraft,
+        hasPayload: !!bot?.payload,
+        tags: bot?.tags
+      })
+
       const res = await fetch(`/api/bots/${botId}/restore?ownerId=${userId}`, {
         method: 'POST'
       })
 
       if (res.ok) {
         setDeletedBots(prev => prev.filter(b => b.id !== botId))
-        if (onBotRestored) onBotRestored()
+        // Pass the bot data to the callback so it can be reopened
+        if (onBotRestored && bot) {
+          console.log('[TrashModal] Calling onBotRestored with bot:', bot.name)
+          onBotRestored(bot)
+        }
       } else {
         const error = await res.json()
         alert(`Failed to restore: ${error.error}`)

@@ -1157,6 +1157,15 @@ export async function createBot(data) {
   // Compress payload if >1MB (FRD-017)
   const storedPayload = await compressPayload(data.payload)
 
+  const isDraftValue = data.isDraft ? 1 : 0
+  console.log('[TRASH-DEBUG] createBot called:', {
+    id,
+    name: data.name,
+    isDraft: data.isDraft,
+    isDraftValue,
+    ownerId: data.ownerId,
+  })
+
   await db.insert(schema.bots).values({
     id,
     ownerId: data.ownerId,
@@ -1167,11 +1176,12 @@ export async function createBot(data) {
     fundSlot: data.fundSlot,
     backtestMode: data.backtestMode || 'CC',
     backtestCostBps: data.backtestCostBps ?? 5,
-    isDraft: data.isDraft ? 1 : 0, // Support draft bots for auto-save
+    isDraft: isDraftValue, // Support draft bots for auto-save
     createdAt: now,
     updatedAt: now,
   })
 
+  console.log('[TRASH-DEBUG] Bot created successfully with isDraft:', isDraftValue)
   return id
 }
 
@@ -1204,9 +1214,26 @@ export async function updateBot(id, ownerId, data) {
 
 export async function deleteBot(id, ownerId) {
   // Soft delete
+  console.log('[TRASH-DEBUG] deleteBot called:', { id, ownerId })
+
+  // First check if bot exists and get its info
+  const bot = sqlite.prepare(`
+    SELECT id, name, is_draft, deleted_at FROM bots WHERE id = ? AND owner_id = ?
+  `).get(id, ownerId)
+
+  console.log('[TRASH-DEBUG] Bot before delete:', bot)
+
+  const deletedAt = Date.now()
   const result = sqlite.prepare(`
     UPDATE bots SET deleted_at = ? WHERE id = ? AND owner_id = ?
-  `).run(Date.now(), id, ownerId)
+  `).run(deletedAt, id, ownerId)
+
+  console.log('[TRASH-DEBUG] Delete result:', {
+    changes: result.changes,
+    deletedAt,
+    success: result.changes > 0,
+  })
+
   return result.changes > 0
 }
 
@@ -1244,11 +1271,22 @@ export async function hardDeleteBot(id, ownerId) {
  * @returns {Promise<Array>} Array of deleted user-created bots with deletion timestamp
  */
 export async function getDeletedBotsByOwner(ownerId) {
+  console.log('[TRASH-DEBUG] getDeletedBotsByOwner called for:', ownerId)
+
   const bots = sqlite.prepare(`
     SELECT * FROM bots
     WHERE owner_id = ? AND deleted_at IS NOT NULL
     ORDER BY deleted_at DESC
   `).all(ownerId)
+
+  console.log('[TRASH-DEBUG] Raw query returned', bots.length, 'bots')
+  console.log('[TRASH-DEBUG] Bot details:', bots.map(b => ({
+    id: b.id,
+    name: b.name,
+    isDraft: b.is_draft,
+    deletedAt: b.deleted_at,
+    tags: b.tags,
+  })))
 
   // Decompress payloads and attach metrics
   const botsWithMetrics = await Promise.all(bots.map(async (bot) => {
@@ -1274,7 +1312,9 @@ export async function getDeletedBotsByOwner(ownerId) {
   }))
 
   // Filter out Nexus/Atlas bots (they shouldn't be in trash)
-  return botsWithMetrics.filter(b => !b.tags.includes('Nexus') && !b.tags.includes('Atlas'))
+  const filtered = botsWithMetrics.filter(b => !b.tags.includes('Nexus') && !b.tags.includes('Atlas'))
+  console.log('[TRASH-DEBUG] After filtering Nexus/Atlas:', filtered.length, 'bots')
+  return filtered
 }
 
 /**

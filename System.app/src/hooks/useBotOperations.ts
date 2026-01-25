@@ -146,8 +146,11 @@ export function useBotOperations({
         : bot.history[bot.historyIndex]
       const hasContent = Boolean(currentTree)
 
-      // If bot is unsaved and has content, warn user before closing
-      if (isUnsaved && hasContent && userId) {
+      // Skip trash for Shaping systems (they're meant to be quickly discarded)
+      const isShapingSystem = bot.subtabContext === 'Shaping'
+
+      // If bot is unsaved and has content, warn user before closing (except for Shaping systems)
+      if (isUnsaved && hasContent && userId && !isShapingSystem) {
         const confirmed = window.confirm(
           "This bot hasn't been saved to a watchlist yet. " +
           "Closing will move it to Trash. Continue?"
@@ -163,11 +166,19 @@ export function useBotOperations({
             builderId: userId,
             payload,
             visibility: 'private',
-            tags: ['Private'],
+            // Add tab context tag so we know which tab to restore to
+            tags: ['Private', `Tab:${bot.tabContext || 'Model'}`],
             createdAt: Date.now(),
             backtestMode: backtestMode,
             backtestCostBps: backtestCostBps,
           }
+
+          console.log('[Auto-Save] Creating draft bot:', {
+            id: draftBot.id,
+            name: draftBot.name,
+            tabContext: bot.tabContext,
+            tags: draftBot.tags,
+          })
 
           // Create draft in database
           const draftId = await createBotInApi(userId, draftBot, true)

@@ -136,21 +136,33 @@ export const createBotInApi = async (userId: UserId, bot: SavedBot, isDraft = fa
     const tags = bot.tags || []
     const visibility = bot.tags?.includes('Nexus') ? 'nexus' : bot.tags?.includes('Nexus Eligible') ? 'nexus_eligible' : 'private'
 
+    const requestBody = {
+      id: bot.id,
+      ownerId: userId,
+      name: bot.name,
+      payload,
+      visibility,
+      tags,
+      fundSlot: bot.fundSlot,
+      backtestMode: bot.backtestMode || 'CC',
+      backtestCostBps: bot.backtestCostBps ?? 5,
+      isDraft, // Support draft bots for auto-save
+    }
+
+    console.log('[TRASH-DEBUG] createBotInApi called with:', {
+      botId: bot.id,
+      botName: bot.name,
+      isDraft,
+      isDraftType: typeof isDraft,
+      requestBodyIsDraft: requestBody.isDraft,
+      inputTags: bot.tags,
+      requestBodyTags: requestBody.tags,
+    })
+
     const res = await fetch(`${API_BASE}/bots`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: bot.id,
-        ownerId: userId,
-        name: bot.name,
-        payload,
-        visibility,
-        tags,
-        fundSlot: bot.fundSlot,
-        backtestMode: bot.backtestMode || 'CC',
-        backtestCostBps: bot.backtestCostBps ?? 5,
-        isDraft, // Support draft bots for auto-save
-      }),
+      body: JSON.stringify(requestBody),
     })
     if (!res.ok) return null
     const { id } = await res.json() as { id: string }

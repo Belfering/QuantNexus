@@ -945,9 +945,82 @@ function App() {
   }
 
   // Handler for when a bot is restored from trash
-  const handleBotRestored = () => {
-    // Refresh the saved bots list in Analyze tab
-    if (userId) {
+  const handleBotRestored = async (bot: { id: string; name: string; payload: any; tags?: string[]; isDraft?: boolean }) => {
+    console.log('[Restore] handleBotRestored called with:', {
+      id: bot.id,
+      name: bot.name,
+      isDraft: bot.isDraft,
+      hasPayload: !!bot.payload,
+      tags: bot.tags
+    })
+
+    if (!userId) return
+
+    // If it's a draft bot, re-open it in the correct tab
+    if (bot.isDraft) {
+      // Extract tab context from tags (e.g., "Tab:Model" or "Tab:Forge")
+      const tabTag = bot.tags?.find(tag => tag.startsWith('Tab:'))
+      const targetTab = tabTag?.split(':')[1] as 'Model' | 'Forge' | undefined
+
+      console.log('[Restore] Draft bot detected, targetTab:', targetTab, 'hasPayload:', !!bot.payload)
+
+      if (targetTab) {
+        // Parse payload if it's a string (comes from API as JSON string)
+        let restoredPayload = bot.payload
+        if (typeof restoredPayload === 'string') {
+          try {
+            restoredPayload = JSON.parse(restoredPayload)
+            console.log('[Restore] Parsed string payload successfully')
+          } catch (err) {
+            console.error('[Restore] Failed to parse payload:', err)
+            restoredPayload = null
+          }
+        }
+
+        // Fallback to default tree if no valid payload
+        if (!restoredPayload) {
+          restoredPayload = {
+            id: 'node-root',
+            kind: 'basic' as const,
+            title: 'Basic',
+            children: { next: [null] },
+            weighting: 'equal' as const,
+            collapsed: false,
+          }
+        }
+
+        console.log('[Restore] Creating new bot session in', targetTab, 'tab with payload:', restoredPayload)
+
+        // Create a new bot session with the restored payload
+        const newBot = createBotSession(bot.name || 'Restored System', targetTab)
+
+        // Update the bot with the restored tree
+        setBots(prev => prev.map(b =>
+          b.id === newBot.id
+            ? {
+                ...b,
+                root: targetTab === 'Model' ? restoredPayload : b.root,
+                history: targetTab === 'Forge' ? [restoredPayload] : b.history,
+                historyIndex: targetTab === 'Forge' ? 0 : b.historyIndex,
+              }
+            : b
+        ))
+
+        // Switch to the target tab and activate the bot
+        setTab(targetTab)
+        if (targetTab === 'Model') {
+          setActiveModelBotId(newBot.id)
+        } else {
+          setActiveForgeBotId(newBot.id)
+        }
+
+        console.log('[Restore] ✅ Draft bot reopened in', targetTab, 'tab with id:', newBot.id)
+      } else {
+        console.warn('[Restore] Could not determine target tab from tags:', bot.tags)
+      }
+    } else {
+      // Regular saved bot - just refresh the savedBots list
+      console.log('[Restore] Regular saved bot, refreshing savedBots list')
       loadBotsFromApi(userId).then(setSavedBots)
     }
   }

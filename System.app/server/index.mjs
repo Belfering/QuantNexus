@@ -2325,6 +2325,26 @@ import optimizationResultsRoutes from './routes/optimizationResults.mjs'
 import batchBacktestRoutes from './routes/batchBacktest.mjs'
 import tickerListsRoutes from './routes/tickerLists.mjs'
 import { shardsRoutes } from './features/shards/index.mjs'
+import { botsRoutes } from './features/bots/index.mjs'
+
+// ============================================================================
+// Global API Debug Middleware
+// ============================================================================
+app.use('/api', (req, res, next) => {
+  console.log('[API-DEBUG] Incoming request:', {
+    method: req.method,
+    url: req.url,
+    path: req.path,
+    originalUrl: req.originalUrl,
+    body: req.method === 'POST' || req.method === 'PUT' ? JSON.stringify(req.body).substring(0, 200) : undefined,
+    query: req.query,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'origin': req.headers.origin,
+    }
+  })
+  next()
+})
 
 // Register auth routes
 app.use('/api/auth', authRoutes)
@@ -2336,6 +2356,7 @@ app.use('/api/optimization', optimizationResultsRoutes)
 app.use('/api/batch-backtest', batchBacktestRoutes)
 app.use('/api/ticker-lists', tickerListsRoutes)
 app.use('/api/shards', shardsRoutes)
+app.use('/api/bots', botsRoutes)
 
 // Initialize database on startup
 let dbInitialized = false
@@ -2452,120 +2473,126 @@ app.get('/api/auth/user/:userId', async (req, res) => {
 })
 
 // ============================================================================
-// Bot Endpoints
+// Bot Endpoints - DEPRECATED: Now using /api/bots router from features/bots
 // ============================================================================
+// NOTE: These old inline endpoints are commented out because they're replaced
+// by the feature-based routes in server/features/bots/routes.mjs which include:
+// - isDraft support for trash functionality
+// - Debug logging
+// - Trash/restore/permanent delete endpoints
+// - Better validation and error handling
+//
+// // GET /api/bots - List user's bots
+// app.get('/api/bots', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const userId = req.query.userId
+//     if (!userId) {
+//       return res.status(400).json({ error: 'userId query parameter required' })
+//     }
+//     const bots = await database.getBotsByOwner(userId)
+//     res.json({ bots })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
+//
+// // GET /api/bots/:id - Get a single bot
+// app.get('/api/bots/:id', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const userId = req.query.userId
+//     const bot = await database.getBotById(req.params.id, true) // include payload
+//     if (!bot) {
+//       return res.status(404).json({ error: 'Bot not found' })
+//     }
+//     // Only return payload if user owns the bot
+//     if (bot.ownerId !== userId && bot.visibility === 'nexus') {
+//       const { payload, ...publicBot } = bot
+//       return res.json({ bot: publicBot })
+//     }
+//     res.json({ bot })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
+//
+// // POST /api/bots - Create a new bot
+// app.post('/api/bots', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const { ownerId, name, payload, visibility, tags, fundSlot, id: clientId } = req.body
+//     if (!ownerId || !name || !payload) {
+//       return res.status(400).json({ error: 'ownerId, name, and payload are required' })
+//     }
+//     const id = await database.createBot({
+//       id: clientId,  // Use client-provided ID if present
+//       ownerId,
+//       name,
+//       payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+//       visibility,
+//       tags,
+//       fundSlot,
+//     })
+//     res.json({ id })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
-// GET /api/bots - List user's bots
-app.get('/api/bots', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const userId = req.query.userId
-    if (!userId) {
-      return res.status(400).json({ error: 'userId query parameter required' })
-    }
-    const bots = await database.getBotsByOwner(userId)
-    res.json({ bots })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
-
-// GET /api/bots/:id - Get a single bot
-app.get('/api/bots/:id', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const userId = req.query.userId
-    const bot = await database.getBotById(req.params.id, true) // include payload
-    if (!bot) {
-      return res.status(404).json({ error: 'Bot not found' })
-    }
-    // Only return payload if user owns the bot
-    if (bot.ownerId !== userId && bot.visibility === 'nexus') {
-      const { payload, ...publicBot } = bot
-      return res.json({ bot: publicBot })
-    }
-    res.json({ bot })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
-
-// POST /api/bots - Create a new bot
-app.post('/api/bots', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const { ownerId, name, payload, visibility, tags, fundSlot, id: clientId } = req.body
-    if (!ownerId || !name || !payload) {
-      return res.status(400).json({ error: 'ownerId, name, and payload are required' })
-    }
-    const id = await database.createBot({
-      id: clientId,  // Use client-provided ID if present
-      ownerId,
-      name,
-      payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
-      visibility,
-      tags,
-      fundSlot,
-    })
-    res.json({ id })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
-
-// PUT /api/bots/:id - Update a bot
-app.put('/api/bots/:id', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const { ownerId, name, payload, visibility, tags, fundSlot } = req.body
-    if (!ownerId) {
-      return res.status(400).json({ error: 'ownerId is required' })
-    }
-    const result = await database.updateBot(req.params.id, ownerId, {
-      name,
-      payload: payload ? (typeof payload === 'string' ? payload : JSON.stringify(payload)) : undefined,
-      visibility,
-      tags,
-      fundSlot,
-    })
-    if (!result) {
-      return res.status(404).json({ error: 'Bot not found or not owned by user' })
-    }
-    res.json({ success: true })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
-
-// DELETE /api/bots/:id - Delete a bot (soft delete)
-app.delete('/api/bots/:id', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const ownerId = req.query.ownerId
-    if (!ownerId) {
-      return res.status(400).json({ error: 'ownerId query parameter required' })
-    }
-    const result = await database.deleteBot(req.params.id, ownerId)
-    if (!result) {
-      return res.status(404).json({ error: 'Bot not found or not owned by user' })
-    }
-    res.json({ success: true })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
-
-// PUT /api/bots/:id/metrics - Update bot metrics after backtest
-app.put('/api/bots/:id/metrics', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const metrics = req.body
-    await database.updateBotMetrics(req.params.id, metrics)
-    res.json({ success: true })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
+// // PUT /api/bots/:id - Update a bot
+// app.put('/api/bots/:id', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const { ownerId, name, payload, visibility, tags, fundSlot } = req.body
+//     if (!ownerId) {
+//       return res.status(400).json({ error: 'ownerId is required' })
+//     }
+//     const result = await database.updateBot(req.params.id, ownerId, {
+//       name,
+//       payload: payload ? (typeof payload === 'string' ? payload : JSON.stringify(payload)) : undefined,
+//       visibility,
+//       tags,
+//       fundSlot,
+//     })
+//     if (!result) {
+//       return res.status(404).json({ error: 'Bot not found or not owned by user' })
+//     }
+//     res.json({ success: true })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
+//
+// // DELETE /api/bots/:id - Delete a bot (soft delete)
+// app.delete('/api/bots/:id', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const ownerId = req.query.ownerId
+//     if (!ownerId) {
+//       return res.status(400).json({ error: 'ownerId query parameter required' })
+//     }
+//     const result = await database.deleteBot(req.params.id, ownerId)
+//     if (!result) {
+//       return res.status(404).json({ error: 'Bot not found or not owned by user' })
+//     }
+//     res.json({ success: true })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
+//
+// // PUT /api/bots/:id/metrics - Update bot metrics after backtest
+// app.put('/api/bots/:id/metrics', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const metrics = req.body
+//     await database.updateBotMetrics(req.params.id, metrics)
+//     res.json({ success: true })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
 // ============================================================================
 // Nexus (Community) Bot Endpoints - PUBLIC, NO PAYLOAD
@@ -4080,24 +4107,25 @@ app.post('/api/indicator-series', async (req, res) => {
 })
 
 // GET /api/bots/:id/metrics - Get cached metrics for a bot
-app.get('/api/bots/:id/metrics', async (req, res) => {
-  try {
-    await ensureDbInitialized()
-    const botId = req.params.id
-
-    const bot = await database.getBotById(botId, false)
-    if (!bot) {
-      return res.status(404).json({ error: 'Bot not found' })
-    }
-
-    res.json({
-      botId,
-      metrics: bot.metrics || null,
-    })
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) })
-  }
-})
+// // GET /api/bots/:id/metrics - Get bot metrics
+// app.get('/api/bots/:id/metrics', async (req, res) => {
+//   try {
+//     await ensureDbInitialized()
+//     const botId = req.params.id
+//
+//     const bot = await database.getBotById(botId, false)
+//     if (!bot) {
+//       return res.status(404).json({ error: 'Bot not found' })
+//     }
+//
+//     res.json({
+//       botId,
+//       metrics: bot.metrics || null,
+//     })
+//   } catch (e) {
+//     res.status(500).json({ error: String(e?.message || e) })
+//   }
+// })
 
 // ============================================================================
 // Portfolio Correlation API Endpoints
