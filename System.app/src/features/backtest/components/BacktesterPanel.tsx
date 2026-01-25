@@ -131,21 +131,16 @@ export function BacktesterPanel({
   useEffect(() => {
     const hasIsOos = !!(result?.isMetrics && result?.oosMetrics && result?.oosStartDate)
 
-    console.log(`[Benchmarks] useEffect triggered - hasIsOos: ${hasIsOos}, tab: ${tab}, benchmarkMetrics: ${benchmarkMetrics?.status}, isState: ${isBenchmarks.status}, oosState: ${oosBenchmarks.status}`)
-
     if (hasIsOos && tab === 'Benchmarks' && benchmarkMetrics?.status === 'done') {
       // Fetch IS benchmarks
       if (isBenchmarks.status === 'idle') {
         const startDate = result.isMetrics!.startDate
         const endDate = result.oosStartDate!
 
-        console.log(`[Benchmarks] Fetching IS benchmarks: ${startDate} to ${endDate}`)
         setIsBenchmarks({ status: 'loading' })
         fetch(`/api/benchmarks/metrics?startDate=${startDate}&endDate=${endDate}`)
           .then(res => res.json())
           .then(data => {
-            console.log(`[Benchmarks] IS response:`, data)
-
             if (data.success) {
               setIsBenchmarks({ status: 'done', data: data.benchmarks })
             } else {
@@ -162,12 +157,10 @@ export function BacktesterPanel({
         const startDate = result.oosStartDate!
         const endDate = result.oosMetrics!.endDate
 
-        console.log(`[Benchmarks] Fetching OOS benchmarks: ${startDate} to ${endDate}`)
         setOosBenchmarks({ status: 'loading' })
         fetch(`/api/benchmarks/metrics?startDate=${startDate}&endDate=${endDate}`)
           .then(res => res.json())
           .then(data => {
-            console.log(`[Benchmarks] OOS response:`, data)
             if (data.success) {
               setOosBenchmarks({ status: 'done', data: data.benchmarks })
             } else {

@@ -86,9 +86,7 @@ export function TickerSearchModal({
   // Don't show Auto for nodes at depth 1 (direct children of root)
   // These nodes have no parent with tickers to match from
   // Depth 0 = root, Depth 1 = first indicator (no Auto), Depth 2+ = nested indicators (has Auto)
-  console.log('[TickerSearchModal] nodeId:', nodeId, 'nodeDepth:', nodeDepth, 'nodeKind:', nodeKind)
   const allowAutoMode = nodeDepth !== 1
-  console.log('[TickerSearchModal] allowAutoMode:', allowAutoMode)
   const [search, setSearch] = useState('')
   const [includeETFs, setIncludeETFs] = useState(true)
   const [includeStocks, setIncludeStocks] = useState(true)

@@ -55,36 +55,7 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
       const prepared = normalizeNodeForBacktest(ensureSlots(cloneNode(node)))
       const payload = JSON.stringify(prepared)
 
-      // DEBUG: Log scaling nodes in the payload to verify branch:from is being sent
-      const dumpScalingNodes = (n: FlowNode, depth: number = 0): void => {
-        if (!n) return
-        const indent = '  '.repeat(depth)
-        if (n.kind === 'scaling') {
-          console.log(`${indent}[PAYLOAD DUMP] SCALING: id=${n.id}, scaleTicker="${n.scaleTicker}", scaleMetric="${n.scaleMetric}"`)
-          const children = n.children as Record<string, unknown>
-          console.log(`${indent}[PAYLOAD DUMP]   children.then: ${JSON.stringify(children?.then ? 'present' : 'NONE')}`)
-          console.log(`${indent}[PAYLOAD DUMP]   children.else: ${JSON.stringify(children?.else ? 'present' : 'NONE')}`)
-        }
-        // Recurse
-        if (n.children) {
-          if (Array.isArray(n.children)) {
-            n.children.forEach(c => c && dumpScalingNodes(c, depth + 1))
-          } else {
-            const ch = n.children as Record<string, FlowNode | FlowNode[] | null>
-            Object.values(ch).forEach(slot => {
-              if (!slot) return
-              if (Array.isArray(slot)) slot.forEach(c => c && dumpScalingNodes(c, depth + 1))
-              else dumpScalingNodes(slot, depth + 1)
-            })
-          }
-        }
-      }
-      console.log('[PAYLOAD DUMP] ========== OUTGOING PAYLOAD ==========')
-      dumpScalingNodes(prepared)
-      console.log('[PAYLOAD DUMP] ========== END ==========')
-
       // Call server API for backtest
-      console.log(`[Backtest] Calling server API with mode=${backtestMode}, costBps=${backtestCostBps}, customIndicators=${customIndicators.length}, splitConfig=${splitConfig?.enabled ? 'enabled' : 'disabled'}...`)
       const response = await fetch(`${API_BASE}/backtest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -104,16 +75,6 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
       }
 
       const serverResult = await response.json()
-      const totalTime = performance.now() - backtestStartTime
-      console.log(`[Backtest] Server response received in ${totalTime.toFixed(1)}ms`)
-
-      // Log compression stats from server
-      if (serverResult.compression) {
-        console.log(
-          `[Backtest] Tree compression: ${serverResult.compression.originalNodes} → ${serverResult.compression.compressedNodes} nodes ` +
-            `(${serverResult.compression.nodesRemoved} removed, ${serverResult.compression.gatesMerged} gates merged) in ${serverResult.compression.compressionTimeMs?.toFixed(1) || '?'}ms`
-        )
-      }
 
       // Transform server response to frontend format
       // Server returns: { metrics, equityCurve, benchmarkCurve, allocations, compression }
@@ -176,21 +137,13 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
       }
 
       // Extract OOS start date if available (for IS/OOS split visualization)
-      console.log('[OOS Debug] splitConfig passed to backend:', splitConfig)
-      console.log('[OOS Debug] shardOosDate passed:', shardOosDate)
-      console.log('[OOS Debug] serverResult.isMetrics:', serverResult.isMetrics)
-      console.log('[OOS Debug] serverResult.oosMetrics:', serverResult.oosMetrics)
       let oosStartDate: string | undefined
 
       // Priority: 1. Server-calculated OOS date, 2. Shard OOS date (for combined strategies)
       if (serverResult.oosMetrics?.startDate) {
         oosStartDate = serverResult.oosMetrics.startDate
-        console.log('[OOS Debug] Using server OOS start date:', oosStartDate)
       } else if (shardOosDate) {
         oosStartDate = shardOosDate
-        console.log('[OOS Debug] Using shard OOS start date:', oosStartDate)
-      } else {
-        console.log('[OOS Debug] No OOS start date available')
       }
 
       // Helper to calculate turnover between two allocations
@@ -259,7 +212,6 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
           avgTurnover: serverResult.isMetrics.avgTurnover || 0,
           avgHoldings: serverResult.isMetrics.avgHoldings || 0,
         }
-        console.log('[OOS Debug] Transformed IS metrics:', isMetrics)
       }
 
       if (serverResult.oosMetrics) {
@@ -283,7 +235,6 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
           avgTurnover: serverResult.oosMetrics.avgTurnover || 0,
           avgHoldings: serverResult.oosMetrics.avgHoldings || 0,
         }
-        console.log('[OOS Debug] Transformed OOS metrics:', oosMetrics)
       }
 
       // Transform IS/OOS split data for In Depth tab
@@ -293,8 +244,6 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
       let oosMonthly = undefined
 
       if (serverResult.isAllocations) {
-        console.log('[useBacktestRunner] serverResult.isAllocations length:', serverResult.isAllocations.length)
-        console.log('[useBacktestRunner] serverResult.isAllocations[0]:', serverResult.isAllocations[0])
         // Transform from backend format { date, alloc } to frontend format { date, entries }
         isAllocations = (serverResult.isAllocations || []).map((a: { date: string; alloc: Record<string, number> }) => ({
           date: a.date,
@@ -303,12 +252,8 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
             .map(([ticker, weight]) => ({ ticker, weight: weight as number }))
             .sort((x, y) => y.weight - x.weight),
         }))
-        console.log('[useBacktestRunner] Transformed isAllocations length:', isAllocations.length)
-        console.log('[useBacktestRunner] Transformed isAllocations[0]:', isAllocations[0])
       }
       if (serverResult.oosAllocations) {
-        console.log('[useBacktestRunner] serverResult.oosAllocations length:', serverResult.oosAllocations.length)
-        console.log('[useBacktestRunner] serverResult.oosAllocations[0]:', serverResult.oosAllocations[0])
         // Transform from backend format { date, alloc } to frontend format { date, entries }
         oosAllocations = (serverResult.oosAllocations || []).map((a: { date: string; alloc: Record<string, number> }) => ({
           date: a.date,
@@ -317,8 +262,6 @@ export function useBacktestRunner({ callChainsById: _callChainsById, customIndic
             .map(([ticker, weight]) => ({ ticker, weight: weight as number }))
             .sort((x, y) => y.weight - x.weight),
         }))
-        console.log('[useBacktestRunner] Transformed oosAllocations length:', oosAllocations.length)
-        console.log('[useBacktestRunner] Transformed oosAllocations[0]:', oosAllocations[0])
       }
 
       // Compute monthly returns for IS/OOS periods from filtered days

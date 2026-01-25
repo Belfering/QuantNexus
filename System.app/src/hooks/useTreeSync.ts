@@ -68,16 +68,6 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
     const isTreeFieldSwitch = prevBotId === activeBotId && activeBotTree !== root
     prevBotIdRef.current = activeBotId
 
-    console.log('[useTreeSync] Load effect triggered:', {
-      tabContext,
-      treeField,
-      activeBotId,
-      activeBotTreeId: activeBotTree?.id,
-      activeBotTreeUndefined: !activeBotTree,
-      isBotSwitch,
-      isTreeFieldSwitch,
-    })
-
     // If tree is undefined, skip syncing - let ForgeTab initialization handle it
     // We don't set a temporary node because that causes the same node to be used everywhere
     if (!activeBotTree) {
@@ -88,15 +78,10 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
     // Load the active bot's tree into useTreeStore
     isSyncingRef.current = true
     setRoot(activeBotTree)
-    console.log('[useTreeSync] Loaded tree into useTreeStore:', {
-      treeField,
-      treeId: activeBotTree.id,
-    })
 
     // Clear zundo history on bot/tree field switch for fresh undo/redo stack
     if (isBotSwitch || isTreeFieldSwitch) {
       getTreeTemporalState().clear()
-      console.log('[useTreeSync] Cleared undo/redo history')
     }
 
     // Small delay to ensure setRoot completes before allowing sync back
@@ -113,14 +98,6 @@ export function useTreeSync(tabContext?: 'Forge' | 'Model', treeField?: 'root' |
 
     // Check if tree actually changed (reference equality)
     if (root === activeBotTree) return
-
-    console.log('[useTreeSync] Saving tree back to bot:', {
-      tabContext,
-      treeField,
-      activeBotId,
-      treeId: root.id,
-      previousTreeId: activeBotTree?.id,
-    })
 
     // Update the active bot's tree field
     setBots((prev) =>

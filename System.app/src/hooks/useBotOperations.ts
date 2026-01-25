@@ -208,13 +208,7 @@ export function useBotOperations({
         strategy: 'chronological',
         splitDate: shardOosDate,
       }
-      console.log('[OOS Debug] Auto-created splitConfig from shardOosDate:', splitConfigToPass)
     }
-
-    console.log('[OOS Debug] Current tab:', tab)
-    console.log('[OOS Debug] Bot splitConfig:', capturedBot.splitConfig)
-    console.log('[OOS Debug] splitConfigToPass:', splitConfigToPass)
-    console.log('[OOS Debug] shardOosDate from store:', shardOosDate)
 
     updateBotBacktest(targetBotId, { status: 'running', focusNodeId: null, result: null, errors: [] })
     try {
@@ -223,9 +217,6 @@ export function useBotOperations({
 
       // Auto-run robustness analysis after successful backtest (fire and forget)
       const savedBotId = capturedBot.savedBotId
-      console.log('[Auto-Robustness] splitConfigToPass:', splitConfigToPass)
-      console.log('[Auto-Robustness] capturedBot.splitConfig:', capturedBot.splitConfig)
-      console.log('[Auto-Robustness] tab:', tab)
       setModelSanityReport({ status: 'loading' })
       const payload = JSON.stringify(ensureSlots(cloneNode(currentTree)))
       const robustnessUrl = savedBotId
@@ -234,19 +225,15 @@ export function useBotOperations({
       const robustnessBody = savedBotId
         ? JSON.stringify({ mode: backtestMode, costBps: backtestCostBps, splitConfig: splitConfigToPass })
         : JSON.stringify({ payload, mode: backtestMode, costBps: backtestCostBps, splitConfig: splitConfigToPass })
-      console.log('[Auto-Robustness] Request body:', robustnessBody)
       fetch(robustnessUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: robustnessBody,
       })
         .then((res) => {
-          console.log('[Auto-Robustness] Response status:', res.status, 'ok:', res.ok)
           return res.ok ? res.json() : Promise.reject(new Error('Sanity report failed'))
         })
         .then((data) => {
-          console.log('[Auto-Robustness] Response data keys:', Object.keys(data))
-          console.log('[Auto-Robustness] Full response data:', data)
           setModelSanityReport({ status: 'done', report: data.report || data })
         })
         .catch((err) => {
@@ -525,7 +512,6 @@ export function useBotOperations({
         const parsed = JSON.parse(text) as unknown
 
         const format = detectImportFormat(parsed)
-        console.log(`[Import] Detected format: ${format}`)
 
         const MAX_COMPOSER_SIZE = 20 * 1024 * 1024
         const MAX_OTHER_SIZE = 1.5 * 1024 * 1024
@@ -542,7 +528,6 @@ export function useBotOperations({
 
         if (format === 'composer') {
           root0 = parseComposerSymphony(parsed as Record<string, unknown>)
-          console.log('[Import] Parsed Composer Symphony:', root0)
         } else if (format === 'quantmage') {
           const workerResult = await new Promise<FlowNode>((resolve, reject) => {
             const worker = new Worker(new URL('../importWorker.ts', import.meta.url), { type: 'module' })
@@ -561,7 +546,6 @@ export function useBotOperations({
             worker.postMessage({ type: 'parse', data: parsed, format: 'quantmage', filename: file.name })
           })
           root0 = workerResult
-          console.log('[Import] Parsed QuantMage Strategy via Worker:', root0)
         } else if (format === 'atlas') {
           const isFlowNodeLike = (v: unknown): v is FlowNode => {
             if (!v || typeof v !== 'object') return false
@@ -617,7 +601,6 @@ export function useBotOperations({
         setClipboard(null)
         setCopiedNodeId(null)
         setIsImporting(false)
-        console.log(`[Import] Successfully imported ${format} format as: ${ensured.title}`)
       } catch (err) {
         setIsImporting(false)
         console.error('[Import] Error:', err)
