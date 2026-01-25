@@ -205,6 +205,11 @@ export function useWatchlistCallbacks({
           backtestMode,
           backtestCostBps,
         }
+        console.log('[Save] Creating bot with:', {
+          name: entry.name,
+          backtestMode: entry.backtestMode,
+          backtestCostBps: entry.backtestCostBps,
+        })
         // Save to API first (database is source of truth)
         const createdId = await createBotInApi(userId, entry)
         if (createdId) {
