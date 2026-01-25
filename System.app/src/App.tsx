@@ -502,49 +502,53 @@ function App() {
   useEffect(() => {
     if (!userId) return
 
-    bots.forEach(async (bot) => {
-      // Check if bot needs auto-save as draft:
-      // 1. Not saved to watchlist yet (!savedBotId)
-      // 2. Has unsaved changes (hasUnsavedChanges = true)
-      // 3. Not already saved as draft (!isDraft)
-      const needsDraftSave = !bot.savedBotId && bot.hasUnsavedChanges && !bot.isDraft
+    const saveDrafts = async () => {
+      for (const bot of bots) {
+        // Check if bot needs auto-save as draft:
+        // 1. Not saved to watchlist yet (!savedBotId)
+        // 2. Has unsaved changes (hasUnsavedChanges = true)
+        // 3. Not already saved as draft (!isDraft)
+        const needsDraftSave = !bot.savedBotId && bot.hasUnsavedChanges && !bot.isDraft
 
-      if (needsDraftSave) {
-        try {
-          // Get current tree based on tab context
-          const currentTree = bot.tabContext === 'Model'
-            ? bot.root
-            : bot.history[bot.historyIndex]
+        if (needsDraftSave) {
+          try {
+            // Get current tree based on tab context
+            const currentTree = bot.tabContext === 'Model'
+              ? bot.root
+              : bot.history[bot.historyIndex]
 
-          if (!currentTree) return
+            if (!currentTree) continue
 
-          const payload = ensureSlots(cloneNode(currentTree))
-          const draftBot: SavedBot = {
-            id: `draft-${Date.now()}-${bot.id}`,
-            name: payload.title || 'Untitled System',
-            builderId: userId,
-            payload,
-            visibility: 'private',
-            tags: ['Private'],
-            createdAt: Date.now(),
-            backtestMode: backtestMode,
-            backtestCostBps: backtestCostBps,
+            const payload = ensureSlots(cloneNode(currentTree))
+            const draftBot: SavedBot = {
+              id: `draft-${Date.now()}-${bot.id}`,
+              name: payload.title || 'Untitled System',
+              builderId: userId,
+              payload,
+              visibility: 'private',
+              tags: ['Private'],
+              createdAt: Date.now(),
+              backtestMode: backtestMode,
+              backtestCostBps: backtestCostBps,
+            }
+
+            const draftId = await createBotInApi(userId, draftBot, true)
+
+            if (draftId) {
+              // Mark this bot session as having a draft saved
+              setBots((prev) => prev.map((b) =>
+                b.id === bot.id ? { ...b, isDraft: true, savedBotId: draftId } : b
+              ))
+              console.log('[Auto-Save] Draft created for unsaved bot:', draftId)
+            }
+          } catch (err) {
+            console.error('[Auto-Save] Failed to create draft:', err)
           }
-
-          const draftId = await createBotInApi(userId, draftBot, true)
-
-          if (draftId) {
-            // Mark this bot session as having a draft saved
-            setBots((prev) => prev.map((b) =>
-              b.id === bot.id ? { ...b, isDraft: true, savedBotId: draftId } : b
-            ))
-            console.log('[Auto-Save] Draft created for unsaved bot:', draftId)
-          }
-        } catch (err) {
-          console.error('[Auto-Save] Failed to create draft:', err)
         }
       }
-    })
+    }
+
+    saveDrafts()
   }, [bots, userId, backtestMode, backtestCostBps, setBots])
 
   // Periodic localStorage auto-save for crash recovery (every 30 seconds)

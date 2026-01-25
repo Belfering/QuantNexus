@@ -654,6 +654,9 @@ export function useBotOperations({
               history: newHistory,
               historyIndex: newHistory.length - 1,
               backtest: { status: 'idle', errors: [], result: null, focusNodeId: null },
+              // Initialize auto-save flags
+              hasUnsavedChanges: false,
+              isDraft: false,
             }
           }),
         )
