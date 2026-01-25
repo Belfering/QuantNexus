@@ -110,7 +110,7 @@ export function BacktesterPanel({
   const [tab, setTab] = useState<'Overview' | 'In Depth' | 'Benchmarks' | 'Robustness'>('Overview')
   const [selectedRange, setSelectedRange] = useState<VisibleRange | null>(null)
   const [logScale, setLogScale] = useState(true)
-  const [activePreset, setActivePreset] = useState<'1m' | '3m' | '6m' | 'ytd' | '1y' | '5y' | 'max' | 'custom'>('max')
+  const [activePreset, setActivePreset] = useState<'1m' | '3m' | '6m' | 'ytd' | '1y' | '5y' | 'oos' | 'max' | 'custom'>('max')
   const [rangePickerOpen, setRangePickerOpen] = useState(false)
   const [rangeStart, setRangeStart] = useState<string>('')
   const [rangeEnd, setRangeEnd] = useState<string>('')
@@ -298,6 +298,33 @@ export function BacktesterPanel({
           break
         }
       }
+      setSelectedRange(clampVisibleRangeToPoints(points, { from: startTime, to: endTime }))
+    } catch {
+      // Invalid date - ignore preset
+    }
+  }
+
+  const applyOOSPreset = () => {
+    if (!points.length || !result?.oosStartDate) return
+    setActivePreset('oos')
+
+    try {
+      // Parse OOS start date (YYYY-MM-DD format)
+      const [yy, mm, dd] = result.oosStartDate.split('-').map((x) => Number(x))
+      if (!(Number.isFinite(yy) && Number.isFinite(mm) && Number.isFinite(dd))) return
+
+      const oosStartSec = Math.floor(Date.UTC(yy, mm - 1, dd) / 1000)
+      let startTime = points[0].time
+
+      // Find the point at or after OOS start date
+      for (let i = 0; i < points.length; i++) {
+        if (Number(points[i].time) >= oosStartSec) {
+          startTime = points[i].time
+          break
+        }
+      }
+
+      const endTime = points[points.length - 1].time
       setSelectedRange(clampVisibleRangeToPoints(points, { from: startTime, to: endTime }))
     } catch {
       // Invalid date - ignore preset
@@ -864,6 +891,9 @@ export function BacktesterPanel({
                   <Button variant={activePreset === 'ytd' ? 'accent' : 'secondary'} size="sm" onClick={() => applyPreset('ytd')}>YTD</Button>
                   <Button variant={activePreset === '1y' ? 'accent' : 'secondary'} size="sm" onClick={() => applyPreset('1y')}>1yr</Button>
                   <Button variant={activePreset === '5y' ? 'accent' : 'secondary'} size="sm" onClick={() => applyPreset('5y')}>5yr</Button>
+                  {result?.oosStartDate && (
+                    <Button variant={activePreset === 'oos' ? 'accent' : 'secondary'} size="sm" onClick={applyOOSPreset}>OOS</Button>
+                  )}
                   <Button variant={activePreset === 'max' ? 'accent' : 'secondary'} size="sm" onClick={() => applyPreset('max')}>Max</Button>
                   <Button variant={logScale ? 'accent' : 'secondary'} size="sm" onClick={() => setLogScale((v) => !v)}>Log</Button>
                 </div>
