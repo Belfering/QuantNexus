@@ -750,6 +750,16 @@ function App() {
       // Fallback: create a basic start node
       return createNode('basic', 'Start')
     }
+    // Use the correct tree based on tab context (same logic as bot tab rendering)
+    if (activeBot.tabContext === 'Model') {
+      return activeBot.root ?? activeBot.history[activeBot.historyIndex] ?? createNode('basic', 'Start')
+    } else if (activeBot.tabContext === 'Forge' && activeBot.subtabContext === 'Shaping') {
+      return activeBot.splitTree ?? activeBot.history[activeBot.historyIndex] ?? createNode('basic', 'Start')
+    } else if (activeBot.tabContext === 'Forge' && activeBot.subtabContext === 'Walk Forward') {
+      return activeBot.walkForwardTree ?? activeBot.history[activeBot.historyIndex] ?? createNode('basic', 'Start')
+    } else if (activeBot.tabContext === 'Forge' && activeBot.subtabContext === 'Combine') {
+      return activeBot.combineTree ?? activeBot.history[activeBot.historyIndex] ?? createNode('basic', 'Start')
+    }
     return activeBot.history[activeBot.historyIndex] ?? createNode('basic', 'Start')
   }, [activeBot])
 
