@@ -166,3 +166,50 @@ Once connected, you can manage the production deployment, check logs, and access
 **API Integration:**
 - Proxy is configured in `vite.config.ts` to forward `/api` to `localhost:8787`
 - No authentication/CORS restrictions (intended for local development)
+
+## UI Development Guidelines
+
+### Tooltips (MANDATORY)
+
+**CRITICAL: All UI elements MUST have hover tooltips to improve user experience and feature discoverability.**
+
+**When to add tooltips:**
+- When creating ANY new UI component (buttons, inputs, dropdowns, toggles, etc.)
+- When adding new features or controls
+- When modifying existing components
+
+**Tooltip Requirements:**
+1. **Detail Level**: 2-3 sentences with concrete examples (not single words or brief labels)
+2. **Format**:
+   - What it is (1 sentence)
+   - How it works (1 sentence with example)
+   - Keyboard shortcut (if applicable)
+3. **Include**:
+   - Concrete examples where applicable
+   - Keyboard shortcuts for interactive elements
+   - Formulas for metrics (using MetricInfoPopover pattern)
+   - Explanation of why disabled elements are disabled
+
+**Existing Infrastructure:**
+- **Generic tooltips**: `src/shared/components/Tooltip.tsx` - Use for standard hover help
+- **Metric tooltips**: `src/components/Forge/MetricInfoPopover.tsx` - Use for metrics with formulas
+- **Tooltip content**: Store in `src/config/tooltipContent.ts` for centralized management
+
+**Example Usage:**
+```tsx
+<Tooltip content="Equal weighting distributes capital evenly across all positions in this branch. For example, if you have 3 positions, each receives 33.3% allocation regardless of any other factors.">
+  <Button>Equal Weight</Button>
+</Tooltip>
+```
+
+**For disabled elements:**
+```tsx
+<Tooltip content={isDisabled ? "Load shards to enable filtering" : "Apply filters to branches"}>
+  <Button disabled={isDisabled}>Apply</Button>
+</Tooltip>
+```
+
+**Maintenance:**
+- When updating UI functionality, update the corresponding tooltip text
+- When removing features, remove associated tooltips
+- Keep tooltips accurate and synchronized with actual behavior

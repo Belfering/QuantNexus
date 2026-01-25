@@ -3,6 +3,8 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Tooltip } from '@/shared/components/Tooltip'
+import { TOOLTIP_CONTENT } from '@/config/tooltipContent'
 import type { OptimizationResult } from '@/types/optimizationJob'
 import type { RollingOptimizationResult } from '@/types/bot'
 import { extractBranchDisplayInfo, type BranchDisplayInfo } from '@/features/shards/utils/conditionDisplay'
@@ -122,22 +124,26 @@ export function ShardsBranchFilter({
         {/* Row 1: Mode toggle with theme colors */}
         <div>
           <div className="flex items-center gap-1">
-            <Button
-              onClick={() => onFilterModeChange('overall')}
-              variant={filterMode === 'overall' ? 'accent' : 'ghost'}
-              size="sm"
-              className="flex-1"
-            >
-              All
-            </Button>
-            <Button
-              onClick={() => onFilterModeChange('perPattern')}
-              variant={filterMode === 'perPattern' ? 'accent' : 'ghost'}
-              size="sm"
-              className="flex-1"
-            >
-              Per Pattern
-            </Button>
+            <Tooltip content="All mode ranks all branches globally by the selected metric. The top X branches overall will be included in the combined strategy. Use this for a simple, global selection approach.">
+              <Button
+                onClick={() => onFilterModeChange('overall')}
+                variant={filterMode === 'overall' ? 'accent' : 'ghost'}
+                size="sm"
+                className="flex-1"
+              >
+                All
+              </Button>
+            </Tooltip>
+            <Tooltip content="Per Pattern mode ranks branches within each unique condition pattern separately. For example, if you have 3 patterns with 10 branches each, selecting Top 2 per pattern gives you 6 total branches (2 from each pattern). This ensures diversity across different strategy patterns.">
+              <Button
+                onClick={() => onFilterModeChange('perPattern')}
+                variant={filterMode === 'perPattern' ? 'accent' : 'ghost'}
+                size="sm"
+                className="flex-1"
+              >
+                Per Pattern
+              </Button>
+            </Tooltip>
           </div>
         </div>
 
@@ -224,45 +230,53 @@ export function ShardsBranchFilter({
 
         {/* Row 2: Metric + Top X + Apply (inline) */}
         <div className="flex items-end gap-2 border-t border-border pt-3">
-          <div className="flex-1">
-            <label className="text-sm text-muted-foreground block mb-1">
-              Metric
-            </label>
-            <FilterMetricDropdown
-              value={filterMetric}
-              onChange={onFilterMetricChange}
-              disabled={allBranches.length === 0}
-              className="w-full"
-            />
-          </div>
-          <div className="w-20">
-            <label className="text-sm text-muted-foreground block mb-1">
-              {filterMode === 'overall' ? 'Top X' : 'Top/Pat'}
-            </label>
-            <input
-              type="number"
-              min={filterMode === 'overall' ? 0 : 1}
-              value={filterMode === 'overall' ? filterTopX : filterTopXPerPattern}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10) || (filterMode === 'overall' ? 0 : 1)
-                if (filterMode === 'overall') {
-                  onFilterTopXChange(val)
-                } else {
-                  onFilterTopXPerPatternChange(val)
-                }
-              }}
-              className="w-full px-2 py-1 rounded border border-border bg-background text-sm h-8"
+          <Tooltip content={TOOLTIP_CONTENT.forge.shardFilter.metric}>
+            <div className="flex-1">
+              <label className="text-sm text-muted-foreground block mb-1">
+                Metric
+              </label>
+              <FilterMetricDropdown
+                value={filterMetric}
+                onChange={onFilterMetricChange}
+                disabled={allBranches.length === 0}
+                className="w-full"
+              />
+            </div>
+          </Tooltip>
+          <Tooltip content={filterMode === 'overall'
+            ? TOOLTIP_CONTENT.forge.shardFilter.topX
+            : TOOLTIP_CONTENT.forge.shardFilter.topXPerPattern}>
+            <div className="w-20">
+              <label className="text-sm text-muted-foreground block mb-1">
+                {filterMode === 'overall' ? 'Top X' : 'Top/Pat'}
+              </label>
+              <input
+                type="number"
+                min={filterMode === 'overall' ? 0 : 1}
+                value={filterMode === 'overall' ? filterTopX : filterTopXPerPattern}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10) || (filterMode === 'overall' ? 0 : 1)
+                  if (filterMode === 'overall') {
+                    onFilterTopXChange(val)
+                  } else {
+                    onFilterTopXPerPatternChange(val)
+                  }
+                }}
+                className="w-full px-2 py-1 rounded border border-border bg-background text-sm h-8"
+                disabled={filterMode === 'perPattern' ? Object.keys(discoveredPatterns).length === 0 : allBranches.length === 0}
+              />
+            </div>
+          </Tooltip>
+          <Tooltip content={allBranches.length === 0 ? "Load shards first to enable filtering" : TOOLTIP_CONTENT.forge.shardFilter.apply}>
+            <Button
+              onClick={onApplyFilter}
+              size="sm"
+              className="h-8"
               disabled={filterMode === 'perPattern' ? Object.keys(discoveredPatterns).length === 0 : allBranches.length === 0}
-            />
-          </div>
-          <Button
-            onClick={onApplyFilter}
-            size="sm"
-            className="h-8"
-            disabled={filterMode === 'perPattern' ? Object.keys(discoveredPatterns).length === 0 : allBranches.length === 0}
-          >
-            Apply
-          </Button>
+            >
+              Apply
+            </Button>
+          </Tooltip>
         </div>
 
         {/* Row 3: Per-pattern info (only shown in perPattern mode) */}

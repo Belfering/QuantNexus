@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
+import { Tooltip } from '@/shared/components/Tooltip'
+import { TOOLTIP_CONTENT } from '@/config/tooltipContent'
 import { cn } from '@/lib/utils'
 import { formatPct, downloadTextFile } from '@/shared/utils'
 import type { EquityPoint, BacktestWarning } from '@/types'
@@ -588,56 +590,70 @@ export function BacktesterPanel({
         <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 items-stretch">
           {/* Left section: Run Backtest through Show benchmark */}
           <div className="flex flex-nowrap gap-2 items-stretch">
-            <Button
-              onClick={handleRun}
-              disabled={status === 'running'}
-              className="flex-1 px-5 text-sm font-bold whitespace-nowrap h-full border-l-[3px] border-l-accent hover:brightness-95 transition-all"
-              style={{ background: 'color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2) 88%)' }}
-            >
-              {status === 'running' ? 'Running\u2026' : 'Run Backtest'}
-            </Button>
+            <Tooltip content={TOOLTIP_CONTENT.backtest.runBacktest}>
+              <Button
+                onClick={handleRun}
+                disabled={status === 'running'}
+                className="flex-1 px-5 text-sm font-bold whitespace-nowrap h-full border-l-[3px] border-l-accent hover:brightness-95 transition-all"
+                style={{ background: 'color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2) 88%)' }}
+              >
+                {status === 'running' ? 'Running\u2026' : 'Run Backtest'}
+              </Button>
+            </Tooltip>
             <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
               <span className="text-xs font-bold text-muted">Mode</span>
               <BacktestModeDropdown value={mode} onChange={(m) => setMode(m)} />
             </div>
-            <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
-              <span className="text-xs font-bold text-muted">Cost (bps)</span>
-              <Input
-                type="number"
-                min={0}
-                step={1}
-                value={Number.isFinite(costBps) ? costBps : 0}
-                onChange={(e) => setCostBps(Number(e.target.value || 0))}
-                title="Transaction cost (bps)"
-                className="w-[60px] text-sm border-0 p-0 h-auto bg-transparent text-center"
-              />
-            </div>
-            <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
-              <div className="flex items-center justify-center gap-1">
-                <input type="checkbox" checked={showBenchmark} onChange={(e) => setShowBenchmark(e.target.checked)} title="Show benchmark on chart" />
-                <span className="text-xs font-bold text-muted">Benchmark</span>
+            <Tooltip content={TOOLTIP_CONTENT.backtest.costBps}>
+              <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
+                <span className="text-xs font-bold text-muted">Cost (bps)</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={Number.isFinite(costBps) ? costBps : 0}
+                  onChange={(e) => setCostBps(Number(e.target.value || 0))}
+                  className="w-[60px] text-sm border-0 p-0 h-auto bg-transparent text-center"
+                />
               </div>
-              <div className="flex items-center justify-center gap-1">
-                <button
-                  className="px-2 py-0.5 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
-                  onClick={() => openTickerModal?.((ticker) => setBenchmark(ticker))}
-                  title="Benchmark ticker"
-                >
-                  {benchmark || 'SPY'}
-                </button>
-                {!benchmarkKnown && benchmark.trim() ? (
-                  <span className="text-danger font-bold text-xs">?</span>
-                ) : null}
+            </Tooltip>
+            <Tooltip content={TOOLTIP_CONTENT.backtest.benchmark}>
+              <div className="flex-1 flex flex-col items-center justify-center border border-border rounded px-3">
+                <div className="flex items-center justify-center gap-1">
+                  <input type="checkbox" checked={showBenchmark} onChange={(e) => setShowBenchmark(e.target.checked)} />
+                  <span className="text-xs font-bold text-muted">Benchmark</span>
+                </div>
+                <div className="flex items-center justify-center gap-1">
+                  <button
+                    className="px-2 py-0.5 border border-border rounded bg-card text-sm font-mono hover:bg-muted/50"
+                    onClick={() => openTickerModal?.((ticker) => setBenchmark(ticker))}
+                  >
+                    {benchmark || 'SPY'}
+                  </button>
+                  {!benchmarkKnown && benchmark.trim() ? (
+                    <span className="text-danger font-bold text-xs">?</span>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            </Tooltip>
           </div>
           {/* Center section: View tabs */}
           <div className="flex items-stretch">
-            {(['Overview', 'In Depth', 'Benchmarks', 'Robustness'] as const).map((t) => (
-              <Button key={t} variant={tab === t ? 'accent' : 'secondary'} className="flex-1 px-5 text-sm font-semibold h-full" onClick={() => setTab(t)}>
-                {t}
-              </Button>
-            ))}
+            {(['Overview', 'In Depth', 'Benchmarks', 'Robustness'] as const).map((t) => {
+              const tooltipMap = {
+                'Overview': TOOLTIP_CONTENT.backtest.tabs.performance,
+                'In Depth': TOOLTIP_CONTENT.backtest.tabs.inDepth,
+                'Benchmarks': TOOLTIP_CONTENT.backtest.tabs.benchmarks,
+                'Robustness': TOOLTIP_CONTENT.backtest.tabs.robustness,
+              }
+              return (
+                <Tooltip key={t} content={tooltipMap[t]}>
+                  <Button variant={tab === t ? 'accent' : 'secondary'} className="flex-1 px-5 text-sm font-semibold h-full" onClick={() => setTab(t)}>
+                    {t}
+                  </Button>
+                </Tooltip>
+              )
+            })}
           </div>
           {/* Right section: empty spacer for grid balance */}
           <div />

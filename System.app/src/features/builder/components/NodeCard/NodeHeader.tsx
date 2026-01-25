@@ -2,6 +2,8 @@
 // Header section of NodeCard with title, actions, and collapse toggle
 
 import { Button } from '@/components/ui/button'
+import { Tooltip } from '@/shared/components/Tooltip'
+import { TOOLTIP_CONTENT } from '@/config/tooltipContent'
 import { shortNodeId } from '@/shared/utils'
 import { getAllSlotsForNode } from '../../utils'
 import type { FlowNode } from '../../../../types'
@@ -50,63 +52,67 @@ export const NodeHeader = ({
       {/* Action buttons - left aligned */}
       <div className="flex items-center gap-1.5">
         {/* Delete button */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-red-600 font-bold hover:text-red-700 hover:bg-red-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete(node.id)
-          }}
-          title="Delete this node"
-        >
-          ✕
-        </Button>
+        <Tooltip content={TOOLTIP_CONTENT.model.actions.delete}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-red-600 font-bold hover:text-red-700 hover:bg-red-100"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete(node.id)
+            }}
+          >
+            ✕
+          </Button>
+        </Tooltip>
 
         {/* Collapse/Expand All descendants */}
         {node.kind !== 'position' && node.kind !== 'call' && (() => {
           const allCollapsed = collapsed && areAllDescendantsCollapsed(node)
           return (
-            <Button
-              variant={allCollapsed ? 'accent' : 'ghost'}
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                onExpandAllBelow(node.id, allCollapsed)
-              }}
-              title={allCollapsed ? 'Expand this node and all descendants' : 'Collapse this node and all descendants'}
-            >
-              {allCollapsed ? '⊞' : '⊟'}
-            </Button>
+            <Tooltip content={TOOLTIP_CONTENT.model.actions.collapse}>
+              <Button
+                variant={allCollapsed ? 'accent' : 'ghost'}
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onExpandAllBelow(node.id, allCollapsed)
+                }}
+              >
+                {allCollapsed ? '⊞' : '⊟'}
+              </Button>
+            </Tooltip>
           )
         })()}
 
         {/* Copy button */}
-        <Button
-          variant={copiedNodeId === node.id ? 'accent' : 'ghost'}
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation()
-            onCopy(node.id)
-          }}
-          title={copiedNodeId === node.id ? 'This node is copied' : 'Copy this node'}
-        >
-          ⧉
-        </Button>
-
-        {/* Color picker button */}
-        <div className="relative">
+        <Tooltip content={TOOLTIP_CONTENT.model.actions.copy}>
           <Button
-            variant={node.bgColor ? 'accent' : 'ghost'}
+            variant={copiedNodeId === node.id ? 'accent' : 'ghost'}
             size="sm"
             onClick={(e) => {
               e.stopPropagation()
-              onSetColorOpen(!colorOpen)
+              onCopy(node.id)
             }}
-            title={node.bgColor ? 'Change color (color is set)' : 'Set color'}
           >
-            ◐
+            ⧉
           </Button>
+        </Tooltip>
+
+        {/* Color picker button */}
+        <div className="relative">
+          <Tooltip content="Set a custom background color for this node. Colors help visually organize and group related nodes in large strategy trees. The color is purely cosmetic and doesn't affect backtest results.">
+            <Button
+              variant={node.bgColor ? 'accent' : 'ghost'}
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSetColorOpen(!colorOpen)
+              }}
+            >
+              ◐
+            </Button>
+          </Tooltip>
           {colorOpen && (
             <div
               className="absolute top-full mt-1 left-0 flex gap-1 p-2 bg-surface border border-border rounded-lg shadow-lg z-[200]"

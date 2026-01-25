@@ -3,6 +3,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { Tooltip } from '@/shared/components/Tooltip'
+import { TOOLTIP_CONTENT } from '@/config/tooltipContent'
 import type { BlockKind, SlotId, FlowNode } from '../../../types'
 
 // Development mode flag - controls visibility of experimental features
@@ -108,18 +110,19 @@ export const InsertMenu = ({
 
   return (
     <>
-      <button
-        ref={buttonRef}
-        className="insert-btn"
-        onClick={(e) => {
-          e.stopPropagation()
-          setIsOpen(!isOpen)
-        }}
-        disabled={disabled}
-        title={title}
-      >
-        +
-      </button>
+      <Tooltip content={disabled ? "Node limit reached in Forge mode" : "Add a new child node. Click to choose node type (Ticker, Weighted, Filtered, If/Else, etc.). Each type serves a different purpose in building your strategy tree."}>
+        <button
+          ref={buttonRef}
+          className="insert-btn"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsOpen(!isOpen)
+          }}
+          disabled={disabled}
+        >
+          +
+        </button>
+      </Tooltip>
       {isOpen && createPortal(
         <div
           ref={menuRef}
@@ -127,20 +130,42 @@ export const InsertMenu = ({
           style={{ top: `${position.top}px`, left: `${position.left}px` }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button onClick={() => handleAdd('position')}>Ticker</button>
-          <button onClick={() => handleAdd('basic')}>Weighted</button>
-          <button onClick={() => handleAdd('function')}>Filtered</button>
-          <button onClick={() => handleAdd('indicator')}>If/Else</button>
-          <button onClick={() => handleAdd('numbered')}>Numbered</button>
+          <Tooltip content={TOOLTIP_CONTENT.model.nodeTypes.position} position="right">
+            <button onClick={() => handleAdd('position')}>Ticker</button>
+          </Tooltip>
+          <Tooltip content={TOOLTIP_CONTENT.model.nodeTypes.basic} position="right">
+            <button onClick={() => handleAdd('basic')}>Weighted</button>
+          </Tooltip>
+          <Tooltip content={TOOLTIP_CONTENT.model.nodeTypes.function} position="right">
+            <button onClick={() => handleAdd('function')}>Filtered</button>
+          </Tooltip>
+          <Tooltip content={TOOLTIP_CONTENT.model.nodeTypes.indicator} position="right">
+            <button onClick={() => handleAdd('indicator')}>If/Else</button>
+          </Tooltip>
+          <Tooltip content="Numbered node for sequential allocation strategies. Allows you to specify multiple branches with equal or weighted allocation across a numbered list. Useful for portfolio construction with specific ordering." position="right">
+            <button onClick={() => handleAdd('numbered')}>Numbered</button>
+          </Tooltip>
           {copiedCallChainId && (
-            <button onClick={handlePasteCallRef}>Paste Call Reference</button>
+            <Tooltip content={TOOLTIP_CONTENT.model.callChains.reference} position="right">
+              <button onClick={handlePasteCallRef}>Paste Call Reference</button>
+            </Tooltip>
           )}
-          <button onClick={() => handleAdd('altExit')}>Enter/Exit</button>
-          <button onClick={() => handleAdd('scaling')}>Mixed</button>
+          <Tooltip content="Enter/Exit node for defining separate entry and exit conditions. Allows you to specify different logic for when to enter positions versus when to exit. Useful for asymmetric trading strategies." position="right">
+            <button onClick={() => handleAdd('altExit')}>Enter/Exit</button>
+          </Tooltip>
+          <Tooltip content="Mixed scaling node that combines multiple allocation strategies. Allows blending of different weighting methods (equal, vol-weighted, custom) within the same branch. Advanced feature for complex portfolio construction." position="right">
+            <button onClick={() => handleAdd('scaling')}>Mixed</button>
+          </Tooltip>
           {IS_DEV_MODE && (
-            <button onClick={() => handleAdd('rolling')}>Rolling</button>
+            <Tooltip content="Rolling node for walk-forward optimization. Automatically re-optimizes parameters over rolling time windows. Experimental feature for adaptive strategies." position="right">
+              <button onClick={() => handleAdd('rolling')}>Rolling</button>
+            </Tooltip>
           )}
-          {clipboard && <button onClick={handlePaste}>Paste</button>}
+          {clipboard && (
+            <Tooltip content={TOOLTIP_CONTENT.model.actions.paste} position="right">
+              <button onClick={handlePaste}>Paste</button>
+            </Tooltip>
+          )}
         </div>,
         document.body
       )}
