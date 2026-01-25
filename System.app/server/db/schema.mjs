@@ -40,6 +40,7 @@ export const bots = sqliteTable('bots', {
   fundSlot: integer('fund_slot'),
   backtestMode: text('backtest_mode').default('CC'), // OO, CC, CO, OC
   backtestCostBps: integer('backtest_cost_bps').default(5), // Transaction cost in basis points
+  isDraft: integer('is_draft').default(0), // 1 if unsaved draft bot (auto-save), 0 if saved to watchlist
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   publishedAt: integer('published_at', { mode: 'timestamp' }),
