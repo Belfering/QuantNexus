@@ -121,28 +121,23 @@ export function ShardsBranchFilter({
       <div className="space-y-3 mb-3">
         {/* Row 1: Mode toggle with theme colors */}
         <div>
-          <label className="text-sm text-muted-foreground block mb-1">Filter Mode</label>
-          <div className="flex items-center gap-1 p-1 bg-muted/50 rounded">
-            <button
+          <div className="flex items-center gap-1">
+            <Button
               onClick={() => onFilterModeChange('overall')}
-              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
-                filterMode === 'overall'
-                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
-                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
+              variant={filterMode === 'overall' ? 'accent' : 'ghost'}
+              size="sm"
+              className="flex-1"
             >
               All
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => onFilterModeChange('perPattern')}
-              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
-                filterMode === 'perPattern'
-                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
-                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
+              variant={filterMode === 'perPattern' ? 'accent' : 'ghost'}
+              size="sm"
+              className="flex-1"
             >
               Per Pattern
-            </button>
+            </Button>
           </div>
         </div>
 

@@ -199,27 +199,23 @@ export function ShardsCombinedPreview({
         </div>
 
         {/* Toggle buttons */}
-        <div className="flex items-center gap-1 p-1 bg-muted/50 rounded">
-          <button
+        <div className="flex items-center gap-1">
+          <Button
             onClick={() => onSetActiveListView('filter')}
-            className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
-              activeListView === 'filter'
-                ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
-                : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
-            }`}
+            variant={activeListView === 'filter' ? 'accent' : 'ghost'}
+            size="sm"
+            className="flex-1"
           >
             Filter List
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => onSetActiveListView('strategy')}
-            className={`flex-1 px-3 py-1.5 text-sm font-medium rounded transition-all ${
-              activeListView === 'strategy'
-                ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
-                : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
-            }`}
+            variant={activeListView === 'strategy' ? 'accent' : 'ghost'}
+            size="sm"
+            className="flex-1"
           >
             Strategy List
-          </button>
+          </Button>
         </div>
       </div>
 
