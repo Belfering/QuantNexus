@@ -357,6 +357,7 @@ export function useBotOperations({
         prev.map((b) => {
           if (b.id !== currentModelBotId) return b
           const ensuredPayload = ensureSlots(payload)
+          ensuredPayload.title = bot.name  // Set title to saved bot name
           const trimmed = b.history.slice(0, b.historyIndex + 1)
           trimmed.push(ensuredPayload)
           return {

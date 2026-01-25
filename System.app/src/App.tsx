@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { LoginScreen } from '@/components/LoginScreen'
+import { BacktestModeTag } from '@/components/ui/BacktestModeTag'
 import { cn } from '@/lib/utils'
 import type {
   FlowNode,
@@ -122,6 +123,7 @@ const defaultUiState = (): UserUiState => ({
   communityWatchlistSlot1Id: null,
   communityWatchlistSlot2Id: null,
   fundZones: { fund1: null, fund2: null, fund3: null, fund4: null, fund5: null },
+  portfolioMode: 'simulated',
 })
 
 // ensureDefaultWatchlist moved to hooks/useWatchlistCallbacks.ts (Phase 2N-20)
@@ -393,7 +395,7 @@ function App() {
   const watchlists = useBotStore(s => s.watchlists)
   const setWatchlists = useBotStore(s => s.setWatchlists)
   // NOTE: callChains is now per-bot (stored in BotSession.callChains), not global state
-  const [uiState, setUiState] = useState<UserUiState>(() => initialUserData.ui)
+  const [uiState, setUiState] = useState<UserUiState>(() => initialUserData.ui || defaultUiState())
 
   // Initialize saved bots and watchlists from localStorage on mount
   useEffect(() => {
@@ -886,7 +888,7 @@ function App() {
 
   useEffect(() => {
     savedBots.forEach((bot) => {
-      if (uiState.analyzeCollapsedByBotId[bot.id] === false) {
+      if (uiState.analyzeCollapsedByBotId?.[bot.id] === false) {
         // Auto-run backtest when card is expanded
         const state = analyzeBacktests[bot.id]
         if (!state || state.status === 'idle') {
@@ -922,7 +924,7 @@ function App() {
 
   useEffect(() => {
     for (const bot of savedBots) {
-      if (uiState.analyzeCollapsedByBotId[bot.id] !== false) continue
+      if (uiState.analyzeCollapsedByBotId?.[bot.id] !== false) continue
       const state = analyzeBacktests[bot.id]
       if (!state || state.status !== 'done') continue
       const botResult = state.result
@@ -1027,7 +1029,7 @@ function App() {
   const getFundSlotForBot = (botId: string): number | null => {
     for (let i = 1; i <= 5; i++) {
       const key = `fund${i}` as keyof FundZones
-      if (uiState.fundZones[key] === botId) return i
+      if (uiState.fundZones?.[key] === botId) return i
     }
     return null
   }
@@ -1233,11 +1235,14 @@ function App() {
                 const root = b.history[b.historyIndex] ?? b.history[0]
                 const label = root?.title || 'Untitled'
                 const isActive = (tab === 'Forge' && b.id === activeForgeBotId) || (tab === 'Model' && b.id === activeModelBotId)
+                // Look up backtestMode from saved bot if this session is linked to one
+                const savedBot = b.savedBotId ? savedBots.find(sb => sb.id === b.savedBotId) : null
+                const backtestMode = savedBot?.backtestMode
                 return (
                   <div
                     key={b.id}
                     className={cn(
-                      'flex flex-col border rounded-lg p-2 min-w-[120px]',
+                      'flex flex-col border rounded-lg p-2 min-w-[120px] max-w-[200px]',
                       isActive
                         ? 'bg-accent-bg border-accent-border text-accent-text'
                         : 'bg-surface border-border'
@@ -1246,7 +1251,7 @@ function App() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="w-full justify-center font-medium"
+                      className="w-full justify-center font-medium truncate"
                       onClick={() => {
                         if (tab === 'Forge') {
                           setActiveForgeBotId(b.id)
@@ -1266,7 +1271,8 @@ function App() {
                     >
                       {label}
                     </Button>
-                    <div className="flex gap-1 mt-1 justify-center">
+                    <div className="flex gap-1 mt-1 justify-center items-center flex-wrap">
+                      {backtestMode && <BacktestModeTag mode={backtestMode} />}
                       <Button
                         variant="ghost"
                         size="sm"
