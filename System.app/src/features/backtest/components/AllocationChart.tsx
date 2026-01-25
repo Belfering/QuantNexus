@@ -240,8 +240,8 @@ export function AllocationChart({
             <>
               <div className="font-bold text-sm mb-2 pb-2 border-b border-border">{legendData.time}</div>
               <div className="grid gap-1">
-                {legendData.allocations.map((a) => (
-                  <div key={a.name} className="flex items-center gap-2 text-sm">
+                {legendData.allocations.map((a, idx) => (
+                  <div key={`${a.name}-${idx}`} className="flex items-center gap-2 text-sm">
                     <span className="w-3 h-3 rounded flex-shrink-0" style={{ background: a.color }} />
                     <span className="font-medium flex-1">{a.name}</span>
                     <span className="font-mono tabular-nums">{a.pct.toFixed(1)}%</span>
@@ -253,8 +253,8 @@ export function AllocationChart({
             <>
               <div className="font-bold text-sm mb-2 pb-2 border-b border-border text-muted">Hover for details</div>
               <div className="grid gap-1">
-                {defaultLegend.map((s) => (
-                  <div key={s.name} className="flex items-center gap-2 text-sm">
+                {defaultLegend.map((s, idx) => (
+                  <div key={`${s.name}-${idx}`} className="flex items-center gap-2 text-sm">
                     <span className="w-3 h-3 rounded flex-shrink-0" style={{ background: s.color }} />
                     <span className="font-medium">{s.name}</span>
                   </div>
