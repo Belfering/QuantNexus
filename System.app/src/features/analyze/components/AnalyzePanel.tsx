@@ -1,7 +1,7 @@
 // src/features/analyze/components/AnalyzePanel.tsx
 // Analyze tab component - displays bot analysis with Systems and Correlation Tool subtabs
 
-import { type Dispatch, type SetStateAction, useMemo } from 'react'
+import { type Dispatch, type SetStateAction, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
