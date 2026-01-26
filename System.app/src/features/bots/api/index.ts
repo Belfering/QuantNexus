@@ -95,7 +95,7 @@ export const loadBotsFromApi = async (userId: UserId): Promise<SavedBot[]> => {
       }
       // Use single-pass normalization for better performance
       const payload = normalizeForImport(rawPayload)
-      return {
+      const result = {
         id: bot.id,
         name: bot.name,
         builderId: bot.ownerId as UserId,
@@ -120,6 +120,15 @@ export const loadBotsFromApi = async (userId: UserId): Promise<SavedBot[]> => {
           avgHoldings: bot.metrics.avgHoldings ?? 0,
         } : undefined,
       } as SavedBot
+
+      // Debug logging for backtest mode persistence
+      console.log('[loadBotsFromApi] Loaded bot:', {
+        name: result.name,
+        rawBacktestMode: bot.backtestMode,
+        parsedBacktestMode: result.backtestMode,
+      })
+
+      return result
     })
   } catch (err) {
     console.warn('[API] Failed to load bots from API:', err)
