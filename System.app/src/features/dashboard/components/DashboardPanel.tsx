@@ -305,11 +305,20 @@ export function DashboardPanel(props: DashboardPanelProps) {
                       alpaca.isConnected ? "text-emerald-500" : "text-amber-500"
                     )}>
                       <div className={cn(
-                        "w-2 h-2 rounded-full",
+                        "w-2 h-2 rounded-full shrink-0",
                         alpaca.isConnected ? "bg-emerald-500" : "bg-amber-500",
                         alpaca.isLoading && "animate-pulse"
                       )} />
-                      {alpaca.isLoading ? 'Loading...' : alpaca.isConnected ? 'Connected' : 'Disconnected'}
+                      {alpaca.isLoading ? 'Loading...' : alpaca.isConnected ? 'Connected' : (
+                        <div className="flex flex-col">
+                          <span>Disconnected</span>
+                          {alpaca.errorMessage && (
+                            <span className="text-[10px] text-muted-foreground mt-0.5">
+                              {alpaca.errorMessage}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

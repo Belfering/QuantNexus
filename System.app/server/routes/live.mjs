@@ -1028,15 +1028,28 @@ router.get('/dashboard/broker/status', async (req, res) => {
 
     // Try to verify connection
     let isConnected = false
+    let errorMessage = null
     try {
       const credentials = getDecryptedCredentials(userId, credentialType)
       if (credentials) {
         const client = createAlpacaClient(credentials)
         const result = await testConnection(client)
         isConnected = result.success
+
+        if (!result.success) {
+          errorMessage = result.error
+          console.warn(`[live] Connection test failed for user ${userId} (${credentialType}):`, result.error)
+        } else {
+          console.log(`[live] Connection test succeeded for user ${userId} (${credentialType})`)
+        }
+      } else {
+        errorMessage = 'Failed to decrypt credentials'
+        console.warn(`[live] Could not decrypt credentials for user ${userId} (${credentialType})`)
       }
-    } catch {
+    } catch (error) {
       isConnected = false
+      errorMessage = error.message || 'Unknown error'
+      console.error(`[live] Exception during connection test for user ${userId} (${credentialType}):`, error)
     }
 
     res.json({
@@ -1045,6 +1058,7 @@ router.get('/dashboard/broker/status', async (req, res) => {
       isConnected,
       mode: credentialType,
       updatedAt: row.updated_at,
+      errorMessage: !isConnected ? errorMessage : undefined,
     })
   } catch (error) {
     console.error('[live] Error getting dashboard broker status:', error)

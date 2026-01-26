@@ -12,6 +12,7 @@ interface BrokerStatusResponse {
   isPaper: boolean
   isConnected: boolean
   mode?: string
+  errorMessage?: string
 }
 
 interface AccountResponse {
@@ -73,6 +74,7 @@ export interface UseAlpacaPortfolioResult {
   isConnected: boolean
   isLoading: boolean
   error: string | null
+  errorMessage: string | null
   lastRefresh: number | null
 
   // Alpaca data
@@ -458,6 +460,7 @@ export function useAlpacaPortfolio({
     isConnected: alpacaBrokerStatus?.isConnected ?? false,
     isLoading: alpacaLoading,
     error: alpacaError,
+    errorMessage: alpacaBrokerStatus?.errorMessage ?? null,
     lastRefresh: alpacaLastRefresh,
 
     // Alpaca data
