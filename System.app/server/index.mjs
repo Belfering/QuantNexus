@@ -2332,18 +2332,19 @@ import { watchlistRoutes } from './features/watchlist/index.mjs'
 // Global API Debug Middleware
 // ============================================================================
 app.use('/api', (req, res, next) => {
-  console.log('[API-DEBUG] Incoming request:', {
-    method: req.method,
-    url: req.url,
-    path: req.path,
-    originalUrl: req.originalUrl,
-    body: req.method === 'POST' || req.method === 'PUT' ? JSON.stringify(req.body).substring(0, 200) : undefined,
-    query: req.query,
-    headers: {
-      'content-type': req.headers['content-type'],
-      'origin': req.headers.origin,
-    }
-  })
+  // Verbose debug log - commented out to reduce noise
+  // console.log('[API-DEBUG] Incoming request:', {
+  //   method: req.method,
+  //   url: req.url,
+  //   path: req.path,
+  //   originalUrl: req.originalUrl,
+  //   body: req.method === 'POST' || req.method === 'PUT' ? JSON.stringify(req.body).substring(0, 200) : undefined,
+  //   query: req.query,
+  //   headers: {
+  //     'content-type': req.headers['content-type'],
+  //     'origin': req.headers.origin,
+  //   }
+  // })
   next()
 })
 
@@ -4706,10 +4707,11 @@ app.get('/api/admin/sync-schedule', authenticate, requireAdmin, async (req, res)
     const lastSync = await scheduler.getLastSyncInfo(database)
     const status = scheduler.getSchedulerStatus()
 
-    console.log('[GET /api/admin/sync-schedule] Returning config:', {
-      tiingo5d: config.tiingo5d,
-      tiingoFull: config.tiingoFull
-    })
+    // Verbose debug log - commented out to reduce noise
+    // console.log('[GET /api/admin/sync-schedule] Returning config:', {
+    //   tiingo5d: config.tiingo5d,
+    //   tiingoFull: config.tiingoFull
+    // })
 
     res.json({
       config,
