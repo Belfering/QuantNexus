@@ -585,7 +585,8 @@ function App() {
           }
 
           localStorage.setItem(`unsaved_bots_${userId}`, JSON.stringify(backupData))
-          console.log('[Auto-Save] Saved', unsavedBots.length, 'bot(s) to localStorage')
+          // Verbose auto-save log - commented out to reduce noise
+          // console.log('[Auto-Save] Saved', unsavedBots.length, 'bot(s) to localStorage')
         } else {
           // Clear localStorage if no unsaved bots
           localStorage.removeItem(`unsaved_bots_${userId}`)

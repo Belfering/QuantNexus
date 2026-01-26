@@ -406,10 +406,11 @@ export function AdminPanel({
         })
         if (schedRes.ok) {
           const data = await schedRes.json()
-          console.log('[Polling] Fetched schedule:', {
-            tiingo5d: data.config?.tiingo5d?.updateTime,
-            tiingoFull: data.config?.tiingoFull?.updateTime
-          })
+          // Verbose polling log - commented out to reduce noise
+          // console.log('[Polling] Fetched schedule:', {
+          //   tiingo5d: data.config?.tiingo5d?.updateTime,
+          //   tiingoFull: data.config?.tiingoFull?.updateTime
+          // })
           setSyncSchedule(data)
           // Also refresh registry stats if job is running
           if (data.status?.isRunning) {
