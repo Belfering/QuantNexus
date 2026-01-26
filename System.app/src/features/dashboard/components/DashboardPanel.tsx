@@ -84,6 +84,58 @@ export interface DashboardPanelProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper Components
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface OrderModeSectionHeaderProps {
+  title: string
+  count: number
+  costBasis: number
+  currentValue: number
+  pnl: number
+  pnlPct: number
+  isExpanded: boolean
+  onToggle: () => void
+}
+
+const OrderModeSectionHeader: React.FC<OrderModeSectionHeaderProps> = ({
+  title,
+  count,
+  costBasis,
+  currentValue,
+  pnl,
+  pnlPct,
+  isExpanded,
+  onToggle,
+}) => {
+  const pnlColor = pnl >= 0 ? 'text-emerald-500' : 'text-red-500'
+
+  return (
+    <div className="flex items-center justify-between mb-2 px-2 py-2 bg-muted/30 rounded-md">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onToggle}>
+          {isExpanded ? 'Collapse' : 'Expand'}
+        </Button>
+        <span className="font-semibold text-sm">
+          {title} ({count})
+        </span>
+      </div>
+
+      {count > 0 && (
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-muted-foreground">
+            ${costBasis.toFixed(0)} → ${currentValue.toFixed(0)}
+          </span>
+          <span className={pnlColor}>
+            ${pnl >= 0 ? '+' : ''}{pnl.toFixed(0)} ({pnl >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -154,6 +206,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
     setDashboardBotExpanded,
     dashboardUnallocatedExpanded,
     setDashboardUnallocatedExpanded,
+    dashboardInvestmentGroupExpanded,
+    setDashboardInvestmentGroupExpanded,
     dashboardBuyBotId,
     setDashboardBuyBotId,
     dashboardBuyBotSearch,
@@ -473,7 +527,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   <div
                                     key={bot.id}
                                     className={cn(
-                                      'px-3 py-2 text-sm cursor-pointer hover:bg-muted/50',
+                                      'px-3 py-2 cursor-pointer hover:bg-muted/50',
                                       dashboardBuyBotId === bot.id && 'bg-muted'
                                     )}
                                     onClick={() => {
@@ -482,10 +536,31 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                       setDashboardBuyBotDropdownOpen(false)
                                     }}
                                   >
-                                    <div className="font-bold">{bot.name}</div>
-                                    {bot.tags && bot.tags.length > 0 && (
-                                      <div className="text-xs text-muted">{bot.tags.join(', ')}</div>
-                                    )}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {/* Backtest Mode Tag */}
+                                      {bot.backtestMode && <BacktestModeTag mode={bot.backtestMode} />}
+
+                                      {/* Bot Name */}
+                                      <div className="font-bold text-sm">{bot.name}</div>
+
+                                      {/* System Type Badge */}
+                                      <Badge
+                                        variant={bot.tags?.includes('Nexus') ? 'default' : bot.tags?.includes('Atlas') ? 'default' : 'accent'}
+                                        className="text-xs"
+                                      >
+                                        {bot.tags?.includes('Nexus') ? 'Nexus' : bot.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
+                                      </Badge>
+
+                                      {/* Builder Name Badge */}
+                                      <Badge variant="default" className="text-xs">
+                                        {bot.builderDisplayName || (bot.builderId === userId ? userDisplayName : null) || bot.builderId}
+                                      </Badge>
+
+                                      {/* ETFs Only Badge (if applicable) */}
+                                      {bot.tags?.includes('ETFs Only') && (
+                                        <Badge variant="secondary" className="text-xs">ETFs Only</Badge>
+                                      )}
+                                    </div>
                                   </div>
                                 ))
                               })()}
@@ -551,14 +626,109 @@ export function DashboardPanel(props: DashboardPanelProps) {
                         ? [syntheticUnallocated, ...alpaca.investments]
                         : alpaca.investments
 
+                      // Separate unallocated from regular investments
+                      const unallocatedInvestment = useMemo(() => {
+                        return allInvestments.find(inv => inv.botId === '__UNALLOCATED__')
+                      }, [allInvestments])
+
+                      const regularInvestments = useMemo(() => {
+                        return allInvestments.filter(inv => inv.botId !== '__UNALLOCATED__')
+                      }, [allInvestments])
+
+                      // Group regular investments by order mode (exclude unallocated)
+                      const investmentsByOrderMode = useMemo(() => {
+                        const groups: {
+                          CC: typeof regularInvestments,
+                          OO: typeof regularInvestments,
+                          INTRADAY: typeof regularInvestments,
+                        } = {
+                          CC: [],
+                          OO: [],
+                          INTRADAY: [],
+                        }
+
+                        for (const inv of regularInvestments) {
+                          const b = savedBots.find(bot => bot.id === inv.botId) ?? allNexusBots.find(bot => bot.id === inv.botId)
+                          const mode = b?.backtestMode || 'CC'
+
+                          if (mode === 'CC') {
+                            groups.CC.push(inv)
+                          } else if (mode === 'OO') {
+                            groups.OO.push(inv)
+                          } else {
+                            groups.INTRADAY.push(inv)  // CO or OC
+                          }
+                        }
+
+                        return groups
+                      }, [regularInvestments, savedBots, allNexusBots])
+
+                      // Calculate aggregate P&L for each group
+                      const groupPnLStats = useMemo(() => {
+                        const stats: Record<string, { costBasis: number, currentValue: number, pnl: number, pnlPct: number }> = {}
+
+                        for (const [groupKey, investments] of Object.entries(investmentsByOrderMode)) {
+                          let totalCostBasis = 0
+                          let totalCurrentValue = 0
+
+                          for (const inv of investments) {
+                            const isSyntheticUnallocated = inv.botId === '__UNALLOCATED__'
+
+                            if (isSyntheticUnallocated) {
+                              // Use pre-calculated values from synthetic unallocated
+                              totalCostBasis += inv._costBasis || 0
+                              totalCurrentValue += inv._currentValue || 0
+                            } else {
+                              // Calculate from position ledger
+                              const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
+                              const hasPositions = botPositions.length > 0
+
+                              if (hasPositions) {
+                                const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
+                                let currentValue = 0
+                                for (const ledgerPos of botPositions) {
+                                  const alpacaPos = alpaca.positions.find(p => p.symbol === ledgerPos.symbol)
+                                  if (alpacaPos) {
+                                    currentValue += ledgerPos.shares * alpacaPos.currentPrice
+                                  } else {
+                                    currentValue += ledgerPos.shares * ledgerPos.avgPrice
+                                  }
+                                }
+                                totalCostBasis += costBasis
+                                totalCurrentValue += currentValue
+                              } else {
+                                // No positions yet, use investment amount as placeholder
+                                totalCostBasis += inv.investmentAmount
+                                totalCurrentValue += inv.investmentAmount
+                              }
+                            }
+                          }
+
+                          const pnl = totalCurrentValue - totalCostBasis
+                          const pnlPct = totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0
+
+                          stats[groupKey] = {
+                            costBasis: totalCostBasis,
+                            currentValue: totalCurrentValue,
+                            pnl,
+                            pnlPct,
+                          }
+                        }
+
+                        return stats
+                      }, [investmentsByOrderMode, alpaca.positionLedger, alpaca.positions, alpaca.unallocatedPositions])
+
                       return (
                         <>
                           <div className="font-black mb-3">Systems Invested In ({allInvestments.length})</div>
                           {allInvestments.length === 0 ? (
                             <div className="text-muted text-center py-4">No investments yet. Use "Buy System" above to invest in a trading bot.</div>
                           ) : (
-                            <div className="flex flex-col gap-2.5">
-                              {allInvestments.map((inv, idx) => {
+                            <div className="flex flex-col gap-4">
+                              {/* Unallocated Positions (if any) - always shown first */}
+                              {unallocatedInvestment && (() => {
+                                const inv = unallocatedInvestment
+                                const idx = 0
                                 const isSyntheticUnallocated = inv.botId === '__UNALLOCATED__'
 
                                 // Find bot info (not applicable for synthetic)
@@ -948,7 +1118,1078 @@ export function DashboardPanel(props: DashboardPanelProps) {
                               )}
                             </Card>
                           )
-                        })}
+                        })()}
+
+                        {/* CC Group: Buy at Close, Sell at Close */}
+                        <div>
+                          <OrderModeSectionHeader
+                            title="Buy at Close, Sell at Close"
+                            count={investmentsByOrderMode.CC.length}
+                            costBasis={groupPnLStats.CC.costBasis}
+                            currentValue={groupPnLStats.CC.currentValue}
+                            pnl={groupPnLStats.CC.pnl}
+                            pnlPct={groupPnLStats.CC.pnlPct}
+                            isExpanded={dashboardInvestmentGroupExpanded?.['CC'] ?? true}
+                            onToggle={() => {
+                              setDashboardInvestmentGroupExpanded({
+                                ...dashboardInvestmentGroupExpanded,
+                                CC: !dashboardInvestmentGroupExpanded?.['CC'],
+                              })
+                            }}
+                          />
+
+                          {(dashboardInvestmentGroupExpanded?.['CC'] ?? true) && (
+                            <div className="space-y-2 ml-2">
+                              {investmentsByOrderMode.CC.length > 0 ? (
+                                investmentsByOrderMode.CC.map((inv, groupIdx) => {
+                                  const idx = groupIdx + 1  // Offset for color cycling (unallocated takes 0)
+                                  const isSyntheticUnallocated = false
+
+                                  // Find bot info
+                                  const b = savedBots.find((bot) => bot.id === inv.botId) ?? allNexusBots.find((bot) => bot.id === inv.botId)
+
+                                  // Use cycle through BOT_CHART_COLORS
+                                  const botColor = BOT_CHART_COLORS[(idx - 1) % BOT_CHART_COLORS.length]
+
+                                  const isExpanded = dashboardBotExpanded?.[inv.botId] ?? false
+                                  const isBuyingMore = dashboardBuyMoreBotId === inv.botId
+                                  const analyzeState = analyzeBacktests[inv.botId]
+                                  const wlTags = watchlistsByBotId.get(inv.botId) ?? []
+
+                                  // Calculate from position ledger
+                                  const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
+                                  const hasPositions = botPositions.length > 0
+
+                                  // Calculate P&L from actual Alpaca positions
+                                  const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
+                                  const currentValue = botPositions.reduce((sum, l) => {
+                                    const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                                    return sum + (pos ? l.shares * pos.currentPrice : 0)
+                                  }, 0)
+
+                                  // If no positions yet, use investment amount as placeholder
+                                  const displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
+                                  const displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
+                                  const pnl = displayCurrentValue - displayCostBasis
+                                  const pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
+
+                                  // Calculate allocation as percentage of total portfolio
+                                  const totalEquity = alpaca.account?.equity ?? 0
+                                  const allocation = totalEquity > 0 ? (displayCurrentValue / totalEquity) * 100 : 0
+
+                                  // Use anonymized display name for Nexus bots from other users
+                                  const displayName = (() => {
+                                    const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
+                                    const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
+                                    return b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
+                                      ? `${builderName}'s Fund #${fundSlot}`
+                                      : b?.tags?.includes('Nexus') && b?.builderId !== userId
+                                        ? `${builderName}'s Fund`
+                                        : inv.botName || b?.name || inv.botId
+                                  })()
+
+                                  const toggleCollapse = () => {
+                                    const next = !isExpanded
+                                    setDashboardBotExpanded((prev) => ({ ...(prev || {}), [inv.botId]: next }))
+                                    // Run backtest if expanding and not already done
+                                    if (next && b) {
+                                      if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
+                                        runAnalyzeBacktest(b)
+                                      }
+                                    }
+                                  }
+
+                                  return (
+                                    <Card key={inv.botId} className="grid gap-2.5">
+                                      {/* Bot card content - same as original */}
+                                      <div className="flex items-center gap-2.5 flex-wrap">
+                                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: botColor }} />
+                                        <Button variant="ghost" size="sm" onClick={toggleCollapse}>
+                                          {isExpanded ? 'Collapse' : 'Expand'}
+                                        </Button>
+                                        {b?.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
+                                        <div className="font-black">{displayName}</div>
+
+                                        <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
+                                          {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
+                                        </Badge>
+                                        <Badge variant="accent" className="text-xs">
+                                          {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                        </Badge>
+                                        {!hasPositions && (
+                                          <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
+                                            Pending - Next Trade Window
+                                          </Badge>
+                                        )}
+                                        {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {wlTags.map((w) => (
+                                            <Badge key={w.id} variant="accent" className="gap-1.5">
+                                              {w.name}
+                                            </Badge>
+                                          ))}
+                                        </div>
+
+                                        <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+                                          {hasPositions && (
+                                            <>
+                                              <div className="text-sm text-muted">
+                                                {formatUsd(displayCostBasis)} → {formatUsd(displayCurrentValue)}
+                                              </div>
+                                              <div className={cn("font-bold min-w-[80px] text-right", pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                                              </div>
+                                            </>
+                                          )}
+
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
+                                            }}
+                                          >
+                                            Buy More
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="destructive"
+                                            onClick={() => alpaca.removeInvestment(inv.botId)}
+                                          >
+                                            Remove
+                                          </Button>
+                                        </div>
+                                      </div>
+
+                                      {/* Buy More inline form */}
+                                      {isBuyingMore && (
+                                        <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
+                                          <div className="flex gap-1">
+                                            <Button
+                                              size="sm"
+                                              variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                              className="h-8 w-8 p-0"
+                                              onClick={() => setDashboardBuyMoreMode('$')}
+                                            >
+                                              $
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                              className="h-8 w-8 p-0"
+                                              onClick={() => setDashboardBuyMoreMode('%')}
+                                            >
+                                              %
+                                            </Button>
+                                          </div>
+                                          <Input
+                                            type="number"
+                                            placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                            value={dashboardBuyMoreAmount}
+                                            onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                            className="h-8 w-32"
+                                          />
+                                          <Button
+                                            size="sm"
+                                            variant="default"
+                                            onClick={async () => {
+                                              const amount = dashboardBuyMoreMode === '%'
+                                                ? (parseFloat(dashboardBuyMoreAmount) / 100) * availableCash
+                                                : parseFloat(dashboardBuyMoreAmount)
+                                              if (isNaN(amount) || amount <= 0) return
+                                              if (amount > availableCash) {
+                                                console.warn('[Dashboard] Buy More amount exceeds available cash')
+                                                return
+                                              }
+                                              const success = await alpaca.addInvestment(inv.botId, inv.investmentAmount + amount, 'dollars')
+                                              if (success) {
+                                                setDashboardBuyMoreBotId(null)
+                                                setDashboardBuyMoreAmount('')
+                                              }
+                                            }}
+                                          >
+                                            Buy More
+                                          </Button>
+                                          <span className="text-sm text-muted">Cash: {formatUsd(availableCash)}</span>
+                                        </div>
+                                      )}
+
+                                      {/* Expanded view - backtest stats */}
+                                      {isExpanded && !isBuyingMore && (
+                                        <div className="flex flex-col gap-2.5 w-full">
+                                          <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
+                                            {analyzeState?.status === 'loading' ? (
+                                              <div className="text-muted">Running backtest…</div>
+                                            ) : analyzeState?.status === 'error' ? (
+                                              <div className="grid gap-2">
+                                                <div className="text-muted">{analyzeState.error ?? 'Failed to run backtest.'}</div>
+                                                {b?.payload && <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>}
+                                              </div>
+                                            ) : analyzeState?.status === 'done' ? (
+                                              <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
+                                                {/* Live Stats */}
+                                                <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                                  <div className="font-black mb-2 text-center">Live Stats</div>
+                                                  {hasPositions ? (
+                                                    <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
+                                                      <div>
+                                                        <div className="stat-label">Allocation</div>
+                                                        <div className="stat-value">{allocation.toFixed(1)}%</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Cost Basis</div>
+                                                        <div className="stat-value">{formatUsd(displayCostBasis)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Current Value</div>
+                                                        <div className="stat-value">{formatUsd(displayCurrentValue)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">P&L</div>
+                                                        <div className={cn("stat-value", pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                          {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  ) : (
+                                                    <div className="text-muted text-sm py-2">
+                                                      Trades will execute at next scheduled window. Investment: {formatUsd(inv.investmentAmount)}
+                                                    </div>
+                                                  )}
+                                                </div>
+
+                                                {/* Backtest Snapshot */}
+                                                <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                  <div className="w-full">
+                                                    <div className="font-black mb-1.5">Backtest Snapshot</div>
+                                                    <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
+                                                    <div className="w-full max-w-full overflow-hidden">
+                                                      <EquityChart
+                                                        points={analyzeState.result?.points ?? []}
+                                                        benchmarkPoints={analyzeState.result?.benchmarkPoints}
+                                                        markers={analyzeState.result?.markers ?? []}
+                                                        logScale
+                                                        showCursorStats={false}
+                                                        heightPx={390}
+                                                        theme={uiState.theme}
+                                                      />
+                                                    </div>
+                                                    <div className="mt-2.5 w-full">
+                                                      <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
+                                                    </div>
+                                                  </div>
+                                                </div>
+
+                                                {/* Historical Stats */}
+                                                <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                  <div className="w-full">
+                                                    <div className="font-black mb-2">Historical Stats</div>
+                                                    <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
+                                                      <div>
+                                                        <div className="stat-label">CAGR</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Max DD</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Calmar Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
+                                                            ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Sharpe Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
+                                                            ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Sortino Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
+                                                            ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Treynor Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
+                                                            ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Beta</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
+                                                            ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Volatility</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Win Rate</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div className="text-muted">Click Expand to load backtest data.</div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Show attributed positions in collapsed view */}
+                                      {!isExpanded && hasPositions && (
+                                        <div className="mt-2 pt-2 border-t border-border text-sm">
+                                          <div className="text-xs text-muted mb-1">Positions:</div>
+                                          <div className="flex flex-wrap gap-2">
+                                            {botPositions.map((l) => {
+                                              const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                                              return (
+                                                <Badge key={l.symbol} variant="default" className="text-xs">
+                                                  {l.symbol}: {l.shares} @ {formatUsd(l.avgPrice)}
+                                                  {pos && ` → ${formatUsd(pos.currentPrice)}`}
+                                                </Badge>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </Card>
+                                  )
+                                })
+                              ) : (
+                                <div className="text-sm text-muted-foreground py-2 px-3">
+                                  No currently active systems
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* OO Group: Buy at Open, Sell at Open */}
+                        <div>
+                          <OrderModeSectionHeader
+                            title="Buy at Open, Sell at Open"
+                            count={investmentsByOrderMode.OO.length}
+                            costBasis={groupPnLStats.OO.costBasis}
+                            currentValue={groupPnLStats.OO.currentValue}
+                            pnl={groupPnLStats.OO.pnl}
+                            pnlPct={groupPnLStats.OO.pnlPct}
+                            isExpanded={dashboardInvestmentGroupExpanded?.['OO'] ?? true}
+                            onToggle={() => {
+                              setDashboardInvestmentGroupExpanded({
+                                ...dashboardInvestmentGroupExpanded,
+                                OO: !dashboardInvestmentGroupExpanded?.['OO'],
+                              })
+                            }}
+                          />
+
+                          {(dashboardInvestmentGroupExpanded?.['OO'] ?? true) && (
+                            <div className="space-y-2 ml-2">
+                              {investmentsByOrderMode.OO.length > 0 ? (
+                                investmentsByOrderMode.OO.map((inv, groupIdx) => {
+                                  const idx = groupIdx + investmentsByOrderMode.CC.length + 1
+                                  const isSyntheticUnallocated = false
+
+                                  // Find bot info
+                                  const b = savedBots.find((bot) => bot.id === inv.botId) ?? allNexusBots.find((bot) => bot.id === inv.botId)
+
+                                  // Use cycle through BOT_CHART_COLORS
+                                  const botColor = BOT_CHART_COLORS[(idx - 1) % BOT_CHART_COLORS.length]
+
+                                  const isExpanded = dashboardBotExpanded?.[inv.botId] ?? false
+                                  const isBuyingMore = dashboardBuyMoreBotId === inv.botId
+                                  const analyzeState = analyzeBacktests[inv.botId]
+                                  const wlTags = watchlistsByBotId.get(inv.botId) ?? []
+
+                                  // Calculate from position ledger
+                                  const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
+                                  const hasPositions = botPositions.length > 0
+
+                                  // Calculate P&L from actual Alpaca positions
+                                  const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
+                                  const currentValue = botPositions.reduce((sum, l) => {
+                                    const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                                    return sum + (pos ? l.shares * pos.currentPrice : 0)
+                                  }, 0)
+
+                                  // If no positions yet, use investment amount as placeholder
+                                  const displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
+                                  const displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
+                                  const pnl = displayCurrentValue - displayCostBasis
+                                  const pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
+
+                                  // Calculate allocation as percentage of total portfolio
+                                  const totalEquity = alpaca.account?.equity ?? 0
+                                  const allocation = totalEquity > 0 ? (displayCurrentValue / totalEquity) * 100 : 0
+
+                                  // Use anonymized display name for Nexus bots from other users
+                                  const displayName = (() => {
+                                    const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
+                                    const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
+                                    return b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
+                                      ? `${builderName}'s Fund #${fundSlot}`
+                                      : b?.tags?.includes('Nexus') && b?.builderId !== userId
+                                        ? `${builderName}'s Fund`
+                                        : inv.botName || b?.name || inv.botId
+                                  })()
+
+                                  const toggleCollapse = () => {
+                                    const next = !isExpanded
+                                    setDashboardBotExpanded((prev) => ({ ...(prev || {}), [inv.botId]: next }))
+                                    // Run backtest if expanding and not already done
+                                    if (next && b) {
+                                      if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
+                                        runAnalyzeBacktest(b)
+                                      }
+                                    }
+                                  }
+
+                                  return (
+                                    <Card key={inv.botId} className="grid gap-2.5">
+                                      {/* Same bot card content as CC section */}
+                                      <div className="flex items-center gap-2.5 flex-wrap">
+                                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: botColor }} />
+                                        <Button variant="ghost" size="sm" onClick={toggleCollapse}>
+                                          {isExpanded ? 'Collapse' : 'Expand'}
+                                        </Button>
+                                        {b?.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
+                                        <div className="font-black">{displayName}</div>
+
+                                        <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
+                                          {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
+                                        </Badge>
+                                        <Badge variant="accent" className="text-xs">
+                                          {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                        </Badge>
+                                        {!hasPositions && (
+                                          <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
+                                            Pending - Next Trade Window
+                                          </Badge>
+                                        )}
+                                        {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {wlTags.map((w) => (
+                                            <Badge key={w.id} variant="accent" className="gap-1.5">
+                                              {w.name}
+                                            </Badge>
+                                          ))}
+                                        </div>
+
+                                        <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+                                          {hasPositions && (
+                                            <>
+                                              <div className="text-sm text-muted">
+                                                {formatUsd(displayCostBasis)} → {formatUsd(displayCurrentValue)}
+                                              </div>
+                                              <div className={cn("font-bold min-w-[80px] text-right", pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                                              </div>
+                                            </>
+                                          )}
+
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
+                                            }}
+                                          >
+                                            Buy More
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="destructive"
+                                            onClick={() => alpaca.removeInvestment(inv.botId)}
+                                          >
+                                            Remove
+                                          </Button>
+                                        </div>
+                                      </div>
+
+                                      {isBuyingMore && (
+                                        <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
+                                          <div className="flex gap-1">
+                                            <Button
+                                              size="sm"
+                                              variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                              className="h-8 w-8 p-0"
+                                              onClick={() => setDashboardBuyMoreMode('$')}
+                                            >
+                                              $
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                              className="h-8 w-8 p-0"
+                                              onClick={() => setDashboardBuyMoreMode('%')}
+                                            >
+                                              %
+                                            </Button>
+                                          </div>
+                                          <Input
+                                            type="number"
+                                            placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                            value={dashboardBuyMoreAmount}
+                                            onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                            className="h-8 w-32"
+                                          />
+                                          <Button
+                                            size="sm"
+                                            variant="default"
+                                            onClick={async () => {
+                                              const amount = dashboardBuyMoreMode === '%'
+                                                ? (parseFloat(dashboardBuyMoreAmount) / 100) * availableCash
+                                                : parseFloat(dashboardBuyMoreAmount)
+                                              if (isNaN(amount) || amount <= 0) return
+                                              if (amount > availableCash) {
+                                                console.warn('[Dashboard] Buy More amount exceeds available cash')
+                                                return
+                                              }
+                                              const success = await alpaca.addInvestment(inv.botId, inv.investmentAmount + amount, 'dollars')
+                                              if (success) {
+                                                setDashboardBuyMoreBotId(null)
+                                                setDashboardBuyMoreAmount('')
+                                              }
+                                            }}
+                                          >
+                                            Buy More
+                                          </Button>
+                                          <span className="text-sm text-muted">Cash: {formatUsd(availableCash)}</span>
+                                        </div>
+                                      )}
+
+                                      {isExpanded && !isBuyingMore && (
+                                        <div className="flex flex-col gap-2.5 w-full">
+                                          <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
+                                            {analyzeState?.status === 'loading' ? (
+                                              <div className="text-muted">Running backtest…</div>
+                                            ) : analyzeState?.status === 'error' ? (
+                                              <div className="grid gap-2">
+                                                <div className="text-muted">{analyzeState.error ?? 'Failed to run backtest.'}</div>
+                                                {b?.payload && <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>}
+                                              </div>
+                                            ) : analyzeState?.status === 'done' ? (
+                                              <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
+                                                <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                                  <div className="font-black mb-2 text-center">Live Stats</div>
+                                                  {hasPositions ? (
+                                                    <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
+                                                      <div>
+                                                        <div className="stat-label">Allocation</div>
+                                                        <div className="stat-value">{allocation.toFixed(1)}%</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Cost Basis</div>
+                                                        <div className="stat-value">{formatUsd(displayCostBasis)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Current Value</div>
+                                                        <div className="stat-value">{formatUsd(displayCurrentValue)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">P&L</div>
+                                                        <div className={cn("stat-value", pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                          {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  ) : (
+                                                    <div className="text-muted text-sm py-2">
+                                                      Trades will execute at next scheduled window. Investment: {formatUsd(inv.investmentAmount)}
+                                                    </div>
+                                                  )}
+                                                </div>
+
+                                                <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                  <div className="w-full">
+                                                    <div className="font-black mb-1.5">Backtest Snapshot</div>
+                                                    <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
+                                                    <div className="w-full max-w-full overflow-hidden">
+                                                      <EquityChart
+                                                        points={analyzeState.result?.points ?? []}
+                                                        benchmarkPoints={analyzeState.result?.benchmarkPoints}
+                                                        markers={analyzeState.result?.markers ?? []}
+                                                        logScale
+                                                        showCursorStats={false}
+                                                        heightPx={390}
+                                                        theme={uiState.theme}
+                                                      />
+                                                    </div>
+                                                    <div className="mt-2.5 w-full">
+                                                      <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
+                                                    </div>
+                                                  </div>
+                                                </div>
+
+                                                <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                  <div className="w-full">
+                                                    <div className="font-black mb-2">Historical Stats</div>
+                                                    <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
+                                                      <div>
+                                                        <div className="stat-label">CAGR</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Max DD</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Calmar Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
+                                                            ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Sharpe Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
+                                                            ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Sortino Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
+                                                            ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Treynor Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
+                                                            ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Beta</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
+                                                            ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Volatility</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Win Rate</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div className="text-muted">Click Expand to load backtest data.</div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {!isExpanded && hasPositions && (
+                                        <div className="mt-2 pt-2 border-t border-border text-sm">
+                                          <div className="text-xs text-muted mb-1">Positions:</div>
+                                          <div className="flex flex-wrap gap-2">
+                                            {botPositions.map((l) => {
+                                              const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                                              return (
+                                                <Badge key={l.symbol} variant="default" className="text-xs">
+                                                  {l.symbol}: {l.shares} @ {formatUsd(l.avgPrice)}
+                                                  {pos && ` → ${formatUsd(pos.currentPrice)}`}
+                                                </Badge>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </Card>
+                                  )
+                                })
+                              ) : (
+                                <div className="text-sm text-muted-foreground py-2 px-3">
+                                  No currently active systems
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* INTRADAY Group: CO and OC */}
+                        <div>
+                          <OrderModeSectionHeader
+                            title="Intraday Trades"
+                            count={investmentsByOrderMode.INTRADAY.length}
+                            costBasis={groupPnLStats.INTRADAY.costBasis}
+                            currentValue={groupPnLStats.INTRADAY.currentValue}
+                            pnl={groupPnLStats.INTRADAY.pnl}
+                            pnlPct={groupPnLStats.INTRADAY.pnlPct}
+                            isExpanded={dashboardInvestmentGroupExpanded?.['INTRADAY'] ?? true}
+                            onToggle={() => {
+                              setDashboardInvestmentGroupExpanded({
+                                ...dashboardInvestmentGroupExpanded,
+                                INTRADAY: !dashboardInvestmentGroupExpanded?.['INTRADAY'],
+                              })
+                            }}
+                          />
+
+                          {(dashboardInvestmentGroupExpanded?.['INTRADAY'] ?? true) && (
+                            <div className="space-y-2 ml-2">
+                              {investmentsByOrderMode.INTRADAY.length > 0 ? (
+                                investmentsByOrderMode.INTRADAY.map((inv, groupIdx) => {
+                                  const idx = groupIdx + investmentsByOrderMode.CC.length + investmentsByOrderMode.OO.length + 1
+                                  const isSyntheticUnallocated = false
+
+                                  // Find bot info
+                                  const b = savedBots.find((bot) => bot.id === inv.botId) ?? allNexusBots.find((bot) => bot.id === inv.botId)
+
+                                  // Use cycle through BOT_CHART_COLORS
+                                  const botColor = BOT_CHART_COLORS[(idx - 1) % BOT_CHART_COLORS.length]
+
+                                  const isExpanded = dashboardBotExpanded?.[inv.botId] ?? false
+                                  const isBuyingMore = dashboardBuyMoreBotId === inv.botId
+                                  const analyzeState = analyzeBacktests[inv.botId]
+                                  const wlTags = watchlistsByBotId.get(inv.botId) ?? []
+
+                                  // Calculate from position ledger
+                                  const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
+                                  const hasPositions = botPositions.length > 0
+
+                                  // Calculate P&L from actual Alpaca positions
+                                  const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
+                                  const currentValue = botPositions.reduce((sum, l) => {
+                                    const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                                    return sum + (pos ? l.shares * pos.currentPrice : 0)
+                                  }, 0)
+
+                                  // If no positions yet, use investment amount as placeholder
+                                  const displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
+                                  const displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
+                                  const pnl = displayCurrentValue - displayCostBasis
+                                  const pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
+
+                                  // Calculate allocation as percentage of total portfolio
+                                  const totalEquity = alpaca.account?.equity ?? 0
+                                  const allocation = totalEquity > 0 ? (displayCurrentValue / totalEquity) * 100 : 0
+
+                                  // Use anonymized display name for Nexus bots from other users
+                                  const displayName = (() => {
+                                    const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
+                                    const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
+                                    return b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
+                                      ? `${builderName}'s Fund #${fundSlot}`
+                                      : b?.tags?.includes('Nexus') && b?.builderId !== userId
+                                        ? `${builderName}'s Fund`
+                                        : inv.botName || b?.name || inv.botId
+                                  })()
+
+                                  const toggleCollapse = () => {
+                                    const next = !isExpanded
+                                    setDashboardBotExpanded((prev) => ({ ...(prev || {}), [inv.botId]: next }))
+                                    // Run backtest if expanding and not already done
+                                    if (next && b) {
+                                      if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
+                                        runAnalyzeBacktest(b)
+                                      }
+                                    }
+                                  }
+
+                                  return (
+                                    <Card key={inv.botId} className="grid gap-2.5">
+                                      {/* Same bot card content */}
+                                      <div className="flex items-center gap-2.5 flex-wrap">
+                                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: botColor }} />
+                                        <Button variant="ghost" size="sm" onClick={toggleCollapse}>
+                                          {isExpanded ? 'Collapse' : 'Expand'}
+                                        </Button>
+                                        {b?.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
+                                        <div className="font-black">{displayName}</div>
+
+                                        <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
+                                          {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
+                                        </Badge>
+                                        <Badge variant="accent" className="text-xs">
+                                          {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                        </Badge>
+                                        {!hasPositions && (
+                                          <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
+                                            Pending - Next Trade Window
+                                          </Badge>
+                                        )}
+                                        {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {wlTags.map((w) => (
+                                            <Badge key={w.id} variant="accent" className="gap-1.5">
+                                              {w.name}
+                                            </Badge>
+                                          ))}
+                                        </div>
+
+                                        <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+                                          {hasPositions && (
+                                            <>
+                                              <div className="text-sm text-muted">
+                                                {formatUsd(displayCostBasis)} → {formatUsd(displayCurrentValue)}
+                                              </div>
+                                              <div className={cn("font-bold min-w-[80px] text-right", pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                                              </div>
+                                            </>
+                                          )}
+
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
+                                            }}
+                                          >
+                                            Buy More
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="destructive"
+                                            onClick={() => alpaca.removeInvestment(inv.botId)}
+                                          >
+                                            Remove
+                                          </Button>
+                                        </div>
+                                      </div>
+
+                                      {isBuyingMore && (
+                                        <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
+                                          <div className="flex gap-1">
+                                            <Button
+                                              size="sm"
+                                              variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                              className="h-8 w-8 p-0"
+                                              onClick={() => setDashboardBuyMoreMode('$')}
+                                            >
+                                              $
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                              className="h-8 w-8 p-0"
+                                              onClick={() => setDashboardBuyMoreMode('%')}
+                                            >
+                                              %
+                                            </Button>
+                                          </div>
+                                          <Input
+                                            type="number"
+                                            placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                            value={dashboardBuyMoreAmount}
+                                            onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                            className="h-8 w-32"
+                                          />
+                                          <Button
+                                            size="sm"
+                                            variant="default"
+                                            onClick={async () => {
+                                              const amount = dashboardBuyMoreMode === '%'
+                                                ? (parseFloat(dashboardBuyMoreAmount) / 100) * availableCash
+                                                : parseFloat(dashboardBuyMoreAmount)
+                                              if (isNaN(amount) || amount <= 0) return
+                                              if (amount > availableCash) {
+                                                console.warn('[Dashboard] Buy More amount exceeds available cash')
+                                                return
+                                              }
+                                              const success = await alpaca.addInvestment(inv.botId, inv.investmentAmount + amount, 'dollars')
+                                              if (success) {
+                                                setDashboardBuyMoreBotId(null)
+                                                setDashboardBuyMoreAmount('')
+                                              }
+                                            }}
+                                          >
+                                            Buy More
+                                          </Button>
+                                          <span className="text-sm text-muted">Cash: {formatUsd(availableCash)}</span>
+                                        </div>
+                                      )}
+
+                                      {isExpanded && !isBuyingMore && (
+                                        <div className="flex flex-col gap-2.5 w-full">
+                                          <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
+                                            {analyzeState?.status === 'loading' ? (
+                                              <div className="text-muted">Running backtest…</div>
+                                            ) : analyzeState?.status === 'error' ? (
+                                              <div className="grid gap-2">
+                                                <div className="text-muted">{analyzeState.error ?? 'Failed to run backtest.'}</div>
+                                                {b?.payload && <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>}
+                                              </div>
+                                            ) : analyzeState?.status === 'done' ? (
+                                              <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
+                                                <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                                  <div className="font-black mb-2 text-center">Live Stats</div>
+                                                  {hasPositions ? (
+                                                    <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
+                                                      <div>
+                                                        <div className="stat-label">Allocation</div>
+                                                        <div className="stat-value">{allocation.toFixed(1)}%</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Cost Basis</div>
+                                                        <div className="stat-value">{formatUsd(displayCostBasis)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Current Value</div>
+                                                        <div className="stat-value">{formatUsd(displayCurrentValue)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">P&L</div>
+                                                        <div className={cn("stat-value", pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                          {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  ) : (
+                                                    <div className="text-muted text-sm py-2">
+                                                      Trades will execute at next scheduled window. Investment: {formatUsd(inv.investmentAmount)}
+                                                    </div>
+                                                  )}
+                                                </div>
+
+                                                <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                  <div className="w-full">
+                                                    <div className="font-black mb-1.5">Backtest Snapshot</div>
+                                                    <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
+                                                    <div className="w-full max-w-full overflow-hidden">
+                                                      <EquityChart
+                                                        points={analyzeState.result?.points ?? []}
+                                                        benchmarkPoints={analyzeState.result?.benchmarkPoints}
+                                                        markers={analyzeState.result?.markers ?? []}
+                                                        logScale
+                                                        showCursorStats={false}
+                                                        heightPx={390}
+                                                        theme={uiState.theme}
+                                                      />
+                                                    </div>
+                                                    <div className="mt-2.5 w-full">
+                                                      <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
+                                                    </div>
+                                                  </div>
+                                                </div>
+
+                                                <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                  <div className="w-full">
+                                                    <div className="font-black mb-2">Historical Stats</div>
+                                                    <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
+                                                      <div>
+                                                        <div className="stat-label">CAGR</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Max DD</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Calmar Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
+                                                            ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Sharpe Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
+                                                            ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Sortino Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
+                                                            ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Treynor Ratio</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
+                                                            ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Beta</div>
+                                                        <div className="stat-value">
+                                                          {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
+                                                            ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
+                                                            : '--'}
+                                                        </div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Volatility</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Win Rate</div>
+                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div className="text-muted">Click Expand to load backtest data.</div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {!isExpanded && hasPositions && (
+                                        <div className="mt-2 pt-2 border-t border-border text-sm">
+                                          <div className="text-xs text-muted mb-1">Positions:</div>
+                                          <div className="flex flex-wrap gap-2">
+                                            {botPositions.map((l) => {
+                                              const pos = alpaca.positions.find(p => p.symbol === l.symbol)
+                                              return (
+                                                <Badge key={l.symbol} variant="default" className="text-xs">
+                                                  {l.symbol}: {l.shares} @ {formatUsd(l.avgPrice)}
+                                                  {pos && ` → ${formatUsd(pos.currentPrice)}`}
+                                                </Badge>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </Card>
+                                  )
+                                })
+                              ) : (
+                                <div className="text-sm text-muted-foreground py-2 px-3">
+                                  No currently active systems
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -1063,7 +2304,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                               <div
                                 key={bot.id}
                                 className={cn(
-                                  'px-3 py-2 text-sm cursor-pointer hover:bg-muted/50',
+                                  'px-3 py-2 cursor-pointer hover:bg-muted/50',
                                   dashboardBuyBotId === bot.id && 'bg-muted'
                                 )}
                                 onClick={() => {
@@ -1072,10 +2313,31 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   setDashboardBuyBotDropdownOpen(false)
                                 }}
                               >
-                                <div className="font-bold">{bot.name}</div>
-                                {bot.tags && bot.tags.length > 0 && (
-                                  <div className="text-xs text-muted">{bot.tags.join(', ')}</div>
-                                )}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {/* Backtest Mode Tag */}
+                                  {bot.backtestMode && <BacktestModeTag mode={bot.backtestMode} />}
+
+                                  {/* Bot Name */}
+                                  <div className="font-bold text-sm">{bot.name}</div>
+
+                                  {/* System Type Badge */}
+                                  <Badge
+                                    variant={bot.tags?.includes('Nexus') ? 'default' : bot.tags?.includes('Atlas') ? 'default' : 'accent'}
+                                    className="text-xs"
+                                  >
+                                    {bot.tags?.includes('Nexus') ? 'Nexus' : bot.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
+                                  </Badge>
+
+                                  {/* Builder Name Badge */}
+                                  <Badge variant="default" className="text-xs">
+                                    {bot.builderDisplayName || (bot.builderId === userId ? userDisplayName : null) || bot.builderId}
+                                  </Badge>
+
+                                  {/* ETFs Only Badge (if applicable) */}
+                                  {bot.tags?.includes('ETFs Only') && (
+                                    <Badge variant="secondary" className="text-xs">ETFs Only</Badge>
+                                  )}
+                                </div>
                               </div>
                             ))
                           })()}
@@ -1108,12 +2370,92 @@ export function DashboardPanel(props: DashboardPanelProps) {
                 <div className="border-t border-border my-3" />
 
                 {/* Systems Invested In Section - Uses same card format as Nexus */}
-                <div className="font-black mb-3">Systems Invested In ({dashboardInvestmentsWithPnl.length})</div>
-                {dashboardInvestmentsWithPnl.length === 0 ? (
-                  <div className="text-muted text-center py-4">No investments yet.</div>
-                ) : (
-                  <div className="flex flex-col gap-2.5">
-                    {dashboardInvestmentsWithPnl.map((inv, idx) => {
+                {(() => {
+                  // Group investments by order mode for simulated mode
+                  const simulatedInvestmentsByOrderMode = useMemo(() => {
+                    const groups: {
+                      CC: typeof dashboardInvestmentsWithPnl,
+                      OO: typeof dashboardInvestmentsWithPnl,
+                      INTRADAY: typeof dashboardInvestmentsWithPnl,
+                    } = {
+                      CC: [],
+                      OO: [],
+                      INTRADAY: [],
+                    }
+
+                    for (const inv of dashboardInvestmentsWithPnl) {
+                      const b = savedBots.find(bot => bot.id === inv.botId) ?? allNexusBots.find(bot => bot.id === inv.botId)
+                      const mode = b?.backtestMode || 'CC'
+
+                      if (mode === 'CC') {
+                        groups.CC.push(inv)
+                      } else if (mode === 'OO') {
+                        groups.OO.push(inv)
+                      } else {
+                        groups.INTRADAY.push(inv)  // CO or OC
+                      }
+                    }
+
+                    return groups
+                  }, [dashboardInvestmentsWithPnl, savedBots, allNexusBots])
+
+                  // Calculate aggregate P&L for each group (simulated mode)
+                  const simulatedGroupPnLStats = useMemo(() => {
+                    const stats: Record<string, { costBasis: number, currentValue: number, pnl: number, pnlPct: number }> = {}
+
+                    for (const [groupKey, investments] of Object.entries(simulatedInvestmentsByOrderMode)) {
+                      let totalCostBasis = 0
+                      let totalCurrentValue = 0
+
+                      for (const inv of investments) {
+                        totalCostBasis += inv.costBasis
+                        totalCurrentValue += inv.currentValue
+                      }
+
+                      const pnl = totalCurrentValue - totalCostBasis
+                      const pnlPct = totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0
+
+                      stats[groupKey] = {
+                        costBasis: totalCostBasis,
+                        currentValue: totalCurrentValue,
+                        pnl,
+                        pnlPct,
+                      }
+                    }
+
+                    return stats
+                  }, [simulatedInvestmentsByOrderMode])
+
+                  return (
+                    <>
+                      <div className="font-black mb-3">Systems Invested In ({dashboardInvestmentsWithPnl.length})</div>
+                      {dashboardInvestmentsWithPnl.length === 0 ? (
+                        <div className="text-muted text-center py-4">No investments yet.</div>
+                      ) : (
+                        <div className="flex flex-col gap-4">
+                          {/* CC Group: Buy at Close, Sell at Close */}
+                          <div>
+                            <OrderModeSectionHeader
+                              title="Buy at Close, Sell at Close"
+                              count={simulatedInvestmentsByOrderMode.CC.length}
+                              costBasis={simulatedGroupPnLStats.CC.costBasis}
+                              currentValue={simulatedGroupPnLStats.CC.currentValue}
+                              pnl={simulatedGroupPnLStats.CC.pnl}
+                              pnlPct={simulatedGroupPnLStats.CC.pnlPct}
+                              isExpanded={dashboardInvestmentGroupExpanded?.['CC'] ?? true}
+                              onToggle={() => {
+                                setDashboardInvestmentGroupExpanded({
+                                  ...dashboardInvestmentGroupExpanded,
+                                  CC: !dashboardInvestmentGroupExpanded?.['CC'],
+                                })
+                              }}
+                            />
+
+                            {(dashboardInvestmentGroupExpanded?.['CC'] ?? true) && (
+                              <div className="space-y-2 ml-2">
+                                {simulatedInvestmentsByOrderMode.CC.length > 0 ? (
+                                  simulatedInvestmentsByOrderMode.CC.map((inv, groupIdx) => {
+                                    const idx = groupIdx
                       const isExpanded = dashboardBotExpanded?.[inv.botId] ?? false
                       const isSelling = dashboardSellBotId === inv.botId
                       const isBuyingMore = dashboardBuyMoreBotId === inv.botId
@@ -1411,10 +2753,665 @@ export function DashboardPanel(props: DashboardPanelProps) {
                             </div>
                           )}
                         </Card>
-                      )
-                    })}
-                  </div>
-                )}
+                                    )
+                                  })
+                                ) : (
+                                  <div className="text-sm text-muted-foreground py-2 px-3">
+                                    No currently active systems
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* OO Group: Buy at Open, Sell at Open */}
+                          <div>
+                            <OrderModeSectionHeader
+                              title="Buy at Open, Sell at Open"
+                              count={simulatedInvestmentsByOrderMode.OO.length}
+                              costBasis={simulatedGroupPnLStats.OO.costBasis}
+                              currentValue={simulatedGroupPnLStats.OO.currentValue}
+                              pnl={simulatedGroupPnLStats.OO.pnl}
+                              pnlPct={simulatedGroupPnLStats.OO.pnlPct}
+                              isExpanded={dashboardInvestmentGroupExpanded?.['OO'] ?? true}
+                              onToggle={() => {
+                                setDashboardInvestmentGroupExpanded({
+                                  ...dashboardInvestmentGroupExpanded,
+                                  OO: !dashboardInvestmentGroupExpanded?.['OO'],
+                                })
+                              }}
+                            />
+
+                            {(dashboardInvestmentGroupExpanded?.['OO'] ?? true) && (
+                              <div className="space-y-2 ml-2">
+                                {simulatedInvestmentsByOrderMode.OO.length > 0 ? (
+                                  simulatedInvestmentsByOrderMode.OO.map((inv, groupIdx) => {
+                                    const idx = groupIdx + simulatedInvestmentsByOrderMode.CC.length
+                                    const isExpanded = dashboardBotExpanded?.[inv.botId] ?? false
+                                    const isSelling = dashboardSellBotId === inv.botId
+                                    const isBuyingMore = dashboardBuyMoreBotId === inv.botId
+                                    const botColor = BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length]
+                                    const allocation = dashboardTotalValue > 0 ? (inv.currentValue / dashboardTotalValue) * 100 : 0
+                                    const b = savedBots.find((bot) => bot.id === inv.botId) ?? allNexusBots.find((bot) => bot.id === inv.botId)
+                                    const analyzeState = analyzeBacktests[inv.botId]
+                                    const wlTags = watchlistsByBotId.get(inv.botId) ?? []
+
+                                    const toggleCollapse = () => {
+                                      const next = !isExpanded
+                                      setDashboardBotExpanded((prev) => ({ ...(prev || {}), [inv.botId]: next }))
+                                      if (next && b) {
+                                        if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
+                                          runAnalyzeBacktest(b)
+                                        }
+                                      }
+                                    }
+
+                                    const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
+                                    const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
+                                    const displayName = b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
+                                      ? `${builderName}'s Fund #${fundSlot}`
+                                      : b?.tags?.includes('Nexus') && b?.builderId !== userId
+                                        ? `${builderName}'s Fund`
+                                        : inv.botName
+
+                                    return (
+                                      <Card key={inv.botId} className="grid gap-2.5">
+                                        {/* Same card structure as CC group */}
+                                        <div className="flex items-center gap-2.5 flex-wrap">
+                                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: botColor }} />
+                                          <Button variant="ghost" size="sm" onClick={toggleCollapse}>
+                                            {isExpanded ? 'Collapse' : 'Expand'}
+                                          </Button>
+                                          {b?.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
+                                          <div className="font-black">{displayName}</div>
+                                          <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
+                                            {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
+                                          </Badge>
+                                          {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
+                                          <div className="flex gap-1.5 flex-wrap">
+                                            {wlTags.map((w) => (
+                                              <Badge key={w.id} variant="accent" className="gap-1.5">
+                                                {w.name}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                          <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+                                            <div className="text-sm text-muted">
+                                              {formatUsd(inv.costBasis)} → {formatUsd(inv.currentValue)}
+                                            </div>
+                                            <div className={cn("font-bold min-w-[80px] text-right", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                              {formatSignedUsd(inv.pnl)} ({inv.pnlPercent >= 0 ? '+' : ''}{inv.pnlPercent.toFixed(1)}%)
+                                            </div>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setDashboardSellBotId(null)
+                                                setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
+                                              }}
+                                            >
+                                              Buy More
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setDashboardBuyMoreBotId(null)
+                                                setDashboardSellBotId(isSelling ? null : inv.botId)
+                                              }}
+                                            >
+                                              Sell
+                                            </Button>
+                                          </div>
+                                        </div>
+
+                                        {isBuyingMore && (
+                                          <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
+                                            <div className="flex gap-1">
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardBuyMoreMode('$')}
+                                              >
+                                                $
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardBuyMoreMode('%')}
+                                              >
+                                                %
+                                              </Button>
+                                            </div>
+                                            <Input
+                                              type="number"
+                                              placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                              value={dashboardBuyMoreAmount}
+                                              onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                              className="h-8 w-32"
+                                            />
+                                            <Button
+                                              size="sm"
+                                              variant="default"
+                                              onClick={() => handleDashboardBuyMore(inv.botId)}
+                                            >
+                                              Buy More
+                                            </Button>
+                                            <span className="text-sm text-muted">Cash: {formatUsd(dashboardCash)}</span>
+                                          </div>
+                                        )}
+
+                                        {isSelling && (
+                                          <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
+                                            <div className="flex gap-1">
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardSellMode === '$' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardSellMode('$')}
+                                              >
+                                                $
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardSellMode === '%' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardSellMode('%')}
+                                              >
+                                                %
+                                              </Button>
+                                            </div>
+                                            <Input
+                                              type="number"
+                                              placeholder={dashboardSellMode === '$' ? 'Amount' : '% to sell'}
+                                              value={dashboardSellAmount}
+                                              onChange={(e) => setDashboardSellAmount(e.target.value)}
+                                              className="h-8 w-32"
+                                            />
+                                            <Button
+                                              size="sm"
+                                              variant="destructive"
+                                              onClick={() => handleDashboardSell(inv.botId, false)}
+                                            >
+                                              Sell
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="destructive"
+                                              onClick={() => handleDashboardSell(inv.botId, true)}
+                                            >
+                                              Sell All
+                                            </Button>
+                                          </div>
+                                        )}
+
+                                        {isExpanded && !isBuyingMore && !isSelling && analyzeState && (
+                                          <div className="flex flex-col gap-2.5 w-full">
+                                            <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
+                                              {analyzeState.status === 'loading' ? (
+                                                <div className="text-muted">Running backtest…</div>
+                                              ) : analyzeState.status === 'error' ? (
+                                                <div className="grid gap-2">
+                                                  <div className="text-muted">{analyzeState.error ?? 'Failed to run backtest.'}</div>
+                                                  {b?.payload && <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>}
+                                                </div>
+                                              ) : analyzeState.status === 'done' ? (
+                                                <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
+                                                  <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                                    <div className="font-black mb-2 text-center">Live Stats</div>
+                                                    <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
+                                                      <div>
+                                                        <div className="stat-label">Allocation</div>
+                                                        <div className="stat-value">{allocation.toFixed(1)}%</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Cost Basis</div>
+                                                        <div className="stat-value">{formatUsd(inv.costBasis)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Current Value</div>
+                                                        <div className="stat-value">{formatUsd(inv.currentValue)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">P&L</div>
+                                                        <div className={cn("stat-value", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                          {formatSignedUsd(inv.pnl)} ({inv.pnlPercent >= 0 ? '+' : ''}{inv.pnlPercent.toFixed(1)}%)
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                    <div className="w-full">
+                                                      <div className="font-black mb-1.5">Backtest Snapshot</div>
+                                                      <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
+                                                      <div className="w-full max-w-full overflow-hidden">
+                                                        <EquityChart
+                                                          points={analyzeState.result?.points ?? []}
+                                                          benchmarkPoints={analyzeState.result?.benchmarkPoints}
+                                                          markers={analyzeState.result?.markers ?? []}
+                                                          logScale
+                                                          showCursorStats={false}
+                                                          heightPx={390}
+                                                          theme={uiState.theme}
+                                                        />
+                                                      </div>
+                                                      <div className="mt-2.5 w-full">
+                                                        <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
+                                                      </div>
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                    <div className="w-full">
+                                                      <div className="font-black mb-2">Historical Stats</div>
+                                                      <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
+                                                        <div>
+                                                          <div className="stat-label">CAGR</div>
+                                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Max DD</div>
+                                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Calmar Ratio</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
+                                                              ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Sharpe Ratio</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
+                                                              ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Sortino Ratio</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
+                                                              ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Treynor Ratio</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
+                                                              ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Beta</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
+                                                              ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Volatility</div>
+                                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Win Rate</div>
+                                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <div className="text-muted">Click Expand to load backtest data.</div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Card>
+                                    )
+                                  })
+                                ) : (
+                                  <div className="text-sm text-muted-foreground py-2 px-3">
+                                    No currently active systems
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* INTRADAY Group: CO and OC */}
+                          <div>
+                            <OrderModeSectionHeader
+                              title="Intraday Trades"
+                              count={simulatedInvestmentsByOrderMode.INTRADAY.length}
+                              costBasis={simulatedGroupPnLStats.INTRADAY.costBasis}
+                              currentValue={simulatedGroupPnLStats.INTRADAY.currentValue}
+                              pnl={simulatedGroupPnLStats.INTRADAY.pnl}
+                              pnlPct={simulatedGroupPnLStats.INTRADAY.pnlPct}
+                              isExpanded={dashboardInvestmentGroupExpanded?.['INTRADAY'] ?? true}
+                              onToggle={() => {
+                                setDashboardInvestmentGroupExpanded({
+                                  ...dashboardInvestmentGroupExpanded,
+                                  INTRADAY: !dashboardInvestmentGroupExpanded?.['INTRADAY'],
+                                })
+                              }}
+                            />
+
+                            {(dashboardInvestmentGroupExpanded?.['INTRADAY'] ?? true) && (
+                              <div className="space-y-2 ml-2">
+                                {simulatedInvestmentsByOrderMode.INTRADAY.length > 0 ? (
+                                  simulatedInvestmentsByOrderMode.INTRADAY.map((inv, groupIdx) => {
+                                    const idx = groupIdx + simulatedInvestmentsByOrderMode.CC.length + simulatedInvestmentsByOrderMode.OO.length
+                                    const isExpanded = dashboardBotExpanded?.[inv.botId] ?? false
+                                    const isSelling = dashboardSellBotId === inv.botId
+                                    const isBuyingMore = dashboardBuyMoreBotId === inv.botId
+                                    const botColor = BOT_CHART_COLORS[idx % BOT_CHART_COLORS.length]
+                                    const allocation = dashboardTotalValue > 0 ? (inv.currentValue / dashboardTotalValue) * 100 : 0
+                                    const b = savedBots.find((bot) => bot.id === inv.botId) ?? allNexusBots.find((bot) => bot.id === inv.botId)
+                                    const analyzeState = analyzeBacktests[inv.botId]
+                                    const wlTags = watchlistsByBotId.get(inv.botId) ?? []
+
+                                    const toggleCollapse = () => {
+                                      const next = !isExpanded
+                                      setDashboardBotExpanded((prev) => ({ ...(prev || {}), [inv.botId]: next }))
+                                      if (next && b) {
+                                        if (!analyzeState || analyzeState.status === 'idle' || analyzeState.status === 'error') {
+                                          runAnalyzeBacktest(b)
+                                        }
+                                      }
+                                    }
+
+                                    const fundSlot = b?.fundSlot ?? getFundSlotForBot(inv.botId)
+                                    const builderName = b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId
+                                    const displayName = b?.tags?.includes('Nexus') && b?.builderId !== userId && fundSlot
+                                      ? `${builderName}'s Fund #${fundSlot}`
+                                      : b?.tags?.includes('Nexus') && b?.builderId !== userId
+                                        ? `${builderName}'s Fund`
+                                        : inv.botName
+
+                                    return (
+                                      <Card key={inv.botId} className="grid gap-2.5">
+                                        {/* Same card structure */}
+                                        <div className="flex items-center gap-2.5 flex-wrap">
+                                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: botColor }} />
+                                          <Button variant="ghost" size="sm" onClick={toggleCollapse}>
+                                            {isExpanded ? 'Collapse' : 'Expand'}
+                                          </Button>
+                                          {b?.backtestMode && <BacktestModeTag mode={b.backtestMode} />}
+                                          <div className="font-black">{displayName}</div>
+                                          <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
+                                            {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
+                                          </Badge>
+                                          {(b?.builderDisplayName || b?.builderId) && <Badge variant="default">{b?.builderDisplayName || (b?.builderId === userId ? userDisplayName : null) || b?.builderId}</Badge>}
+                                          <div className="flex gap-1.5 flex-wrap">
+                                            {wlTags.map((w) => (
+                                              <Badge key={w.id} variant="accent" className="gap-1.5">
+                                                {w.name}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                          <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+                                            <div className="text-sm text-muted">
+                                              {formatUsd(inv.costBasis)} → {formatUsd(inv.currentValue)}
+                                            </div>
+                                            <div className={cn("font-bold min-w-[80px] text-right", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                              {formatSignedUsd(inv.pnl)} ({inv.pnlPercent >= 0 ? '+' : ''}{inv.pnlPercent.toFixed(1)}%)
+                                            </div>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setDashboardSellBotId(null)
+                                                setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
+                                              }}
+                                            >
+                                              Buy More
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setDashboardBuyMoreBotId(null)
+                                                setDashboardSellBotId(isSelling ? null : inv.botId)
+                                              }}
+                                            >
+                                              Sell
+                                            </Button>
+                                          </div>
+                                        </div>
+
+                                        {isBuyingMore && (
+                                          <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
+                                            <div className="flex gap-1">
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardBuyMoreMode('$')}
+                                              >
+                                                $
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardBuyMoreMode('%')}
+                                              >
+                                                %
+                                              </Button>
+                                            </div>
+                                            <Input
+                                              type="number"
+                                              placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                              value={dashboardBuyMoreAmount}
+                                              onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                              className="h-8 w-32"
+                                            />
+                                            <Button
+                                              size="sm"
+                                              variant="default"
+                                              onClick={() => handleDashboardBuyMore(inv.botId)}
+                                            >
+                                              Buy More
+                                            </Button>
+                                            <span className="text-sm text-muted">Cash: {formatUsd(dashboardCash)}</span>
+                                          </div>
+                                        )}
+
+                                        {isSelling && (
+                                          <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
+                                            <div className="flex gap-1">
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardSellMode === '$' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardSellMode('$')}
+                                              >
+                                                $
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardSellMode === '%' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardSellMode('%')}
+                                              >
+                                                %
+                                              </Button>
+                                            </div>
+                                            <Input
+                                              type="number"
+                                              placeholder={dashboardSellMode === '$' ? 'Amount' : '% to sell'}
+                                              value={dashboardSellAmount}
+                                              onChange={(e) => setDashboardSellAmount(e.target.value)}
+                                              className="h-8 w-32"
+                                            />
+                                            <Button
+                                              size="sm"
+                                              variant="destructive"
+                                              onClick={() => handleDashboardSell(inv.botId, false)}
+                                            >
+                                              Sell
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="destructive"
+                                              onClick={() => handleDashboardSell(inv.botId, true)}
+                                            >
+                                              Sell All
+                                            </Button>
+                                          </div>
+                                        )}
+
+                                        {isExpanded && !isBuyingMore && !isSelling && analyzeState && (
+                                          <div className="flex flex-col gap-2.5 w-full">
+                                            <div className="saved-item grid grid-cols-1 gap-3.5 h-full w-full min-w-0 overflow-hidden items-stretch justify-items-stretch">
+                                              {analyzeState.status === 'loading' ? (
+                                                <div className="text-muted">Running backtest…</div>
+                                              ) : analyzeState.status === 'error' ? (
+                                                <div className="grid gap-2">
+                                                  <div className="text-muted">{analyzeState.error ?? 'Failed to run backtest.'}</div>
+                                                  {b?.payload && <Button onClick={() => runAnalyzeBacktest(b)}>Retry</Button>}
+                                                </div>
+                                              ) : analyzeState.status === 'done' ? (
+                                                <div className="grid grid-cols-1 gap-2.5 min-w-0 w-full">
+                                                  <div className="base-stats-card w-full min-w-0 max-w-full flex flex-col items-stretch text-center">
+                                                    <div className="font-black mb-2 text-center">Live Stats</div>
+                                                    <div className="grid grid-cols-4 gap-2.5 justify-items-center w-full">
+                                                      <div>
+                                                        <div className="stat-label">Allocation</div>
+                                                        <div className="stat-value">{allocation.toFixed(1)}%</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Cost Basis</div>
+                                                        <div className="stat-value">{formatUsd(inv.costBasis)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">Current Value</div>
+                                                        <div className="stat-value">{formatUsd(inv.currentValue)}</div>
+                                                      </div>
+                                                      <div>
+                                                        <div className="stat-label">P&L</div>
+                                                        <div className={cn("stat-value", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
+                                                          {formatSignedUsd(inv.pnl)} ({inv.pnlPercent >= 0 ? '+' : ''}{inv.pnlPercent.toFixed(1)}%)
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                    <div className="w-full">
+                                                      <div className="font-black mb-1.5">Backtest Snapshot</div>
+                                                      <div className="text-xs text-muted mb-2.5">Benchmark: {backtestBenchmark}</div>
+                                                      <div className="w-full max-w-full overflow-hidden">
+                                                        <EquityChart
+                                                          points={analyzeState.result?.points ?? []}
+                                                          benchmarkPoints={analyzeState.result?.benchmarkPoints}
+                                                          markers={analyzeState.result?.markers ?? []}
+                                                          logScale
+                                                          showCursorStats={false}
+                                                          heightPx={390}
+                                                          theme={uiState.theme}
+                                                        />
+                                                      </div>
+                                                      <div className="mt-2.5 w-full">
+                                                        <DrawdownChart points={analyzeState.result?.drawdownPoints ?? []} theme={uiState.theme} />
+                                                      </div>
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="base-stats-card w-full min-w-0 text-center self-stretch">
+                                                    <div className="w-full">
+                                                      <div className="font-black mb-2">Historical Stats</div>
+                                                      <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
+                                                        <div>
+                                                          <div className="stat-label">CAGR</div>
+                                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Max DD</div>
+                                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Calmar Ratio</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
+                                                              ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Sharpe Ratio</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
+                                                              ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Sortino Ratio</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
+                                                              ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Treynor Ratio</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
+                                                              ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Beta</div>
+                                                          <div className="stat-value">
+                                                            {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
+                                                              ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
+                                                              : '--'}
+                                                          </div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Volatility</div>
+                                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
+                                                        </div>
+                                                        <div>
+                                                          <div className="stat-label">Win Rate</div>
+                                                          <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <div className="text-muted">Click Expand to load backtest data.</div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Card>
+                                    )
+                                  })
+                                ) : (
+                                  <div className="text-sm text-muted-foreground py-2 px-3">
+                                    No currently active systems
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
                   </>
                 )}
               </Card>

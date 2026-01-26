@@ -27,6 +27,7 @@ interface DashboardState {
   // Dashboard UI state (from useDashboardUIState.ts)
   dashboardTimePeriod: DashboardTimePeriod
   dashboardBotExpanded: Record<string, boolean>
+  dashboardInvestmentGroupExpanded: Record<string, boolean>
   dashboardUnallocatedExpanded: boolean
   dashboardBuyBotId: string
   dashboardBuyBotSearch: string
@@ -66,6 +67,7 @@ interface DashboardState {
   // Dashboard UI actions - support both direct values and callbacks
   setDashboardTimePeriod: (dataOrFn: SetStateAction<DashboardTimePeriod>) => void
   setDashboardBotExpanded: (dataOrFn: SetStateAction<Record<string, boolean>>) => void
+  setDashboardInvestmentGroupExpanded: (dataOrFn: SetStateAction<Record<string, boolean>>) => void
   setDashboardUnallocatedExpanded: (dataOrFn: SetStateAction<boolean>) => void
   setDashboardBuyBotId: (dataOrFn: SetStateAction<string>) => void
   setDashboardBuyBotSearch: (dataOrFn: SetStateAction<string>) => void
@@ -123,6 +125,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   // Initial state - Dashboard UI
   dashboardTimePeriod: '1Y',
   dashboardBotExpanded: {},
+  dashboardInvestmentGroupExpanded: { CC: true, OO: true, INTRADAY: true },
   dashboardUnallocatedExpanded: true,
   dashboardBuyBotId: '',
   dashboardBuyBotSearch: '',
@@ -162,6 +165,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   // Dashboard UI actions
   setDashboardTimePeriod: (dataOrFn) => handleSetState(set, 'dashboardTimePeriod', dataOrFn),
   setDashboardBotExpanded: (dataOrFn) => handleSetState(set, 'dashboardBotExpanded', dataOrFn),
+  setDashboardInvestmentGroupExpanded: (dataOrFn) => handleSetState(set, 'dashboardInvestmentGroupExpanded', dataOrFn),
   setDashboardUnallocatedExpanded: (dataOrFn) => handleSetState(set, 'dashboardUnallocatedExpanded', dataOrFn),
   setDashboardBuyBotId: (dataOrFn) => handleSetState(set, 'dashboardBuyBotId', dataOrFn),
   setDashboardBuyBotSearch: (dataOrFn) => handleSetState(set, 'dashboardBuyBotSearch', dataOrFn),
