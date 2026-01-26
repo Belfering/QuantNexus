@@ -154,6 +154,8 @@ const createBotSchema = {
     fundSlot: z.string().optional(),
     id: z.string().optional(), // Client-provided ID
     isDraft: z.boolean().optional(), // Support draft bots for auto-save
+    backtestMode: z.enum(['CC', 'CO', 'OC', 'OO']).optional(),
+    backtestCostBps: z.number().optional(),
   }),
 }
 
@@ -162,7 +164,7 @@ const createBotSchema = {
  */
 router.post('/', validate(createBotSchema), asyncHandler(async (req, res) => {
   await ensureDbInitialized()
-  const { ownerId, name, payload, visibility, tags, fundSlot, id: clientId, isDraft } = req.body
+  const { ownerId, name, payload, visibility, tags, fundSlot, id: clientId, isDraft, backtestMode, backtestCostBps } = req.body
 
   console.log('[TRASH-DEBUG] POST /api/bots received:', {
     ownerId,
@@ -170,6 +172,8 @@ router.post('/', validate(createBotSchema), asyncHandler(async (req, res) => {
     isDraft,
     isDraftType: typeof isDraft,
     reqBodyIsDraft: req.body.isDraft,
+    backtestMode,
+    backtestCostBps,
     fullBody: JSON.stringify(req.body).substring(0, 200),
   })
 
@@ -182,9 +186,11 @@ router.post('/', validate(createBotSchema), asyncHandler(async (req, res) => {
     tags,
     fundSlot,
     isDraft, // Include draft flag for auto-save
+    backtestMode,
+    backtestCostBps,
   })
 
-  logger.info('Bot created', { id, ownerId, name, isDraft: isDraft || false })
+  logger.info('Bot created', { id, ownerId, name, isDraft: isDraft || false, backtestMode, backtestCostBps })
   res.json({ id })
 }))
 
@@ -200,6 +206,8 @@ const updateBotSchema = {
     tags: z.array(z.string()).optional(),
     fundSlot: z.string().optional(),
     isDraft: z.boolean().optional(), // Support draft bots for auto-save
+    backtestMode: z.enum(['CC', 'CO', 'OC', 'OO']).optional(),
+    backtestCostBps: z.number().optional(),
   }),
 }
 
@@ -208,7 +216,7 @@ const updateBotSchema = {
  */
 router.put('/:id', validate(updateBotSchema), asyncHandler(async (req, res) => {
   await ensureDbInitialized()
-  const { ownerId, name, payload, visibility, tags, fundSlot, isDraft } = req.body
+  const { ownerId, name, payload, visibility, tags, fundSlot, isDraft, backtestMode, backtestCostBps } = req.body
 
   const result = await database.updateBot(req.params.id, ownerId, {
     name,
@@ -217,13 +225,15 @@ router.put('/:id', validate(updateBotSchema), asyncHandler(async (req, res) => {
     visibility,
     tags,
     fundSlot,
+    backtestMode,
+    backtestCostBps,
   })
 
   if (!result) {
     return res.status(404).json({ error: 'Bot not found or not owned by user' })
   }
 
-  logger.info('Bot updated', { id: req.params.id, ownerId })
+  logger.info('Bot updated', { id: req.params.id, ownerId, backtestMode, backtestCostBps })
   res.json({ success: true })
 }))
 
