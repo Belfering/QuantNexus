@@ -466,15 +466,13 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       ? (config.tiingoSleepSeconds ?? 0.2)
       : (config.sleepSeconds ?? 2.0)
 
-    // Determine download mode and recent days
+    // Determine download mode and recent days (only for Tiingo)
     let downloadMode = mode === 'full' ? 'full' : 'recent'
     let recentDays = mode === '5d' ? 5 : 10  // Default to 10 days for 'recent' mode
 
     const args = [
       '-u',
       scriptPath,
-      '--mode',
-      downloadMode,
       '--tickers-json',
       tempTickersPath,
       '--out-dir',
@@ -489,13 +487,15 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       skipMetadataPath,
     ]
 
-    // Add recent-days for non-full mode
-    if (downloadMode === 'recent') {
-      args.push('--recent-days', String(recentDays))
-    }
-
-    // Add Tiingo API key from environment (only for tiingo source)
+    // Add Tiingo-specific arguments
     if (source === 'tiingo') {
+      // Mode and recent-days only supported by tiingo_download.py
+      args.push('--mode', downloadMode)
+      if (downloadMode === 'recent') {
+        args.push('--recent-days', String(recentDays))
+      }
+
+      // Tiingo API key
       const tiingoApiKey = process.env.TIINGO_API_KEY
       if (tiingoApiKey) {
         args.push('--api-key', tiingoApiKey)
@@ -503,6 +503,8 @@ async function runTickerSync(config, tickerDataRoot, parquetDir, pythonCmd, data
       // Use Tiingo-only mode: download ALL tickers directly from Tiingo (slower but thorough)
       args.push('--tiingo-only')
     }
+    // yfinance (download.py) doesn't need --mode or --recent-days
+    // It always downloads period="max" (all available history from 1993 to now)
 
     // Log the command being run for debugging
     console.log(`[scheduler] Running: ${pythonCmd} ${args.join(' ')}`)
