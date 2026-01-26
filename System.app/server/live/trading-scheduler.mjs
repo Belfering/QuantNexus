@@ -596,7 +596,7 @@ export function getTradingSchedulerStatus() {
     schedulerActive: schedulerInterval !== null,
     enabledUserCount: users.length,
     nextExecutionTime: `${String(execHour).padStart(2, '0')}:${String(execMinute).padStart(2, '0')} ET`,
-    isTradingDay: cachedMarketHours !== null ? true : isWeekday('America/New_York'),  // Fall back to weekday check if market hours not cached yet
+    isTradingDay: cachedMarketHours !== null ? true : isTradingDay(),  // Fall back to weekday check if market hours not cached yet
     marketClose: cachedMarketHours?.close,
     isEarlyClose: cachedMarketHours?.isEarlyClose,
   }
