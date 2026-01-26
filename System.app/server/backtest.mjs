@@ -7,6 +7,7 @@ import duckdb from 'duckdb'
 import { compressTree } from './tree-compressor.mjs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import fs from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -88,6 +89,13 @@ async function initTickerCache() {
 // Internal function without cache check (used for initial loading)
 async function fetchOhlcSeriesUncached(ticker, limit = 20000) {
   const filePath = path.join(PARQUET_DIR, `${ticker}.parquet`)
+  const normalizedPath = filePath.replace(/\\/g, '/')
+
+  console.log(`[Backtest] Loading ${ticker} from ${filePath}`)
+  console.log(`[Backtest] PARQUET_DIR: ${PARQUET_DIR}`)
+  console.log(`[Backtest] File exists:`, fs.existsSync(filePath))
+  console.log(`[Backtest] Normalized path: ${normalizedPath}`)
+
   const sql = `
     SELECT
       epoch(Date) AS time,
@@ -97,13 +105,19 @@ async function fetchOhlcSeriesUncached(ticker, limit = 20000) {
       Close AS close,
       "Adj Close" AS adjClose,
       Volume AS volume
-    FROM read_parquet('${filePath.replace(/\\/g, '/')}')
+    FROM read_parquet('${normalizedPath}')
     WHERE epoch(Date) >= ${BACKTEST_START_EPOCH}
     ORDER BY Date DESC
     LIMIT ${limit}
   `
 
+  console.log(`[Backtest] SQL:`, sql)
   const rows = await runQuery(sql)
+  console.log(`[Backtest] Query returned ${rows?.length || 0} rows`)
+  if (rows && rows.length > 0) {
+    console.log(`[Backtest] First row:`, rows[0])
+    console.log(`[Backtest] Last row:`, rows[rows.length - 1])
+  }
   return rows
     .map(r => ({
       time: Number(r.time),
@@ -4278,10 +4292,14 @@ export async function runBacktest(payload, options = {}) {
           return { ticker: t, bars }
         } catch (err) {
           console.warn(`[Backtest] Failed to load ${t}:`, err.message)
+          console.error(`[Backtest] Error details for ${t}:`, err)
           return { ticker: t, bars: [] }
         }
       })
     )
+
+    console.log(`[Backtest] Loaded tickers:`)
+    loaded.forEach(l => console.log(`  - ${l.ticker}: ${l.bars.length} bars`))
 
     // Use indicator tickers for date intersection to get longer history for lookback calculations
     // Position tickers may have shorter history but get null values before their data starts

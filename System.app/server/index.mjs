@@ -331,6 +331,53 @@ app.get('/api/status', async (_req, res) => {
   })
 })
 
+// Debug endpoint to test parquet query directly
+app.get('/api/test-parquet-query', async (req, res) => {
+  try {
+    const ticker = req.query.ticker || 'SPY'
+    const limit = parseInt(req.query.limit || '10', 10)
+
+    // Import backtest module to access runQuery function
+    const { runQuery, PARQUET_DIR: parquetDir } = await import('./backtest.mjs')
+
+    const filePath = path.join(parquetDir, `${ticker}.parquet`)
+    const normalizedPath = filePath.replace(/\\/g, '/')
+
+    // Test if file exists
+    const fileExists = await fs.access(filePath).then(() => true).catch(() => false)
+
+    const sql = `
+      SELECT
+        epoch(Date) AS time,
+        Close AS close
+      FROM read_parquet('${normalizedPath}')
+      WHERE epoch(Date) >= 725864400
+      ORDER BY Date DESC
+      LIMIT ${limit}
+    `
+
+    console.log('[Test] SQL:', sql)
+
+    const rows = await runQuery(sql)
+
+    res.json({
+      ticker,
+      filePath,
+      normalizedPath,
+      fileExists,
+      rowCount: rows.length,
+      sql,
+      rows: rows.slice(0, 10),
+    })
+  } catch (err) {
+    console.error('[Test] Error:', err)
+    res.status(500).json({
+      error: err.message,
+      stack: err.stack,
+    })
+  }
+})
+
 function newJobId() {
   return `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
