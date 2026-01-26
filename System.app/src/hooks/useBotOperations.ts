@@ -82,9 +82,11 @@ export function useBotOperations({
   const setClipboard = useBotStore((s) => s.setClipboard)
   const setCopiedNodeId = useBotStore((s) => s.setCopiedNodeId)
 
-  // Backtest Store - for auto-run robustness
+  // Backtest Store - for auto-run robustness and loading saved bots
   const backtestMode = useBacktestStore((s) => s.backtestMode)
   const backtestCostBps = useBacktestStore((s) => s.backtestCostBps)
+  const setBacktestMode = useBacktestStore((s) => s.setBacktestMode)
+  const setBacktestCostBps = useBacktestStore((s) => s.setBacktestCostBps)
   const setModelSanityReport = useBacktestStore((s) => s.setModelSanityReport)
 
   // Shard Store - for combined strategy OOS date
@@ -543,6 +545,15 @@ export function useBotOperations({
         return
       }
       const payload = ensureSlots(cloneNode(bot.payload))
+
+      // Update global backtest settings to match the bot's saved settings
+      // Default to 'CC' (Close-Close) and 5 bps for imports without saved backtest mode
+      const botBacktestMode = bot.backtestMode || 'CC'
+      const botBacktestCostBps = bot.backtestCostBps ?? 5
+      setBacktestMode(botBacktestMode)
+      setBacktestCostBps(botBacktestCostBps)
+      console.log('[Open Saved] Setting backtest mode:', { botBacktestMode, botBacktestCostBps })
+
       const session: BotSession = {
         id: `bot-${newId()}`,
         root: payload, // Set root field for Model tab
@@ -559,7 +570,7 @@ export function useBotOperations({
       setActiveBot(session.id, 'Model')
       setTab('Model')
     },
-    [userId, setBots, setActiveBot, setTab],
+    [userId, setBots, setActiveBot, setTab, setBacktestMode, setBacktestCostBps],
   )
 
   /**
