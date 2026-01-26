@@ -1550,24 +1550,6 @@ function App() {
                 // Look up backtestMode from saved bot if this session is linked to one, otherwise use global
                 const savedBot = b.savedBotId ? savedBots.find(sb => sb.id === b.savedBotId) : null
                 const botBacktestMode = savedBot?.backtestMode || backtestMode
-
-                // Debug logging for backtest mode persistence issue
-                if (b.savedBotId && !savedBot && botsLoaded) {
-                  console.warn('[Bot Tab] savedBotId exists but savedBot not found:', {
-                    botId: b.id,
-                    savedBotId: b.savedBotId,
-                    savedBotsCount: savedBots.length,
-                    botsLoaded,
-                  })
-                }
-                if (savedBot) {
-                  console.log('[Bot Tab] Rendering bot with mode:', {
-                    name: label,
-                    savedBotMode: savedBot.backtestMode,
-                    globalMode: backtestMode,
-                    usedMode: botBacktestMode,
-                  })
-                }
                 return (
                   <div
                     key={b.id}

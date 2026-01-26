@@ -120,14 +120,6 @@ export const loadBotsFromApi = async (userId: UserId): Promise<SavedBot[]> => {
           avgHoldings: bot.metrics.avgHoldings ?? 0,
         } : undefined,
       } as SavedBot
-
-      // Debug logging for backtest mode persistence
-      console.log('[loadBotsFromApi] Loaded bot:', {
-        name: result.name,
-        rawBacktestMode: bot.backtestMode,
-        parsedBacktestMode: result.backtestMode,
-      })
-
       return result
     })
   } catch (err) {
