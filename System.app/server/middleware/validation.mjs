@@ -63,6 +63,12 @@ export function validate(schemas) {
  * Format Zod errors into a readable message
  */
 function formatZodErrors(error) {
+  // Safety check: ensure error.errors exists and is an array
+  if (!error || !Array.isArray(error.errors)) {
+    console.error('[validation] Invalid error structure passed to formatZodErrors:', error)
+    return 'Validation error'
+  }
+
   const messages = error.errors.map(err => {
     const path = err.path.join('.')
     return path ? `${path}: ${err.message}` : err.message
