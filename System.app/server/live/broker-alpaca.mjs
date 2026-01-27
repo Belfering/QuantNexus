@@ -248,6 +248,31 @@ export async function submitLimitBuy(client, symbol, qty, limitPrice) {
 }
 
 /**
+ * Submit a market buy order with notional amount (dollar-based, supports fractional shares)
+ * @param {Alpaca} client - Alpaca client instance
+ * @param {string} symbol - Stock symbol
+ * @param {number} notional - Dollar amount to invest
+ * @returns {Promise<Object>} Order result
+ */
+export async function submitNotionalMarketBuy(client, symbol, notional) {
+  const order = await client.createOrder({
+    symbol,
+    notional,
+    side: 'buy',
+    type: 'market',
+    time_in_force: 'day',
+  })
+  return {
+    id: order.id,
+    symbol: order.symbol,
+    side: 'buy',
+    notional,
+    type: 'market',
+    status: order.status,
+  }
+}
+
+/**
  * Get portfolio value history for equity chart
  * @param {Alpaca} client - Alpaca client instance
  * @param {string} period - Time period: '1D', '1W', '1M', '3M', '6M', '1Y', 'ALL'

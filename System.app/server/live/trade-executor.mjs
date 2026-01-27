@@ -17,6 +17,7 @@ import {
   cancelAllOrders,
   submitMarketSell,
   submitLimitBuy,
+  submitNotionalMarketBuy,
 } from './broker-alpaca.mjs'
 
 // Safety constants (matching master.py)
@@ -57,23 +58,40 @@ export async function executeDryRun(credentials, allocations, options = {}) {
     console.log(`[trade-executor] Scaling allocations from ${totalAlloc.toFixed(2)}% to ${MAX_ALLOCATION_PERCENT}%`)
   }
 
-  // Get current prices
+  // Get current prices for estimation
   const tickers = Object.keys(allocations)
   const prices = await getLatestPrices(client, tickers)
 
-  // Calculate positions
+  // Calculate positions using notional amounts (like live trading)
   const positions = []
   let totalAllocated = 0
 
   for (const [ticker, pct] of Object.entries(allocations)) {
     const scaledPct = pct * scaleFactor
+    const notional = adjustedEquity * (scaledPct / 100)
     const price = prices[ticker]
+
+    // Skip if notional amount is less than $1 (Alpaca minimum)
+    if (notional < 1) {
+      positions.push({
+        ticker,
+        targetPercent: scaledPct,
+        price,
+        notional,
+        shares: 0,
+        value: 0,
+        skipped: true,
+        reason: `Notional amount $${notional.toFixed(2)} is less than $1 minimum`,
+      })
+      continue
+    }
 
     if (!price) {
       positions.push({
         ticker,
         targetPercent: scaledPct,
         price: null,
+        notional,
         shares: 0,
         value: 0,
         error: 'Unable to get price',
@@ -81,32 +99,18 @@ export async function executeDryRun(credentials, allocations, options = {}) {
       continue
     }
 
-    const targetValue = adjustedEquity * (scaledPct / 100)
-    const limitPrice = Math.round(price * (1 + LIMIT_PRICE_BUFFER) * 100) / 100
-    const shares = Math.floor(targetValue / limitPrice)
-    const value = shares * limitPrice
-
-    if (shares < MIN_SHARES) {
-      positions.push({
-        ticker,
-        targetPercent: scaledPct,
-        price,
-        limitPrice,
-        shares: 0,
-        value: 0,
-        skipped: true,
-        reason: `Not enough to buy ${MIN_SHARES} share(s) at $${limitPrice.toFixed(2)}`,
-      })
-      continue
-    }
+    // Estimate shares (will be fractional)
+    const estimatedShares = notional / price
+    const value = notional
 
     totalAllocated += value
     positions.push({
       ticker,
       targetPercent: scaledPct,
       price,
-      limitPrice,
-      shares,
+      notional,
+      estimatedShares,
+      shares: estimatedShares,  // For backwards compatibility
       value,
     })
   }
@@ -245,44 +249,37 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
     // Partial sells would need more complex logic
   }
 
-  // Step 4: Get fresh prices and execute buys
-  const buySymbols = buys.map(b => b.symbol)
-  const prices = await getLatestPrices(client, buySymbols)
-
+  // Step 4: Execute buys using notional (dollar-based) market orders
+  // This allows fractional shares for small allocations
   const buyResults = []
   for (const buy of buys) {
-    const price = prices[buy.symbol]
-    if (!price) {
-      buyResults.push({
-        symbol: buy.symbol,
-        success: false,
-        error: 'Unable to get price',
-      })
-      continue
-    }
+    const notional = adjustedEquity * (buy.targetPct / 100)
 
-    const targetValue = adjustedEquity * (buy.targetPct / 100)
-    const limitPrice = Math.round(price * (1 + LIMIT_PRICE_BUFFER) * 100) / 100
-    const shares = Math.floor(targetValue / limitPrice)
-
-    if (shares < MIN_SHARES) {
+    // Skip if notional amount is less than $1 (Alpaca minimum)
+    if (notional < 1) {
       buyResults.push({
         symbol: buy.symbol,
         success: false,
         skipped: true,
-        reason: `Not enough to buy ${MIN_SHARES} share(s)`,
+        reason: `Notional amount $${notional.toFixed(2)} is less than $1 minimum`,
+        notional,
       })
       continue
     }
 
     try {
-      const result = await submitLimitBuy(client, buy.symbol, shares, limitPrice)
-      buyResults.push({ ...result, success: true })
+      const result = await submitNotionalMarketBuy(client, buy.symbol, notional)
+      buyResults.push({
+        ...result,
+        success: true,
+        estimatedShares: null, // Will be filled after order executes
+      })
     } catch (error) {
       buyResults.push({
         symbol: buy.symbol,
         success: false,
         error: error.message,
+        notional,
       })
     }
   }
