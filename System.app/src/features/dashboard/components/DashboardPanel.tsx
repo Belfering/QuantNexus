@@ -1720,67 +1720,125 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                               setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
                                             }}
                                           >
-                                            Buy More
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="destructive"
-                                            onClick={() => alpaca.removeInvestment(inv.botId)}
-                                          >
-                                            Remove
+                                            Manage
                                           </Button>
                                         </div>
                                       </div>
 
+                                      {/* Manage inline form - Buy/Sell */}
                                       {isBuyingMore && (
-                                        <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
-                                          <div className="flex gap-1">
+                                        <div className="pt-3 border-t border-border flex flex-col gap-2">
+                                          {/* Buy Row */}
+                                          <div className="flex gap-2 items-center flex-wrap">
+                                            <span className="text-sm font-bold w-10">Buy:</span>
+                                            <div className="flex gap-1">
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardBuyMoreMode('$')}
+                                              >
+                                                $
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardBuyMoreMode('%')}
+                                              >
+                                                %
+                                              </Button>
+                                            </div>
+                                            <Input
+                                              type="number"
+                                              placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                              value={dashboardBuyMoreAmount}
+                                              onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                              className="h-8 w-24"
+                                            />
                                             <Button
                                               size="sm"
-                                              variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
-                                              className="h-8 w-8 p-0"
-                                              onClick={() => setDashboardBuyMoreMode('$')}
+                                              variant="default"
+                                              onClick={async () => {
+                                                const amount = dashboardBuyMoreMode === '%'
+                                                  ? (parseFloat(dashboardBuyMoreAmount) / 100) * availableCash
+                                                  : parseFloat(dashboardBuyMoreAmount)
+                                                if (isNaN(amount) || amount <= 0) return
+                                                if (amount > availableCash) {
+                                                  console.warn('[Dashboard] Buy More amount exceeds available cash')
+                                                  return
+                                                }
+                                                const success = await alpaca.addInvestment(inv.botId, inv.investmentAmount + amount, 'dollars')
+                                                if (success) {
+                                                  setDashboardBuyMoreBotId(null)
+                                                  setDashboardBuyMoreAmount('')
+                                                }
+                                              }}
                                             >
-                                              $
+                                              Add
+                                            </Button>
+                                            <span className="text-xs text-muted">Cash: {formatUsd(availableCash)}</span>
+                                          </div>
+                                          {/* Sell Row */}
+                                          <div className="flex gap-2 items-center flex-wrap">
+                                            <span className="text-sm font-bold w-10">Sell:</span>
+                                            <div className="flex gap-1">
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardSellMode === '$' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardSellMode('$')}
+                                              >
+                                                $
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardSellMode === '%' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardSellMode('%')}
+                                              >
+                                                %
+                                              </Button>
+                                            </div>
+                                            <Input
+                                              type="number"
+                                              placeholder={dashboardSellMode === '$' ? 'Amount' : 'Percent'}
+                                              value={dashboardSellAmount}
+                                              onChange={(e) => setDashboardSellAmount(e.target.value)}
+                                              className="h-8 w-24"
+                                            />
+                                            <Button
+                                              size="sm"
+                                              variant="default"
+                                              onClick={async () => {
+                                                const currentValue = displayCurrentValue
+                                                let sellAmount: number
+                                                if (dashboardSellMode === '%') {
+                                                  sellAmount = (parseFloat(dashboardSellAmount) / 100) * currentValue
+                                                } else {
+                                                  sellAmount = parseFloat(dashboardSellAmount)
+                                                }
+                                                if (isNaN(sellAmount) || sellAmount <= 0) return
+                                                const newAmount = Math.max(0, inv.investmentAmount - sellAmount)
+                                                if (newAmount < 1) {
+                                                  await alpaca.removeInvestment(inv.botId)
+                                                } else {
+                                                  await alpaca.addInvestment(inv.botId, newAmount, 'dollars')
+                                                }
+                                                setDashboardBuyMoreBotId(null)
+                                                setDashboardSellAmount('')
+                                              }}
+                                            >
+                                              Sell
                                             </Button>
                                             <Button
                                               size="sm"
-                                              variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
-                                              className="h-8 w-8 p-0"
-                                              onClick={() => setDashboardBuyMoreMode('%')}
+                                              variant="destructive"
+                                              onClick={() => alpaca.removeInvestment(inv.botId)}
                                             >
-                                              %
+                                              Sell All
                                             </Button>
                                           </div>
-                                          <Input
-                                            type="number"
-                                            placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
-                                            value={dashboardBuyMoreAmount}
-                                            onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
-                                            className="h-8 w-32"
-                                          />
-                                          <Button
-                                            size="sm"
-                                            variant="default"
-                                            onClick={async () => {
-                                              const amount = dashboardBuyMoreMode === '%'
-                                                ? (parseFloat(dashboardBuyMoreAmount) / 100) * availableCash
-                                                : parseFloat(dashboardBuyMoreAmount)
-                                              if (isNaN(amount) || amount <= 0) return
-                                              if (amount > availableCash) {
-                                                console.warn('[Dashboard] Buy More amount exceeds available cash')
-                                                return
-                                              }
-                                              const success = await alpaca.addInvestment(inv.botId, inv.investmentAmount + amount, 'dollars')
-                                              if (success) {
-                                                setDashboardBuyMoreBotId(null)
-                                                setDashboardBuyMoreAmount('')
-                                              }
-                                            }}
-                                          >
-                                            Buy More
-                                          </Button>
-                                          <span className="text-sm text-muted">Cash: {formatUsd(availableCash)}</span>
                                         </div>
                                       )}
 
@@ -2036,67 +2094,125 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                               setDashboardBuyMoreBotId(isBuyingMore ? null : inv.botId)
                                             }}
                                           >
-                                            Buy More
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="destructive"
-                                            onClick={() => alpaca.removeInvestment(inv.botId)}
-                                          >
-                                            Remove
+                                            Manage
                                           </Button>
                                         </div>
                                       </div>
 
+                                      {/* Manage inline form - Buy/Sell */}
                                       {isBuyingMore && (
-                                        <div className="pt-3 border-t border-border flex gap-2 items-center flex-wrap">
-                                          <div className="flex gap-1">
+                                        <div className="pt-3 border-t border-border flex flex-col gap-2">
+                                          {/* Buy Row */}
+                                          <div className="flex gap-2 items-center flex-wrap">
+                                            <span className="text-sm font-bold w-10">Buy:</span>
+                                            <div className="flex gap-1">
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardBuyMoreMode('$')}
+                                              >
+                                                $
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardBuyMoreMode('%')}
+                                              >
+                                                %
+                                              </Button>
+                                            </div>
+                                            <Input
+                                              type="number"
+                                              placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
+                                              value={dashboardBuyMoreAmount}
+                                              onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
+                                              className="h-8 w-24"
+                                            />
                                             <Button
                                               size="sm"
-                                              variant={dashboardBuyMoreMode === '$' ? 'accent' : 'outline'}
-                                              className="h-8 w-8 p-0"
-                                              onClick={() => setDashboardBuyMoreMode('$')}
+                                              variant="default"
+                                              onClick={async () => {
+                                                const amount = dashboardBuyMoreMode === '%'
+                                                  ? (parseFloat(dashboardBuyMoreAmount) / 100) * availableCash
+                                                  : parseFloat(dashboardBuyMoreAmount)
+                                                if (isNaN(amount) || amount <= 0) return
+                                                if (amount > availableCash) {
+                                                  console.warn('[Dashboard] Buy More amount exceeds available cash')
+                                                  return
+                                                }
+                                                const success = await alpaca.addInvestment(inv.botId, inv.investmentAmount + amount, 'dollars')
+                                                if (success) {
+                                                  setDashboardBuyMoreBotId(null)
+                                                  setDashboardBuyMoreAmount('')
+                                                }
+                                              }}
                                             >
-                                              $
+                                              Add
+                                            </Button>
+                                            <span className="text-xs text-muted">Cash: {formatUsd(availableCash)}</span>
+                                          </div>
+                                          {/* Sell Row */}
+                                          <div className="flex gap-2 items-center flex-wrap">
+                                            <span className="text-sm font-bold w-10">Sell:</span>
+                                            <div className="flex gap-1">
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardSellMode === '$' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardSellMode('$')}
+                                              >
+                                                $
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant={dashboardSellMode === '%' ? 'accent' : 'outline'}
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setDashboardSellMode('%')}
+                                              >
+                                                %
+                                              </Button>
+                                            </div>
+                                            <Input
+                                              type="number"
+                                              placeholder={dashboardSellMode === '$' ? 'Amount' : 'Percent'}
+                                              value={dashboardSellAmount}
+                                              onChange={(e) => setDashboardSellAmount(e.target.value)}
+                                              className="h-8 w-24"
+                                            />
+                                            <Button
+                                              size="sm"
+                                              variant="default"
+                                              onClick={async () => {
+                                                const currentValue = displayCurrentValue
+                                                let sellAmount: number
+                                                if (dashboardSellMode === '%') {
+                                                  sellAmount = (parseFloat(dashboardSellAmount) / 100) * currentValue
+                                                } else {
+                                                  sellAmount = parseFloat(dashboardSellAmount)
+                                                }
+                                                if (isNaN(sellAmount) || sellAmount <= 0) return
+                                                const newAmount = Math.max(0, inv.investmentAmount - sellAmount)
+                                                if (newAmount < 1) {
+                                                  await alpaca.removeInvestment(inv.botId)
+                                                } else {
+                                                  await alpaca.addInvestment(inv.botId, newAmount, 'dollars')
+                                                }
+                                                setDashboardBuyMoreBotId(null)
+                                                setDashboardSellAmount('')
+                                              }}
+                                            >
+                                              Sell
                                             </Button>
                                             <Button
                                               size="sm"
-                                              variant={dashboardBuyMoreMode === '%' ? 'accent' : 'outline'}
-                                              className="h-8 w-8 p-0"
-                                              onClick={() => setDashboardBuyMoreMode('%')}
+                                              variant="destructive"
+                                              onClick={() => alpaca.removeInvestment(inv.botId)}
                                             >
-                                              %
+                                              Sell All
                                             </Button>
                                           </div>
-                                          <Input
-                                            type="number"
-                                            placeholder={dashboardBuyMoreMode === '$' ? 'Amount' : '% of cash'}
-                                            value={dashboardBuyMoreAmount}
-                                            onChange={(e) => setDashboardBuyMoreAmount(e.target.value)}
-                                            className="h-8 w-32"
-                                          />
-                                          <Button
-                                            size="sm"
-                                            variant="default"
-                                            onClick={async () => {
-                                              const amount = dashboardBuyMoreMode === '%'
-                                                ? (parseFloat(dashboardBuyMoreAmount) / 100) * availableCash
-                                                : parseFloat(dashboardBuyMoreAmount)
-                                              if (isNaN(amount) || amount <= 0) return
-                                              if (amount > availableCash) {
-                                                console.warn('[Dashboard] Buy More amount exceeds available cash')
-                                                return
-                                              }
-                                              const success = await alpaca.addInvestment(inv.botId, inv.investmentAmount + amount, 'dollars')
-                                              if (success) {
-                                                setDashboardBuyMoreBotId(null)
-                                                setDashboardBuyMoreAmount('')
-                                              }
-                                            }}
-                                          >
-                                            Buy More
-                                          </Button>
-                                          <span className="text-sm text-muted">Cash: {formatUsd(availableCash)}</span>
                                         </div>
                                       )}
 

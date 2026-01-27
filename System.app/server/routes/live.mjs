@@ -1423,21 +1423,55 @@ router.post('/dashboard/broker/sell-unallocated', async (req, res) => {
     const scheduledOrders = []
     const errors = []
 
-    // Check for existing pending sell and update or insert
-    const existingStmt = sqlite.prepare(`
-      SELECT id, qty FROM pending_manual_sells
-      WHERE user_id = ? AND credential_type = ? AND symbol = ? AND status = 'pending'
-    `)
+    // One-time cleanup: remove duplicate pending sells (keep only the most recent per symbol)
+    // This fixes the race condition bug where clicking "Sell" multiple times created duplicates
+    try {
+      const dupeCount = sqlite.prepare(`
+        SELECT COUNT(*) - COUNT(DISTINCT user_id || credential_type || symbol) as dupes
+        FROM pending_manual_sells WHERE status = 'pending'
+      `).get()
 
-    const updateStmt = sqlite.prepare(`
-      UPDATE pending_manual_sells
-      SET qty = ?, updated_at = unixepoch()
-      WHERE id = ?
-    `)
+      if (dupeCount && dupeCount.dupes > 0) {
+        console.log(`[live] Cleaning up ${dupeCount.dupes} duplicate pending sells...`)
+        sqlite.exec(`
+          DELETE FROM pending_manual_sells
+          WHERE status = 'pending' AND id NOT IN (
+            SELECT id FROM (
+              SELECT id, ROW_NUMBER() OVER (
+                PARTITION BY user_id, credential_type, symbol
+                ORDER BY created_at DESC
+              ) as rn
+              FROM pending_manual_sells
+              WHERE status = 'pending'
+            ) WHERE rn = 1
+          )
+        `)
+        console.log(`[live] Duplicate cleanup complete`)
+      }
+    } catch (cleanupErr) {
+      console.warn('[live] Duplicate cleanup skipped:', cleanupErr.message)
+    }
 
-    const insertStmt = sqlite.prepare(`
+    // Ensure unique partial index exists (idempotent - safe to run multiple times)
+    // This prevents future duplicate pending sells
+    try {
+      sqlite.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_sells_unique
+        ON pending_manual_sells(user_id, credential_type, symbol)
+        WHERE status = 'pending'
+      `)
+    } catch (indexErr) {
+      // Index might already exist or table structure differs - that's OK
+      console.warn('[live] Index creation skipped:', indexErr.message)
+    }
+
+    // Atomic upsert: INSERT or UPDATE if pending sell already exists for this symbol
+    // This prevents duplicate pending sells even when clicking rapidly multiple times
+    const upsertStmt = sqlite.prepare(`
       INSERT INTO pending_manual_sells (id, user_id, credential_type, symbol, qty, status, created_at)
       VALUES (?, ?, ?, ?, ?, 'pending', unixepoch())
+      ON CONFLICT(user_id, credential_type, symbol) WHERE status = 'pending'
+      DO UPDATE SET qty = excluded.qty, updated_at = unixepoch()
     `)
 
     for (const order of orders) {
@@ -1448,19 +1482,10 @@ router.post('/dashboard/broker/sell-unallocated', async (req, res) => {
       }
 
       try {
-        // Check if a pending sell already exists for this symbol
-        const existing = existingStmt.get(userId, credentialType, symbol)
-
-        if (existing) {
-          // Update existing pending sell with new quantity
-          updateStmt.run(qty, existing.id)
-          scheduledOrders.push({ id: existing.id, symbol, qty, status: 'pending', updated: true })
-        } else {
-          // Insert new pending sell
-          const id = crypto.randomUUID()
-          insertStmt.run(id, userId, credentialType, symbol, qty)
-          scheduledOrders.push({ id, symbol, qty, status: 'pending' })
-        }
+        // Atomic upsert - no race condition possible
+        const id = crypto.randomUUID()
+        const result = upsertStmt.run(id, userId, credentialType, symbol, qty)
+        scheduledOrders.push({ id, symbol, qty, status: 'pending', updated: result.changes === 0 })
       } catch (err) {
         console.error(`[live] Failed to schedule sell for ${symbol}:`, err)
         errors.push({ symbol, error: err.message })
@@ -1492,6 +1517,35 @@ router.get('/dashboard/broker/pending-sells', (req, res) => {
     const userId = req.user?.id
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    // One-time cleanup: remove duplicate pending sells (keep only the most recent per symbol)
+    // This fixes the race condition bug where clicking "Sell" multiple times created duplicates
+    try {
+      const dupeCount = sqlite.prepare(`
+        SELECT COUNT(*) - COUNT(DISTINCT user_id || credential_type || symbol) as dupes
+        FROM pending_manual_sells WHERE status = 'pending' AND user_id = ?
+      `).get(userId)
+
+      if (dupeCount && dupeCount.dupes > 0) {
+        console.log(`[live] Cleaning up ${dupeCount.dupes} duplicate pending sells for user ${userId}...`)
+        sqlite.prepare(`
+          DELETE FROM pending_manual_sells
+          WHERE status = 'pending' AND user_id = ? AND id NOT IN (
+            SELECT id FROM (
+              SELECT id, ROW_NUMBER() OVER (
+                PARTITION BY user_id, credential_type, symbol
+                ORDER BY created_at DESC
+              ) as rn
+              FROM pending_manual_sells
+              WHERE status = 'pending' AND user_id = ?
+            ) WHERE rn = 1
+          )
+        `).run(userId, userId)
+        console.log(`[live] Duplicate cleanup complete`)
+      }
+    } catch (cleanupErr) {
+      console.warn('[live] Duplicate cleanup skipped:', cleanupErr.message)
     }
 
     const { credentialType } = req.query
