@@ -43,7 +43,8 @@ export function AdvancedTabContent(props: AdvancedTabContentProps) {
   const reportBenchmarks = (sanityState?.report as { benchmarkMetrics?: Record<string, ComparisonMetrics> })?.benchmarkMetrics
   const isBenchmarks = (sanityState?.report as { isBenchmarkMetrics?: Record<string, ComparisonMetrics> })?.isBenchmarkMetrics
   const oosBenchmarks = (sanityState?.report as { oosBenchmarkMetrics?: Record<string, ComparisonMetrics> })?.oosBenchmarkMetrics
-  const benchmarks = reportBenchmarks ?? benchmarkMetrics?.data ?? {}
+  // Use reportBenchmarks only if it has actual data, otherwise fall back to global benchmarks
+  const benchmarks = (reportBenchmarks && Object.keys(reportBenchmarks).length > 0) ? reportBenchmarks : (benchmarkMetrics?.data ?? {})
   // Strategy betas vs each benchmark ticker
   const strategyBetas: Record<string, number> = (sanityState?.report as { strategyBetas?: Record<string, number> })?.strategyBetas ?? {}
 
