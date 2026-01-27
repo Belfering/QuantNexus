@@ -697,11 +697,9 @@ router.post('/live/dry-run', async (req, res) => {
                     allTickers.add(right.trim())
                     botTickers.add(right.trim())
                   }
-                  console.log(`[live] [DEBUG] ${indent}Found indicator ratio ticker: ${ticker} -> ${left}, ${right}`)
                 } else {
                   allTickers.add(ticker)
                   botTickers.add(ticker)
-                  console.log(`[live] [DEBUG] ${indent}Found indicator ticker: ${ticker}`)
                 }
               }
               if (cond.rightTicker && cond.rightTicker !== 'Empty') {
@@ -717,11 +715,9 @@ router.post('/live/dry-run', async (req, res) => {
                     allTickers.add(right.trim())
                     botTickers.add(right.trim())
                   }
-                  console.log(`[live] [DEBUG] ${indent}Found indicator rightTicker ratio: ${ticker} -> ${left}, ${right}`)
                 } else {
                   allTickers.add(ticker)
                   botTickers.add(ticker)
-                  console.log(`[live] [DEBUG] ${indent}Found indicator rightTicker: ${ticker}`)
                 }
               }
             }
@@ -1015,8 +1011,6 @@ router.post('/live/dry-run', async (req, res) => {
         // Update bot position ledger after successful execution (skip for simulations)
         if (mode !== 'simulate' && executionResult && (mode === 'execute-paper' || mode === 'execute-live')) {
           try {
-            console.log('[ledger] [DEBUG] ===== UPDATING BOT POSITION LEDGER =====')
-
             // Process BUY orders - ADD to ledger
             if (executionResult.buys && Array.isArray(executionResult.buys)) {
               for (const buy of executionResult.buys) {
@@ -1031,11 +1025,8 @@ router.post('/live/dry-run', async (req, res) => {
                     const avgFillPrice = parseFloat(order.filled_avg_price)
                     const botId = investments[0].bot_id
 
-                    console.log(`[ledger] [DEBUG] ADD: bot=${botId}, symbol=${buy.symbol}, shares=${filledShares.toFixed(4)}, price=$${avgFillPrice.toFixed(2)}`)
-                    console.log(`[ledger] [DEBUG] SQL params: userId=${userId}, credType=${credentialType}, botId=${botId}, symbol=${buy.symbol}`)
-
                     // Insert or update ledger entry
-                    const insertResult = sqlite.prepare(`
+                    sqlite.prepare(`
                       INSERT INTO bot_position_ledger
                         (user_id, credential_type, bot_id, symbol, shares, avg_price, updated_at)
                       VALUES (?, ?, ?, ?, ?, ?, unixepoch())
@@ -1044,18 +1035,9 @@ router.post('/live/dry-run', async (req, res) => {
                         avg_price = ((bot_position_ledger.shares * bot_position_ledger.avg_price) + (excluded.shares * excluded.avg_price)) / (bot_position_ledger.shares + excluded.shares),
                         updated_at = unixepoch()
                     `).run(userId, credentialType, botId, buy.symbol, filledShares, avgFillPrice)
-
-                    console.log(`[ledger] [DEBUG] INSERT result: changes=${insertResult.changes}, lastInsertRowid=${insertResult.lastInsertRowid}`)
-
-                    // Verify what was actually written
-                    const verification = sqlite.prepare(`
-                      SELECT * FROM bot_position_ledger
-                      WHERE user_id = ? AND credential_type = ? AND bot_id = ? AND symbol = ?
-                    `).get(userId, credentialType, botId, buy.symbol)
-                    console.log(`[ledger] [DEBUG] Verified DB entry:`, verification)
                   }
                 } catch (err) {
-                  console.warn(`[ledger] [DEBUG] Failed to update ledger for buy ${buy.symbol}: ${err.message}`)
+                  console.warn(`[ledger] Failed to update ledger for buy ${buy.symbol}: ${err.message}`)
                 }
               }
             }
@@ -1071,8 +1053,6 @@ router.post('/live/dry-run', async (req, res) => {
                   if (order.status === 'filled') {
                     const filledShares = parseFloat(order.filled_qty)
                     const botId = investments[0].bot_id
-
-                    console.log(`[ledger] [DEBUG] SUBTRACT: bot=${botId}, symbol=${sell.symbol}, shares=${filledShares.toFixed(4)}`)
 
                     // Subtract shares from ledger
                     sqlite.prepare(`
@@ -1090,30 +1070,12 @@ router.post('/live/dry-run', async (req, res) => {
                     `).run(userId, credentialType, botId, sell.symbol)
                   }
                 } catch (err) {
-                  console.warn(`[ledger] [DEBUG] Failed to update ledger for sell ${sell.symbol}: ${err.message}`)
+                  console.warn(`[ledger] Failed to update ledger for sell ${sell.symbol}: ${err.message}`)
                 }
               }
             }
-
-            console.log('[ledger] [DEBUG] Bot position ledger updated successfully')
-
-            // Show final ledger state for all bots
-            for (const inv of investments) {
-              const botPositions = sqlite.prepare(`
-                SELECT bot_id, symbol, shares, avg_price, updated_at
-                FROM bot_position_ledger
-                WHERE user_id = ? AND credential_type = ? AND bot_id = ?
-                ORDER BY symbol ASC
-              `).all(userId, credentialType, inv.bot_id)
-
-              console.log(`[ledger] [DEBUG] ===== FINAL LEDGER STATE FOR BOT ${inv.bot_id} =====`)
-              console.log(`[ledger] [DEBUG] Total positions: ${botPositions.length}`)
-              for (const pos of botPositions) {
-                console.log(`[ledger] [DEBUG]   ${pos.symbol}: ${pos.shares.toFixed(4)} shares @ $${pos.avg_price.toFixed(2)}`)
-              }
-            }
           } catch (ledgerErr) {
-            console.error('[ledger] [ERROR] Ledger update failed:', ledgerErr.message)
+            console.error('[ledger] Ledger update failed:', ledgerErr.message)
             // Don't fail the execution if ledger update fails - just log it
           }
         }

@@ -278,21 +278,15 @@ function getUsersWithTradingEnabled() {
  * Execute trades for a single user/mode combination
  */
 async function executeForUser(userId, credentialType, settings) {
-  console.log(`[DEBUG] ═══════════════════════════════════════════════════════════`)
-  console.log(`[DEBUG] EXECUTING FOR USER: ${userId} (${credentialType})`)
   console.log(`[trading-scheduler] Executing ${credentialType} trades for user ${userId}`)
 
-  console.log(`[DEBUG] → Loading credentials...`)
   const credentials = getDecryptedCredentials(userId, credentialType)
   if (!credentials) {
-    console.log(`[DEBUG] ✗ No credentials found for ${credentialType}`)
     console.warn(`[trading-scheduler] No ${credentialType} credentials for user ${userId}`)
     return { success: false, error: 'No credentials' }
   }
-  console.log(`[DEBUG] ✓ Credentials loaded successfully`)
 
   // Get investments
-  console.log(`[DEBUG] → Loading bot investments...`)
   const investmentRows = db.prepare(`
     SELECT i.*, b.name as bot_name, b.payload as bot_payload
     FROM user_bot_investments i
@@ -300,17 +294,9 @@ async function executeForUser(userId, credentialType, settings) {
     WHERE i.user_id = ? AND i.credential_type = ?
   `).all(userId, credentialType)
 
-  console.log(`[DEBUG] → Found ${investmentRows.length} bot investments`)
-
   if (investmentRows.length === 0) {
-    console.log(`[DEBUG] No investments found - skipping execution`)
     console.log(`[trading-scheduler] No ${credentialType} investments for user ${userId}`)
     return { success: true, message: 'No investments' }
-  }
-
-  // Log each investment
-  for (const row of investmentRows) {
-    console.log(`[DEBUG]   Bot: ${row.bot_name || row.bot_id} - $${row.investment_amount} (${row.weight_mode})`)
   }
 
   // Build investments with bot objects
@@ -337,13 +323,9 @@ async function executeForUser(userId, credentialType, settings) {
 
   try {
     // Get account info
-    console.log(`[DEBUG] → Connecting to Alpaca and fetching account info...`)
     const client = createAlpacaClient(credentials)
     const account = await getAccountInfo(client)
     const totalEquity = account.equity
-
-    console.log(`[DEBUG] → Account equity: $${totalEquity.toFixed(2)}`)
-    console.log(`[DEBUG] → Account cash: $${account.cash.toFixed(2)}`)
 
     // Calculate cash reserve
     let reservedCash = 0
@@ -356,12 +338,7 @@ async function executeForUser(userId, credentialType, settings) {
     }
     const adjustedEquity = Math.max(0, totalEquity - reservedCash)
 
-    console.log(`[DEBUG] → Reserved cash: $${reservedCash.toFixed(2)}`)
-    console.log(`[DEBUG] → Adjusted equity (for trading): $${adjustedEquity.toFixed(2)}`)
-
-    // Compute allocations
-    console.log(`[DEBUG] ─────────────────────────────────────────────────────────────`)
-    console.log(`[DEBUG] → Computing allocations from backtests...`)
+    // Compute allocations from backtests
     const allocations = await computeFinalAllocations(
       investments,
       adjustedEquity,
@@ -372,15 +349,8 @@ async function executeForUser(userId, credentialType, settings) {
       }
     )
 
-    console.log(`[DEBUG] → Target allocations:`)
-    for (const [ticker, pct] of Object.entries(allocations)) {
-      console.log(`[DEBUG]   ${ticker}: ${pct.toFixed(2)}%`)
-    }
-
     // Fetch bot's current ledger positions for sell calculations
     // This isolates bot positions from unallocated Alpaca positions
-    console.log(`[DEBUG] ─────────────────────────────────────────────────────────────`)
-    console.log(`[DEBUG] → Fetching bot ledger positions...`)
     const botId = investments[0].botId
     const ledgerPositions = db.prepare(`
       SELECT symbol, shares, avg_price as avgPrice
@@ -388,8 +358,6 @@ async function executeForUser(userId, credentialType, settings) {
       WHERE user_id = ? AND credential_type = ? AND bot_id = ?
         AND shares > 0.0001
     `).all(userId, credentialType, botId)
-
-    console.log(`[DEBUG] → Found ${ledgerPositions.length} positions in bot ledger`)
 
     // Get current prices from Alpaca for market value calculations
     const alpacaPositions = await getPositions(client)
@@ -407,17 +375,38 @@ async function executeForUser(userId, credentialType, settings) {
       marketValue: pos.shares * (priceMap[pos.symbol] || pos.avgPrice)
     }))
 
-    for (const pos of botPositions) {
-      console.log(`[DEBUG]   Bot position: ${pos.symbol} - ${pos.qty} shares @ $${pos.currentPrice.toFixed(2)} ($${pos.marketValue.toFixed(2)})`)
-    }
-
     // Calculate total invested for this execution
     const totalInvested = investments.reduce((sum, inv) => sum + inv.investmentAmount, 0)
-    console.log(`[DEBUG] → Total invested: $${totalInvested.toFixed(2)}`)
+
+    // Print clear trade summary
+    const botName = investments[0].bot?.name || investments[0].botId
+    console.log(`\n[TRADE] ════════════════════════════════════════`)
+    console.log(`[TRADE] BOT: ${botName}`)
+    console.log(`[TRADE] Mode: ${credentialType}`)
+    console.log(`[TRADE] Investment: $${totalInvested.toFixed(2)}`)
+    console.log(`[TRADE] Account Equity: $${totalEquity.toFixed(2)}`)
+    console.log(`[TRADE] ────────────────────────────────────────`)
+    console.log(`[TRADE] CURRENT POSITIONS (from ledger):`)
+    if (botPositions.length === 0) {
+      console.log(`[TRADE]   (none)`)
+    } else {
+      for (const pos of botPositions) {
+        console.log(`[TRADE]   ${pos.symbol}: ${pos.qty.toFixed(4)} shares @ $${pos.currentPrice.toFixed(2)} ($${pos.marketValue.toFixed(2)})`)
+      }
+    }
+    console.log(`[TRADE] ────────────────────────────────────────`)
+    console.log(`[TRADE] TARGET ALLOCATIONS (from backtest):`)
+    if (Object.keys(allocations).length === 0) {
+      console.log(`[TRADE]   (none)`)
+    } else {
+      for (const [ticker, pct] of Object.entries(allocations)) {
+        const targetValue = adjustedEquity * (pct / 100)
+        console.log(`[TRADE]   ${ticker}: ${pct.toFixed(2)}% ($${targetValue.toFixed(2)})`)
+      }
+    }
+    console.log(`[TRADE] ════════════════════════════════════════\n`)
 
     // Execute live trades
-    console.log(`[DEBUG] ─────────────────────────────────────────────────────────────`)
-    console.log(`[DEBUG] → Executing live trades...`)
     const result = await executeLiveTrades(credentials, allocations, {
       investmentAmount: totalInvested,  // Use bot investment amount
       botPositions,  // Pass bot's ledger positions for sell calculations
@@ -430,7 +419,6 @@ async function executeForUser(userId, credentialType, settings) {
     const executionDate = new Date().toISOString().split('T')[0]
 
     // Log the execution
-    console.log(`[DEBUG] → Logging execution to database...`)
     const execResult = db.prepare(`
       INSERT INTO trade_executions (user_id, credential_type, execution_date, status, target_allocations, executed_orders, errors)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -464,8 +452,6 @@ async function executeForUser(userId, credentialType, settings) {
     }
 
     // Update bot position ledger after successful execution
-    console.log(`[DEBUG] ─────────────────────────────────────────────────────────────`)
-    console.log(`[DEBUG] UPDATING BOT POSITION LEDGER`)
     try {
       const client = createAlpacaClient(credentials)
 
@@ -483,8 +469,6 @@ async function executeForUser(userId, credentialType, settings) {
               const avgFillPrice = parseFloat(order.filled_avg_price)
               const botId = investments[0].botId  // First bot for now
 
-              console.log(`[DEBUG] → ADD: bot=${botId}, symbol=${buy.symbol}, shares=${filledShares.toFixed(4)}, price=$${avgFillPrice.toFixed(2)}`)
-
               // Insert or update ledger entry
               db.prepare(`
                 INSERT INTO bot_position_ledger
@@ -495,11 +479,9 @@ async function executeForUser(userId, credentialType, settings) {
                   avg_price = ((bot_position_ledger.shares * bot_position_ledger.avg_price) + (excluded.shares * excluded.avg_price)) / (bot_position_ledger.shares + excluded.shares),
                   updated_at = unixepoch()
               `).run(userId, credentialType, botId, buy.symbol, filledShares, avgFillPrice)
-
-              console.log(`[DEBUG]   ✓ Ledger updated for BUY ${buy.symbol}`)
             }
           } catch (err) {
-            console.warn(`[DEBUG]   ✗ Failed to update ledger for buy ${buy.symbol}: ${err.message}`)
+            console.warn(`[ledger] Failed to update ledger for buy ${buy.symbol}: ${err.message}`)
           }
         }
       }
@@ -516,8 +498,6 @@ async function executeForUser(userId, credentialType, settings) {
               const filledShares = parseFloat(order.filled_qty)
               const botId = investments[0].botId  // First bot for now
 
-              console.log(`[DEBUG] → SUBTRACT: bot=${botId}, symbol=${sell.symbol}, shares=${filledShares.toFixed(4)}`)
-
               // Subtract shares from ledger
               db.prepare(`
                 UPDATE bot_position_ledger
@@ -532,34 +512,19 @@ async function executeForUser(userId, credentialType, settings) {
                 WHERE user_id = ? AND credential_type = ? AND bot_id = ? AND symbol = ?
                   AND shares < 0.0001
               `).run(userId, credentialType, botId, sell.symbol)
-
-              console.log(`[DEBUG]   ✓ Ledger updated for SELL ${sell.symbol}`)
             }
           } catch (err) {
-            console.warn(`[DEBUG]   ✗ Failed to update ledger for sell ${sell.symbol}: ${err.message}`)
+            console.warn(`[ledger] Failed to update ledger for sell ${sell.symbol}: ${err.message}`)
           }
         }
       }
-
-      // Show final ledger state
-      const botPositions = db.prepare(`
-        SELECT bot_id, symbol, shares, avg_price
-        FROM bot_position_ledger
-        WHERE user_id = ? AND credential_type = ? AND bot_id = ?
-        ORDER BY symbol ASC
-      `).all(userId, credentialType, investments[0].botId)
-
-      console.log(`[DEBUG] → Final ledger state: ${botPositions.length} positions`)
-      for (const pos of botPositions) {
-        console.log(`[DEBUG]   ${pos.symbol}: ${pos.shares.toFixed(4)} shares @ $${pos.avg_price.toFixed(2)}`)
-      }
     } catch (ledgerErr) {
-      console.error(`[DEBUG] ✗ Ledger update failed: ${ledgerErr.message}`)
+      console.error(`[ledger] Ledger update failed: ${ledgerErr.message}`)
       // Don't fail the execution if ledger update fails - just log it
     }
 
-    console.log(`[DEBUG] ✓ Execution complete for ${userId} (${credentialType})`)
-    console.log(`[DEBUG] Summary: ${result.summary?.sellCount || 0} sells, ${result.summary?.buyCount || 0} buys, ${result.summary?.errorCount || 0} errors`)
+    // Print execution summary
+    console.log(`[TRADE] EXECUTION COMPLETE: ${result.summary?.sellCount || 0} sells, ${result.summary?.buyCount || 0} buys, ${result.summary?.errorCount || 0} errors`)
     console.log(`[trading-scheduler] Completed ${credentialType} execution for user ${userId}:`, result.summary)
 
     return {
@@ -570,7 +535,7 @@ async function executeForUser(userId, credentialType, settings) {
       result,
     }
   } catch (error) {
-    console.log(`[DEBUG] ✗ EXECUTION FAILED: ${error.message}`)
+    console.error(`[TRADE] EXECUTION FAILED: ${error.message}`)
     console.error(`[trading-scheduler] Error executing for user ${userId}:`, error)
 
     // Log failed execution
@@ -589,31 +554,29 @@ async function executeForUser(userId, credentialType, settings) {
  * These are sells scheduled via the Dashboard for unallocated positions
  */
 async function processPendingManualSells(userId, credentialType, credentials) {
-  console.log(`[DEBUG] ═══════════════════════════════════════════════════════════`)
-  console.log(`[DEBUG] PROCESSING PENDING MANUAL SELLS`)
-  console.log(`[DEBUG] User: ${userId}, Mode: ${credentialType}`)
-
   const pendingSells = db.prepare(`
     SELECT id, symbol, qty
     FROM pending_manual_sells
     WHERE user_id = ? AND credential_type = ? AND status = 'pending'
   `).all(userId, credentialType)
 
-  console.log(`[DEBUG] Found ${pendingSells.length} pending sells to process`)
-
   if (pendingSells.length === 0) {
-    console.log(`[DEBUG] No pending sells - skipping`)
     return { processed: 0, succeeded: 0, failed: 0 }
   }
 
-  console.log(`[trading-scheduler] Processing ${pendingSells.length} pending manual sells for user ${userId} (${credentialType})`)
+  console.log(`\n[TRADE] ════════════════════════════════════════`)
+  console.log(`[TRADE] PENDING MANUAL SELLS (${credentialType})`)
+  console.log(`[TRADE] ────────────────────────────────────────`)
+  for (const sell of pendingSells) {
+    console.log(`[TRADE]   SELL ${sell.symbol}: ${sell.qty} shares`)
+  }
+  console.log(`[TRADE] ════════════════════════════════════════\n`)
 
   const client = createAlpacaClient(credentials)
   let succeeded = 0
   let failed = 0
 
   for (const sell of pendingSells) {
-    console.log(`[DEBUG] → Executing sell: ${sell.symbol} x ${sell.qty} shares`)
     try {
       await submitMarketSell(client, sell.symbol, sell.qty)
 
@@ -624,12 +587,10 @@ async function processPendingManualSells(userId, credentialType, credentials) {
         WHERE id = ?
       `).run(sell.id)
 
-      console.log(`[DEBUG] ✓ Sell executed successfully: ${sell.symbol}`)
-      console.log(`[trading-scheduler] Executed pending sell: ${sell.symbol} x ${sell.qty}`)
+      console.log(`[TRADE] ✓ SELL ${sell.symbol} x ${sell.qty} shares - SUCCESS`)
       succeeded++
     } catch (error) {
-      console.log(`[DEBUG] ✗ Sell FAILED: ${sell.symbol} - ${error.message}`)
-      console.error(`[trading-scheduler] Failed pending sell ${sell.symbol}:`, error)
+      console.log(`[TRADE] ✗ SELL ${sell.symbol} x ${sell.qty} shares - FAILED: ${error.message}`)
 
       // Mark as failed with error message
       db.prepare(`
@@ -642,7 +603,7 @@ async function processPendingManualSells(userId, credentialType, credentials) {
     }
   }
 
-  console.log(`[DEBUG] Pending manual sells complete: ${succeeded}/${pendingSells.length} succeeded, ${failed} failed`)
+  console.log(`[TRADE] Manual sells: ${succeeded}/${pendingSells.length} succeeded, ${failed} failed`)
   return { processed: pendingSells.length, succeeded, failed }
 }
 
@@ -662,35 +623,24 @@ async function runScheduledExecution() {
     status: 'running',
   }
 
-  console.log(`[DEBUG] ═══════════════════════════════════════════════════════════`)
-  console.log(`[DEBUG] ═══════════════════════════════════════════════════════════`)
-  console.log(`[DEBUG] STARTING SCHEDULED TRADE EXECUTION`)
-  console.log(`[DEBUG] Time: ${new Date().toISOString()}`)
-  console.log(`[DEBUG] ═══════════════════════════════════════════════════════════`)
-  console.log('[trading-scheduler] Starting scheduled trade execution...')
+  console.log(`\n[trading-scheduler] ════════════════════════════════════════════════════════`)
+  console.log(`[trading-scheduler] STARTING SCHEDULED TRADE EXECUTION`)
+  console.log(`[trading-scheduler] Time: ${new Date().toISOString()}`)
+  console.log(`[trading-scheduler] ════════════════════════════════════════════════════════\n`)
 
   try {
     const users = getUsersWithTradingEnabled()
-    console.log(`[DEBUG] Users with trading enabled: ${users.length}`)
     console.log(`[trading-scheduler] Found ${users.length} users with trading enabled`)
 
     for (const userSettings of users) {
       const userId = userSettings.user_id
       currentExecution.currentUser = userId
 
-      console.log(`[DEBUG] ═══════════════════════════════════════════════════════════`)
-      console.log(`[DEBUG] Processing user: ${userId}`)
-
       // Execute paper trades if credentials exist
       const paperCreds = getDecryptedCredentials(userId, 'paper')
       if (paperCreds) {
-        console.log(`[DEBUG] → Paper credentials found`)
-
         // Process pending manual sells first (before rebalancing)
         const paperManualSells = await processPendingManualSells(userId, 'paper', paperCreds)
-        if (paperManualSells.processed > 0) {
-          console.log(`[trading-scheduler] Paper manual sells: ${paperManualSells.succeeded}/${paperManualSells.processed} succeeded`)
-        }
 
         const paperResult = await executeForUser(userId, 'paper', userSettings)
         currentExecution.users.push({
@@ -699,20 +649,13 @@ async function runScheduledExecution() {
           manualSells: paperManualSells,
           ...paperResult,
         })
-      } else {
-        console.log(`[DEBUG] → No paper credentials`)
       }
 
       // Execute live trades if credentials exist
       const liveCreds = getDecryptedCredentials(userId, 'live')
       if (liveCreds) {
-        console.log(`[DEBUG] → Live credentials found`)
-
         // Process pending manual sells first (before rebalancing)
         const liveManualSells = await processPendingManualSells(userId, 'live', liveCreds)
-        if (liveManualSells.processed > 0) {
-          console.log(`[trading-scheduler] Live manual sells: ${liveManualSells.succeeded}/${liveManualSells.processed} succeeded`)
-        }
 
         const liveResult = await executeForUser(userId, 'live', userSettings)
         currentExecution.users.push({
@@ -721,8 +664,6 @@ async function runScheduledExecution() {
           manualSells: liveManualSells,
           ...liveResult,
         })
-      } else {
-        console.log(`[DEBUG] → No live credentials`)
       }
     }
 
@@ -730,19 +671,15 @@ async function runScheduledExecution() {
     currentExecution.completedAt = Date.now()
     currentExecution.duration = currentExecution.completedAt - currentExecution.startedAt
 
-    console.log(`[DEBUG] ═══════════════════════════════════════════════════════════`)
-    console.log(`[DEBUG] EXECUTION COMPLETE`)
-    console.log(`[DEBUG] Duration: ${currentExecution.duration}ms`)
-    console.log(`[DEBUG] Users processed: ${currentExecution.users.length}`)
-    console.log(`[DEBUG] ═══════════════════════════════════════════════════════════`)
-    console.log(`[trading-scheduler] Completed scheduled execution in ${currentExecution.duration}ms`)
+    console.log(`\n[trading-scheduler] ════════════════════════════════════════════════════════`)
+    console.log(`[trading-scheduler] EXECUTION COMPLETE - Duration: ${currentExecution.duration}ms`)
+    console.log(`[trading-scheduler] ════════════════════════════════════════════════════════\n`)
 
     // Update last execution date
     lastExecutionDate = getEasternDate()
 
   } catch (error) {
-    console.log(`[DEBUG] ✗ SCHEDULED EXECUTION FAILED: ${error.message}`)
-    console.error('[trading-scheduler] Error in scheduled execution:', error)
+    console.error('[trading-scheduler] Scheduled execution FAILED:', error)
     currentExecution.status = 'failed'
     currentExecution.error = error.message
   } finally {
