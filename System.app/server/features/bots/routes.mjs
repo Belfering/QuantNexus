@@ -149,7 +149,7 @@ const createBotSchema = {
     ownerId: z.string().min(1),
     name: z.string().min(1).max(100),
     payload: z.union([z.string(), z.object({}).passthrough()]),
-    visibility: z.enum(['private', 'nexus']).optional(),
+    visibility: z.enum(['private', 'nexus_eligible', 'nexus', 'atlas']).optional(),
     tags: z.array(z.string()).optional(),
     fundSlot: z.string().optional(),
     id: z.string().optional(), // Client-provided ID
@@ -202,7 +202,7 @@ const updateBotSchema = {
     ownerId: z.string().min(1),
     name: z.string().min(1).max(100).optional(),
     payload: z.union([z.string(), z.object({}).passthrough()]).optional(),
-    visibility: z.enum(['private', 'nexus']).optional(),
+    visibility: z.enum(['private', 'nexus_eligible', 'nexus', 'atlas']).optional(),
     tags: z.array(z.string()).optional(),
     fundSlot: z.string().optional(),
     isDraft: z.boolean().optional(), // Support draft bots for auto-save
