@@ -4777,19 +4777,16 @@ app.post('/api/admin/tickers/cleanup-inactive', requireAdmin, async (req, res) =
   try {
     console.log('[Admin] Cleanup inactive tickers requested')
 
-    // Get all inactive tickers from registry
-    const inactiveTickers = await new Promise((resolve, reject) => {
-      db.all(
-        `SELECT ticker, end_date, last_synced
-         FROM ticker_registry
-         WHERE is_active = 0
-         ORDER BY ticker`,
-        (err, rows) => {
-          if (err) reject(err)
-          else resolve(rows || [])
-        }
-      )
-    })
+    // Ensure ticker registry table exists
+    await tickerRegistry.ensureTickerRegistryTable()
+
+    // Get all inactive tickers from registry (using better-sqlite3 synchronous API)
+    const inactiveTickers = database.sqlite.prepare(
+      `SELECT ticker, end_date, last_synced
+       FROM ticker_registry
+       WHERE is_active = 0
+       ORDER BY ticker`
+    ).all()
 
     if (inactiveTickers.length === 0) {
       return res.json({
@@ -4832,17 +4829,8 @@ app.post('/api/admin/tickers/cleanup-inactive', requireAdmin, async (req, res) =
           console.log(`[Admin] Dropped DuckDB table: ${tableName}`)
         }
 
-        // 3. Remove from ticker registry
-        await new Promise((resolve, reject) => {
-          db.run(
-            'DELETE FROM ticker_registry WHERE ticker = ?',
-            [ticker],
-            (err) => {
-              if (err) reject(err)
-              else resolve()
-            }
-          )
-        })
+        // 3. Remove from ticker registry (using better-sqlite3 synchronous API)
+        database.sqlite.prepare('DELETE FROM ticker_registry WHERE ticker = ?').run(ticker)
 
         removed++
       } catch (err) {
