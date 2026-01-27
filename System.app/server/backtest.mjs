@@ -91,11 +91,6 @@ async function fetchOhlcSeriesUncached(ticker, limit = 20000) {
   const filePath = path.join(PARQUET_DIR, `${ticker}.parquet`)
   const normalizedPath = filePath.replace(/\\/g, '/')
 
-  console.log(`[Backtest] Loading ${ticker} from ${filePath}`)
-  console.log(`[Backtest] PARQUET_DIR: ${PARQUET_DIR}`)
-  console.log(`[Backtest] File exists:`, fs.existsSync(filePath))
-  console.log(`[Backtest] Normalized path: ${normalizedPath}`)
-
   const sql = `
     SELECT
       epoch(Date) AS time,
@@ -111,13 +106,7 @@ async function fetchOhlcSeriesUncached(ticker, limit = 20000) {
     LIMIT ${limit}
   `
 
-  console.log(`[Backtest] SQL:`, sql)
   const rows = await runQuery(sql)
-  console.log(`[Backtest] Query returned ${rows?.length || 0} rows`)
-  if (rows && rows.length > 0) {
-    console.log(`[Backtest] First row:`, rows[0])
-    console.log(`[Backtest] Last row:`, rows[rows.length - 1])
-  }
   return rows
     .map(r => ({
       time: Number(r.time),
@@ -1840,42 +1829,16 @@ const metricAt = (ctx, ticker, metric, window, parentNode = null) => {
       console.log(`[BRANCH INSIDE] decisionIndex=${ctx.decisionIndex}, branchName="${branchName}", parentNode=${parentNode?.id ?? 'NULL'}`)
     }
 
-    // DEBUG: Log branch resolution details for first few dates
-    const DEBUG_BRANCH = ctx.decisionIndex < 5
-    if (DEBUG_BRANCH) {
-      console.log(`[metricAt DEBUG] ticker: "${ticker}", branchName: "${branchName}"`)
-      console.log(`[metricAt DEBUG] parentNode provided: ${!!parentNode}, id: ${parentNode?.id ?? 'none'}`)
-      console.log(`[metricAt DEBUG] ctx.branchParentNode: ${!!ctx.branchParentNode}`)
-    }
-
-    const branchNode = getBranchChildNode(parentNode || ctx.branchParentNode, branchName, DEBUG_BRANCH)
-
-    if (DEBUG_BRANCH) {
-      console.log(`[metricAt DEBUG] getBranchChildNode returned: ${branchNode ? `node id=${branchNode.id}, kind=${branchNode.kind}` : 'NULL'}`)
-    }
+    const branchNode = getBranchChildNode(parentNode || ctx.branchParentNode, branchName)
 
     if (!branchNode) {
       // Branch not found - return null (indicator will fail gracefully)
-      if (DEBUG_BRANCH) {
-        console.log(`[metricAt DEBUG] Branch not found, returning null`)
-      }
       return null
     }
     const branchEquity = getBranchEquity(ctx, branchNode)
 
-    if (DEBUG_BRANCH) {
-      console.log(`[metricAt DEBUG] branchEquity: ${branchEquity ? `equity array length=${branchEquity.equity?.length}` : 'NULL'}`)
-    }
-
     if (!branchEquity) return null
     const result = branchMetricAt(ctx, branchEquity, metric, window, ctx.indicatorIndex)
-
-    if (DEBUG_BRANCH) {
-      console.log(`[metricAt DEBUG] branchMetricAt result: ${result?.toFixed(6) ?? 'NULL'}`)
-    }
-
-    // DEBUG: Print branch:from value for EVERY day
-    console.log(`[BRANCH VALUE] day=${ctx.decisionIndex}, date=${ctx.db.dates[ctx.decisionIndex]}, ticker="${ticker}", metric="${metric}", window=${window}, value=${result}`)
 
     return result
   }
@@ -2311,16 +2274,8 @@ const parseBranchRef = (ticker) => {
 
 // Get the child node for a branch reference from the parent node
 // branchName: 'from', 'to', 'then', 'else', 'enter', 'exit'
-const getBranchChildNode = (parentNode, branchName, debug = false) => {
-  if (debug) {
-    console.log(`[getBranchChildNode DEBUG] parentNode: ${parentNode ? `id=${parentNode.id}, kind=${parentNode.kind}` : 'NULL'}`)
-    console.log(`[getBranchChildNode DEBUG] branchName: "${branchName}"`)
-  }
-
-  if (!parentNode || !branchName) {
-    if (debug) console.log(`[getBranchChildNode DEBUG] Early return null - missing parentNode or branchName`)
-    return null
-  }
+const getBranchChildNode = (parentNode, branchName) => {
+  if (!parentNode || !branchName) return null
 
   // Map branch names to slot names
   const slotMap = {
@@ -2333,19 +2288,9 @@ const getBranchChildNode = (parentNode, branchName, debug = false) => {
   }
 
   const slotName = slotMap[branchName]
-  if (debug) {
-    console.log(`[getBranchChildNode DEBUG] slotName for "${branchName}": ${slotName ?? 'NOT FOUND'}`)
-  }
   if (!slotName) return null
 
   const children = parentNode.children?.[slotName]
-  if (debug) {
-    console.log(`[getBranchChildNode DEBUG] parentNode.children keys: ${parentNode.children ? Object.keys(parentNode.children).join(', ') : 'no children'}`)
-    console.log(`[getBranchChildNode DEBUG] children[${slotName}]: ${children ? `array length=${children.length}` : 'NULL/undefined'}`)
-    if (children?.[0]) {
-      console.log(`[getBranchChildNode DEBUG] children[0]: id=${children[0].id}, kind=${children[0].kind}`)
-    }
-  }
 
   if (!Array.isArray(children) || children.length === 0) return null
 
@@ -3566,9 +3511,6 @@ function evaluateNode(ctx, node) {
   }
 
   if (node.kind === 'scaling') {
-    // DEBUG: Always log scaling node evaluation
-    console.log(`[SCALING EVAL] node=${node.id}, raw scaleTicker="${node.scaleTicker}"`)
-
     // Scaling nodes blend between then/else based on an indicator value in a range
     const scaleTicker = normalizeChoice(node.scaleTicker || 'SPY')
     const scaleMetric = node.scaleMetric || 'Relative Strength Index'
@@ -3576,33 +3518,8 @@ function evaluateNode(ctx, node) {
     const scaleFrom = Number(node.scaleFrom ?? 0)
     const scaleTo = Number(node.scaleTo ?? 100)
 
-    // DEBUG: Log EVERY scaling node on first date to see what's happening
-    if (ctx.decisionIndex === 0) {
-      console.log(`[Scaling Node] id=${node.id}, scaleTicker="${scaleTicker}", isBranchRef=${isBranchRef(scaleTicker)}`)
-    }
-
-    // ALWAYS log for branch references on first date to verify resolution
-    const isBranch = isBranchRef(scaleTicker)
-    if (isBranch && ctx.decisionIndex === 0) {
-      console.log(`\n[Branch Scaling] ========== First Date Debug ==========`)
-      console.log(`[Branch Scaling] Node: ${node.title || node.id}`)
-      console.log(`[Branch Scaling] scaleTicker: "${scaleTicker}", scaleMetric: "${scaleMetric}", scaleWindow: ${scaleWindow}`)
-      console.log(`[Branch Scaling] scaleFrom: ${scaleFrom}, scaleTo: ${scaleTo}`)
-      console.log(`[Branch Scaling] node.children.then exists: ${!!node.children?.then}, length: ${node.children?.then?.length ?? 0}`)
-      console.log(`[Branch Scaling] node.children.else exists: ${!!node.children?.else}, length: ${node.children?.else?.length ?? 0}`)
-      if (node.children?.then?.[0]) {
-        console.log(`[Branch Scaling] then[0] id: ${node.children.then[0].id}, kind: ${node.children.then[0].kind}`)
-      }
-    }
-
     // FRD-021: Pass the scaling node as parent for branch reference resolution
     const val = metricAt(ctx, scaleTicker, scaleMetric, scaleWindow, node)
-
-    // ALWAYS log result for branch references on first date
-    if (isBranch && ctx.decisionIndex === 0) {
-      console.log(`[Branch Scaling] metricAt result: ${val?.toFixed(6) ?? 'NULL'}`)
-      console.log(`[Branch Scaling] ==========================================\n`)
-    }
 
     // Calculate blend factor: 0 = all "then", 1 = all "else"
     // If val is below scaleFrom, blend = 0 (100% then)
@@ -4173,67 +4090,10 @@ export async function runBacktest(payload, options = {}) {
 
   // Parse payload if string
   const rawNode = typeof payload === 'string' ? JSON.parse(payload) : payload
-  console.log(`[Backtest] >>> Parsed payload, rawNode kind=${rawNode?.kind}, has children=${!!rawNode?.children}`)
 
-  // DEBUG: Dump all scaling nodes to verify branch:from is being received
-  const dumpScalingNodes = (n, depth = 0) => {
-    if (!n) return
-    const indent = '  '.repeat(depth)
-
-    // Helper to describe a branch
-    const describeBranch = (b) => {
-      if (!b) return 'NONE'
-      if (Array.isArray(b)) {
-        const first = b[0]
-        return first ? `[array] first: id=${first.id}, kind=${first.kind}` : '[empty array]'
-      }
-      return `id=${b.id}, kind=${b.kind}`
-    }
-
-    if (n.kind === 'scaling') {
-      console.log(`${indent}[DUMP] SCALING NODE: id=${n.id}, scaleTicker="${n.scaleTicker}", scaleMetric="${n.scaleMetric}", scaleWindow=${n.scaleWindow}`)
-      console.log(`${indent}[DUMP]   children.then: ${describeBranch(n.children?.then)}`)
-      console.log(`${indent}[DUMP]   children.else: ${describeBranch(n.children?.else)}`)
-    } else if (n.kind === 'indicator' && n.conditions) {
-      // Check for branch refs in conditions
-      const branchConditions = n.conditions.filter(c => c.ticker?.startsWith('branch:') || c.rightTicker?.startsWith('branch:'))
-      if (branchConditions.length > 0) {
-        console.log(`${indent}[DUMP] INDICATOR NODE with branch refs: id=${n.id}`)
-        branchConditions.forEach(c => {
-          console.log(`${indent}[DUMP]   condition: ticker="${c.ticker}", rightTicker="${c.rightTicker}"`)
-        })
-      }
-    }
-    // Recurse into children
-    if (n.children) {
-      if (Array.isArray(n.children)) {
-        n.children.forEach(c => dumpScalingNodes(c, depth + 1))
-      } else {
-        const recurse = (slot) => {
-          if (!slot) return
-          if (Array.isArray(slot)) slot.forEach(c => dumpScalingNodes(c, depth + 1))
-          else dumpScalingNodes(slot, depth + 1)
-        }
-        recurse(n.children.then)
-        recurse(n.children.else)
-        recurse(n.children.pass)
-        recurse(n.children.fail)
-        recurse(n.children.next)
-      }
-    }
-    if (n.incantations) {
-      n.incantations.forEach((inc, i) => dumpScalingNodes(inc, depth + 1))
-    }
-  }
-  console.log(`[DUMP] ========== RAW PAYLOAD BEFORE COMPRESSION ==========`)
-  dumpScalingNodes(rawNode)
-  console.log(`[DUMP] ========== END RAW PAYLOAD ==========`)
-
-  console.log(`[Backtest] >>> Starting compression...`)
   const compressionStart = Date.now()
-  const { tree: node, tickerLocations, stats: compressionStats } = compressTree(rawNode)
+  const { tree: node, tickerLocations, stats: compressionStats} = compressTree(rawNode)
   const compressionTime = Date.now() - compressionStart
-  console.log(`[Backtest] Tree compression: ${compressionStats.originalNodes} → ${compressionStats.compressedNodes} nodes (${compressionStats.nodesRemoved} removed, ${compressionStats.gateChainsMerged} gates merged) in ${compressionTime}ms`)
 
   if (!node) {
     // Tree was completely pruned - likely all position nodes are empty
