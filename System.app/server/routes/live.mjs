@@ -1000,12 +1000,12 @@ router.post('/live/dry-run', async (req, res) => {
                     // Insert or update ledger entry
                     sqlite.prepare(`
                       INSERT INTO bot_position_ledger
-                        (user_id, credential_type, bot_id, symbol, shares, avg_price, last_updated)
-                      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                        (user_id, credential_type, bot_id, symbol, shares, avg_price, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, unixepoch())
                       ON CONFLICT(user_id, credential_type, bot_id, symbol) DO UPDATE SET
                         shares = shares + excluded.shares,
                         avg_price = ((bot_position_ledger.shares * bot_position_ledger.avg_price) + (excluded.shares * excluded.avg_price)) / (bot_position_ledger.shares + excluded.shares),
-                        last_updated = datetime('now')
+                        updated_at = unixepoch()
                     `).run(userId, credentialType, botId, buy.symbol, filledShares, avgFillPrice)
                   }
                 } catch (err) {
@@ -1032,7 +1032,7 @@ router.post('/live/dry-run', async (req, res) => {
                     sqlite.prepare(`
                       UPDATE bot_position_ledger
                       SET shares = shares - ?,
-                          last_updated = datetime('now')
+                          updated_at = unixepoch()
                       WHERE user_id = ? AND credential_type = ? AND bot_id = ? AND symbol = ?
                     `).run(filledShares, userId, credentialType, botId, sell.symbol)
 
@@ -1618,7 +1618,7 @@ router.get('/trading/bot-positions/:botId', async (req, res) => {
         bpl.symbol,
         bpl.shares,
         bpl.avg_price as avgPrice,
-        bpl.last_updated as lastUpdated
+        bpl.updated_at as lastUpdated
       FROM bot_position_ledger bpl
       WHERE bpl.user_id = ? AND bpl.credential_type = ? AND bpl.bot_id = ?
         AND bpl.shares > 0.0001
@@ -1706,12 +1706,12 @@ router.post('/trading/assign-positions', async (req, res) => {
     // Insert positions into ledger
     const insertStmt = sqlite.prepare(`
       INSERT INTO bot_position_ledger
-        (user_id, credential_type, bot_id, symbol, shares, avg_price, last_updated)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        (user_id, credential_type, bot_id, symbol, shares, avg_price, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, unixepoch())
       ON CONFLICT(user_id, credential_type, bot_id, symbol) DO UPDATE SET
         shares = excluded.shares,
         avg_price = excluded.avg_price,
-        last_updated = datetime('now')
+        updated_at = unixepoch()
     `)
 
     let assigned = 0
