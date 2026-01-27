@@ -216,6 +216,85 @@ try {
     )
   `)
 
+  // Migration: Sync existing portfolio_positions to user_bot_investments
+  try {
+    console.log('[live] [MIGRATION] Starting portfolio sync migration...')
+
+    // First, check if the required tables exist
+    const portfolioTableExists = sqlite.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name='portfolio_positions'
+    `).get()
+
+    const portfoliosTableExists = sqlite.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name='portfolios'
+    `).get()
+
+    console.log('[live] [MIGRATION] Table existence check:', {
+      portfolio_positions: !!portfolioTableExists,
+      portfolios: !!portfoliosTableExists
+    })
+
+    if (!portfolioTableExists || !portfoliosTableExists) {
+      console.log('[live] [MIGRATION] Portfolio tables do not exist in this database, skipping migration')
+      console.log('[live] [MIGRATION] Note: This is expected if portfolio tables are in Drizzle database')
+    } else {
+      // Tables exist, check if migration is needed
+      console.log('[live] [MIGRATION] Portfolio tables found, checking for positions to migrate...')
+
+      const totalPositions = sqlite.prepare(`
+        SELECT COUNT(*) as count FROM portfolio_positions WHERE exit_date IS NULL
+      `).get()
+      console.log('[live] [MIGRATION] Total active portfolio positions:', totalPositions.count)
+
+      const totalInvestments = sqlite.prepare(`
+        SELECT COUNT(*) as count FROM user_bot_investments
+      `).get()
+      console.log('[live] [MIGRATION] Total user_bot_investments:', totalInvestments.count)
+
+      const needsMigration = sqlite.prepare(`
+        SELECT COUNT(*) as count FROM portfolio_positions pp
+        WHERE pp.exit_date IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM user_bot_investments ubi
+            WHERE ubi.user_id = (SELECT owner_id FROM portfolios WHERE id = pp.portfolio_id)
+              AND ubi.bot_id = pp.bot_id
+              AND ubi.credential_type = 'paper'
+          )
+      `).get()
+
+      console.log('[live] [MIGRATION] Positions needing migration:', needsMigration.count)
+
+      if (needsMigration.count > 0) {
+        console.log(`[live] [MIGRATION] Migrating ${needsMigration.count} portfolio positions to user_bot_investments...`)
+
+        sqlite.prepare(`
+          INSERT INTO user_bot_investments (user_id, credential_type, bot_id, investment_amount, weight_mode, created_at, updated_at)
+          SELECT
+            portfolios.owner_id,
+            'paper',
+            pp.bot_id,
+            pp.cost_basis,
+            'dollars',
+            pp.entry_date,
+            unixepoch()
+          FROM portfolio_positions pp
+          JOIN portfolios ON pp.portfolio_id = portfolios.id
+          WHERE pp.exit_date IS NULL
+          ON CONFLICT(user_id, credential_type, bot_id) DO UPDATE SET
+            investment_amount = excluded.investment_amount,
+            updated_at = unixepoch()
+        `).run()
+
+        console.log('[live] [MIGRATION] Migration complete - portfolio positions synced to user_bot_investments')
+      } else {
+        console.log('[live] [MIGRATION] No positions to migrate (all already synced)')
+      }
+    }
+  } catch (e) {
+    console.error('[live] [MIGRATION] Migration error:', e.message)
+    console.error('[live] [MIGRATION] Stack trace:', e.stack)
+  }
+
   console.log('[live] Trading tables initialized')
 } catch (err) {
   console.error('[live] Error creating trading tables:', err)
@@ -581,9 +660,23 @@ router.post('/live/dry-run', async (req, res) => {
             for (const pos of node.positions) {
               if (pos.ticker && pos.ticker !== 'Empty') {
                 const ticker = pos.ticker.toUpperCase()
-                allTickers.add(ticker)
-                botTickers.add(ticker)
-                console.log(`[live] [DEBUG] ${indent}Found position ticker: ${ticker}`)
+                // Handle ratio tickers (e.g., "QQQ/XLU" positions)
+                if (ticker.includes('/')) {
+                  const [left, right] = ticker.split('/')
+                  if (left) {
+                    allTickers.add(left.trim())
+                    botTickers.add(left.trim())
+                  }
+                  if (right) {
+                    allTickers.add(right.trim())
+                    botTickers.add(right.trim())
+                  }
+                  console.log(`[live] [DEBUG] ${indent}Found position ratio ticker: ${ticker} -> ${left}, ${right}`)
+                } else {
+                  allTickers.add(ticker)
+                  botTickers.add(ticker)
+                  console.log(`[live] [DEBUG] ${indent}Found position ticker: ${ticker}`)
+                }
               }
             }
           }
@@ -593,15 +686,43 @@ router.post('/live/dry-run', async (req, res) => {
             for (const cond of node.conditions) {
               if (cond.ticker && cond.ticker !== 'Empty') {
                 const ticker = cond.ticker.toUpperCase()
-                allTickers.add(ticker)
-                botTickers.add(ticker)
-                console.log(`[live] [DEBUG] ${indent}Found indicator ticker: ${ticker}`)
+                // Handle ratio tickers (e.g., "QQQ/QQQE" for RSI comparisons)
+                if (ticker.includes('/')) {
+                  const [left, right] = ticker.split('/')
+                  if (left) {
+                    allTickers.add(left.trim())
+                    botTickers.add(left.trim())
+                  }
+                  if (right) {
+                    allTickers.add(right.trim())
+                    botTickers.add(right.trim())
+                  }
+                  console.log(`[live] [DEBUG] ${indent}Found indicator ratio ticker: ${ticker} -> ${left}, ${right}`)
+                } else {
+                  allTickers.add(ticker)
+                  botTickers.add(ticker)
+                  console.log(`[live] [DEBUG] ${indent}Found indicator ticker: ${ticker}`)
+                }
               }
               if (cond.rightTicker && cond.rightTicker !== 'Empty') {
                 const ticker = cond.rightTicker.toUpperCase()
-                allTickers.add(ticker)
-                botTickers.add(ticker)
-                console.log(`[live] [DEBUG] ${indent}Found indicator rightTicker: ${ticker}`)
+                // Handle ratio tickers in rightTicker as well
+                if (ticker.includes('/')) {
+                  const [left, right] = ticker.split('/')
+                  if (left) {
+                    allTickers.add(left.trim())
+                    botTickers.add(left.trim())
+                  }
+                  if (right) {
+                    allTickers.add(right.trim())
+                    botTickers.add(right.trim())
+                  }
+                  console.log(`[live] [DEBUG] ${indent}Found indicator rightTicker ratio: ${ticker} -> ${left}, ${right}`)
+                } else {
+                  allTickers.add(ticker)
+                  botTickers.add(ticker)
+                  console.log(`[live] [DEBUG] ${indent}Found indicator rightTicker: ${ticker}`)
+                }
               }
             }
           }
@@ -703,7 +824,29 @@ router.post('/live/dry-run', async (req, res) => {
         // Get the most recent allocation
         const allocations = backtestResult.allocations || []
         const latestAllocation = allocations.length > 0 ? allocations[allocations.length - 1] : null
-        const currentAlloc = latestAllocation?.alloc || {}
+
+        // Debug: Log the structure of the latest allocation
+        console.log(`[live] [DEBUG] Backtest result structure:`, {
+          hasAllocations: !!backtestResult.allocations,
+          allocationsLength: allocations.length,
+          latestAllocationKeys: latestAllocation ? Object.keys(latestAllocation) : [],
+          sampleEntries: latestAllocation?.entries?.slice(0, 3).map(e => `${e.ticker}:${e.weight.toFixed(4)}`)
+        })
+
+        // Convert backtest allocation format to object
+        // Backtest returns: { date: "2024-01-27", entries: [{ticker: "SPY", weight: 0.5}, ...] }
+        // We need: { SPY: 0.5, QQQ: 0.5, ... }
+        let currentAlloc = {}
+        if (latestAllocation?.entries && Array.isArray(latestAllocation.entries)) {
+          for (const entry of latestAllocation.entries) {
+            if (entry.ticker && entry.weight > 0) {
+              currentAlloc[entry.ticker] = entry.weight
+            }
+          }
+        } else if (latestAllocation?.alloc) {
+          // Fallback for old format (backwards compatibility)
+          currentAlloc = latestAllocation.alloc
+        }
         console.log(`[live] [DEBUG] Raw allocation for ${bot.name}:`, currentAlloc)
 
         // Filter out "Empty" positions and normalize
