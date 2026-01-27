@@ -3553,6 +3553,15 @@ app.post('/api/bots/:id/sanity-report', async (req, res) => {
 
     // Compute strategy beta vs each benchmark ticker AND benchmark metrics vs strategy
     const benchmarkTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
+
+    // Ensure all benchmark tickers are loaded into memory
+    for (const ticker of benchmarkTickers) {
+      if (!loadedTickers.has(ticker)) {
+        console.log(`[Benchmarks] Loading ${ticker} into memory...`)
+        await loadTickerIntoMemory(ticker)
+      }
+    }
+
     const strategyBetas = {}
     const benchmarkMetricsVsStrategy = {}
 
@@ -3808,6 +3817,15 @@ app.post('/api/sanity-report', async (req, res) => {
 
     // Compute strategy beta vs each benchmark ticker AND benchmark metrics vs strategy
     const benchmarkTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
+
+    // Ensure all benchmark tickers are loaded into memory
+    for (const ticker of benchmarkTickers) {
+      if (!loadedTickers.has(ticker)) {
+        console.log(`[Benchmarks] Loading ${ticker} into memory...`)
+        await loadTickerIntoMemory(ticker)
+      }
+    }
+
     const strategyBetas = {}
     const benchmarkMetricsVsStrategy = {}
 
@@ -4699,6 +4717,14 @@ app.post('/api/admin/cache/prewarm', authenticate, requireAdmin, async (req, res
 
               // Compute strategy beta vs each benchmark ticker
               const benchmarkTickers = ['VTI', 'SPY', 'QQQ', 'DIA', 'DBC', 'DBO', 'GLD', 'BND', 'TLT', 'GBTC']
+
+              // Ensure all benchmark tickers are loaded into memory
+              for (const ticker of benchmarkTickers) {
+                if (!loadedTickers.has(ticker)) {
+                  await loadTickerIntoMemory(ticker)
+                }
+              }
+
               const strategyBetas = {}
               for (const ticker of benchmarkTickers) {
                 if (loadedTickers.has(ticker)) {
@@ -4743,6 +4769,103 @@ app.post('/api/admin/cache/prewarm', authenticate, requireAdmin, async (req, res
   } catch (e) {
     console.error('[Cache Prewarm] Fatal error:', e)
     res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// POST /api/admin/tickers/cleanup-inactive - Remove inactive tickers from database and disk
+app.post('/api/admin/tickers/cleanup-inactive', requireAdmin, async (req, res) => {
+  try {
+    console.log('[Admin] Cleanup inactive tickers requested')
+
+    // Get all inactive tickers from registry
+    const inactiveTickers = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT ticker, end_date, last_synced
+         FROM ticker_registry
+         WHERE is_active = 0
+         ORDER BY ticker`,
+        (err, rows) => {
+          if (err) reject(err)
+          else resolve(rows || [])
+        }
+      )
+    })
+
+    if (inactiveTickers.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No inactive tickers found',
+        removed: 0,
+        filesDeleted: 0,
+        errors: []
+      })
+    }
+
+    console.log(`[Admin] Found ${inactiveTickers.length} inactive tickers to remove`)
+
+    let removed = 0
+    let filesDeleted = 0
+    const errors = []
+
+    for (const row of inactiveTickers) {
+      const ticker = row.ticker
+
+      try {
+        // 1. Delete parquet file if exists
+        const parquetPath = path.join(PARQUET_DIR, `${ticker}.parquet`)
+        try {
+          await fs.access(parquetPath)
+          await fs.unlink(parquetPath)
+          filesDeleted++
+          console.log(`[Admin] Deleted parquet file: ${ticker}.parquet`)
+        } catch {
+          // File doesn't exist, skip
+        }
+
+        // 2. Drop DuckDB table if loaded
+        const tableName = `ticker_${ticker.replace(/[^A-Z0-9]/g, '_')}`
+        if (loadedTickers.has(ticker)) {
+          await new Promise((resolve) => {
+            conn.run(`DROP TABLE IF EXISTS ${tableName}`, () => resolve())
+          })
+          loadedTickers.delete(ticker)
+          console.log(`[Admin] Dropped DuckDB table: ${tableName}`)
+        }
+
+        // 3. Remove from ticker registry
+        await new Promise((resolve, reject) => {
+          db.run(
+            'DELETE FROM ticker_registry WHERE ticker = ?',
+            [ticker],
+            (err) => {
+              if (err) reject(err)
+              else resolve()
+            }
+          )
+        })
+
+        removed++
+      } catch (err) {
+        console.error(`[Admin] Failed to remove ticker ${ticker}:`, err.message)
+        errors.push(`${ticker}: ${err.message}`)
+      }
+    }
+
+    console.log(`[Admin] Cleanup complete: ${removed} tickers removed, ${filesDeleted} files deleted, ${errors.length} errors`)
+
+    res.json({
+      success: true,
+      message: `Removed ${removed} inactive tickers`,
+      removed,
+      filesDeleted,
+      errors: errors.length > 0 ? errors : undefined
+    })
+  } catch (err) {
+    console.error('[Admin] Cleanup inactive tickers error:', err)
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to cleanup inactive tickers'
+    })
   }
 })
 

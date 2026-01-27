@@ -70,6 +70,8 @@ export function AdminPanel({
   const [cacheStats, setCacheStats] = useState<{ entryCount: number; totalSizeBytes: number; lastRefreshDate: string | null; currentDataDate: string } | null>(null)
   const [cacheRefreshing, setCacheRefreshing] = useState(false)
   const [prewarmRunning, setPrewarmRunning] = useState(false)
+  const [tickerPreloadRunning, setTickerPreloadRunning] = useState(false)
+  const [cleanupRunning, setCleanupRunning] = useState(false)
 
   // Ticker Registry state
   const [registryStats, setRegistryStats] = useState<{ total: number; active: number; syncedToday: number; pending: number; lastSync: string | null } | null>(null)
@@ -2989,54 +2991,141 @@ export function AdminPanel({
                 <div><strong>Cached:</strong> {cacheStats?.entryCount ?? 0} systems</div>
                 <div><strong>Size:</strong> {cacheStats?.totalSizeBytes ? `${(cacheStats.totalSizeBytes / 1024).toFixed(1)} KB` : '0'}</div>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={cacheRefreshing}
-                  onClick={async () => {
-                    if (!confirm('Clear all cached backtest results?')) return
-                    setCacheRefreshing(true)
-                    try {
-                      await fetch(`${API_BASE}/admin/cache/invalidate`, {
-                        method: 'POST',
-                        headers: { Authorization: `Bearer ${getAuthToken()}` }
-                      })
-                      const res = await fetch(`${API_BASE}/admin/cache/stats`, {
-                        headers: { Authorization: `Bearer ${getAuthToken()}` }
-                      })
-                      if (res.ok) setCacheStats(await res.json())
-                    } finally {
-                      setCacheRefreshing(false)
-                    }
-                  }}
-                >
-                  Clear Cache
-                </Button>
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={prewarmRunning}
-                  onClick={async () => {
-                    if (!confirm('Run backtests for all systems?')) return
-                    setPrewarmRunning(true)
-                    try {
-                      await fetch(`${API_BASE}/admin/cache/prewarm`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          Authorization: `Bearer ${getAuthToken()}`
-                        },
-                        body: JSON.stringify({ includeSanity: true })
-                      })
-                      onPrewarmComplete?.()
-                    } finally {
-                      setPrewarmRunning(false)
-                    }
-                  }}
-                >
-                  {prewarmRunning ? 'Running...' : 'Prewarm Cache'}
-                </Button>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={prewarmRunning}
+                    onClick={async () => {
+                      if (!confirm('Run backtests for all systems?')) return
+                      setPrewarmRunning(true)
+                      try {
+                        await fetch(`${API_BASE}/admin/cache/prewarm`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${getAuthToken()}`
+                          },
+                          body: JSON.stringify({ includeSanity: true })
+                        })
+                        onPrewarmComplete?.()
+                      } finally {
+                        setPrewarmRunning(false)
+                      }
+                    }}
+                  >
+                    {prewarmRunning ? 'Running...' : 'Prewarm All Systems'}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={cacheRefreshing}
+                    onClick={async () => {
+                      if (!confirm('Clear all cached backtest results?')) return
+                      setCacheRefreshing(true)
+                      try {
+                        await fetch(`${API_BASE}/admin/cache/invalidate`, {
+                          method: 'POST',
+                          headers: { Authorization: `Bearer ${getAuthToken()}` }
+                        })
+                        const res = await fetch(`${API_BASE}/admin/cache/stats`, {
+                          headers: { Authorization: `Bearer ${getAuthToken()}` }
+                        })
+                        if (res.ok) setCacheStats(await res.json())
+                      } finally {
+                        setCacheRefreshing(false)
+                      }
+                    }}
+                  >
+                    {cacheRefreshing ? 'Clearing...' : 'Clear All Systems from Cache'}
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={tickerPreloadRunning}
+                    onClick={async () => {
+                      setTickerPreloadRunning(true)
+                      try {
+                        const res = await fetch(`${API_BASE}/internal/preload-cache`, {
+                          method: 'POST',
+                          headers: {
+                            Authorization: `Bearer ${getAuthToken()}`,
+                            'Content-Type': 'application/json'
+                          },
+                        })
+                        if (res.ok) {
+                          const data = await res.json()
+                          alert(`Ticker cache preloaded: ${data.preloaded} tickers loaded, ${data.failed} failed (${data.elapsed}s)`)
+                          // Refresh cache stats
+                          const cacheRes = await fetch(`${API_BASE}/admin/cache/stats`, {
+                            headers: { Authorization: `Bearer ${getAuthToken()}` }
+                          })
+                          if (cacheRes.ok) setCacheStats(await cacheRes.json())
+                        } else {
+                          const err = await res.json()
+                          alert(`Failed to preload ticker cache: ${err.error || 'Unknown error'}`)
+                        }
+                      } catch (err) {
+                        console.error('[Admin] Preload ticker cache error:', err)
+                        alert('Failed to preload ticker cache')
+                      } finally {
+                        setTickerPreloadRunning(false)
+                      }
+                    }}
+                  >
+                    {tickerPreloadRunning ? 'Loading...' : 'Load All Ticker Data into Cache'}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={cleanupRunning}
+                    onClick={async () => {
+                      const confirmed = confirm(
+                        'This will permanently delete all inactive tickers from the database and disk. ' +
+                        'Inactive tickers are those marked as delisted or with no recent activity. ' +
+                        'Continue?'
+                      )
+                      if (!confirmed) return
+
+                      setCleanupRunning(true)
+                      try {
+                        const res = await fetch(`${API_BASE}/admin/tickers/cleanup-inactive`, {
+                          method: 'POST',
+                          headers: {
+                            Authorization: `Bearer ${getAuthToken()}`,
+                            'Content-Type': 'application/json'
+                          },
+                        })
+                        if (res.ok) {
+                          const data = await res.json()
+                          if (data.removed > 0) {
+                            let msg = `Removed ${data.removed} inactive tickers (${data.filesDeleted} files deleted)`
+                            if (data.errors && data.errors.length > 0) {
+                              console.warn('[Admin] Cleanup errors:', data.errors)
+                              msg += `\n\nWarning: ${data.errors.length} tickers had errors (see console)`
+                            }
+                            alert(msg)
+                          } else {
+                            alert('No inactive tickers found')
+                          }
+                        } else {
+                          const err = await res.json()
+                          alert(`Failed to cleanup tickers: ${err.error || 'Unknown error'}`)
+                        }
+                      } catch (err) {
+                        console.error('[Admin] Cleanup inactive tickers error:', err)
+                        alert('Failed to cleanup inactive tickers')
+                      } finally {
+                        setCleanupRunning(false)
+                      }
+                    }}
+                  >
+                    {cleanupRunning ? 'Cleaning...' : 'Remove Inactive Tickers from Database'}
+                  </Button>
+                </div>
               </div>
             </div>
           </details>
