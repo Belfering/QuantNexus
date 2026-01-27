@@ -193,22 +193,23 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
     const currentPct = currentAlloc[pos.symbol]
     const diff = targetPct - currentPct
 
-    if (diff < -0.5) {  // Need to sell (more than 0.5% difference)
+    if (diff < 0) {  // Need to sell (target is less than current, or not in target at all)
       sells.push({
         symbol: pos.symbol,
         currentQty: pos.qty,
         currentValue: pos.marketValue,
         targetPct,
+        currentPct,
       })
     }
   }
 
-  // Find buys (need to increase or new positions)
+  // Find buys - BUY ALL positions in target allocation, regardless of size
   for (const [ticker, targetPct] of Object.entries(scaledAllocations)) {
     const currentPct = currentAlloc[ticker] || 0
     const diff = targetPct - currentPct
 
-    if (diff > 0.5) {  // Need to buy (more than 0.5% difference)
+    if (diff > 0) {  // Need to buy (target is more than current, including new positions)
       buys.push({
         symbol: ticker,
         targetPct,
@@ -217,6 +218,9 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
       })
     }
   }
+
+  console.log(`[trade-executor] Calculated ${sells.length} sells, ${buys.length} buys`)
+  console.log(`[trade-executor] Buys:`, buys.map(b => `${b.symbol} ${b.targetPct.toFixed(2)}%`).join(', '))
 
   // Step 2: Cancel existing orders
   const cancelledCount = await cancelAllOrders(client)
