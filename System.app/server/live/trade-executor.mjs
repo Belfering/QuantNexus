@@ -36,8 +36,12 @@ const MIN_SHARES = 1                 // Minimum shares to place an order
  */
 export async function executeDryRun(credentials, allocations, options = {}) {
   const client = createAlpacaClient(credentials)
+  const { investmentAmount } = options  // NEW: receive invested amount from bot investments
+
   const account = await getAccountInfo(client)
-  const equity = account.equity
+
+  // Use investmentAmount if provided (bot investment mode), otherwise use full account equity
+  const equity = investmentAmount || account.equity
 
   // Calculate cash reserve
   let reservedCash = 0
@@ -152,11 +156,15 @@ export async function executeDryRun(credentials, allocations, options = {}) {
  */
 export async function executeLiveTrades(credentials, allocations, options = {}) {
   const client = createAlpacaClient(credentials)
+  const { investmentAmount } = options  // NEW: receive invested amount from bot investments
 
   // Step 1: Get current state
   const account = await getAccountInfo(client)
   const currentPositions = await getPositions(client)
-  const equity = account.equity
+
+  // Use investmentAmount if provided (bot investment mode), otherwise use full account equity
+  const equity = investmentAmount || account.equity
+  console.log(`[trade-executor] Using ${investmentAmount ? 'investment amount' : 'account equity'}: $${equity.toFixed(2)}`)
 
   // Calculate cash reserve
   let reservedCash = 0
@@ -168,6 +176,7 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
     }
   }
   const adjustedEquity = Math.max(0, equity - reservedCash)
+  console.log(`[trade-executor] Adjusted equity: $${adjustedEquity.toFixed(2)} (equity $${equity.toFixed(2)} - reserve $${reservedCash.toFixed(2)})`)
 
   // Apply 99% safety cap
   const totalAlloc = Object.values(allocations).reduce((a, b) => a + b, 0)
@@ -252,11 +261,14 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
   // Step 4: Execute buys using notional (dollar-based) market orders
   // This allows fractional shares for small allocations
   const buyResults = []
+  console.log(`[trade-executor] Executing ${buys.length} buy orders...`)
+
   for (const buy of buys) {
     const notional = adjustedEquity * (buy.targetPct / 100)
 
     // Skip if notional amount is less than $1 (Alpaca minimum)
     if (notional < 1) {
+      console.log(`[trade-executor] ⏭️  SKIP ${buy.symbol}: notional $${notional.toFixed(2)} < $1`)
       buyResults.push({
         symbol: buy.symbol,
         success: false,
@@ -268,13 +280,16 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
     }
 
     try {
+      console.log(`[trade-executor] 📤 BUY ${buy.symbol}: $${notional.toFixed(2)} notional`)
       const result = await submitNotionalMarketBuy(client, buy.symbol, notional)
+      console.log(`[trade-executor] ✅ ${buy.symbol}: Order ${result.id} submitted`)
       buyResults.push({
         ...result,
         success: true,
         estimatedShares: null, // Will be filled after order executes
       })
     } catch (error) {
+      console.error(`[trade-executor] ❌ ${buy.symbol} FAILED: ${error.message}`)
       buyResults.push({
         symbol: buy.symbol,
         success: false,
@@ -283,6 +298,8 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
       })
     }
   }
+
+  console.log(`[trade-executor] Buy summary: ${buyResults.filter(r => r.success).length} successful, ${buyResults.filter(r => r.skipped).length} skipped, ${buyResults.filter(r => !r.success && !r.skipped).length} failed`)
 
   return {
     mode: 'live',

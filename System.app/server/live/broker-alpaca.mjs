@@ -255,20 +255,34 @@ export async function submitLimitBuy(client, symbol, qty, limitPrice) {
  * @returns {Promise<Object>} Order result
  */
 export async function submitNotionalMarketBuy(client, symbol, notional) {
-  const order = await client.createOrder({
-    symbol,
-    notional,
-    side: 'buy',
-    type: 'market',
-    time_in_force: 'day',
-  })
-  return {
-    id: order.id,
-    symbol: order.symbol,
-    side: 'buy',
-    notional,
-    type: 'market',
-    status: order.status,
+  // Round notional to 2 decimal places (Alpaca requirement)
+  const roundedNotional = Number(notional.toFixed(2))
+
+  try {
+    const order = await client.createOrder({
+      symbol,
+      notional: roundedNotional,
+      side: 'buy',
+      type: 'market',
+      time_in_force: 'day',
+    })
+    return {
+      id: order.id,
+      symbol: order.symbol,
+      side: 'buy',
+      notional: roundedNotional,
+      type: 'market',
+      status: order.status,
+    }
+  } catch (error) {
+    // Log full Alpaca error for debugging
+    console.error(`[alpaca] Order failed for ${symbol}:`, {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+      notional: roundedNotional,
+    })
+    throw error
   }
 }
 

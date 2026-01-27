@@ -938,15 +938,17 @@ router.post('/live/dry-run', async (req, res) => {
             userId,
             credentialType,
             botIds,
+            investmentAmount: totalInvested,  // Use bot investment amount, not full equity
             cashReserve: 0,  // Cash reserve handled above in adjustedEquity calculation
             cashMode: 'dollars',
           })
         } else {
-          console.log(`[live] [DEBUG] Calling executeLiveTrades with ${mergedTickers.length} tickers, adjustedEquity=$${adjustedEquity.toFixed(2)}`)
+          console.log(`[live] [DEBUG] Calling executeLiveTrades with ${mergedTickers.length} tickers, investmentAmount=$${totalInvested.toFixed(2)}`)
           executionResult = await executeLiveTrades(credentials, mergedAllocations, {
             userId,
             credentialType,
             botIds,
+            investmentAmount: totalInvested,  // Use bot investment amount, not full equity
             cashReserve: 0,  // Cash reserve handled above in adjustedEquity calculation
             cashMode: 'dollars',
           })
