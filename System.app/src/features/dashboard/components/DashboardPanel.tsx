@@ -627,96 +627,86 @@ export function DashboardPanel(props: DashboardPanelProps) {
                         : alpaca.investments
 
                       // Separate unallocated from regular investments
-                      const unallocatedInvestment = useMemo(() => {
-                        return allInvestments.find(inv => inv.botId === '__UNALLOCATED__')
-                      }, [allInvestments])
+                      const unallocatedInvestment = allInvestments.find(inv => inv.botId === '__UNALLOCATED__')
 
-                      const regularInvestments = useMemo(() => {
-                        return allInvestments.filter(inv => inv.botId !== '__UNALLOCATED__')
-                      }, [allInvestments])
+                      const regularInvestments = allInvestments.filter(inv => inv.botId !== '__UNALLOCATED__')
 
                       // Group regular investments by order mode (exclude unallocated)
-                      const investmentsByOrderMode = useMemo(() => {
-                        const groups: {
-                          CC: typeof regularInvestments,
-                          OO: typeof regularInvestments,
-                          INTRADAY: typeof regularInvestments,
-                        } = {
-                          CC: [],
-                          OO: [],
-                          INTRADAY: [],
+                      const groups: {
+                        CC: typeof regularInvestments,
+                        OO: typeof regularInvestments,
+                        INTRADAY: typeof regularInvestments,
+                      } = {
+                        CC: [],
+                        OO: [],
+                        INTRADAY: [],
+                      }
+
+                      for (const inv of regularInvestments) {
+                        const b = savedBots.find(bot => bot.id === inv.botId) ?? allNexusBots.find(bot => bot.id === inv.botId)
+                        const mode = b?.backtestMode || 'CC'
+
+                        if (mode === 'CC') {
+                          groups.CC.push(inv)
+                        } else if (mode === 'OO') {
+                          groups.OO.push(inv)
+                        } else {
+                          groups.INTRADAY.push(inv)  // CO or OC
                         }
+                      }
 
-                        for (const inv of regularInvestments) {
-                          const b = savedBots.find(bot => bot.id === inv.botId) ?? allNexusBots.find(bot => bot.id === inv.botId)
-                          const mode = b?.backtestMode || 'CC'
-
-                          if (mode === 'CC') {
-                            groups.CC.push(inv)
-                          } else if (mode === 'OO') {
-                            groups.OO.push(inv)
-                          } else {
-                            groups.INTRADAY.push(inv)  // CO or OC
-                          }
-                        }
-
-                        return groups
-                      }, [regularInvestments, savedBots, allNexusBots])
+                      const investmentsByOrderMode = groups
 
                       // Calculate aggregate P&L for each group
-                      const groupPnLStats = useMemo(() => {
-                        const stats: Record<string, { costBasis: number, currentValue: number, pnl: number, pnlPct: number }> = {}
+                      const groupPnLStats: Record<string, { costBasis: number, currentValue: number, pnl: number, pnlPct: number }> = {}
 
-                        for (const [groupKey, investments] of Object.entries(investmentsByOrderMode)) {
-                          let totalCostBasis = 0
-                          let totalCurrentValue = 0
+                      for (const [groupKey, investments] of Object.entries(investmentsByOrderMode)) {
+                        let totalCostBasis = 0
+                        let totalCurrentValue = 0
 
-                          for (const inv of investments) {
-                            const isSyntheticUnallocated = inv.botId === '__UNALLOCATED__'
+                        for (const inv of investments) {
+                          const isSyntheticUnallocated = inv.botId === '__UNALLOCATED__'
 
-                            if (isSyntheticUnallocated) {
-                              // Use pre-calculated values from synthetic unallocated
-                              totalCostBasis += inv._costBasis || 0
-                              totalCurrentValue += inv._currentValue || 0
-                            } else {
-                              // Calculate from position ledger
-                              const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
-                              const hasPositions = botPositions.length > 0
+                          if (isSyntheticUnallocated) {
+                            // Use pre-calculated values from synthetic unallocated
+                            totalCostBasis += inv._costBasis || 0
+                            totalCurrentValue += inv._currentValue || 0
+                          } else {
+                            // Calculate from position ledger
+                            const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
+                            const hasPositions = botPositions.length > 0
 
-                              if (hasPositions) {
-                                const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
-                                let currentValue = 0
-                                for (const ledgerPos of botPositions) {
-                                  const alpacaPos = alpaca.positions.find(p => p.symbol === ledgerPos.symbol)
-                                  if (alpacaPos) {
-                                    currentValue += ledgerPos.shares * alpacaPos.currentPrice
-                                  } else {
-                                    currentValue += ledgerPos.shares * ledgerPos.avgPrice
-                                  }
+                            if (hasPositions) {
+                              const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
+                              let currentValue = 0
+                              for (const ledgerPos of botPositions) {
+                                const alpacaPos = alpaca.positions.find(p => p.symbol === ledgerPos.symbol)
+                                if (alpacaPos) {
+                                  currentValue += ledgerPos.shares * alpacaPos.currentPrice
+                                } else {
+                                  currentValue += ledgerPos.shares * ledgerPos.avgPrice
                                 }
-                                totalCostBasis += costBasis
-                                totalCurrentValue += currentValue
-                              } else {
-                                // No positions yet, use investment amount as placeholder
-                                totalCostBasis += inv.investmentAmount
-                                totalCurrentValue += inv.investmentAmount
                               }
+                              totalCostBasis += costBasis
+                              totalCurrentValue += currentValue
+                            } else {
+                              // No positions yet, use investment amount as placeholder
+                              totalCostBasis += inv.investmentAmount
+                              totalCurrentValue += inv.investmentAmount
                             }
-                          }
-
-                          const pnl = totalCurrentValue - totalCostBasis
-                          const pnlPct = totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0
-
-                          stats[groupKey] = {
-                            costBasis: totalCostBasis,
-                            currentValue: totalCurrentValue,
-                            pnl,
-                            pnlPct,
                           }
                         }
 
-                        return stats
-                      }, [investmentsByOrderMode, alpaca.positionLedger, alpaca.positions, alpaca.unallocatedPositions])
+                        const pnl = totalCurrentValue - totalCostBasis
+                        const pnlPct = totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0
+
+                        groupPnLStats[groupKey] = {
+                          costBasis: totalCostBasis,
+                          currentValue: totalCurrentValue,
+                          pnl,
+                          pnlPct,
+                        }
+                      }
 
                       return (
                         <>
@@ -2372,59 +2362,53 @@ export function DashboardPanel(props: DashboardPanelProps) {
                 {/* Systems Invested In Section - Uses same card format as Nexus */}
                 {(() => {
                   // Group investments by order mode for simulated mode
-                  const simulatedInvestmentsByOrderMode = useMemo(() => {
-                    const groups: {
-                      CC: typeof dashboardInvestmentsWithPnl,
-                      OO: typeof dashboardInvestmentsWithPnl,
-                      INTRADAY: typeof dashboardInvestmentsWithPnl,
-                    } = {
-                      CC: [],
-                      OO: [],
-                      INTRADAY: [],
+                  const groups: {
+                    CC: typeof dashboardInvestmentsWithPnl,
+                    OO: typeof dashboardInvestmentsWithPnl,
+                    INTRADAY: typeof dashboardInvestmentsWithPnl,
+                  } = {
+                    CC: [],
+                    OO: [],
+                    INTRADAY: [],
+                  }
+
+                  for (const inv of dashboardInvestmentsWithPnl) {
+                    const b = savedBots.find(bot => bot.id === inv.botId) ?? allNexusBots.find(bot => bot.id === inv.botId)
+                    const mode = b?.backtestMode || 'CC'
+
+                    if (mode === 'CC') {
+                      groups.CC.push(inv)
+                    } else if (mode === 'OO') {
+                      groups.OO.push(inv)
+                    } else {
+                      groups.INTRADAY.push(inv)  // CO or OC
                     }
+                  }
 
-                    for (const inv of dashboardInvestmentsWithPnl) {
-                      const b = savedBots.find(bot => bot.id === inv.botId) ?? allNexusBots.find(bot => bot.id === inv.botId)
-                      const mode = b?.backtestMode || 'CC'
-
-                      if (mode === 'CC') {
-                        groups.CC.push(inv)
-                      } else if (mode === 'OO') {
-                        groups.OO.push(inv)
-                      } else {
-                        groups.INTRADAY.push(inv)  // CO or OC
-                      }
-                    }
-
-                    return groups
-                  }, [dashboardInvestmentsWithPnl, savedBots, allNexusBots])
+                  const simulatedInvestmentsByOrderMode = groups
 
                   // Calculate aggregate P&L for each group (simulated mode)
-                  const simulatedGroupPnLStats = useMemo(() => {
-                    const stats: Record<string, { costBasis: number, currentValue: number, pnl: number, pnlPct: number }> = {}
+                  const simulatedGroupPnLStats: Record<string, { costBasis: number, currentValue: number, pnl: number, pnlPct: number }> = {}
 
-                    for (const [groupKey, investments] of Object.entries(simulatedInvestmentsByOrderMode)) {
-                      let totalCostBasis = 0
-                      let totalCurrentValue = 0
+                  for (const [groupKey, investments] of Object.entries(simulatedInvestmentsByOrderMode)) {
+                    let totalCostBasis = 0
+                    let totalCurrentValue = 0
 
-                      for (const inv of investments) {
-                        totalCostBasis += inv.costBasis
-                        totalCurrentValue += inv.currentValue
-                      }
-
-                      const pnl = totalCurrentValue - totalCostBasis
-                      const pnlPct = totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0
-
-                      stats[groupKey] = {
-                        costBasis: totalCostBasis,
-                        currentValue: totalCurrentValue,
-                        pnl,
-                        pnlPct,
-                      }
+                    for (const inv of investments) {
+                      totalCostBasis += inv.costBasis
+                      totalCurrentValue += inv.currentValue
                     }
 
-                    return stats
-                  }, [simulatedInvestmentsByOrderMode])
+                    const pnl = totalCurrentValue - totalCostBasis
+                    const pnlPct = totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0
+
+                    simulatedGroupPnLStats[groupKey] = {
+                      costBasis: totalCostBasis,
+                      currentValue: totalCurrentValue,
+                      pnl,
+                      pnlPct,
+                    }
+                  }
 
                   return (
                     <>

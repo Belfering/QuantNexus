@@ -5009,6 +5009,41 @@ export async function runBacktest(payload, options = {}) {
     }
   })
 
+  // Build days array with holdings for frontend
+  // points[0] is initial equity (1.0), points[1+] are daily equity values
+  // dailyAllocations[i] corresponds to points[i+1]
+  const days = points.slice(1).map((p, i) => {
+    const alloc = dailyAllocations[i] || { date: safeIsoDate(p.time), entries: [] }
+    const prevAlloc = i > 0 ? dailyAllocations[i - 1] : { date: '', entries: [] }
+
+    // Calculate turnover from entries arrays
+    const allTickers = new Set()
+    prevAlloc.entries.forEach(e => allTickers.add(e.ticker))
+    alloc.entries.forEach(e => allTickers.add(e.ticker))
+
+    let changed = 0
+    for (const ticker of allTickers) {
+      const prevWeight = prevAlloc.entries.find(e => e.ticker === ticker)?.weight ?? 0
+      const currWeight = alloc.entries.find(e => e.ticker === ticker)?.weight ?? 0
+      changed += Math.abs(currWeight - prevWeight)
+    }
+    const turnover = changed / 2
+    const cost = (Math.max(0, costBps) / 10000) * turnover
+
+    return {
+      time: p.time,
+      date: safeIsoDate(p.time),
+      equity: p.value,
+      holdings: alloc.entries,
+      benchmark: benchmarkPoints[i + 1]?.value,
+      drawdown: 0, // Frontend can calculate this from equity
+      grossReturn: returns[i] ?? 0,
+      netReturn: returns[i] ?? 0,
+      turnover,
+      cost,
+    }
+  })
+
   return {
     metrics: {
       cagr: metrics.cagr,
@@ -5033,6 +5068,8 @@ export async function runBacktest(payload, options = {}) {
     benchmarkCurve: benchmarkPoints.map(p => ({ date: safeIsoDate(p.time), equity: p.value })),
     // Include daily allocations for the Allocations tab
     allocations: dailyAllocations,
+    // Include complete days array with holdings for ticker contributions
+    days,
     // Include IS/OOS split allocations (only if split enabled)
     isAllocations: splitConfig?.enabled ? isAllocations : undefined,
     oosAllocations: splitConfig?.enabled ? oosAllocations : undefined,

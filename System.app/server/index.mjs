@@ -3278,6 +3278,7 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
           equityCurve: cached.equityCurve,
           benchmarkCurve: cached.benchmarkCurve,
           allocations: cached.allocations,
+          days: cached.days,
         })
       }
     }
@@ -3300,6 +3301,7 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
       equityCurve: result.equityCurve,
       benchmarkCurve: result.benchmarkCurve,
       allocations: result.allocations,
+      days: result.days,
     })
 
     // Return metrics (never the payload)
@@ -3310,6 +3312,7 @@ app.post('/api/bots/:id/run-backtest', async (req, res) => {
       equityCurve: result.equityCurve,
       benchmarkCurve: result.benchmarkCurve,
       allocations: result.allocations,
+      days: result.days,
       compression: result.compression,
     })
   } catch (e) {
@@ -3347,6 +3350,7 @@ app.post('/api/backtest', async (req, res) => {
       equityCurve: result.equityCurve,
       benchmarkCurve: result.benchmarkCurve,
       allocations: result.allocations,
+      days: result.days,
       compression: result.compression,
     })
   } catch (e) {

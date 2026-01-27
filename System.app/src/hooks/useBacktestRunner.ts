@@ -122,11 +122,11 @@ export function useBacktestRunner({ callChainsById, customIndicators = [] }: Use
       })
 
       // Convert allocations from server format
-      const allocations: BacktestAllocationRow[] = (serverResult.allocations || []).map((a: { date: string; alloc: Record<string, number> }) => ({
+      // Server sends { date, entries: [{ ticker, weight }, ...] }
+      const allocations: BacktestAllocationRow[] = (serverResult.allocations || []).map((a: { date: string; entries: { ticker: string; weight: number }[] }) => ({
         date: a.date,
-        entries: Object.entries(a.alloc || {})
-          .filter(([_, w]) => (w as number) > 0)
-          .map(([ticker, weight]) => ({ ticker, weight: weight as number }))
+        entries: (a.entries || [])
+          .filter((e) => e.weight > 0)
           .sort((x, y) => y.weight - x.weight),
       }))
 
@@ -168,44 +168,46 @@ export function useBacktestRunner({ callChainsById, customIndicators = [] }: Use
         oosStartDate = shardOosDate
       }
 
-      // Helper to calculate turnover between two allocations
-      const calculateTurnover = (prevAlloc: BacktestAllocationRow | undefined, currAlloc: BacktestAllocationRow | undefined): number => {
-        if (!prevAlloc || !currAlloc) return 0
+      // Use days from server if available, otherwise reconstruct as fallback
+      const days: BacktestDayRow[] = serverResult.days || (() => {
+        // Fallback reconstruction for backwards compatibility
+        const calculateTurnover = (prevAlloc: BacktestAllocationRow | undefined, currAlloc: BacktestAllocationRow | undefined): number => {
+          if (!prevAlloc || !currAlloc) return 0
 
-        const allTickers = new Set<string>()
-        prevAlloc.entries.forEach(e => allTickers.add(e.ticker))
-        currAlloc.entries.forEach(e => allTickers.add(e.ticker))
+          const allTickers = new Set<string>()
+          prevAlloc.entries.forEach(e => allTickers.add(e.ticker))
+          currAlloc.entries.forEach(e => allTickers.add(e.ticker))
 
-        let changed = 0
-        for (const ticker of allTickers) {
-          const prevWeight = prevAlloc.entries.find(e => e.ticker === ticker)?.weight ?? 0
-          const currWeight = currAlloc.entries.find(e => e.ticker === ticker)?.weight ?? 0
-          changed += Math.abs(currWeight - prevWeight)
+          let changed = 0
+          for (const ticker of allTickers) {
+            const prevWeight = prevAlloc.entries.find(e => e.ticker === ticker)?.weight ?? 0
+            const currWeight = currAlloc.entries.find(e => e.ticker === ticker)?.weight ?? 0
+            changed += Math.abs(currWeight - prevWeight)
+          }
+
+          return changed / 2
         }
 
-        return changed / 2
-      }
+        return points.slice(1).map((p, i) => {
+          const prevEquity = i > 0 ? points[i].value : 1
+          const netReturn = prevEquity > 0 ? p.value / prevEquity - 1 : 0
+          const turnover = calculateTurnover(allocations[i - 1], allocations[i])
+          const cost = (backtestCostBps / 10000) * turnover
 
-      // Build minimal days array for monthly returns calculation
-      const days: BacktestDayRow[] = points.slice(1).map((p, i) => {
-        const prevEquity = i > 0 ? points[i].value : 1
-        const netReturn = prevEquity > 0 ? p.value / prevEquity - 1 : 0
-        const turnover = calculateTurnover(allocations[i - 1], allocations[i])
-        const cost = (backtestCostBps / 10000) * turnover
-
-        return {
-          time: p.time,
-          date: new Date(Number(p.time) * 1000).toISOString().split('T')[0],
-          equity: p.value,
-          drawdown: drawdownPoints[i + 1]?.value ?? 0,
-          grossReturn: netReturn,
-          netReturn,
-          turnover,
-          cost,
-          holdings: allocations[i]?.entries || [],
-          endNodes: [],
-        }
-      })
+          return {
+            time: p.time,
+            date: new Date(Number(p.time) * 1000).toISOString().split('T')[0],
+            equity: p.value,
+            drawdown: drawdownPoints[i + 1]?.value ?? 0,
+            grossReturn: netReturn,
+            netReturn,
+            turnover,
+            cost,
+            holdings: allocations[i]?.entries || [],
+            endNodes: [],
+          }
+        })
+      })()
 
       const monthly = computeMonthlyReturns(days)
 
