@@ -1,7 +1,7 @@
 // src/features/dashboard/components/DashboardPanel.tsx
 // Dashboard tab component - displays portfolio, investments, and partner program
 
-import { type Dispatch, type SetStateAction, useMemo, useState } from 'react'
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +30,7 @@ import type { InvestmentWithPnl } from '../hooks/useDashboardInvestments'
 import type { UTCTimestamp } from 'lightweight-charts'
 import type { PortfolioMode } from '@/types'
 import { useAlpacaPortfolio } from '../hooks'
+import { useSellUnallocated } from '../hooks/useSellUnallocated'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -101,8 +102,10 @@ interface OrderModeSectionHeaderProps {
 const OrderModeSectionHeader: React.FC<OrderModeSectionHeaderProps> = ({
   title,
   count,
-  costBasis,
-  currentValue,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  costBasis: _costBasis,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  currentValue: _currentValue,
   pnl,
   pnlPct,
   isExpanded,
@@ -123,9 +126,6 @@ const OrderModeSectionHeader: React.FC<OrderModeSectionHeaderProps> = ({
 
       {count > 0 && (
         <div className="flex items-center gap-3 text-xs">
-          <span className="text-muted-foreground">
-            ${costBasis.toFixed(0)} → ${currentValue.toFixed(0)}
-          </span>
           <span className={pnlColor}>
             ${pnl >= 0 ? '+' : ''}{pnl.toFixed(0)} ({pnl >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)
           </span>
@@ -247,6 +247,22 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
   // Bulk sell modal state for unallocated positions
   const [isBulkSellModalOpen, setIsBulkSellModalOpen] = useState(false)
+
+  // Pending sells hook for scheduling and managing unallocated sells
+  const {
+    scheduleSell,
+    fetchPendingSells,
+    cancelPendingSell,
+    pendingSells,
+    isLoading: isSellLoading,
+    isCancelling,
+  } = useSellUnallocated()
+
+  // Fetch pending sells when component mounts or portfolio mode changes
+  useEffect(() => {
+    const credentialType = portfolioMode === 'live' ? 'live' : 'paper'
+    fetchPendingSells(credentialType)
+  }, [portfolioMode, fetchPendingSells])
 
   // Derived: watchlists by bot ID
   const watchlistsByBotId = useMemo(() => {
@@ -662,7 +678,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                       for (const [groupKey, investments] of Object.entries(investmentsByOrderMode)) {
                         let totalCostBasis = 0
-                        let totalCurrentValue = 0
+                        let totalMarketValue = 0
 
                         for (const inv of investments) {
                           const isSyntheticUnallocated = inv.botId === '__UNALLOCATED__'
@@ -670,7 +686,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                           if (isSyntheticUnallocated) {
                             // Use pre-calculated values from synthetic unallocated
                             totalCostBasis += inv._costBasis || 0
-                            totalCurrentValue += inv._currentValue || 0
+                            totalMarketValue += inv._currentValue || 0
                           } else {
                             // Calculate from position ledger
                             const botPositions = alpaca.positionLedger.filter(l => l.botId === inv.botId)
@@ -678,31 +694,30 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                             if (hasPositions) {
                               const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
-                              let currentValue = 0
+                              let positionsMarketValue = 0
                               for (const ledgerPos of botPositions) {
                                 const alpacaPos = alpaca.positions.find(p => p.symbol === ledgerPos.symbol)
                                 if (alpacaPos) {
-                                  currentValue += ledgerPos.shares * alpacaPos.currentPrice
+                                  positionsMarketValue += ledgerPos.shares * alpacaPos.currentPrice
                                 } else {
-                                  currentValue += ledgerPos.shares * ledgerPos.avgPrice
+                                  positionsMarketValue += ledgerPos.shares * ledgerPos.avgPrice
                                 }
                               }
+                              // For P&L: only compare positions market value to cost basis (not including cash)
                               totalCostBasis += costBasis
-                              totalCurrentValue += currentValue
-                            } else {
-                              // No positions yet, use investment amount as placeholder
-                              totalCostBasis += inv.investmentAmount
-                              totalCurrentValue += inv.investmentAmount
+                              totalMarketValue += positionsMarketValue
                             }
+                            // No positions = no P&L to track (0 cost, 0 value)
                           }
                         }
 
-                        const pnl = totalCurrentValue - totalCostBasis
+                        // P&L is purely based on positions: market value - cost basis
+                        const pnl = totalMarketValue - totalCostBasis
                         const pnlPct = totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0
 
                         groupPnLStats[groupKey] = {
                           costBasis: totalCostBasis,
-                          currentValue: totalCurrentValue,
+                          currentValue: totalMarketValue,
                           pnl,
                           pnlPct,
                         }
@@ -810,9 +825,17 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                                 {isSyntheticUnallocated ? (
                                   // Synthetic unallocated card badges
-                                  <Badge variant="default" className="bg-slate-600/20 text-slate-400 border-slate-600/30">
-                                    Not Traded by Scheduler
-                                  </Badge>
+                                  <>
+                                    <Badge variant="default" className="bg-slate-600/20 text-slate-400 border-slate-600/30">
+                                      Not Traded by Scheduler
+                                    </Badge>
+                                    {/* Show pending sells count if any */}
+                                    {pendingSells.filter(s => s.credentialType === (portfolioMode === 'live' ? 'live' : 'paper')).length > 0 && (
+                                      <Badge variant="default" className="bg-amber-600/20 text-amber-500 border-amber-600/30">
+                                        {pendingSells.filter(s => s.credentialType === (portfolioMode === 'live' ? 'live' : 'paper')).length} Sell{pendingSells.filter(s => s.credentialType === (portfolioMode === 'live' ? 'live' : 'paper')).length !== 1 ? 's' : ''} Scheduled
+                                      </Badge>
+                                    )}
+                                  </>
                                 ) : (
                                   // Regular bot badges
                                   <>
@@ -949,6 +972,42 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                       credentialType={portfolioMode === 'live' ? 'live' : 'paper'}
                                       onSellComplete={() => alpaca.refetch()}
                                     />
+
+                                    {/* Pending Scheduled Sells Section */}
+                                    {pendingSells.length > 0 && (
+                                      <div className="mt-4 border border-border rounded-lg p-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <div className="font-bold text-sm">Pending Scheduled Sells</div>
+                                          <Badge variant="default" className="bg-amber-600/20 text-amber-500 border-amber-600/30">
+                                            {pendingSells.length} order{pendingSells.length !== 1 ? 's' : ''} pending
+                                          </Badge>
+                                        </div>
+                                        <div className="text-xs text-muted mb-2">
+                                          These orders will execute at the next scheduled trade window.
+                                        </div>
+                                        <div className="space-y-1">
+                                          {pendingSells
+                                            .filter(sell => sell.credentialType === (portfolioMode === 'live' ? 'live' : 'paper'))
+                                            .map((sell) => (
+                                              <div key={sell.id} className="flex items-center justify-between py-1 px-2 bg-muted/30 rounded">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="font-bold">{sell.symbol}</span>
+                                                  <span className="text-muted text-sm">x {sell.qty}</span>
+                                                </div>
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  className="h-6 px-2 text-xs text-danger hover:text-danger hover:bg-danger/10"
+                                                  disabled={isCancelling}
+                                                  onClick={() => cancelPendingSell(sell.id)}
+                                                >
+                                                  Cancel
+                                                </Button>
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   // Regular bot expanded view: Show backtest stats
@@ -1089,23 +1148,6 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                 )
                               )}
 
-                              {/* Show attributed positions in collapsed view */}
-                              {!isExpanded && hasPositions && !isSyntheticUnallocated && (
-                                <div className="mt-2 pt-2 border-t border-border text-sm">
-                                  <div className="text-xs text-muted mb-1">Positions:</div>
-                                  <div className="flex flex-wrap gap-2">
-                                    {botPositions.map((l) => {
-                                      const pos = alpaca.positions.find(p => p.symbol === l.symbol)
-                                      return (
-                                        <Badge key={l.symbol} variant="default" className="text-xs">
-                                          {l.symbol}: {l.shares} @ {formatUsd(l.avgPrice)}
-                                          {pos && ` → ${formatUsd(pos.currentPrice)}`}
-                                        </Badge>
-                                      )
-                                    })}
-                                  </div>
-                                </div>
-                              )}
                             </Card>
                           )
                         })()}
@@ -1152,15 +1194,19 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                                   // Calculate P&L from actual Alpaca positions
                                   const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
-                                  const currentValue = botPositions.reduce((sum, l) => {
+                                  const positionsMarketValue = botPositions.reduce((sum, l) => {
                                     const pos = alpaca.positions.find(p => p.symbol === l.symbol)
                                     return sum + (pos ? l.shares * pos.currentPrice : 0)
                                   }, 0)
+                                  // Leftover cash = original investment - what was spent on positions
+                                  const leftoverCash = Math.max(0, inv.investmentAmount - costBasis)
+                                  // Current value = positions market value + leftover cash
+                                  const currentValue = positionsMarketValue + leftoverCash
 
                                   // If no positions yet, use investment amount as placeholder
                                   const displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
                                   const displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
-                                  const pnl = displayCurrentValue - displayCostBasis
+                                  const pnl = positionsMarketValue - costBasis  // P&L is only on positions, not cash
                                   const pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
 
                                   // Calculate allocation as percentage of total portfolio
@@ -1204,7 +1250,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                           {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
                                         </Badge>
                                         <Badge variant="accent" className="text-xs">
-                                          {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                          {hasPositions ? formatUsd(displayCurrentValue) : (inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount))}
                                         </Badge>
                                         {!hasPositions && (
                                           <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
@@ -1370,68 +1416,38 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                                   </div>
                                                 </div>
 
-                                                {/* Historical Stats */}
+                                                {/* Current Positions */}
                                                 <div className="base-stats-card w-full min-w-0 text-center self-stretch">
                                                   <div className="w-full">
-                                                    <div className="font-black mb-2">Historical Stats</div>
-                                                    <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
-                                                      <div>
-                                                        <div className="stat-label">CAGR</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                                    <div className="font-black mb-2">Current Positions</div>
+                                                    {hasPositions ? (
+                                                      <div className="flex flex-wrap gap-2 justify-center">
+                                                        {botPositions.map((pos) => {
+                                                          const alpacaPos = alpaca.positions.find(p => p.symbol === pos.symbol)
+                                                          const posCurrentPrice = alpacaPos?.currentPrice ?? pos.avgPrice
+                                                          const posValue = pos.shares * posCurrentPrice
+                                                          const posCost = pos.shares * pos.avgPrice
+                                                          const posGain = posValue - posCost
+                                                          const posGainPct = posCost > 0 ? (posGain / posCost) * 100 : 0
+                                                          return (
+                                                            <span key={pos.symbol} className="text-sm bg-surface-2 px-2 py-1 rounded flex items-center gap-1.5">
+                                                              <span className="font-medium">{pos.symbol}:</span>
+                                                              <span>{pos.shares.toFixed(2)} shares</span>
+                                                              <span className={cn(posGain >= 0 ? 'text-success' : 'text-danger')}>
+                                                                ({posGain >= 0 ? '+' : ''}{posGainPct.toFixed(1)}%)
+                                                              </span>
+                                                            </span>
+                                                          )
+                                                        })}
+                                                        {leftoverCash > 0.01 && (
+                                                          <span className="text-sm bg-surface-2 px-2 py-1 rounded text-muted">
+                                                            Cash: {formatUsd(leftoverCash)}
+                                                          </span>
+                                                        )}
                                                       </div>
-                                                      <div>
-                                                        <div className="stat-label">Max DD</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Calmar Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
-                                                            ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Sharpe Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
-                                                            ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Sortino Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
-                                                            ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Treynor Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
-                                                            ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Beta</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
-                                                            ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Volatility</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Win Rate</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
-                                                      </div>
-                                                    </div>
+                                                    ) : (
+                                                      <div className="text-muted text-sm">No positions yet</div>
+                                                    )}
                                                   </div>
                                                 </div>
                                               </div>
@@ -1442,23 +1458,6 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         </div>
                                       )}
 
-                                      {/* Show attributed positions in collapsed view */}
-                                      {!isExpanded && hasPositions && (
-                                        <div className="mt-2 pt-2 border-t border-border text-sm">
-                                          <div className="text-xs text-muted mb-1">Positions:</div>
-                                          <div className="flex flex-wrap gap-2">
-                                            {botPositions.map((l) => {
-                                              const pos = alpaca.positions.find(p => p.symbol === l.symbol)
-                                              return (
-                                                <Badge key={l.symbol} variant="default" className="text-xs">
-                                                  {l.symbol}: {l.shares} @ {formatUsd(l.avgPrice)}
-                                                  {pos && ` → ${formatUsd(pos.currentPrice)}`}
-                                                </Badge>
-                                              )
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
                                     </Card>
                                   )
                                 })
@@ -1513,15 +1512,19 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                                   // Calculate P&L from actual Alpaca positions
                                   const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
-                                  const currentValue = botPositions.reduce((sum, l) => {
+                                  const positionsMarketValue = botPositions.reduce((sum, l) => {
                                     const pos = alpaca.positions.find(p => p.symbol === l.symbol)
                                     return sum + (pos ? l.shares * pos.currentPrice : 0)
                                   }, 0)
+                                  // Leftover cash = original investment - what was spent on positions
+                                  const leftoverCash = Math.max(0, inv.investmentAmount - costBasis)
+                                  // Current value = positions market value + leftover cash
+                                  const currentValue = positionsMarketValue + leftoverCash
 
                                   // If no positions yet, use investment amount as placeholder
                                   const displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
                                   const displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
-                                  const pnl = displayCurrentValue - displayCostBasis
+                                  const pnl = positionsMarketValue - costBasis  // P&L is only on positions, not cash
                                   const pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
 
                                   // Calculate allocation as percentage of total portfolio
@@ -1565,7 +1568,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                           {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
                                         </Badge>
                                         <Badge variant="accent" className="text-xs">
-                                          {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                          {hasPositions ? formatUsd(displayCurrentValue) : (inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount))}
                                         </Badge>
                                         {!hasPositions && (
                                           <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
@@ -1727,67 +1730,38 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                                   </div>
                                                 </div>
 
+                                                {/* Current Positions */}
                                                 <div className="base-stats-card w-full min-w-0 text-center self-stretch">
                                                   <div className="w-full">
-                                                    <div className="font-black mb-2">Historical Stats</div>
-                                                    <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
-                                                      <div>
-                                                        <div className="stat-label">CAGR</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                                    <div className="font-black mb-2">Current Positions</div>
+                                                    {hasPositions ? (
+                                                      <div className="flex flex-wrap gap-2 justify-center">
+                                                        {botPositions.map((pos) => {
+                                                          const alpacaPos = alpaca.positions.find(p => p.symbol === pos.symbol)
+                                                          const posCurrentPrice = alpacaPos?.currentPrice ?? pos.avgPrice
+                                                          const posValue = pos.shares * posCurrentPrice
+                                                          const posCost = pos.shares * pos.avgPrice
+                                                          const posGain = posValue - posCost
+                                                          const posGainPct = posCost > 0 ? (posGain / posCost) * 100 : 0
+                                                          return (
+                                                            <span key={pos.symbol} className="text-sm bg-surface-2 px-2 py-1 rounded flex items-center gap-1.5">
+                                                              <span className="font-medium">{pos.symbol}:</span>
+                                                              <span>{pos.shares.toFixed(2)} shares</span>
+                                                              <span className={cn(posGain >= 0 ? 'text-success' : 'text-danger')}>
+                                                                ({posGain >= 0 ? '+' : ''}{posGainPct.toFixed(1)}%)
+                                                              </span>
+                                                            </span>
+                                                          )
+                                                        })}
+                                                        {leftoverCash > 0.01 && (
+                                                          <span className="text-sm bg-surface-2 px-2 py-1 rounded text-muted">
+                                                            Cash: {formatUsd(leftoverCash)}
+                                                          </span>
+                                                        )}
                                                       </div>
-                                                      <div>
-                                                        <div className="stat-label">Max DD</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Calmar Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
-                                                            ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Sharpe Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
-                                                            ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Sortino Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
-                                                            ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Treynor Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
-                                                            ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Beta</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
-                                                            ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Volatility</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Win Rate</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
-                                                      </div>
-                                                    </div>
+                                                    ) : (
+                                                      <div className="text-muted text-sm">No positions yet</div>
+                                                    )}
                                                   </div>
                                                 </div>
                                               </div>
@@ -1798,22 +1772,6 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         </div>
                                       )}
 
-                                      {!isExpanded && hasPositions && (
-                                        <div className="mt-2 pt-2 border-t border-border text-sm">
-                                          <div className="text-xs text-muted mb-1">Positions:</div>
-                                          <div className="flex flex-wrap gap-2">
-                                            {botPositions.map((l) => {
-                                              const pos = alpaca.positions.find(p => p.symbol === l.symbol)
-                                              return (
-                                                <Badge key={l.symbol} variant="default" className="text-xs">
-                                                  {l.symbol}: {l.shares} @ {formatUsd(l.avgPrice)}
-                                                  {pos && ` → ${formatUsd(pos.currentPrice)}`}
-                                                </Badge>
-                                              )
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
                                     </Card>
                                   )
                                 })
@@ -1868,15 +1826,19 @@ export function DashboardPanel(props: DashboardPanelProps) {
 
                                   // Calculate P&L from actual Alpaca positions
                                   const costBasis = botPositions.reduce((sum, l) => sum + (l.shares * l.avgPrice), 0)
-                                  const currentValue = botPositions.reduce((sum, l) => {
+                                  const positionsMarketValue = botPositions.reduce((sum, l) => {
                                     const pos = alpaca.positions.find(p => p.symbol === l.symbol)
                                     return sum + (pos ? l.shares * pos.currentPrice : 0)
                                   }, 0)
+                                  // Leftover cash = original investment - what was spent on positions
+                                  const leftoverCash = Math.max(0, inv.investmentAmount - costBasis)
+                                  // Current value = positions market value + leftover cash
+                                  const currentValue = positionsMarketValue + leftoverCash
 
                                   // If no positions yet, use investment amount as placeholder
                                   const displayCostBasis = hasPositions ? costBasis : inv.investmentAmount
                                   const displayCurrentValue = hasPositions ? currentValue : inv.investmentAmount
-                                  const pnl = displayCurrentValue - displayCostBasis
+                                  const pnl = positionsMarketValue - costBasis  // P&L is only on positions, not cash
                                   const pnlPercent = displayCostBasis > 0 ? (pnl / displayCostBasis) * 100 : 0
 
                                   // Calculate allocation as percentage of total portfolio
@@ -1920,7 +1882,7 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                           {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
                                         </Badge>
                                         <Badge variant="accent" className="text-xs">
-                                          {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                          {hasPositions ? formatUsd(displayCurrentValue) : (inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount))}
                                         </Badge>
                                         {!hasPositions && (
                                           <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
@@ -2082,67 +2044,38 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                                   </div>
                                                 </div>
 
+                                                {/* Current Positions */}
                                                 <div className="base-stats-card w-full min-w-0 text-center self-stretch">
                                                   <div className="w-full">
-                                                    <div className="font-black mb-2">Historical Stats</div>
-                                                    <div className="grid grid-cols-[repeat(4,minmax(140px,1fr))] gap-2.5 justify-items-center overflow-x-auto max-w-full w-full">
-                                                      <div>
-                                                        <div className="stat-label">CAGR</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.cagr ?? NaN)}</div>
+                                                    <div className="font-black mb-2">Current Positions</div>
+                                                    {hasPositions ? (
+                                                      <div className="flex flex-wrap gap-2 justify-center">
+                                                        {botPositions.map((pos) => {
+                                                          const alpacaPos = alpaca.positions.find(p => p.symbol === pos.symbol)
+                                                          const posCurrentPrice = alpacaPos?.currentPrice ?? pos.avgPrice
+                                                          const posValue = pos.shares * posCurrentPrice
+                                                          const posCost = pos.shares * pos.avgPrice
+                                                          const posGain = posValue - posCost
+                                                          const posGainPct = posCost > 0 ? (posGain / posCost) * 100 : 0
+                                                          return (
+                                                            <span key={pos.symbol} className="text-sm bg-surface-2 px-2 py-1 rounded flex items-center gap-1.5">
+                                                              <span className="font-medium">{pos.symbol}:</span>
+                                                              <span>{pos.shares.toFixed(2)} shares</span>
+                                                              <span className={cn(posGain >= 0 ? 'text-success' : 'text-danger')}>
+                                                                ({posGain >= 0 ? '+' : ''}{posGainPct.toFixed(1)}%)
+                                                              </span>
+                                                            </span>
+                                                          )
+                                                        })}
+                                                        {leftoverCash > 0.01 && (
+                                                          <span className="text-sm bg-surface-2 px-2 py-1 rounded text-muted">
+                                                            Cash: {formatUsd(leftoverCash)}
+                                                          </span>
+                                                        )}
                                                       </div>
-                                                      <div>
-                                                        <div className="stat-label">Max DD</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.maxDrawdown ?? NaN)}</div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Calmar Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.calmar ?? NaN)
-                                                            ? (analyzeState.result?.metrics.calmar ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Sharpe Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.sharpe ?? NaN)
-                                                            ? (analyzeState.result?.metrics.sharpe ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Sortino Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.sortino ?? NaN)
-                                                            ? (analyzeState.result?.metrics.sortino ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Treynor Ratio</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.treynor ?? NaN)
-                                                            ? (analyzeState.result?.metrics.treynor ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Beta</div>
-                                                        <div className="stat-value">
-                                                          {Number.isFinite(analyzeState.result?.metrics.beta ?? NaN)
-                                                            ? (analyzeState.result?.metrics.beta ?? 0).toFixed(2)
-                                                            : '--'}
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Volatility</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.vol ?? NaN)}</div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="stat-label">Win Rate</div>
-                                                        <div className="stat-value">{formatPct(analyzeState.result?.metrics.winRate ?? NaN)}</div>
-                                                      </div>
-                                                    </div>
+                                                    ) : (
+                                                      <div className="text-muted text-sm">No positions yet</div>
+                                                    )}
                                                   </div>
                                                 </div>
                                               </div>
@@ -2153,22 +2086,6 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         </div>
                                       )}
 
-                                      {!isExpanded && hasPositions && (
-                                        <div className="mt-2 pt-2 border-t border-border text-sm">
-                                          <div className="text-xs text-muted mb-1">Positions:</div>
-                                          <div className="flex flex-wrap gap-2">
-                                            {botPositions.map((l) => {
-                                              const pos = alpaca.positions.find(p => p.symbol === l.symbol)
-                                              return (
-                                                <Badge key={l.symbol} variant="default" className="text-xs">
-                                                  {l.symbol}: {l.shares} @ {formatUsd(l.avgPrice)}
-                                                  {pos && ` → ${formatUsd(pos.currentPrice)}`}
-                                                </Badge>
-                                              )
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
                                     </Card>
                                   )
                                 })
@@ -4202,26 +4119,21 @@ export function DashboardPanel(props: DashboardPanelProps) {
         mode="bulk"
         positions={alpaca.unallocatedPositions}
         credentialType={portfolioMode === 'live' ? 'live' : 'paper'}
+        isLoading={isSellLoading}
         onConfirm={async (sellOrders) => {
-          // Use the same hook/API as the individual sell
-          const response = await fetch('/api/dashboard/broker/sell-unallocated', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              credentialType: portfolioMode === 'live' ? 'live' : 'paper',
-              orders: sellOrders.map((o) => ({ symbol: o.symbol, qty: o.qty })),
-            }),
-          })
+          const credentialType = portfolioMode === 'live' ? 'live' : 'paper'
+          const result = await scheduleSell(credentialType, sellOrders)
 
-          if (response.ok) {
-            const result = await response.json()
-            console.log(`Successfully submitted ${result.orders.length} bulk sell order(s)`)
+          if (result?.success) {
+            console.log(`Scheduled ${result.orders.length} sell order(s) for next trade window`)
             setIsBulkSellModalOpen(false)
-            alpaca.refetch()
+            // Refresh pending sells list
+            await fetchPendingSells(credentialType)
+            // Show confirmation
+            alert(`✓ ${result.orders.length} sell order(s) scheduled for next trade window.\n\nExpand "Unallocated Positions" to view or cancel pending sells.`)
           } else {
-            const data = await response.json().catch(() => ({}))
-            console.error('Failed to sell positions:', data.error || 'Unknown error')
+            console.error('Failed to schedule sells:', result?.errors || 'Unknown error')
+            alert(`Failed to schedule sells: ${result?.errors?.[0]?.error || 'Unknown error'}`)
           }
         }}
       />

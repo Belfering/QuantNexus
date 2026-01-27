@@ -415,6 +415,19 @@ export function initializeDatabase() {
       deleted_at INTEGER
     );
 
+    -- Pending Manual Sells (Scheduled Unallocated Sell Orders)
+    CREATE TABLE IF NOT EXISTS pending_manual_sells (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      credential_type TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      qty REAL NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at INTEGER,
+      executed_at INTEGER,
+      error_message TEXT
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_id);
     CREATE INDEX IF NOT EXISTS idx_bots_visibility ON bots(visibility);
@@ -446,6 +459,8 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_opt_results_job ON optimization_results(job_id);
     CREATE INDEX IF NOT EXISTS idx_opt_results_is_cagr ON optimization_results(is_cagr DESC);
     CREATE INDEX IF NOT EXISTS idx_opt_results_oos_cagr ON optimization_results(oos_cagr DESC);
+    CREATE INDEX IF NOT EXISTS idx_pending_sells_user ON pending_manual_sells(user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_pending_sells_status ON pending_manual_sells(status, credential_type);
   `)
 
   // Migration: Add backtest_mode and backtest_cost_bps columns to bots table

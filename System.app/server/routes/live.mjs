@@ -944,11 +944,47 @@ router.post('/live/dry-run', async (req, res) => {
           })
         } else {
           console.log(`[live] [DEBUG] Calling executeLiveTrades with ${mergedTickers.length} tickers, investmentAmount=$${totalInvested.toFixed(2)}`)
+
+          // Fetch bot's current ledger positions for sell calculations
+          // This isolates bot positions from unallocated Alpaca positions
+          const botId = investments[0].bot_id
+          const ledgerPositions = sqlite.prepare(`
+            SELECT symbol, shares, avg_price as avgPrice
+            FROM bot_position_ledger
+            WHERE user_id = ? AND credential_type = ? AND bot_id = ?
+              AND shares > 0.0001
+          `).all(userId, credentialType, botId)
+
+          console.log(`[live] [DEBUG] Fetched ${ledgerPositions.length} positions from bot ledger for bot ${botId}`)
+
+          // Get current prices from Alpaca for market value calculations
+          const alpacaPositions = await getPositions(client)
+          const priceMap = {}
+          for (const pos of alpacaPositions) {
+            priceMap[pos.symbol] = {
+              currentPrice: parseFloat(pos.currentPrice),
+              marketValue: parseFloat(pos.marketValue),
+              qty: parseFloat(pos.qty)
+            }
+          }
+
+          // Enrich ledger positions with current market data
+          const botPositions = ledgerPositions.map(pos => ({
+            symbol: pos.symbol,
+            qty: pos.shares,
+            avgEntryPrice: pos.avgPrice,
+            currentPrice: priceMap[pos.symbol]?.currentPrice || pos.avgPrice,
+            marketValue: pos.shares * (priceMap[pos.symbol]?.currentPrice || pos.avgPrice)
+          }))
+
+          console.log(`[live] [DEBUG] Bot positions for execution:`, botPositions.map(p => `${p.symbol}: ${p.qty} @ $${p.currentPrice}`))
+
           executionResult = await executeLiveTrades(credentials, mergedAllocations, {
             userId,
             credentialType,
             botIds,
             investmentAmount: totalInvested,  // Use bot investment amount, not full equity
+            botPositions,  // Pass bot's ledger positions for sell calculations
             cashReserve: 0,  // Cash reserve handled above in adjustedEquity calculation
             cashMode: 'dollars',
           })
@@ -1358,7 +1394,7 @@ router.get('/dashboard/broker/history', async (req, res) => {
 
 /**
  * POST /api/dashboard/broker/sell-unallocated
- * Sell unallocated positions
+ * Schedule unallocated positions for sale at next trade window
  * Body: { credentialType: 'live' | 'paper', orders: Array<{ symbol: string, qty: number }> }
  */
 router.post('/dashboard/broker/sell-unallocated', async (req, res) => {
@@ -1378,14 +1414,31 @@ router.post('/dashboard/broker/sell-unallocated', async (req, res) => {
       return res.status(400).json({ error: 'No orders provided' })
     }
 
+    // Verify credentials exist (but don't execute yet)
     const credentials = getDecryptedCredentials(userId, credentialType)
     if (!credentials) {
       return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
     }
 
-    const client = createAlpacaClient(credentials)
-    const results = []
+    const scheduledOrders = []
     const errors = []
+
+    // Check for existing pending sell and update or insert
+    const existingStmt = sqlite.prepare(`
+      SELECT id, qty FROM pending_manual_sells
+      WHERE user_id = ? AND credential_type = ? AND symbol = ? AND status = 'pending'
+    `)
+
+    const updateStmt = sqlite.prepare(`
+      UPDATE pending_manual_sells
+      SET qty = ?, updated_at = unixepoch()
+      WHERE id = ?
+    `)
+
+    const insertStmt = sqlite.prepare(`
+      INSERT INTO pending_manual_sells (id, user_id, credential_type, symbol, qty, status, created_at)
+      VALUES (?, ?, ?, ?, ?, 'pending', unixepoch())
+    `)
 
     for (const order of orders) {
       const { symbol, qty } = order
@@ -1395,22 +1448,253 @@ router.post('/dashboard/broker/sell-unallocated', async (req, res) => {
       }
 
       try {
-        const result = await submitMarketSell(client, symbol, qty)
-        results.push(result)
+        // Check if a pending sell already exists for this symbol
+        const existing = existingStmt.get(userId, credentialType, symbol)
+
+        if (existing) {
+          // Update existing pending sell with new quantity
+          updateStmt.run(qty, existing.id)
+          scheduledOrders.push({ id: existing.id, symbol, qty, status: 'pending', updated: true })
+        } else {
+          // Insert new pending sell
+          const id = crypto.randomUUID()
+          insertStmt.run(id, userId, credentialType, symbol, qty)
+          scheduledOrders.push({ id, symbol, qty, status: 'pending' })
+        }
       } catch (err) {
-        console.error(`[live] Failed to sell ${symbol}:`, err)
+        console.error(`[live] Failed to schedule sell for ${symbol}:`, err)
         errors.push({ symbol, error: err.message })
       }
     }
 
+    console.log(`[live] Scheduled ${scheduledOrders.length} sell orders for user ${userId} (${credentialType})`)
+
     res.json({
       success: errors.length === 0,
-      orders: results,
+      scheduled: true,
+      orders: scheduledOrders,
       errors: errors.length > 0 ? errors : undefined,
+      message: `${scheduledOrders.length} order(s) scheduled for next trade window`,
     })
   } catch (error) {
-    console.error('[live] Error selling unallocated positions:', error)
-    res.status(500).json({ error: error.message || 'Failed to sell positions' })
+    console.error('[live] Error scheduling unallocated sells:', error)
+    res.status(500).json({ error: error.message || 'Failed to schedule sells' })
+  }
+})
+
+/**
+ * GET /api/dashboard/broker/pending-sells
+ * Get pending sell orders for the current user
+ * Query: { credentialType?: 'live' | 'paper' }
+ */
+router.get('/dashboard/broker/pending-sells', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { credentialType } = req.query
+
+    let query = `
+      SELECT id, credential_type, symbol, qty, status, created_at, executed_at, error_message
+      FROM pending_manual_sells
+      WHERE user_id = ? AND status = 'pending'
+    `
+    const params = [userId]
+
+    if (credentialType && ['live', 'paper'].includes(credentialType)) {
+      query += ' AND credential_type = ?'
+      params.push(credentialType)
+    }
+
+    query += ' ORDER BY created_at DESC'
+
+    const pendingSells = sqlite.prepare(query).all(...params)
+
+    // Transform snake_case to camelCase
+    const formatted = pendingSells.map(sell => ({
+      id: sell.id,
+      credentialType: sell.credential_type,
+      symbol: sell.symbol,
+      qty: sell.qty,
+      status: sell.status,
+      createdAt: sell.created_at,
+      executedAt: sell.executed_at,
+      errorMessage: sell.error_message,
+    }))
+
+    res.json({ pendingSells: formatted })
+  } catch (error) {
+    console.error('[live] Error getting pending sells:', error)
+    res.status(500).json({ error: error.message || 'Failed to get pending sells' })
+  }
+})
+
+/**
+ * DELETE /api/dashboard/broker/pending-sells/:id
+ * Cancel a pending sell order
+ */
+router.delete('/dashboard/broker/pending-sells/:id', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { id } = req.params
+
+    // First check if the order exists and belongs to this user
+    const existing = sqlite.prepare(`
+      SELECT id, status FROM pending_manual_sells
+      WHERE id = ? AND user_id = ?
+    `).get(id, userId)
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Pending sell order not found' })
+    }
+
+    if (existing.status !== 'pending') {
+      return res.status(400).json({ error: `Cannot cancel order with status: ${existing.status}` })
+    }
+
+    // Update status to cancelled
+    sqlite.prepare(`
+      UPDATE pending_manual_sells
+      SET status = 'cancelled'
+      WHERE id = ?
+    `).run(id)
+
+    console.log(`[live] Cancelled pending sell order ${id} for user ${userId}`)
+
+    res.json({ success: true, message: 'Pending sell order cancelled' })
+  } catch (error) {
+    console.error('[live] Error cancelling pending sell:', error)
+    res.status(500).json({ error: error.message || 'Failed to cancel pending sell' })
+  }
+})
+
+/**
+ * DELETE /api/dashboard/broker/pending-sells
+ * Cancel ALL pending sell orders for the current user (with optional credentialType filter)
+ * Query: { credentialType?: 'live' | 'paper' }
+ */
+router.delete('/dashboard/broker/pending-sells', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { credentialType } = req.query
+
+    let result
+    if (credentialType && ['live', 'paper'].includes(credentialType)) {
+      result = sqlite.prepare(`
+        UPDATE pending_manual_sells
+        SET status = 'cancelled'
+        WHERE user_id = ? AND credential_type = ? AND status = 'pending'
+      `).run(userId, credentialType)
+    } else {
+      result = sqlite.prepare(`
+        UPDATE pending_manual_sells
+        SET status = 'cancelled'
+        WHERE user_id = ? AND status = 'pending'
+      `).run(userId)
+    }
+
+    console.log(`[live] Cancelled ${result.changes} pending sell orders for user ${userId}`)
+
+    res.json({
+      success: true,
+      message: `${result.changes} pending sell order(s) cancelled`,
+      cancelled: result.changes,
+    })
+  } catch (error) {
+    console.error('[live] Error cancelling all pending sells:', error)
+    res.status(500).json({ error: error.message || 'Failed to cancel pending sells' })
+  }
+})
+
+/**
+ * POST /api/dashboard/broker/execute-pending-sells
+ * Manually trigger execution of pending sells (instead of waiting for scheduled window)
+ * Body: { credentialType: 'live' | 'paper' }
+ */
+router.post('/dashboard/broker/execute-pending-sells', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { credentialType } = req.body
+    if (!credentialType || !['live', 'paper'].includes(credentialType)) {
+      return res.status(400).json({ error: 'credentialType required (live or paper)' })
+    }
+
+    // Get credentials
+    const credentials = getDecryptedCredentials(userId, credentialType)
+    if (!credentials) {
+      return res.status(400).json({ error: `No ${credentialType} credentials found` })
+    }
+
+    // Get pending sells
+    const pendingSells = sqlite.prepare(`
+      SELECT id, symbol, qty FROM pending_manual_sells
+      WHERE user_id = ? AND credential_type = ? AND status = 'pending'
+    `).all(userId, credentialType)
+
+    if (pendingSells.length === 0) {
+      return res.json({ success: true, message: 'No pending sells to execute', processed: 0, results: [] })
+    }
+
+    console.log(`[live] Executing ${pendingSells.length} pending sells for user ${userId} (${credentialType})`)
+
+    const client = createAlpacaClient(credentials)
+    const results = []
+
+    for (const sell of pendingSells) {
+      try {
+        console.log(`[live] Executing sell: ${sell.symbol} x ${sell.qty} shares`)
+        await submitMarketSell(client, sell.symbol, sell.qty)
+
+        sqlite.prepare(`
+          UPDATE pending_manual_sells
+          SET status = 'executed', executed_at = unixepoch()
+          WHERE id = ?
+        `).run(sell.id)
+
+        results.push({ symbol: sell.symbol, qty: sell.qty, success: true })
+        console.log(`[live] ✓ Sell executed: ${sell.symbol}`)
+      } catch (error) {
+        sqlite.prepare(`
+          UPDATE pending_manual_sells
+          SET status = 'failed', executed_at = unixepoch(), error_message = ?
+          WHERE id = ?
+        `).run(error.message || 'Unknown error', sell.id)
+
+        results.push({ symbol: sell.symbol, qty: sell.qty, success: false, error: error.message })
+        console.log(`[live] ✗ Sell failed: ${sell.symbol} - ${error.message}`)
+      }
+    }
+
+    const succeeded = results.filter(r => r.success).length
+    const failed = results.filter(r => !r.success).length
+
+    console.log(`[live] Execute pending sells complete: ${succeeded}/${pendingSells.length} succeeded, ${failed} failed`)
+
+    res.json({
+      success: failed === 0,
+      processed: pendingSells.length,
+      succeeded,
+      failed,
+      results,
+      message: `${succeeded}/${pendingSells.length} sells executed successfully`
+    })
+  } catch (error) {
+    console.error('[live] Error executing pending sells:', error)
+    res.status(500).json({ error: error.message || 'Failed to execute pending sells' })
   }
 })
 
@@ -1634,7 +1918,7 @@ router.get('/trading/bot-positions/:botId', async (req, res) => {
     const { botId } = req.params
     const { credentialType = 'paper' } = req.query
 
-    if (!botId || isNaN(parseInt(botId))) {
+    if (!botId) {
       return res.status(400).json({ error: 'Invalid bot ID' })
     }
 
@@ -1649,7 +1933,7 @@ router.get('/trading/bot-positions/:botId', async (req, res) => {
       WHERE bpl.user_id = ? AND bpl.credential_type = ? AND bpl.bot_id = ?
         AND bpl.shares > 0.0001
       ORDER BY bpl.symbol ASC
-    `).all(userId, credentialType, parseInt(botId))
+    `).all(userId, credentialType, botId)
 
     // Get current prices from Alpaca
     const client = await createAlpacaClient(userId, credentialType)
@@ -1702,7 +1986,7 @@ router.post('/trading/assign-positions', async (req, res) => {
 
     const { botId, positions, credentialType = 'paper' } = req.body
 
-    if (!botId || isNaN(parseInt(botId))) {
+    if (!botId) {
       return res.status(400).json({ error: 'Invalid bot ID' })
     }
 
@@ -1713,7 +1997,7 @@ router.post('/trading/assign-positions', async (req, res) => {
     // Verify bot exists and user has access
     const bot = sqlite.prepare(`
       SELECT id, name FROM bots WHERE id = ? AND user_id = ?
-    `).get(parseInt(botId), userId)
+    `).get(botId, userId)
 
     if (!bot) {
       return res.status(404).json({ error: 'Bot not found or access denied' })
@@ -1766,7 +2050,7 @@ router.post('/trading/assign-positions', async (req, res) => {
       const avgPrice = parseFloat(alpacaPos.avgEntryPrice || alpacaPos.currentPrice)
 
       try {
-        insertStmt.run(userId, credentialType, parseInt(botId), pos.symbol, shares, avgPrice)
+        insertStmt.run(userId, credentialType, botId, pos.symbol, shares, avgPrice)
         console.log(`[assign-positions] ✅ Assigned ${shares.toFixed(4)} shares of ${pos.symbol} to bot ${botId}`)
         assigned++
       } catch (err) {

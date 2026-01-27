@@ -366,3 +366,18 @@ export const optimizationJobsRelations = relations(optimizationJobs, ({ many }) 
 export const optimizationResultsRelations = relations(optimizationResults, ({ one }) => ({
   job: one(optimizationJobs, { fields: [optimizationResults.jobId], references: [optimizationJobs.id] }),
 }))
+
+// ============================================
+// PENDING MANUAL SELLS (Scheduled Unallocated Sell Orders)
+// ============================================
+export const pendingManualSells = sqliteTable('pending_manual_sells', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  credentialType: text('credential_type').notNull(), // 'live' | 'paper'
+  symbol: text('symbol').notNull(),
+  qty: real('qty').notNull(),
+  status: text('status').default('pending'), // pending, executed, cancelled, failed
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  executedAt: integer('executed_at', { mode: 'timestamp' }),
+  errorMessage: text('error_message'),
+})

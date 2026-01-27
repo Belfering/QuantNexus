@@ -301,7 +301,17 @@ export function useAlpacaPortfolio({
       }
 
       if (ledgerData) {
-        setPositionLedger(ledgerData.ledger)
+        // Transform snake_case from API to camelCase for TypeScript
+        const transformedLedger = ledgerData.ledger.map((entry: Record<string, unknown>) => ({
+          id: entry.id,
+          botId: entry.bot_id,
+          symbol: entry.symbol,
+          shares: entry.shares,
+          avgPrice: entry.avg_price,
+          createdAt: entry.created_at,
+          updatedAt: entry.updated_at,
+        }))
+        setPositionLedger(transformedLedger)
       }
 
       if (unallocatedData) {

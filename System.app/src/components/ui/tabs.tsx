@@ -52,7 +52,7 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
         onClick={() => context.onValueChange(value)}
         className={cn(
           "border border-border bg-surface-2 px-3 py-2 rounded-lg font-bold cursor-pointer transition-colors",
-          isActive && "bg-accent-bg border-accent-border text-accent-text",
+          isActive && "!bg-accent-bg !border-accent-border !text-accent-text",
           className
         )}
         {...props}

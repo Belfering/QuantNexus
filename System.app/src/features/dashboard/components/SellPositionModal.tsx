@@ -344,8 +344,7 @@ export function SellPositionModal({
             </div>
             <div className="mt-1 text-xs text-muted">
               {calculatedOrders.length} order{calculatedOrders.length !== 1 ? 's' : ''} will be
-              submitted as market sell{calculatedOrders.length !== 1 ? 's' : ''} on {credentialType}{' '}
-              account.
+              scheduled for the next trade window on {credentialType} account.
             </div>
           </div>
         )}
@@ -360,7 +359,7 @@ export function SellPositionModal({
             onClick={handleConfirm}
             disabled={!isValid || isLoading}
           >
-            {isLoading ? 'Submitting...' : 'Confirm Sell'}
+            {isLoading ? 'Scheduling...' : 'Schedule Sell'}
           </Button>
         </ModalFooter>
       </div>
