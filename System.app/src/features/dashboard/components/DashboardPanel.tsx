@@ -867,8 +867,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   {/* Show P&L for both synthetic and regular */}
                                   {hasPositions && (
                                     <>
-                                      <div className="text-sm text-muted">
-                                        {formatUsd(displayCostBasis)} → {formatUsd(displayCurrentValue)}
+                                      <div className="text-sm font-bold">
+                                        {formatUsd(displayCurrentValue)}
                                       </div>
                                       <div className={cn("font-bold min-w-[80px] text-right", pnl >= 0 ? 'text-success' : 'text-danger')}>
                                         {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
@@ -1249,9 +1249,11 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
                                           {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
                                         </Badge>
-                                        <Badge variant="accent" className="text-xs">
-                                          {hasPositions ? formatUsd(displayCurrentValue) : (inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount))}
-                                        </Badge>
+                                        {!hasPositions && (
+                                          <Badge variant="accent" className="text-xs">
+                                            {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                          </Badge>
+                                        )}
                                         {!hasPositions && (
                                           <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
                                             Pending - Next Trade Window
@@ -1269,8 +1271,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         <div className="ml-auto flex items-center gap-2.5 flex-wrap">
                                           {hasPositions && (
                                             <>
-                                              <div className="text-sm text-muted">
-                                                {formatUsd(displayCostBasis)} → {formatUsd(displayCurrentValue)}
+                                              <div className="text-sm font-bold">
+                                                {formatUsd(displayCurrentValue)}
                                               </div>
                                               <div className={cn("font-bold min-w-[80px] text-right", pnl >= 0 ? 'text-success' : 'text-danger')}>
                                                 {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
@@ -1567,9 +1569,11 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
                                           {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
                                         </Badge>
-                                        <Badge variant="accent" className="text-xs">
-                                          {hasPositions ? formatUsd(displayCurrentValue) : (inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount))}
-                                        </Badge>
+                                        {!hasPositions && (
+                                          <Badge variant="accent" className="text-xs">
+                                            {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                          </Badge>
+                                        )}
                                         {!hasPositions && (
                                           <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
                                             Pending - Next Trade Window
@@ -1587,8 +1591,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         <div className="ml-auto flex items-center gap-2.5 flex-wrap">
                                           {hasPositions && (
                                             <>
-                                              <div className="text-sm text-muted">
-                                                {formatUsd(displayCostBasis)} → {formatUsd(displayCurrentValue)}
+                                              <div className="text-sm font-bold">
+                                                {formatUsd(displayCurrentValue)}
                                               </div>
                                               <div className={cn("font-bold min-w-[80px] text-right", pnl >= 0 ? 'text-success' : 'text-danger')}>
                                                 {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
@@ -1881,9 +1885,11 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         <Badge variant={b?.tags?.includes('Nexus') ? 'default' : b?.tags?.includes('Atlas') ? 'default' : 'accent'}>
                                           {b?.tags?.includes('Nexus') ? 'Nexus' : b?.tags?.includes('Atlas') ? 'Atlas' : 'Private'}
                                         </Badge>
-                                        <Badge variant="accent" className="text-xs">
-                                          {hasPositions ? formatUsd(displayCurrentValue) : (inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount))}
-                                        </Badge>
+                                        {!hasPositions && (
+                                          <Badge variant="accent" className="text-xs">
+                                            {inv.weightMode === 'percent' ? `${inv.investmentAmount}%` : formatUsd(inv.investmentAmount)}
+                                          </Badge>
+                                        )}
                                         {!hasPositions && (
                                           <Badge variant="default" className="text-xs bg-amber-600/20 text-amber-500 border-amber-600/30">
                                             Pending - Next Trade Window
@@ -1901,8 +1907,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                         <div className="ml-auto flex items-center gap-2.5 flex-wrap">
                                           {hasPositions && (
                                             <>
-                                              <div className="text-sm text-muted">
-                                                {formatUsd(displayCostBasis)} → {formatUsd(displayCurrentValue)}
+                                              <div className="text-sm font-bold">
+                                                {formatUsd(displayCurrentValue)}
                                               </div>
                                               <div className={cn("font-bold min-w-[80px] text-right", pnl >= 0 ? 'text-success' : 'text-danger')}>
                                                 {formatSignedUsd(pnl)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%)
@@ -2409,9 +2415,6 @@ export function DashboardPanel(props: DashboardPanelProps) {
                               ))}
                             </div>
                             <div className="ml-auto flex items-center gap-2.5 flex-wrap">
-                              <div className="text-sm text-muted">
-                                {formatUsd(inv.costBasis)} → {formatUsd(inv.currentValue)}
-                              </div>
                               <div className={cn("font-bold min-w-[80px] text-right", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
                                 {formatSignedUsd(inv.pnl)} ({inv.pnlPercent >= 0 ? '+' : ''}{inv.pnlPercent.toFixed(1)}%)
                               </div>
@@ -2737,8 +2740,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                             ))}
                                           </div>
                                           <div className="ml-auto flex items-center gap-2.5 flex-wrap">
-                                            <div className="text-sm text-muted">
-                                              {formatUsd(inv.costBasis)} → {formatUsd(inv.currentValue)}
+                                            <div className="text-sm font-bold">
+                                              {formatUsd(inv.currentValue)}
                                             </div>
                                             <div className={cn("font-bold min-w-[80px] text-right", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
                                               {formatSignedUsd(inv.pnl)} ({inv.pnlPercent >= 0 ? '+' : ''}{inv.pnlPercent.toFixed(1)}%)
@@ -3059,8 +3062,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                             ))}
                                           </div>
                                           <div className="ml-auto flex items-center gap-2.5 flex-wrap">
-                                            <div className="text-sm text-muted">
-                                              {formatUsd(inv.costBasis)} → {formatUsd(inv.currentValue)}
+                                            <div className="text-sm font-bold">
+                                              {formatUsd(inv.currentValue)}
                                             </div>
                                             <div className={cn("font-bold min-w-[80px] text-right", inv.pnl >= 0 ? 'text-success' : 'text-danger')}>
                                               {formatSignedUsd(inv.pnl)} ({inv.pnlPercent >= 0 ? '+' : ''}{inv.pnlPercent.toFixed(1)}%)
