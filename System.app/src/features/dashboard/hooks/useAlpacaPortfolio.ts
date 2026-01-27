@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useDashboardStore } from '@/stores/useDashboardStore'
 import type { DashboardTimePeriod, PortfolioMode, BotInvestment, PositionLedgerEntry, UnallocatedPosition } from '@/types'
+import { API_BASE_URL } from '@/config/api'
 
 // API response types
 interface BrokerStatusResponse {
@@ -154,7 +155,7 @@ export function useAlpacaPortfolio({
   const fetchBrokerStatus = useCallback(async (mode: PortfolioMode): Promise<BrokerStatusResponse | null> => {
     try {
       const apiMode = getApiMode(mode)
-      const res = await fetch(`/api/admin/dashboard/broker/status?mode=${apiMode}`)
+      const res = await fetch(`${API_BASE_URL}/api/admin/dashboard/broker/status?mode=${apiMode}`)
       if (!res.ok) return null
       return await res.json()
     } catch (err) {
@@ -167,7 +168,7 @@ export function useAlpacaPortfolio({
   const fetchAccount = useCallback(async (mode: PortfolioMode): Promise<AccountResponse | null> => {
     try {
       const apiMode = getApiMode(mode)
-      const res = await fetch(`/api/admin/dashboard/broker/account?mode=${apiMode}`)
+      const res = await fetch(`${API_BASE_URL}/api/admin/dashboard/broker/account?mode=${apiMode}`)
       if (!res.ok) return null
       return await res.json()
     } catch (err) {
@@ -180,7 +181,7 @@ export function useAlpacaPortfolio({
   const fetchPositions = useCallback(async (mode: PortfolioMode): Promise<PositionsResponse | null> => {
     try {
       const apiMode = getApiMode(mode)
-      const res = await fetch(`/api/admin/dashboard/broker/positions?mode=${apiMode}`)
+      const res = await fetch(`${API_BASE_URL}/api/admin/dashboard/broker/positions?mode=${apiMode}`)
       if (!res.ok) return null
       return await res.json()
     } catch (err) {
@@ -193,7 +194,7 @@ export function useAlpacaPortfolio({
   const fetchHistory = useCallback(async (period: string, mode: PortfolioMode): Promise<HistoryResponse | null> => {
     try {
       const apiMode = getApiMode(mode)
-      const res = await fetch(`/api/admin/dashboard/broker/history?period=${period}&mode=${apiMode}`)
+      const res = await fetch(`${API_BASE_URL}/api/admin/dashboard/broker/history?period=${period}&mode=${apiMode}`)
       if (!res.ok) return null
       return await res.json()
     } catch (err) {
@@ -206,7 +207,7 @@ export function useAlpacaPortfolio({
   const fetchInvestments = useCallback(async (mode: PortfolioMode): Promise<InvestmentsResponse | null> => {
     try {
       const apiMode = getApiMode(mode)
-      const res = await fetch(`/api/admin/trading/investments?mode=${apiMode}`)
+      const res = await fetch(`${API_BASE_URL}/api/admin/trading/investments?mode=${apiMode}`)
       if (!res.ok) return null
       return await res.json()
     } catch (err) {
@@ -219,7 +220,7 @@ export function useAlpacaPortfolio({
   const fetchLedger = useCallback(async (mode: PortfolioMode): Promise<LedgerResponse | null> => {
     try {
       const apiMode = getApiMode(mode)
-      const res = await fetch(`/api/admin/trading/ledger?mode=${apiMode}`)
+      const res = await fetch(`${API_BASE_URL}/api/admin/trading/ledger?mode=${apiMode}`)
       if (!res.ok) return null
       return await res.json()
     } catch (err) {
@@ -232,7 +233,7 @@ export function useAlpacaPortfolio({
   const fetchUnallocated = useCallback(async (mode: PortfolioMode): Promise<UnallocatedResponse | null> => {
     try {
       const apiMode = getApiMode(mode)
-      const res = await fetch(`/api/admin/trading/unallocated?mode=${apiMode}`)
+      const res = await fetch(`${API_BASE_URL}/api/admin/trading/unallocated?mode=${apiMode}`)
       if (!res.ok) return null
       return await res.json()
     } catch (err) {
@@ -404,7 +405,7 @@ export function useAlpacaPortfolio({
 
     try {
       const apiMode = getApiMode(portfolioMode)
-      const res = await fetch('/api/admin/trading/investments', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/trading/investments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -440,7 +441,7 @@ export function useAlpacaPortfolio({
 
     try {
       const apiMode = getApiMode(portfolioMode)
-      const res = await fetch(`/api/admin/trading/investments/${encodeURIComponent(botId)}?mode=${apiMode}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/trading/investments/${encodeURIComponent(botId)}?mode=${apiMode}`, {
         method: 'DELETE',
       })
 

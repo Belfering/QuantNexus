@@ -2,6 +2,7 @@
 // Hook for selling unallocated positions (schedules sells for next trade window)
 
 import { useState, useCallback } from 'react'
+import { API_BASE_URL } from '@/config/api'
 
 export interface SellOrder {
   symbol: string
@@ -51,7 +52,7 @@ export function useSellUnallocated() {
     setError(null)
 
     try {
-      const response = await fetch('/api/admin/dashboard/broker/sell-unallocated', {
+      const response = await fetch(`${API_BASE_URL}/api/admin/dashboard/broker/sell-unallocated`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -83,8 +84,8 @@ export function useSellUnallocated() {
   const fetchPendingSells = useCallback(async (credentialType?: 'live' | 'paper') => {
     try {
       const url = credentialType
-        ? `/api/admin/dashboard/broker/pending-sells?credentialType=${credentialType}`
-        : '/api/admin/dashboard/broker/pending-sells'
+        ? `${API_BASE_URL}/api/admin/dashboard/broker/pending-sells?credentialType=${credentialType}`
+        : `${API_BASE_URL}/api/admin/dashboard/broker/pending-sells`
 
       const response = await fetch(url, {
         credentials: 'include',
@@ -110,7 +111,7 @@ export function useSellUnallocated() {
     setError(null)
 
     try {
-      const response = await fetch(`/api/admin/dashboard/broker/pending-sells/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/dashboard/broker/pending-sells/${id}`, {
         method: 'DELETE',
         credentials: 'include',
       })
