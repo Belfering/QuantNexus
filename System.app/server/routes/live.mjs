@@ -1208,8 +1208,6 @@ router.get('/dashboard/broker/status', async (req, res) => {
         if (!result.success) {
           errorMessage = result.error
           console.warn(`[live] Connection test failed for user ${userId} (${credentialType}):`, result.error)
-        } else {
-          console.log(`[live] Connection test succeeded for user ${userId} (${credentialType})`)
         }
       } else {
         errorMessage = 'Failed to decrypt credentials'
@@ -2539,6 +2537,48 @@ router.post('/trading/scheduler/trigger', async (req, res) => {
   } catch (error) {
     console.error('[live] Error triggering manual execution:', error)
     res.status(500).json({ error: error.message || 'Failed to trigger execution' })
+  }
+})
+
+/**
+ * DELETE /api/admin/trading/ledger/purge
+ * Purge bot position ledger
+ * Removes all entries from bot_position_ledger, making all positions show as unallocated
+ */
+router.delete('/trading/ledger/purge', (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { mode = 'paper' } = req.query
+    const credentialType = mode === 'live' ? 'live' : 'paper'
+
+    console.log(`[live] Purging bot_position_ledger for user=${userId}, mode=${credentialType}`)
+
+    // Count entries before deletion
+    const countBefore = sqlite.prepare(`
+      SELECT COUNT(*) as count FROM bot_position_ledger
+      WHERE user_id = ? AND credential_type = ?
+    `).get(userId, credentialType)
+
+    // Delete all entries for this user and credential type
+    const result = sqlite.prepare(`
+      DELETE FROM bot_position_ledger
+      WHERE user_id = ? AND credential_type = ?
+    `).run(userId, credentialType)
+
+    console.log(`[live] Purged ${result.changes} entries from bot_position_ledger (counted ${countBefore.count} before deletion)`)
+
+    res.json({
+      success: true,
+      entriesDeleted: result.changes,
+      mode: credentialType
+    })
+  } catch (error) {
+    console.error('[live] Error purging bot position ledger:', error)
+    res.status(500).json({ error: error.message || 'Failed to purge ledger' })
   }
 })
 

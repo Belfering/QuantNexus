@@ -233,27 +233,45 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
     }
   }
 
-  // Print trade decisions
-  console.log(`[TRADE] ORDERS TO EXECUTE:`)
-  console.log(`[TRADE] ────────────────────────────────────────`)
+  // Print trade decisions with dollar amounts
+  console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+  console.log(`[TRADE] TRADE CALCULATION - WHAT NEEDS TO CHANGE`)
+  console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+  console.log(`[TRADE] Using Investment Amount: $${adjustedEquity.toFixed(2)}`)
+  console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
   if (sells.length === 0) {
-    console.log(`[TRADE] SELLS: (none)`)
+    console.log(`[TRADE] SELLS: (none - no positions to liquidate)`)
   } else {
-    console.log(`[TRADE] SELLS:`)
+    console.log(`[TRADE] SELLS: ${sells.length} position(s) to sell`)
+    let totalSellValue = 0
     for (const sell of sells) {
-      console.log(`[TRADE]   ${sell.symbol}: ${sell.currentQty.toFixed(4)} shares (${sell.currentPct.toFixed(2)}% → ${sell.targetPct.toFixed(2)}%)`)
+      totalSellValue += sell.currentValue
+      if (sell.targetPct === 0) {
+        console.log(`[TRADE]   ${sell.symbol}: FULL LIQUIDATION - Sell all ${sell.currentQty.toFixed(4)} shares ($${sell.currentValue.toFixed(2)})`)
+      } else {
+        console.log(`[TRADE]   ${sell.symbol}: REDUCE - ${sell.currentPct.toFixed(2)}% → ${sell.targetPct.toFixed(2)}% (${sell.currentQty.toFixed(4)} shares, $${sell.currentValue.toFixed(2)})`)
+      }
     }
+    console.log(`[TRADE]   Total Sell Value: $${totalSellValue.toFixed(2)}`)
   }
+  console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
   if (buys.length === 0) {
-    console.log(`[TRADE] BUYS: (none)`)
+    console.log(`[TRADE] BUYS: (none - staying in cash)`)
   } else {
-    console.log(`[TRADE] BUYS:`)
+    console.log(`[TRADE] BUYS: ${buys.length} position(s) to buy`)
+    let totalBuyValue = 0
     for (const buy of buys) {
       const notional = adjustedEquity * (buy.targetPct / 100)
-      console.log(`[TRADE]   ${buy.symbol}: $${notional.toFixed(2)} (${buy.targetPct.toFixed(2)}%)`)
+      totalBuyValue += notional
+      if (buy.currentPct === 0) {
+        console.log(`[TRADE]   ${buy.symbol}: NEW POSITION - Buy $${notional.toFixed(2)} (${buy.targetPct.toFixed(2)}%)`)
+      } else {
+        console.log(`[TRADE]   ${buy.symbol}: ADD TO POSITION - ${buy.currentPct.toFixed(2)}% → ${buy.targetPct.toFixed(2)}% (buy $${notional.toFixed(2)})`)
+      }
     }
+    console.log(`[TRADE]   Total Buy Value: $${totalBuyValue.toFixed(2)}`)
   }
-  console.log(`[TRADE] ────────────────────────────────────────`)
+  console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
 
   // Cancel existing orders
   const cancelledCount = await cancelAllOrders(client)
@@ -346,12 +364,50 @@ export async function executeLiveTrades(credentials, allocations, options = {}) 
     }
   }
 
-  // Print summary
+  // Print execution summary
   const successfulSells = sellResults.filter(r => r.success).length
   const successfulBuys = buyResults.filter(r => r.success).length
   const skippedCount = [...sellResults, ...buyResults].filter(r => r.skipped).length
   const errorCount = [...sellResults, ...buyResults].filter(r => !r.success && !r.skipped).length
-  console.log(`[TRADE] RESULTS: ${successfulSells} sells, ${successfulBuys} buys, ${skippedCount} skipped, ${errorCount} errors`)
+
+  console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+  console.log(`[TRADE] EXECUTION COMPLETE - FINAL RESULTS`)
+  console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+  console.log(`[TRADE] PLANNED: ${sells.length} sells, ${buys.length} buys`)
+  console.log(`[TRADE] EXECUTED: ${successfulSells}/${sells.length} sells, ${successfulBuys}/${buys.length} buys`)
+  if (skippedCount > 0) {
+    console.log(`[TRADE] SKIPPED: ${skippedCount} orders (below minimum thresholds)`)
+  }
+  if (errorCount > 0) {
+    console.log(`[TRADE] FAILED: ${errorCount} orders (errors during execution)`)
+  }
+  console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+  console.log(`[TRADE] DETAILED RESULTS:`)
+  if (sellResults.length > 0) {
+    console.log(`[TRADE] Sells:`)
+    for (const sell of sellResults) {
+      if (sell.success) {
+        console.log(`[TRADE]   ✓ ${sell.symbol}: ${sell.qty ? sell.qty.toFixed(4) : '?'} shares sold`)
+      } else if (sell.skipped) {
+        console.log(`[TRADE]   ⊘ ${sell.symbol}: SKIPPED (${sell.reason})`)
+      } else {
+        console.log(`[TRADE]   ✗ ${sell.symbol}: FAILED (${sell.error})`)
+      }
+    }
+  }
+  if (buyResults.length > 0) {
+    console.log(`[TRADE] Buys:`)
+    for (const buy of buyResults) {
+      if (buy.success) {
+        console.log(`[TRADE]   ✓ ${buy.symbol}: $${buy.notional ? buy.notional.toFixed(2) : '?'} purchased`)
+      } else if (buy.skipped) {
+        console.log(`[TRADE]   ⊘ ${buy.symbol}: SKIPPED (${buy.reason})`)
+      } else {
+        console.log(`[TRADE]   ✗ ${buy.symbol}: FAILED (${buy.error})`)
+      }
+    }
+  }
+  console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
 
   return {
     mode: 'live',

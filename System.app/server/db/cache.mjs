@@ -130,19 +130,16 @@ export function getCachedBacktest(botId, currentPayloadHash, currentDataDate) {
 
   // Validate cache - payload hash must match
   if (row.payload_hash !== currentPayloadHash) {
-    console.log(`[Cache] Miss for ${botId}: payload changed`)
     return null
   }
 
   // Validate cache - data date must match (new ticker data invalidates)
   if (row.data_date !== currentDataDate) {
-    console.log(`[Cache] Miss for ${botId}: data date changed (${row.data_date} -> ${currentDataDate})`)
     return null
   }
 
   try {
     const results = JSON.parse(row.results)
-    console.log(`[Cache] Hit for ${botId} (computed ${new Date(row.computed_at).toISOString()})`)
     return {
       ...results,
       cached: true,
@@ -175,8 +172,6 @@ export function setCachedBacktest(botId, payloadHash, dataDate, results) {
       computed_at = excluded.computed_at,
       updated_at = excluded.updated_at
   `).run(botId, payloadHash, dataDate, resultsJson, now, now, now)
-
-  console.log(`[Cache] Stored backtest for ${botId} (payload hash: ${payloadHash.substring(0, 8)}..., data: ${dataDate})`)
 }
 
 // ============================================
@@ -203,19 +198,16 @@ export function getCachedSanityReport(botId, currentPayloadHash, currentDataDate
 
   // Validate cache - payload hash must match
   if (row.payload_hash !== currentPayloadHash) {
-    console.log(`[Cache] Sanity report miss for ${botId}: payload changed`)
     return null
   }
 
   // Validate cache - data date must match (new ticker data invalidates)
   if (row.data_date !== currentDataDate) {
-    console.log(`[Cache] Sanity report miss for ${botId}: data date changed (${row.data_date} -> ${currentDataDate})`)
     return null
   }
 
   try {
     const report = JSON.parse(row.report)
-    console.log(`[Cache] Sanity report hit for ${botId} (computed ${new Date(row.computed_at).toISOString()})`)
     return {
       report,
       cached: true,
@@ -248,8 +240,6 @@ export function setCachedSanityReport(botId, payloadHash, dataDate, report) {
       computed_at = excluded.computed_at,
       updated_at = excluded.updated_at
   `).run(botId, payloadHash, dataDate, reportJson, now, now, now)
-
-  console.log(`[Cache] Stored sanity report for ${botId} (payload hash: ${payloadHash.substring(0, 8)}..., data: ${dataDate})`)
 }
 
 /**
@@ -259,9 +249,6 @@ export function invalidateBotCache(botId) {
   const result1 = cacheDb.prepare('DELETE FROM backtest_cache WHERE bot_id = ?').run(botId)
   const result2 = cacheDb.prepare('DELETE FROM sanity_report_cache WHERE bot_id = ?').run(botId)
   const total = result1.changes + result2.changes
-  if (total > 0) {
-    console.log(`[Cache] Invalidated cache for ${botId} (backtest: ${result1.changes}, sanity: ${result2.changes})`)
-  }
   return total > 0
 }
 
@@ -273,7 +260,6 @@ export function invalidateAllCache() {
   const result2 = cacheDb.prepare('DELETE FROM sanity_report_cache').run()
   const result3 = cacheDb.prepare('DELETE FROM benchmark_metrics_cache').run()
   const total = result1.changes + result2.changes + result3.changes
-  console.log(`[Cache] Invalidated all cache entries (backtest: ${result1.changes}, sanity: ${result2.changes}, benchmarks: ${result3.changes})`)
   return total
 }
 
@@ -307,7 +293,6 @@ export function setLastRefreshDate() {
       updated_at = excluded.updated_at
   `).run(today, now)
 
-  console.log(`[Cache] Set last refresh date to ${today}`)
   return today
 }
 
@@ -324,8 +309,6 @@ export function checkAndTriggerDailyRefresh() {
     // Already refreshed today
     return false
   }
-
-  console.log(`[Cache] Daily refresh triggered (last: ${lastRefresh || 'never'}, today: ${today})`)
 
   // Invalidate all cache entries
   invalidateAllCache()
@@ -387,13 +370,11 @@ export function getCachedBenchmarkMetrics(ticker, currentDataDate) {
 
   // Validate cache - data date must match (new ticker data invalidates)
   if (row.data_date !== currentDataDate) {
-    console.log(`[Cache] Benchmark miss for ${ticker}: data date changed (${row.data_date} -> ${currentDataDate})`)
     return null
   }
 
   try {
     const metrics = JSON.parse(row.metrics)
-    console.log(`[Cache] Benchmark hit for ${ticker} (computed ${new Date(row.computed_at).toISOString()})`)
     return {
       metrics,
       cached: true,
@@ -424,8 +405,6 @@ export function setCachedBenchmarkMetrics(ticker, dataDate, metrics) {
       computed_at = excluded.computed_at,
       updated_at = excluded.updated_at
   `).run(ticker, dataDate, metricsJson, now, now, now)
-
-  console.log(`[Cache] Stored benchmark metrics for ${ticker} (data: ${dataDate})`)
 }
 
 /**
@@ -456,7 +435,6 @@ export function getAllCachedBenchmarkMetrics(currentDataDate) {
  */
 export function invalidateAllBenchmarkCache() {
   const result = cacheDb.prepare('DELETE FROM benchmark_metrics_cache').run()
-  console.log(`[Cache] Invalidated all benchmark cache entries (${result.changes})`)
   return result.changes
 }
 

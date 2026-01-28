@@ -1648,7 +1648,6 @@ app.post('/api/candles/batch', async (req, res) => {
   }
 
   const fetchedCount = tickersToFetch.length
-  console.log(`[Batch] Fetched ${Object.keys(results).length} tickers (${cachedCount} cached, ${fetchedCount} queried) in ${Date.now() - startTime}ms`)
 
   res.json({
     success: true,

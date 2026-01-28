@@ -129,6 +129,7 @@ export function useBacktestRunner({ callChainsById, customIndicators = [] }: Use
           .filter((e) => e.weight > 0)
           .sort((x, y) => y.weight - x.weight),
       }))
+      console.log(`[BacktestRunner] Received ${serverResult.allocations?.length || 0} allocations from server, transformed to ${allocations.length}, first 3:`, allocations.slice(0, 3))
 
       // Transform metrics from server format to frontend format
       const tradingDays = serverResult.metrics?.tradingDays ?? 0
@@ -188,11 +189,16 @@ export function useBacktestRunner({ callChainsById, customIndicators = [] }: Use
           return changed / 2
         }
 
-        return points.slice(1).map((p, i) => {
+        const days = points.slice(1).map((p, i) => {
           const prevEquity = i > 0 ? points[i].value : 1
           const netReturn = prevEquity > 0 ? p.value / prevEquity - 1 : 0
           const turnover = calculateTurnover(allocations[i - 1], allocations[i])
           const cost = (backtestCostBps / 10000) * turnover
+
+          const holdings = allocations[i]?.entries || []
+          if (i < 3) {
+            console.log(`[BacktestRunner] Day ${i}: allocations[${i}] =`, allocations[i], ', holdings:', holdings)
+          }
 
           return {
             time: p.time,
@@ -203,10 +209,12 @@ export function useBacktestRunner({ callChainsById, customIndicators = [] }: Use
             netReturn,
             turnover,
             cost,
-            holdings: allocations[i]?.entries || [],
+            holdings,
             endNodes: [],
           }
         })
+        console.log(`[BacktestRunner] Created ${days.length} days, first day holdings:`, days[0]?.holdings, ', days with holdings:', days.filter(d => d.holdings.length > 0).length)
+        return days
       })()
 
       const monthly = computeMonthlyReturns(days)

@@ -169,12 +169,10 @@ export const preCacheAllETFs = async (
 ): Promise<void> => {
   // Prevent multiple simultaneous pre-cache operations
   if (preCacheInProgress) {
-    console.log('[OHLC Cache] Pre-cache already in progress, skipping...')
     return
   }
 
   preCacheInProgress = true
-  console.log('[OHLC Cache] Pre-caching all ETFs...')
 
   try {
     // Fetch only ETF tickers from server (not all 12,066 tickers!)
@@ -186,8 +184,6 @@ export const preCacheAllETFs = async (
 
     const data = (await response.json()) as { tickers: string[] }
     const etfTickers = (data.tickers || []).filter((t) => t !== 'Empty')
-
-    console.log(`[OHLC Cache] Found ${etfTickers.length} ETFs to pre-cache`)
 
     // Progressive loading with memory management
     // Fetch in smaller chunks with delays to prevent heap overflow
@@ -214,8 +210,6 @@ export const preCacheAllETFs = async (
       const results = await fetchOhlcSeriesBatch(chunk, limit)
       totalCached += results.size
 
-      console.log(`[OHLC Cache] Progress: ${totalCached}/${etfTickers.length} tickers cached`)
-
       if (onProgress) {
         onProgress(totalCached, etfTickers.length)
       }
@@ -225,8 +219,6 @@ export const preCacheAllETFs = async (
         await new Promise((resolve) => setTimeout(resolve, DELAY_MS))
       }
     }
-
-    console.log(`[OHLC Cache] Successfully pre-cached ${totalCached}/${etfTickers.length} ETFs`)
   } catch (err) {
     console.warn('[OHLC Cache] Failed to pre-cache ETFs:', err)
     // Don't throw - pre-caching is optional optimization
@@ -257,9 +249,6 @@ export const ensureTickersAvailable = async (tickers: string[], limit: number = 
 
   // Fetch missing tickers
   if (missing.length > 0) {
-    console.log(`[OHLC Cache] Fetching ${missing.length} missing tickers before backtest:`, missing)
     await fetchOhlcSeriesBatch(missing, limit)
-  } else {
-    console.log('[OHLC Cache] All required tickers already cached')
   }
 }

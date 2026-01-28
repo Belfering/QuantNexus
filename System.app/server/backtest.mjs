@@ -4158,9 +4158,6 @@ export async function runBacktest(payload, options = {}) {
       })
     )
 
-    console.log(`[Backtest] Loaded tickers:`)
-    loaded.forEach(l => console.log(`  - ${l.ticker}: ${l.bars.length} bars`))
-
     // Use indicator tickers for date intersection to get longer history for lookback calculations
     // Position tickers may have shorter history but get null values before their data starts
     db = buildPriceDb(loaded.filter(l => l.bars.length > 0), indicatorTickers)

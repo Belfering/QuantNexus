@@ -19,7 +19,7 @@ import {
   type UserId,
 } from '@/types'
 import { AdminDataPanel } from './AdminDataPanel'
-import { useAuthStore, useUIStore, useBotStore } from '@/stores'
+import { useAuthStore, useUIStore, useBotStore, useBacktestStore } from '@/stores'
 import { TickerSearchModal, type TickerMetadata } from '@/shared/components/TickerSearchModal'
 
 export interface AdminPanelProps {
@@ -40,6 +40,7 @@ export function AdminPanel({
   const { userId } = useAuthStore()
   const { adminTab, setAdminTab } = useUIStore()
   const { savedBots, setSavedBots } = useBotStore()
+  const { setAnalyzeBacktests, setAnalyzeTickerContrib } = useBacktestStore()
   // Helper to get auth token from either localStorage or sessionStorage
   const getAuthToken = () => localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
 
@@ -72,6 +73,7 @@ export function AdminPanel({
   const [prewarmRunning, setPrewarmRunning] = useState(false)
   const [tickerPreloadRunning, setTickerPreloadRunning] = useState(false)
   const [cleanupRunning, setCleanupRunning] = useState(false)
+  const [purgeLedgerRunning, setPurgeLedgerRunning] = useState(false)
 
   // Ticker Registry state
   const [registryStats, setRegistryStats] = useState<{ total: number; active: number; syncedToday: number; pending: number; lastSync: string | null } | null>(null)
@@ -3022,13 +3024,21 @@ export function AdminPanel({
                     size="sm"
                     disabled={cacheRefreshing}
                     onClick={async () => {
-                      if (!confirm('Clear all cached backtest results?')) return
+                      if (!confirm('Clear all cached backtest results? This will clear both backend cache and frontend state.')) return
                       setCacheRefreshing(true)
                       try {
+                        // Clear backend cache
                         await fetch(`${API_BASE}/admin/cache/invalidate`, {
                           method: 'POST',
                           headers: { Authorization: `Bearer ${getAuthToken()}` }
                         })
+
+                        // Clear frontend Zustand state for backtests and ticker contributions
+                        setAnalyzeBacktests({})
+                        setAnalyzeTickerContrib({})
+                        console.log('[Admin] Cleared frontend backtest state')
+
+                        // Refresh cache stats
                         const res = await fetch(`${API_BASE}/admin/cache/stats`, {
                           headers: { Authorization: `Bearer ${getAuthToken()}` }
                         })
@@ -3124,6 +3134,51 @@ export function AdminPanel({
                     }}
                   >
                     {cleanupRunning ? 'Cleaning...' : 'Remove Inactive Tickers from Database'}
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={purgeLedgerRunning}
+                    onClick={async () => {
+                      const mode = prompt('Enter mode to purge (paper or live):', 'paper')
+                      if (!mode || (mode !== 'paper' && mode !== 'live')) {
+                        alert('Invalid mode. Must be "paper" or "live".')
+                        return
+                      }
+
+                      const confirmed = confirm(
+                        `This will permanently delete all bot position ledger entries for ${mode.toUpperCase()} mode. ` +
+                        'All positions will appear as "Unallocated" after this operation. ' +
+                        'This action cannot be undone. Continue?'
+                      )
+                      if (!confirmed) return
+
+                      setPurgeLedgerRunning(true)
+                      try {
+                        const res = await fetch(`${API_BASE}/admin/trading/ledger/purge?mode=${mode}`, {
+                          method: 'DELETE',
+                          headers: {
+                            Authorization: `Bearer ${getAuthToken()}`,
+                          },
+                        })
+                        if (res.ok) {
+                          const data = await res.json()
+                          alert(`Successfully purged ${data.entriesDeleted} ledger entries in ${mode.toUpperCase()} mode. All positions will now show as unallocated.`)
+                        } else {
+                          const err = await res.json()
+                          alert(`Failed to purge ledger: ${err.error || 'Unknown error'}`)
+                        }
+                      } catch (err) {
+                        console.error('[Admin] Purge bot ledger error:', err)
+                        alert('Failed to purge bot position ledger')
+                      } finally {
+                        setPurgeLedgerRunning(false)
+                      }
+                    }}
+                  >
+                    {purgeLedgerRunning ? 'Purging...' : 'Purge Bot Position Ledger'}
                   </Button>
                 </div>
               </div>

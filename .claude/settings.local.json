@@ -129,7 +129,10 @@
       "Bash(wc:*)",
       "Bash(if [ -d \"C:\\\\Users\\\\Trader\\\\Desktop\\\\test\" ])",
       "Bash(then ls -la \"C:\\\\Users\\\\Trader\\\\Desktop\\\\test\")",
-      "Bash(else echo \"Directory does not exist\")"
+      "Bash(else echo \"Directory does not exist\")",
+      "Bash(cmd //c taskkill //PID 747448 //F)",
+      "Bash(cmd //c taskkill //PID 755852 //F)",
+      "Bash(copy:*)"
     ]
   }
 }
