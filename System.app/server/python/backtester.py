@@ -307,8 +307,10 @@ class Backtester:
         cost_bps = options.get('costBps', 5)
         split_config = options.get('splitConfig', {})
 
-        # Debug: Log split config
-        print(f'[DEBUG] splitConfig received: {json.dumps(split_config)}', file=sys.stderr, flush=True)
+        # Debug: Log split config and tree structure
+        print(f'[DEBUG] splitConfig: {json.dumps(split_config)}', file=sys.stderr, flush=True)
+        print(f'[DEBUG] Tree root kind: {tree.get("kind")}', file=sys.stderr, flush=True)
+        print(f'[DEBUG] Tree title: {tree.get("title")}', file=sys.stderr, flush=True)
 
         # Collect tickers from tree
         tickers = self.collect_tickers(tree)
@@ -455,10 +457,24 @@ class Backtester:
         early_termination_check_interval = 100  # Check every 100 bars
         min_bars_before_termination = 200  # Don't terminate before 200 bars (need min sample size)
 
+        # Track allocation statistics for debugging
+        allocation_stats = {'empty_count': 0, 'invested_count': 0, 'unique_allocations': set()}
+
         for i in range(len(dates)):
             # Evaluate tree to get target allocation
             allocation = self.evaluate_tree(tree, db, i, shared_indicator_cache)
             allocations.append(allocation)
+
+            # Track allocation statistics (only log on first few bars and summary)
+            if allocation and len(allocation) > 0:
+                allocation_stats['invested_count'] += 1
+                allocation_stats['unique_allocations'].add(tuple(sorted(allocation.items())))
+            else:
+                allocation_stats['empty_count'] += 1
+
+            # Log first 3 allocations to help debug
+            if i < 3:
+                print(f'[DEBUG] Bar {i}: allocation = {allocation}', file=sys.stderr, flush=True)
 
             # Calculate current portfolio value from holdings
             portfolio_value = 0.0
@@ -527,6 +543,13 @@ class Backtester:
                 if equity_value < 1000:  # Lost 90%+
                     print(f'[EarlyTerm] Terminating at bar {i}/{len(dates)} due to equity < $1000', file=sys.stderr)
                     break
+
+        # Log allocation summary to help debug empty equity curves
+        print(f'[DEBUG] Simulation complete: {len(dates)} bars, {allocation_stats["invested_count"]} invested, {allocation_stats["empty_count"]} empty, {len(allocation_stats["unique_allocations"])} unique allocations', file=sys.stderr, flush=True)
+        if len(equity_curve) > 0:
+            print(f'[DEBUG] Equity curve: start=${equity_curve[0][1]:.2f}, end=${equity_curve[-1][1]:.2f}, bars={len(equity_curve)}', file=sys.stderr, flush=True)
+        else:
+            print(f'[DEBUG] WARNING: Equity curve is EMPTY!', file=sys.stderr, flush=True)
 
         return equity_curve, allocations
 

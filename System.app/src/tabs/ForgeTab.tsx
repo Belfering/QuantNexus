@@ -1593,6 +1593,64 @@ export function ForgeTab({
         {/* Shaping Tab Content */}
         {forgeSubtab === 'Shaping' && (
           <>
+            {/* Shaping System Header */}
+            <div className="shrink-0 border-b border-border pb-3 mb-3">
+              <div className="flex items-center gap-3">
+                <div className="font-bold text-lg">{current?.title || 'Shaping System'}</div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const titleInput = prompt('Enter new system name:', current?.title || 'Shaping System')
+                    if (titleInput && titleInput.trim()) {
+                      treeStore.updateTitle(current.id, titleInput.trim())
+                    }
+                  }}
+                  title="Rename system (keyboard shortcut: CC)"
+                >
+                  CC
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const { setClipboard, setCopiedNodeId } = useBotStore.getState()
+                    if (current) {
+                      setClipboard(cloneNode(current))
+                      setCopiedNodeId(current.id)
+                    }
+                  }}
+                  title="Copy entire system to clipboard"
+                >
+                  Copy
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    // Close/reset to default empty tree
+                    if (confirm('Close this system and reset to empty?')) {
+                      const emptyTree = createNode('basic', 'Shaping System')
+                      treeStore.pushTree(emptyTree)
+                    }
+                  }}
+                  title="Close system and reset"
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    alert('Shaping System: This is where you configure In-Sample/Out-of-Sample splits and pass/fail criteria for backtests.')
+                  }}
+                  title="Help about Shaping tab"
+                >
+                  ?
+                </Button>
+              </div>
+            </div>
+
             {/* Top Zone - Chronological Settings Panel */}
             <div className="shrink-0 border-b border-border pb-4">
               <ChronologicalSettingsPanel
