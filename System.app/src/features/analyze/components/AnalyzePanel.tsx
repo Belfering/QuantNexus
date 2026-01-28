@@ -27,6 +27,7 @@ import type {
   TickerContributionState,
   UserId,
   BacktestMode,
+  PositionLedgerEntry,
 } from '@/types'
 import type { InvestmentWithPnl } from '@/features/dashboard/hooks/useDashboardInvestments'
 
@@ -95,6 +96,7 @@ export interface AnalyzePanelProps {
   // Dashboard integration (computed values)
   dashboardCash: number
   dashboardInvestmentsWithPnl: InvestmentWithPnl[]
+  positionLedger: PositionLedgerEntry[]
 
   // Action callbacks
   handleNexusBuy: (botId: string) => Promise<void>
@@ -127,6 +129,7 @@ export function AnalyzePanel(props: AnalyzePanelProps) {
     // Dashboard integration
     dashboardCash,
     dashboardInvestmentsWithPnl,
+    positionLedger,
 
     // Action callbacks
     handleNexusBuy,
@@ -275,6 +278,7 @@ export function AnalyzePanel(props: AnalyzePanelProps) {
             backtestBenchmark={backtestBenchmark}
             dashboardCash={dashboardCash}
             dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
+            positionLedger={positionLedger}
             nexusBuyBotId={nexusBuyBotId}
             setNexusBuyBotId={setNexusBuyBotId}
             nexusBuyAmount={nexusBuyAmount}
@@ -872,6 +876,7 @@ interface SystemsContentProps {
   backtestBenchmark: string
   dashboardCash: number
   dashboardInvestmentsWithPnl: InvestmentWithPnl[]
+  positionLedger: PositionLedgerEntry[]
   nexusBuyBotId: string | null
   setNexusBuyBotId: (id: string | null) => void
   nexusBuyAmount: string
@@ -913,6 +918,7 @@ function SystemsContent(props: SystemsContentProps) {
     backtestBenchmark,
     dashboardCash,
     dashboardInvestmentsWithPnl,
+    positionLedger,
     nexusBuyBotId,
     setNexusBuyBotId,
     nexusBuyAmount,
@@ -963,6 +969,7 @@ function SystemsContent(props: SystemsContentProps) {
             backtestBenchmark={backtestBenchmark}
             dashboardCash={dashboardCash}
             dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
+            positionLedger={positionLedger}
             nexusBuyBotId={nexusBuyBotId}
             setNexusBuyBotId={setNexusBuyBotId}
             nexusBuyAmount={nexusBuyAmount}
@@ -1010,6 +1017,7 @@ interface BotCardProps {
   backtestBenchmark: string
   dashboardCash: number
   dashboardInvestmentsWithPnl: InvestmentWithPnl[]
+  positionLedger: PositionLedgerEntry[]
   nexusBuyBotId: string | null
   setNexusBuyBotId: (id: string | null) => void
   nexusBuyAmount: string
@@ -1049,6 +1057,7 @@ function BotCard(props: BotCardProps) {
     backtestBenchmark,
     dashboardCash,
     dashboardInvestmentsWithPnl,
+    positionLedger,
     nexusBuyBotId,
     setNexusBuyBotId,
     nexusBuyAmount,
@@ -1197,6 +1206,7 @@ function BotCard(props: BotCardProps) {
           backtestBenchmark={backtestBenchmark}
           dashboardCash={dashboardCash}
           dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
+          positionLedger={positionLedger}
           nexusBuyBotId={nexusBuyBotId}
           setNexusBuyBotId={setNexusBuyBotId}
           nexusBuyAmount={nexusBuyAmount}
@@ -1235,6 +1245,7 @@ interface BotCardContentProps {
   backtestBenchmark: string
   dashboardCash: number
   dashboardInvestmentsWithPnl: InvestmentWithPnl[]
+  positionLedger: PositionLedgerEntry[]
   nexusBuyBotId: string | null
   setNexusBuyBotId: (id: string | null) => void
   nexusBuyAmount: string
@@ -1266,6 +1277,7 @@ function BotCardContent(props: BotCardContentProps) {
     backtestBenchmark,
     dashboardCash,
     dashboardInvestmentsWithPnl,
+    positionLedger,
     nexusBuyBotId,
     setNexusBuyBotId,
     nexusBuyAmount,
@@ -1355,6 +1367,7 @@ function BotCardContent(props: BotCardContentProps) {
           backtestBenchmark={backtestBenchmark}
           dashboardCash={dashboardCash}
           dashboardInvestmentsWithPnl={dashboardInvestmentsWithPnl}
+          positionLedger={positionLedger}
           nexusBuyBotId={nexusBuyBotId}
           setNexusBuyBotId={setNexusBuyBotId}
           nexusBuyAmount={nexusBuyAmount}

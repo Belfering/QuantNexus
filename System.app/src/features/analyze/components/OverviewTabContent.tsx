@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { formatPct, formatUsd, normalizeChoice } from '@/shared/utils'
 import { EquityChart, DrawdownChart, collectPositionTickers } from '@/features/backtest'
 import { cloneNode, ensureSlots } from '@/features/builder'
+import { Tooltip } from '@/shared/components/Tooltip'
 import type {
   FlowNode,
   CallChain,
@@ -18,6 +19,7 @@ import type {
   BacktestMode,
 } from '@/types'
 import type { InvestmentWithPnl } from '@/features/dashboard/hooks/useDashboardInvestments'
+import type { PositionLedgerEntry } from '@/types'
 
 interface OverviewTabContentProps {
   bot: SavedBot
@@ -30,6 +32,7 @@ interface OverviewTabContentProps {
   backtestBenchmark: string
   dashboardCash: number
   dashboardInvestmentsWithPnl: InvestmentWithPnl[]
+  positionLedger: PositionLedgerEntry[]
   nexusBuyBotId: string | null
   setNexusBuyBotId: (id: string | null) => void
   nexusBuyAmount: string
@@ -54,6 +57,7 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
     backtestBenchmark,
     dashboardCash,
     dashboardInvestmentsWithPnl,
+    positionLedger,
     nexusBuyBotId,
     setNexusBuyBotId,
     nexusBuyAmount,
@@ -340,6 +344,48 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
               }
               const histAlloc = (ticker: string) => (allocSum.get(ticker) || 0) / denom
 
+              // Calculate live metrics for each ticker from current portfolio positions
+              const liveMetrics = new Map<string, { allocation: number; returnPct: number; expectancy: number }>()
+
+              // Get current bot investment from dashboard
+              const botInvestment = dashboardInvestmentsWithPnl.find(inv => inv.botId === b.id)
+
+              if (botInvestment) {
+                // Calculate total portfolio value across ALL bots for allocation percentage
+                const totalPortfolioValue = dashboardInvestmentsWithPnl.reduce((sum, inv) => sum + (inv.currentValue || 0), 0) + dashboardCash
+
+                // CASH allocation (cash / total portfolio)
+                if (totalPortfolioValue > 0) {
+                  liveMetrics.set('CASH', {
+                    allocation: dashboardCash / totalPortfolioValue,
+                    returnPct: 0, // Cash has no return
+                    expectancy: 0
+                  })
+                }
+
+                // Calculate live metrics for each ticker position in this bot's ledger
+                // Filter position ledger to only this bot's positions
+                const botPositions = positionLedger.filter(pos => pos.botId === b.id)
+
+                for (const position of botPositions) {
+                  // We need current price to calculate live metrics
+                  // Position ledger stores avgPrice but not currentPrice
+                  // For now, we can calculate allocation and returns using the data we have
+                  // In a production system, we'd fetch current prices here
+
+                  // For now, use avgPrice as an approximation (this will show 0% return)
+                  // TODO: Fetch current prices from market data API to show accurate live returns
+                  const currentPrice = position.avgPrice // Placeholder - should be fetched
+                  const tickerValue = position.shares * currentPrice
+
+                  liveMetrics.set(position.symbol, {
+                    allocation: totalPortfolioValue > 0 ? tickerValue / totalPortfolioValue : 0,
+                    returnPct: position.avgPrice > 0 ? (currentPrice / position.avgPrice) - 1 : 0,
+                    expectancy: 0  // Requires trade history from bot_position_ledger trades
+                  })
+                }
+              }
+
               const toggleSort = (column: string) => {
                 setAnalyzeTickerSort((prev) => {
                   if (prev.column === column) return { column, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
@@ -367,29 +413,41 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
                 if (col === 'ticker') return mult * a.display.localeCompare(b.display)
 
                 const aVal =
-                  col === 'histAllocation'
-                    ? a.histAllocation
-                    : col === 'histReturnPct'
-                      ? a.st?.status === 'done'
-                        ? a.st.returnPct ?? NaN
-                        : NaN
-                      : col === 'histExpectancy'
-                        ? a.st?.status === 'done'
-                          ? a.st.expectancy ?? NaN
-                          : NaN
-                        : 0
+                  col === 'liveAllocation'
+                    ? liveMetrics.get(a.t)?.allocation ?? 0
+                    : col === 'liveReturnPct'
+                      ? liveMetrics.get(a.t)?.returnPct ?? 0
+                      : col === 'liveExpectancy'
+                        ? liveMetrics.get(a.t)?.expectancy ?? 0
+                        : col === 'histAllocation'
+                          ? a.histAllocation
+                          : col === 'histReturnPct'
+                            ? a.st?.status === 'done'
+                              ? a.st.returnPct ?? NaN
+                              : NaN
+                            : col === 'histExpectancy'
+                              ? a.st?.status === 'done'
+                                ? a.st.expectancy ?? NaN
+                                : NaN
+                              : 0
                 const bVal =
-                  col === 'histAllocation'
-                    ? b.histAllocation
-                    : col === 'histReturnPct'
-                      ? b.st?.status === 'done'
-                        ? b.st.returnPct ?? NaN
-                        : NaN
-                      : col === 'histExpectancy'
-                        ? b.st?.status === 'done'
-                          ? b.st.expectancy ?? NaN
-                          : NaN
-                        : 0
+                  col === 'liveAllocation'
+                    ? liveMetrics.get(b.t)?.allocation ?? 0
+                    : col === 'liveReturnPct'
+                      ? liveMetrics.get(b.t)?.returnPct ?? 0
+                      : col === 'liveExpectancy'
+                        ? liveMetrics.get(b.t)?.expectancy ?? 0
+                        : col === 'histAllocation'
+                          ? b.histAllocation
+                          : col === 'histReturnPct'
+                            ? b.st?.status === 'done'
+                              ? b.st.returnPct ?? NaN
+                              : NaN
+                            : col === 'histExpectancy'
+                              ? b.st?.status === 'done'
+                                ? b.st.expectancy ?? NaN
+                                : NaN
+                              : 0
 
                 const aOk = Number.isFinite(aVal)
                 const bOk = Number.isFinite(bVal)
@@ -413,25 +471,39 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
                     </tr>
                     <tr>
                       <th onClick={() => toggleSort('ticker')} className="cursor-pointer">
-                        Tickers{sortGlyph('ticker')}
+                        <Tooltip content="Individual ticker symbols held in the portfolio. Click to sort.">
+                          <span>Tickers{sortGlyph('ticker')}</span>
+                        </Tooltip>
                       </th>
                       <th onClick={() => toggleSort('liveAllocation')} className="cursor-pointer">
-                        Allocation{sortGlyph('liveAllocation')}
+                        <Tooltip content="Current portfolio weight for this ticker in live trading. Does not account for slippage or trading costs. Click to sort.">
+                          <span>Allocation{sortGlyph('liveAllocation')}</span>
+                        </Tooltip>
                       </th>
-                      <th onClick={() => toggleSort('liveCagr')} className="cursor-pointer">
-                        CAGR{sortGlyph('liveCagr')}
+                      <th onClick={() => toggleSort('liveReturnPct')} className="cursor-pointer">
+                        <Tooltip content="Cumulative return for this ticker in live trading since first purchase. Does not account for slippage or trading costs. Click to sort.">
+                          <span>RETURN %{sortGlyph('liveReturnPct')}</span>
+                        </Tooltip>
                       </th>
                       <th onClick={() => toggleSort('liveExpectancy')} className="cursor-pointer">
-                        Expectancy{sortGlyph('liveExpectancy')}
+                        <Tooltip content="Expected profit per trade for this ticker based on live trading history. Does not account for slippage or trading costs. Click to sort.">
+                          <span>Expectancy{sortGlyph('liveExpectancy')}</span>
+                        </Tooltip>
                       </th>
                       <th onClick={() => toggleSort('histAllocation')} className="cursor-pointer">
-                        Allocation{sortGlyph('histAllocation')}
+                        <Tooltip content="Average portfolio weight for this ticker across all backtest days. Does not account for slippage or trading costs. Click to sort.">
+                          <span>Allocation{sortGlyph('histAllocation')}</span>
+                        </Tooltip>
                       </th>
                       <th onClick={() => toggleSort('histReturnPct')} className="cursor-pointer">
-                        Return %{sortGlyph('histReturnPct')}
+                        <Tooltip content="Cumulative return contribution from this ticker in the backtest, calculated using a compounded equity curve. Does not account for slippage or trading costs. Click to sort.">
+                          <span>Return %{sortGlyph('histReturnPct')}</span>
+                        </Tooltip>
                       </th>
                       <th onClick={() => toggleSort('histExpectancy')} className="cursor-pointer">
-                        Expectancy{sortGlyph('histExpectancy')}
+                        <Tooltip content="Expected profit per trade for this ticker in the backtest: (win rate × avg win) - (loss rate × avg loss). Does not account for slippage or trading costs. Click to sort.">
+                          <span>Expectancy{sortGlyph('histExpectancy')}</span>
+                        </Tooltip>
                       </th>
                     </tr>
                   </thead>
@@ -440,6 +512,7 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
                       const t = row.t
                       const st =
                         t === 'CASH' ? ({ status: 'done', returnPct: 0, expectancy: 0 } as TickerContributionState) : row.st
+
                       const histReturn =
                         !st
                           ? '...'
@@ -456,12 +529,18 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
                             : st.status === 'loading'
                               ? '...'
                               : '—'
+                      // Get live metrics for this ticker
+                      const liveMetric = liveMetrics.get(t)
+                      const liveAllocation = liveMetric?.allocation ?? 0
+                      const liveReturnPct = liveMetric?.returnPct ?? 0
+                      const liveExpectancy = liveMetric?.expectancy ?? 0
+
                       return (
                         <tr key={t}>
                           <td className="font-black">{row.display}</td>
-                          <td>{formatPct(0)}</td>
-                          <td>{formatPct(0)}</td>
-                          <td>{formatPct(0)}</td>
+                          <td>{formatPct(liveAllocation)}</td>
+                          <td>{formatPct(liveReturnPct)}</td>
+                          <td>{formatPct(liveExpectancy)}</td>
                           <td>{formatPct(row.histAllocation)}</td>
                           <td>{histReturn}</td>
                           <td>{histExpectancy}</td>

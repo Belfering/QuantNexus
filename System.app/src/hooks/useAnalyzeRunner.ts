@@ -117,7 +117,7 @@ export function useAnalyzeRunner({
             }
             equityCurve?: { date: string; equity: number }[]
             benchmarkCurve?: { date: string; equity: number }[]
-            allocations?: { date: string; alloc: Record<string, number> }[]
+            allocations?: { date: string; entries: { ticker: string; weight: number }[] }[]
             cached?: boolean
             compression?: {
               originalNodes: number
@@ -133,6 +133,15 @@ export function useAnalyzeRunner({
           } else if (compression) {
             console.log(`[Backtest] Tree compression: ${compression.originalNodes} → ${compression.compressedNodes} nodes (${compression.nodesRemoved} removed, ${compression.gatesMerged} gates merged) in ${compression.compressionTimeMs}ms`)
           }
+
+          // Debug: Log what allocations were received from server
+          console.log(`[Backtest] Server response for ${bot.name}:`, {
+            allocations: serverAllocations ? `${serverAllocations.length} dates` : 'undefined',
+            firstAllocation: serverAllocations?.[0],
+            firstAllocationKeys: serverAllocations?.[0] ? Object.keys(serverAllocations[0]) : [],
+            firstAllocationAlloc: serverAllocations?.[0]?.alloc,
+            cached: wasCached
+          })
 
           // Convert equity curve from server format to frontend format
           const safeParseDate = (dateStr: string | undefined): number => {
@@ -167,12 +176,18 @@ export function useAnalyzeRunner({
           const years = metrics.tradingDays / 252
 
           // Convert server allocations to frontend format
+          // Server sends { date, entries: [{ ticker, weight }] } directly
           const allocations: BacktestAllocationRow[] = (serverAllocations || []).map((a) => ({
             date: a.date,
-            entries: Object.entries(a.alloc || {})
-              .filter(([, w]) => w > 0)
-              .map(([ticker, weight]) => ({ ticker, weight })),
+            entries: a.entries || [],
           }))
+
+          console.log(`[Backtest] Transformed allocations for ${bot.name}:`, {
+            total: allocations.length,
+            firstAllocation: allocations[0],
+            firstEntries: allocations[0]?.entries,
+            daysWithEntries: allocations.filter(a => a.entries.length > 0).length
+          })
 
           // Build days array from allocations for ticker stats table
           const days: BacktestDayRow[] = allocations.map((a, i) => ({
@@ -186,6 +201,13 @@ export function useAnalyzeRunner({
             cost: 0,
             holdings: a.entries.map((e) => ({ ticker: e.ticker, weight: e.weight })),
           }))
+
+          console.log(`[Backtest] Built days array for ${bot.name}:`, {
+            total: days.length,
+            firstDay: days[0],
+            firstDayHoldings: days[0]?.holdings,
+            daysWithHoldings: days.filter(d => d.holdings.length > 0).length
+          })
 
           const result: BacktestResult = {
             points,
@@ -521,35 +543,57 @@ export function useAnalyzeRunner({
    */
   const runAnalyzeTickerContribution = useCallback(
     async (key: string, ticker: string, botResult: BacktestResult) => {
+      console.log(`[TickerCalc] Starting calculation for ${ticker}, key: ${key}`)
       setAnalyzeTickerContrib((prev) => {
-        if (prev[key]?.status === 'loading') return prev
+        if (prev[key]?.status === 'loading') {
+          console.log(`[TickerCalc] ${ticker}: already loading, skipping`)
+          return prev
+        }
+        console.log(`[TickerCalc] ${ticker}: setting status to loading`)
         return { ...prev, [key]: { status: 'loading' } }
       })
       try {
+        console.log(`[TickerCalc] ${ticker}: fetching OHLC data`)
         const bars = await fetchOhlcSeries(ticker, 20000)
+        console.log(`[TickerCalc] ${ticker}: fetched ${bars.length} bars`)
         const barMap = new Map<number, { open: number; close: number; adjClose: number }>()
         for (const b of bars) barMap.set(Number(b.time), { open: Number(b.open), close: Number(b.close), adjClose: Number(b.adjClose) })
 
         const days = botResult.days || []
         const points = botResult.points || []
-        let cumulative = 0
+        const finalEquity = days.length > 0 ? days[days.length - 1]?.equity : undefined
+        // Build equity curve for this ticker's contribution
+        let tickerEquity = 1.0
         let winCount = 0
         let lossCount = 0
         let sumWins = 0
         let sumLossAbs = 0
+        let validDays = 0
+        let skippedNoWeight = 0
+        let skippedNoPrices = 0
 
-        for (let i = 0; i < days.length; i++) {
+        // Start from day 1 since we need to look at previous day's holdings
+        for (let i = 1; i < days.length; i++) {
           const day = days[i]
-          const prevBotEquity = i === 0 ? 1 : days[i - 1]?.equity ?? 1
-          const weight = day.holdings?.find((h) => normalizeChoice(h.ticker) === normalizeChoice(ticker))?.weight ?? 0
+          const prevDay = days[i - 1]
+          if (!prevDay) continue
+
+          // Check if we held this ticker on the PREVIOUS day
+          const weight = prevDay.holdings?.find((h) => normalizeChoice(h.ticker) === normalizeChoice(ticker))?.weight ?? 0
+
           if (!(Number.isFinite(weight) && weight > 0)) {
+            skippedNoWeight++
             continue
           }
 
+          validDays++
+
+          // Get price bars
+          const prevTime = prevDay.time
           const endTime = day.time
-          const prevTime = points[i]?.time ?? endTime
           const startBar = barMap.get(Number(prevTime))
           const endBar = barMap.get(Number(endTime))
+
           const entry =
             backtestMode === 'OC'
               ? endBar?.open
@@ -571,42 +615,42 @@ export function useAnalyzeRunner({
                     ? endBar?.open
                     : endBar?.close
           if (entry == null || exit == null || !(entry > 0) || !(exit > 0)) {
+            skippedNoPrices++
             continue
           }
 
+          // Calculate daily return for this ticker
           const r = exit / entry - 1
-          const investedWeight = (day.holdings || []).reduce((sum, h) => {
-            const t = normalizeChoice(h.ticker)
-            if (t === 'CASH' || t === 'Empty') return sum
-            const w = Number(h.weight || 0)
-            return sum + (Number.isFinite(w) ? w : 0)
-          }, 0)
-          const costShare = investedWeight > 0 ? (day.cost || 0) * (weight / investedWeight) : 0
-          const contribPct = weight * r - costShare
 
-          if (contribPct > 0) {
+          // Weighted return for this day
+          const dailyWeightedReturn = weight * r
+
+          // Compound into equity curve
+          tickerEquity *= (1 + dailyWeightedReturn)
+
+          // Track win/loss for expectancy
+          if (dailyWeightedReturn > 0) {
             winCount += 1
-            sumWins += contribPct
-          } else if (contribPct < 0) {
+            sumWins += dailyWeightedReturn
+          } else if (dailyWeightedReturn < 0) {
             lossCount += 1
-            sumLossAbs += Math.abs(contribPct)
+            sumLossAbs += Math.abs(dailyWeightedReturn)
           }
-
-          const dailyDollar = prevBotEquity * contribPct
-          if (Number.isFinite(dailyDollar)) cumulative += dailyDollar
         }
 
-        const botTotal = days.length ? (days[days.length - 1].equity ?? 1) - 1 : 0
-        const returnPct = botTotal !== 0 ? cumulative / botTotal : 0
+        // Final contribution is equity curve result minus starting value
+        const returnPct = tickerEquity - 1
         const totalCount = winCount + lossCount
         const winRate = totalCount > 0 ? winCount / totalCount : 0
         const lossRate = totalCount > 0 ? lossCount / totalCount : 0
         const avgWin = winCount > 0 ? sumWins / winCount : 0
         const avgLoss = lossCount > 0 ? sumLossAbs / lossCount : 0
         const expectancy = winRate * avgWin - lossRate * avgLoss
+        console.log(`[TickerCalc] ${ticker}: DONE - totalDays=${days.length}, validDays=${validDays}, skippedNoWeight=${skippedNoWeight}, skippedNoPrices=${skippedNoPrices}, tickerEquity=${tickerEquity.toFixed(4)}, returnPct=${returnPct.toFixed(4)}, expectancy=${expectancy.toFixed(4)}`)
         setAnalyzeTickerContrib((prev) => ({ ...prev, [key]: { status: 'done', returnPct, expectancy } }))
       } catch (err) {
         const message = String((err as Error)?.message || err)
+        console.error(`[TickerCalc] ${ticker}: ERROR -`, message, err)
         setAnalyzeTickerContrib((prev) => ({ ...prev, [key]: { status: 'error', error: message } }))
       }
     },

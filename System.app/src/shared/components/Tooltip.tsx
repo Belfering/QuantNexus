@@ -5,23 +5,25 @@ import { cn } from '@/lib/utils'
 interface TooltipProps {
   content: ReactNode
   children: ReactNode
-  position?: 'top' | 'bottom' | 'left' | 'right'
+  position?: 'top' | 'bottom' | 'left' | 'right' | 'auto'
   delay?: number
   className?: string
 }
 
 /**
  * A simple tooltip component that shows on hover.
+ * Automatically positions to the left/right based on screen position to prevent cutoff.
  */
 export function Tooltip({
   content,
   children,
-  position = 'top',
+  position = 'auto',
   delay = 200,
   className,
 }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false)
   const [coords, setCoords] = useState({ x: 0, y: 0 })
+  const [computedPosition, setComputedPosition] = useState<'left' | 'right'>('right')
   const triggerRef = useRef<HTMLDivElement>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -31,11 +33,21 @@ export function Tooltip({
     const rect = triggerRef.current.getBoundingClientRect()
     const scrollX = window.scrollX
     const scrollY = window.scrollY
+    const screenWidth = window.innerWidth
 
     let x = rect.left + scrollX + rect.width / 2
     let y = rect.top + scrollY
 
-    switch (position) {
+    // Auto position: if cursor is on right half of screen, show tooltip on left side
+    // Otherwise show on right side to prevent cutoff
+    let actualPosition = position
+    if (position === 'auto') {
+      const cursorX = rect.left + rect.width / 2
+      actualPosition = cursorX > screenWidth / 2 ? 'left' : 'right'
+      setComputedPosition(actualPosition)
+    }
+
+    switch (actualPosition) {
       case 'top':
         y = rect.top + scrollY - 8
         break
@@ -83,6 +95,7 @@ export function Tooltip({
     bottom: '-translate-x-1/2',
     left: '-translate-x-full -translate-y-1/2',
     right: '-translate-y-1/2',
+    auto: position === 'auto' && computedPosition === 'left' ? '-translate-x-full -translate-y-1/2' : '-translate-y-1/2',
   }
 
   return (
@@ -99,8 +112,9 @@ export function Tooltip({
         createPortal(
           <div
             className={cn(
-              'fixed z-[100] px-2 py-1 text-xs text-white bg-gray-900 dark:bg-gray-700 rounded shadow-lg pointer-events-none',
+              'fixed z-[100] px-3 py-2 text-xs text-white bg-gray-900 dark:bg-gray-700 rounded shadow-lg pointer-events-none',
               'animate-in fade-in-0 zoom-in-95 duration-100',
+              'max-w-xs whitespace-normal break-words',
               positionClasses[position],
               className
             )}
