@@ -452,6 +452,145 @@ function getDecryptedCredentials(userId, credentialType = 'paper') {
 }
 
 /**
+ * Show complete portfolio summary before trading (manual execution)
+ * Includes all positions, breakdown by system, and pending trades
+ */
+async function showPortfolioSummaryManual(userId, credentialType, credentials, client, account) {
+  try {
+    const alpacaPositions = await getPositions(client)
+
+    // Get all bot investments
+    const investmentRows = sqlite.prepare(`
+      SELECT i.bot_id, i.investment_amount, b.name as bot_name
+      FROM user_bot_investments i
+      LEFT JOIN bots b ON i.bot_id = b.id
+      WHERE i.user_id = ? AND i.credential_type = ?
+    `).all(userId, credentialType)
+
+    // Get all bot ledger positions
+    const allLedgerPositions = sqlite.prepare(`
+      SELECT bot_id, symbol, shares, avg_price
+      FROM bot_position_ledger
+      WHERE user_id = ? AND credential_type = ? AND shares > 0.0001
+    `).all(userId, credentialType)
+
+    // Get pending manual sells (unallocated sells)
+    const pendingSells = sqlite.prepare(`
+      SELECT symbol, qty
+      FROM pending_manual_sells
+      WHERE user_id = ? AND credential_type = ? AND status = 'pending'
+    `).all(userId, credentialType)
+
+    // Calculate totals
+    const totalEquity = account.equity
+    const totalCash = account.cash
+    const totalPositionValue = alpacaPositions.reduce((sum, p) => sum + parseFloat(p.marketValue), 0)
+
+    // Build position attribution map
+    const ledgerBySymbol = new Map()
+    const positionsByBot = new Map()
+
+    for (const pos of allLedgerPositions) {
+      if (!ledgerBySymbol.has(pos.symbol)) {
+        ledgerBySymbol.set(pos.symbol, [])
+      }
+      ledgerBySymbol.get(pos.symbol).push(pos)
+
+      if (!positionsByBot.has(pos.bot_id)) {
+        positionsByBot.set(pos.bot_id, [])
+      }
+      positionsByBot.get(pos.bot_id).push(pos)
+    }
+
+    // Identify unallocated positions
+    const unallocatedPositions = []
+    for (const alpacaPos of alpacaPositions) {
+      const ledgerEntries = ledgerBySymbol.get(alpacaPos.symbol) || []
+      const totalLedgerShares = ledgerEntries.reduce((sum, e) => sum + e.shares, 0)
+      const alpacaQty = parseFloat(alpacaPos.qty)
+      const unallocatedQty = alpacaQty - totalLedgerShares
+
+      if (unallocatedQty > 0.0001) {
+        const unallocatedValue = unallocatedQty * parseFloat(alpacaPos.currentPrice)
+        unallocatedPositions.push({
+          symbol: alpacaPos.symbol,
+          qty: unallocatedQty,
+          price: parseFloat(alpacaPos.currentPrice),
+          value: unallocatedValue,
+        })
+      }
+    }
+
+    const unallocatedValue = unallocatedPositions.reduce((sum, p) => sum + p.value, 0)
+
+    // Print portfolio summary
+    console.log(`\n[PORTFOLIO] ════════════════════════════════════════════════════════════════`)
+    console.log(`[PORTFOLIO] COMPLETE PORTFOLIO STATE (${credentialType.toUpperCase()})`)
+    console.log(`[PORTFOLIO] User: ${userId}`)
+    console.log(`[PORTFOLIO] ════════════════════════════════════════════════════════════════`)
+    console.log(`[PORTFOLIO] ACCOUNT OVERVIEW:`)
+    console.log(`[PORTFOLIO]   Total Equity: $${totalEquity.toFixed(2)}`)
+    console.log(`[PORTFOLIO]   Cash: $${totalCash.toFixed(2)}`)
+    console.log(`[PORTFOLIO]   Total Position Value: $${totalPositionValue.toFixed(2)}`)
+    console.log(`[PORTFOLIO] ────────────────────────────────────────────────────────────────`)
+    console.log(`[PORTFOLIO] BREAKDOWN BY SYSTEM:`)
+
+    // Unallocated system
+    console.log(`[PORTFOLIO]`)
+    console.log(`[PORTFOLIO]   ┌─ UNALLOCATED POSITIONS`)
+    console.log(`[PORTFOLIO]   │  Total Value: $${unallocatedValue.toFixed(2)}`)
+    console.log(`[PORTFOLIO]   │  Position Count: ${unallocatedPositions.length}`)
+    console.log(`[PORTFOLIO]   │  Pending Sells: ${pendingSells.length}`)
+    if (unallocatedPositions.length > 0) {
+      console.log(`[PORTFOLIO]   │  Positions:`)
+      for (const pos of unallocatedPositions) {
+        const hasPendingSell = pendingSells.some(s => s.symbol === pos.symbol)
+        const sellIndicator = hasPendingSell ? ' [SELL SCHEDULED]' : ''
+        console.log(`[PORTFOLIO]   │    • ${pos.symbol}: ${pos.qty.toFixed(4)} shares @ $${pos.price.toFixed(2)} = $${pos.value.toFixed(2)}${sellIndicator}`)
+      }
+    }
+    console.log(`[PORTFOLIO]   │  Projected After Sells: $0.00 (all positions scheduled to sell)`)
+    console.log(`[PORTFOLIO]   └──────────────────────────────────────`)
+
+    // Bot systems
+    for (const inv of investmentRows) {
+      const botPositions = positionsByBot.get(inv.bot_id) || []
+      let botValue = 0
+
+      // Calculate current market value
+      for (const pos of botPositions) {
+        const alpacaPos = alpacaPositions.find(p => p.symbol === pos.symbol)
+        const currentPrice = alpacaPos ? parseFloat(alpacaPos.currentPrice) : pos.avg_price
+        botValue += pos.shares * currentPrice
+      }
+
+      console.log(`[PORTFOLIO]`)
+      console.log(`[PORTFOLIO]   ┌─ ${inv.bot_name || inv.bot_id}`)
+      console.log(`[PORTFOLIO]   │  Investment Amount: $${inv.investment_amount.toFixed(2)}`)
+      console.log(`[PORTFOLIO]   │  Current Value: $${botValue.toFixed(2)}`)
+      console.log(`[PORTFOLIO]   │  P&L: $${(botValue - inv.investment_amount).toFixed(2)} (${((botValue / inv.investment_amount - 1) * 100).toFixed(2)}%)`)
+      console.log(`[PORTFOLIO]   │  Position Count: ${botPositions.length}`)
+      if (botPositions.length > 0) {
+        console.log(`[PORTFOLIO]   │  Positions:`)
+        for (const pos of botPositions) {
+          const alpacaPos = alpacaPositions.find(p => p.symbol === pos.symbol)
+          const currentPrice = alpacaPos ? parseFloat(alpacaPos.currentPrice) : pos.avg_price
+          const posValue = pos.shares * currentPrice
+          console.log(`[PORTFOLIO]   │    • ${pos.symbol}: ${pos.shares.toFixed(4)} shares @ $${currentPrice.toFixed(2)} = $${posValue.toFixed(2)}`)
+        }
+      }
+      console.log(`[PORTFOLIO]   │  Projected After Rebalance: $${inv.investment_amount.toFixed(2)} (will sell current and buy new positions)`)
+      console.log(`[PORTFOLIO]   └──────────────────────────────────────`)
+    }
+
+    console.log(`[PORTFOLIO] ════════════════════════════════════════════════════════════════\n`)
+
+  } catch (error) {
+    console.error(`[PORTFOLIO] Error generating portfolio summary: ${error.message}`)
+  }
+}
+
+/**
  * POST /api/admin/broker/test
  * Test broker connection
  * Body: { credentialType: 'paper' | 'live' }
@@ -2315,6 +2454,9 @@ router.post('/trading/execute', async (req, res) => {
       }
     }
     const adjustedEquity = Math.max(0, totalEquity - reservedCash)
+
+    // Show portfolio summary BEFORE executing trades
+    await showPortfolioSummaryManual(userId, credentialType, credentials, client, account)
 
     // Compute final allocations from all bot backtests
     const allocations = await computeFinalAllocations(
