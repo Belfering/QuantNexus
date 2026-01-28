@@ -424,6 +424,7 @@ export function initializeDatabase() {
       qty REAL NOT NULL,
       status TEXT DEFAULT 'pending',
       created_at INTEGER,
+      updated_at INTEGER DEFAULT (unixepoch()),
       executed_at INTEGER,
       error_message TEXT
     );

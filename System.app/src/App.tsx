@@ -1219,44 +1219,25 @@ function App() {
   }, [dashboardPortfolio.investments, savedBots, allNexusBots, analyzeBacktests, runAnalyzeBacktest])
 
   useEffect(() => {
-    console.log('[TickerContrib] Running ticker contribution effect, savedBots:', savedBots.length)
     for (const bot of savedBots) {
       // Run ticker contribution analysis for all bots with completed backtests
       // (removed collapsed check - users should see metrics even when cards are collapsed)
       const state = analyzeBacktests[bot.id]
-      console.log(`[TickerContrib] Bot ${bot.name} (${bot.id}):`, state?.status)
       if (!state || state.status !== 'done') continue
       const botResult = state.result
       if (!botResult) {
-        console.log(`[TickerContrib] Bot ${bot.name}: no result`)
         continue
-      }
-      console.log(`[TickerContrib] Bot ${bot.name}: backtest metrics - CAGR=${botResult.metrics.cagr}, Sharpe=${botResult.metrics.sharpe}, days=${botResult.days?.length}, finalEquity=${botResult.days?.[botResult.days.length - 1]?.equity}`)
-      if (botResult.days && botResult.days.length > 0) {
-        const firstDay = botResult.days[0]
-        console.log(`[TickerContrib] Bot ${bot.name}: First day - time=${firstDay.time}, equity=${firstDay.equity}, holdings:`, firstDay.holdings)
-        // Check how many days have non-empty holdings
-        const daysWithHoldings = botResult.days.filter(d => d.holdings && d.holdings.length > 0).length
-        console.log(`[TickerContrib] Bot ${bot.name}: Days with holdings: ${daysWithHoldings} / ${botResult.days.length}`)
-        if (daysWithHoldings > 0) {
-          const firstDayWithHoldings = botResult.days.find(d => d.holdings && d.holdings.length > 0)
-          console.log(`[TickerContrib] Bot ${bot.name}: First day with holdings:`, firstDayWithHoldings)
-        }
       }
       try {
         const prepared = normalizeNodeForBacktest(ensureSlots(cloneNode(bot.payload)))
         const tickers = collectPositionTickers(prepared, callChainsById).filter((t) => t && t !== 'Empty' && t !== 'CASH')
-        console.log(`[TickerContrib] Bot ${bot.name}: found ${tickers.length} tickers:`, tickers)
         for (const t of tickers) {
           const key = `${bot.id}:${t}:${backtestMode}:${botResult.metrics.startDate}:${botResult.metrics.endDate}`
           const existing = analyzeTickerContrib[key]
-          console.log(`[TickerContrib] Ticker ${t}: existing status =`, existing?.status, ', key =', key)
 
           if (existing && existing.status !== 'idle') {
-            console.log(`[TickerContrib] Ticker ${t}: skipping (status: ${existing.status})`)
             continue
           }
-          console.log(`[TickerContrib] Ticker ${t}: starting calculation`)
           runAnalyzeTickerContribution(key, t, botResult)
         }
       } catch (err) {
