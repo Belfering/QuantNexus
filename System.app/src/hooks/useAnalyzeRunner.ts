@@ -543,19 +543,14 @@ export function useAnalyzeRunner({
    */
   const runAnalyzeTickerContribution = useCallback(
     async (key: string, ticker: string, botResult: BacktestResult) => {
-      console.log(`[TickerCalc] Starting calculation for ${ticker}, key: ${key}`)
       setAnalyzeTickerContrib((prev) => {
         if (prev[key]?.status === 'loading') {
-          console.log(`[TickerCalc] ${ticker}: already loading, skipping`)
           return prev
         }
-        console.log(`[TickerCalc] ${ticker}: setting status to loading`)
         return { ...prev, [key]: { status: 'loading' } }
       })
       try {
-        console.log(`[TickerCalc] ${ticker}: fetching OHLC data`)
         const bars = await fetchOhlcSeries(ticker, 20000)
-        console.log(`[TickerCalc] ${ticker}: fetched ${bars.length} bars`)
         const barMap = new Map<number, { open: number; close: number; adjClose: number }>()
         for (const b of bars) barMap.set(Number(b.time), { open: Number(b.open), close: Number(b.close), adjClose: Number(b.adjClose) })
 
@@ -646,7 +641,6 @@ export function useAnalyzeRunner({
         const avgWin = winCount > 0 ? sumWins / winCount : 0
         const avgLoss = lossCount > 0 ? sumLossAbs / lossCount : 0
         const expectancy = winRate * avgWin - lossRate * avgLoss
-        console.log(`[TickerCalc] ${ticker}: DONE - totalDays=${days.length}, validDays=${validDays}, skippedNoWeight=${skippedNoWeight}, skippedNoPrices=${skippedNoPrices}, tickerEquity=${tickerEquity.toFixed(4)}, returnPct=${returnPct.toFixed(4)}, expectancy=${expectancy.toFixed(4)}`)
         setAnalyzeTickerContrib((prev) => ({ ...prev, [key]: { status: 'done', returnPct, expectancy } }))
       } catch (err) {
         const message = String((err as Error)?.message || err)
