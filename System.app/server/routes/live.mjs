@@ -16,6 +16,7 @@ import { computeFinalAllocations } from '../live/backtest-allocator.mjs'
 import { authenticate, requireMainAdmin } from '../middleware/auth.mjs'
 import { runBacktest } from '../backtest.mjs'
 import { decompressPayload } from '../db/index.mjs'
+import { executeTrading, isV2ExecutionEnabled } from '../live/trading-orchestrator.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -215,6 +216,116 @@ try {
       created_at INTEGER DEFAULT (unixepoch())
     )
   `)
+
+  // ============================================
+  // V2 TRADING SYSTEM TABLES (Two-Phase Architecture)
+  // ============================================
+
+  // system_deduplication - Track unique systems across users for deduplication
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS system_deduplication (
+      system_id TEXT PRIMARY KEY,
+      user_count INTEGER DEFAULT 0,
+      last_allocation TEXT,
+      last_updated INTEGER DEFAULT (unixepoch())
+    )
+  `)
+
+  // execution_queue - Randomized user order for fair execution
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS execution_queue (
+      execution_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      credential_type TEXT NOT NULL,
+      queue_position INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending',
+      started_at INTEGER,
+      completed_at INTEGER,
+      PRIMARY KEY (execution_id, user_id, credential_type)
+    )
+  `)
+
+  // trade_executions_v2 - Enhanced execution log with phase tracking
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS trade_executions_v2 (
+      execution_id TEXT PRIMARY KEY,
+      phase TEXT NOT NULL,
+      started_at INTEGER DEFAULT (unixepoch()),
+      completed_at INTEGER,
+      total_users INTEGER DEFAULT 0,
+      total_systems INTEGER DEFAULT 0,
+      total_tickers INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'running',
+      errors TEXT
+    )
+  `)
+
+  // user_execution_results - Per-user results within an execution run
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS user_execution_results (
+      execution_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      credential_type TEXT NOT NULL,
+      queue_position INTEGER NOT NULL,
+      net_trades TEXT,
+      orders_executed TEXT,
+      attribution_results TEXT,
+      pnl_results TEXT,
+      status TEXT DEFAULT 'pending',
+      errors TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      PRIMARY KEY (execution_id, user_id, credential_type)
+    )
+  `)
+
+  // share_transfers - Track share reallocation between systems
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS share_transfers (
+      execution_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      credential_type TEXT NOT NULL,
+      ticker TEXT NOT NULL,
+      from_system_id TEXT NOT NULL,
+      to_system_id TEXT NOT NULL,
+      shares REAL NOT NULL,
+      transfer_time INTEGER DEFAULT (unixepoch()),
+      PRIMARY KEY (execution_id, user_id, credential_type, ticker, from_system_id, to_system_id)
+    )
+  `)
+
+  // Add execution tracking columns to bot_position_ledger (migration safe)
+  try {
+    const columns = sqlite.prepare(`PRAGMA table_info(bot_position_ledger)`).all()
+    const hasExecutionId = columns.some(col => col.name === 'last_execution_id')
+    const hasLastUpdated = columns.some(col => col.name === 'last_updated')
+
+    if (!hasExecutionId) {
+      sqlite.exec(`ALTER TABLE bot_position_ledger ADD COLUMN last_execution_id TEXT`)
+      console.log('[live] Added last_execution_id column to bot_position_ledger')
+    }
+    if (!hasLastUpdated) {
+      sqlite.exec(`ALTER TABLE bot_position_ledger ADD COLUMN last_updated INTEGER`)
+      console.log('[live] Added last_updated column to bot_position_ledger')
+    }
+  } catch (err) {
+    console.error('[live] Error adding v2 columns to bot_position_ledger:', err)
+  }
+
+  // Add v2 feature flag to trading_settings (migration safe)
+  try {
+    const columns = sqlite.prepare(`PRAGMA table_info(trading_settings)`).all()
+    const hasV2Flag = columns.some(col => col.name === 'use_v2_execution')
+
+    if (!hasV2Flag) {
+      sqlite.exec(`ALTER TABLE trading_settings ADD COLUMN use_v2_execution INTEGER DEFAULT 0`)
+      console.log('[live] Added use_v2_execution feature flag to trading_settings')
+    }
+  } catch (err) {
+    console.error('[live] Error adding use_v2_execution column:', err)
+  }
+
+  console.log('[live] V2 trading tables initialized')
 
   // Migration: Sync existing portfolio_positions to user_bot_investments
   try {
@@ -632,6 +743,66 @@ router.post('/broker/test', async (req, res) => {
 })
 
 /**
+ * POST /api/admin/live/toggle-v2
+ * Enable or disable v2 trading execution for the current user
+ * @param {boolean} enabled - true to enable v2, false to disable
+ */
+router.post('/live/toggle-v2', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { enabled } = req.body
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'Missing or invalid "enabled" parameter (must be boolean)' })
+    }
+
+    // Enable or disable v2 execution
+    const { setV2ExecutionEnabled: setV2Flag } = await import('../live/trading-orchestrator.mjs')
+    setV2Flag(userId, enabled)
+
+    const currentStatus = isV2ExecutionEnabled(userId)
+
+    console.log(`[live] V2 execution ${enabled ? 'enabled' : 'disabled'} for user ${userId}`)
+
+    res.json({
+      success: true,
+      v2Enabled: currentStatus,
+      message: `V2 execution ${enabled ? 'enabled' : 'disabled'} successfully`,
+    })
+  } catch (error) {
+    console.error('[live] Error toggling v2 execution:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * GET /api/admin/live/v2-status
+ * Check if v2 execution is enabled for the current user
+ */
+router.get('/live/v2-status', async (req, res) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const v2Enabled = isV2ExecutionEnabled(userId)
+
+    res.json({
+      userId,
+      v2Enabled,
+      message: v2Enabled ? 'V2 execution is ENABLED' : 'V2 execution is DISABLED (using legacy v1)',
+    })
+  } catch (error) {
+    console.error('[live] Error checking v2 status:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * POST /api/admin/live/dry-run
  * Executes trades immediately on Live or Paper account using current bot allocations.
  * Despite the endpoint name (kept for backwards compatibility), this now actually executes trades.
@@ -663,6 +834,78 @@ router.post('/live/dry-run', async (req, res) => {
     if (!credentials) {
       return res.status(400).json({ error: `No ${credentialType} trading credentials configured` })
     }
+
+    // ============================================
+    // V2 EXECUTION PATH (Feature Flag)
+    // ============================================
+    if (isV2ExecutionEnabled(userId)) {
+      console.log(`[live] ✨ V2 execution enabled for user ${userId} - using trading orchestrator`)
+      try {
+        // Fetch account info for response (v1 compatibility)
+        const client = createAlpacaClient(credentials)
+        const account = await getAccountInfo(client)
+
+        // Calculate reserved cash
+        let reservedCash = 0
+        if (cashReserve) {
+          if (cashMode === 'percent') {
+            reservedCash = account.equity * (cashReserve / 100)
+          } else {
+            reservedCash = cashReserve
+          }
+        }
+        const adjustedEquity = account.equity - reservedCash
+
+        const result = await executeTrading({
+          mode,
+          userId,
+          credentialType,
+          cashReserve,
+          cashMode,
+        })
+
+        const perfTotal = Date.now() - perfStart
+        console.log(`[live] [PERF] ===== V2 EXECUTION COMPLETE: ${perfTotal}ms =====`)
+
+        return res.json({
+          success: result.success,
+          executionId: result.executionId,
+          mode: mode,
+          executionMode: mode,
+          executedAt: new Date().toISOString(),
+          timestamp: new Date().toISOString(),
+          usedLivePrices: false,
+          account: {
+            equity: account.equity,
+            cash: account.cash,
+            buyingPower: account.buyingPower,
+            reservedCash,
+            adjustedEquity,
+          },
+          botBreakdown: [], // TODO: Calculate from v2 results
+          mergedAllocations: {}, // TODO: Calculate from v2 results
+          totalInvested: adjustedEquity,
+          positions: [], // TODO: Map from v2 net trades
+          summary: {
+            totalAllocated: 0, // TODO: Calculate from v2 results
+            unallocated: adjustedEquity,
+            allocationPercent: 0,
+            positionCount: result.stats?.totalTrades || 0,
+          },
+          stats: result.stats,
+          duration: result.duration,
+          v2: true,
+        })
+      } catch (error) {
+        console.error(`[live] V2 execution failed:`, error)
+        return res.status(500).json({ error: error.message, v2: true })
+      }
+    }
+
+    // ============================================
+    // V1 EXECUTION PATH (Legacy)
+    // ============================================
+    console.log(`[live] Using V1 execution for user ${userId}`)
 
     // Safety check for live execution
     if (mode === 'execute-live') {
@@ -1065,6 +1308,211 @@ router.post('/live/dry-run', async (req, res) => {
       const botIds = investments.map(inv => inv.bot_id)
       console.log(`[live] [DEBUG] Executing for ${botIds.length} bots: ${botIds.join(', ')}`)
 
+      // ============================================================
+      // FETCH ALPACA POSITIONS & BUILD PRICE MAP (for all modes)
+      // ============================================================
+      const alpacaPositions = await getPositions(client)
+      const priceMap = {}
+      for (const pos of alpacaPositions) {
+        priceMap[pos.symbol] = {
+          currentPrice: parseFloat(pos.currentPrice),
+          marketValue: parseFloat(pos.marketValue),
+          qty: parseFloat(pos.qty)
+        }
+      }
+
+      // ============================================================
+      // SECTION A: Calculate unallocated positions
+      // ============================================================
+      // Get all bot ledger positions (across all bots)
+      const allBotLedgerPositions = sqlite.prepare(`
+        SELECT symbol, SUM(shares) as total_shares
+        FROM bot_position_ledger
+        WHERE user_id = ? AND credential_type = ?
+        GROUP BY symbol
+      `).all(userId, credentialType)
+
+      // Create map of ledger shares by symbol
+      const ledgerSharesMap = {}
+      for (const pos of allBotLedgerPositions) {
+        ledgerSharesMap[pos.symbol] = pos.total_shares
+      }
+
+      // For EACH Alpaca position, calculate excess shares (unallocated = alpacaQty - ledgerQty)
+      // Example: 501 shares of SPY in Alpaca, 500 in bot ledgers = 1 unallocated share
+      const unallocatedPositions = []
+      let totalUnallocatedValue = 0
+
+      for (const alpacaPos of alpacaPositions) {
+        const alpacaShares = parseFloat(alpacaPos.qty)
+        const ledgerShares = ledgerSharesMap[alpacaPos.symbol] || 0
+        const unallocatedShares = alpacaShares - ledgerShares
+
+        if (unallocatedShares > 0.0001) {
+          const currentPrice = parseFloat(alpacaPos.currentPrice)
+          const unallocatedValue = unallocatedShares * currentPrice
+
+          unallocatedPositions.push({
+            symbol: alpacaPos.symbol,
+            qty: unallocatedShares,  // Only the excess shares
+            currentPrice: currentPrice,
+            marketValue: unallocatedValue
+          })
+
+          totalUnallocatedValue += unallocatedValue
+        }
+      }
+
+      // ============================================================
+      // SECTION B: Calculate P&L rollover and unallocated target
+      // ============================================================
+      // P&L ROLLOVER: Calculate current market value for each bot
+      // investments array was fetched earlier, but we need to update investment amounts to current market value
+      let totalOriginalInvestment = 0
+      let totalCurrentValue = 0
+
+      for (const inv of investments) {
+        const originalAmount = inv.investment_amount
+        totalOriginalInvestment += originalAmount
+
+        // Get ledger positions for this bot
+        const botLedgerPositions = sqlite.prepare(`
+          SELECT symbol, shares, avg_price as avgPrice
+          FROM bot_position_ledger
+          WHERE user_id = ? AND credential_type = ? AND bot_id = ?
+            AND shares > 0.0001
+        `).all(userId, credentialType, inv.bot_id)
+
+        // Calculate current market value using priceMap
+        let currentValue = 0
+        for (const pos of botLedgerPositions) {
+          const currentPrice = priceMap[pos.symbol]?.currentPrice || pos.avgPrice
+          currentValue += pos.shares * currentPrice
+        }
+
+        // If bot has positions, use current value; otherwise use original investment
+        if (currentValue > 0) {
+          inv.investment_amount = currentValue
+          totalCurrentValue += currentValue
+        } else {
+          totalCurrentValue += originalAmount
+        }
+      }
+
+      // Recalculate totalInvested with updated investment amounts (P&L rollover)
+      totalInvested = totalCurrentValue
+
+      // Log P&L rollover summary
+      const pnl = totalCurrentValue - totalOriginalInvestment
+      console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+      console.log(`[TRADE] P&L ROLLOVER CALCULATION`)
+      console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+      console.log(`[TRADE] Original Investment: $${totalOriginalInvestment.toFixed(2)}`)
+      console.log(`[TRADE] Current Market Value: $${totalCurrentValue.toFixed(2)}`)
+      console.log(`[TRADE] P&L: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${(pnl / totalOriginalInvestment * 100).toFixed(2)}%)`)
+      console.log(`[TRADE] Rebalancing With: $${totalCurrentValue.toFixed(2)} (current value)`)
+      console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+
+      // Calculate unallocated target = Total Portfolio - Bot Targets - Reserved Cash
+      const totalBotTarget = totalCurrentValue  // Sum of all bot current values
+      const unallocatedTarget = Math.max(0, account.equity - totalBotTarget - reservedCash)
+      const unallocatedChange = unallocatedTarget - totalUnallocatedValue
+
+      // ============================================================
+      // SECTION C: Log per-bot position changes (Current → Future → Action)
+      // ============================================================
+      console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+      console.log(`[TRADE] BOT POSITION CHANGES - CURRENT → FUTURE → ACTION`)
+      console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+
+      for (const inv of investments) {
+        const cached = botPayloads.get(inv.bot_id)
+        const botName = cached?.bot?.name || inv.bot_id
+        const targetAllocations = botBreakdown.find(b => b.botId === inv.bot_id)?.allocations || {}
+
+        console.log(`\n[TRADE] BOT: ${botName}`)
+        console.log(`[TRADE] Investment: $${inv.investment_amount.toFixed(2)} (with P&L rollover)`)
+        console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+
+        // Get current bot positions from ledger
+        const currentBotPositions = sqlite.prepare(`
+          SELECT symbol, shares
+          FROM bot_position_ledger
+          WHERE user_id = ? AND credential_type = ? AND bot_id = ?
+            AND shares > 0.0001
+        `).all(userId, credentialType, inv.bot_id)
+
+        // Create map of current positions
+        const currentPosMap = {}
+        for (const pos of currentBotPositions) {
+          currentPosMap[pos.symbol] = pos.shares
+        }
+
+        // Get all tickers (current + target)
+        const allTickers = new Set([
+          ...Object.keys(currentPosMap),
+          ...Object.keys(targetAllocations)
+        ])
+
+        // For each ticker, show current → future → action
+        for (const ticker of allTickers) {
+          const currentShares = currentPosMap[ticker] || 0
+          const targetWeight = targetAllocations[ticker] || 0
+          const currentPrice = priceMap[ticker]?.currentPrice || 0
+
+          // Calculate target shares
+          const targetDollarValue = inv.investment_amount * targetWeight
+          const targetShares = currentPrice > 0 ? targetDollarValue / currentPrice : 0
+
+          const shareDiff = targetShares - currentShares
+          const dollarDiff = shareDiff * currentPrice
+
+          // Determine action
+          let action = ''
+          if (Math.abs(shareDiff) < 0.0001) {
+            action = 'no change'
+          } else if (shareDiff > 0) {
+            if (currentShares < 0.0001) {
+              action = `buy ${shareDiff.toFixed(4)} shares (~$${dollarDiff.toFixed(2)}) [NEW POSITION]`
+            } else {
+              action = `buy ${shareDiff.toFixed(4)} shares (~$${dollarDiff.toFixed(2)})`
+            }
+          } else {
+            action = `sell ${Math.abs(shareDiff).toFixed(4)} shares at market`
+          }
+
+          console.log(`[TRADE]   Current - ${ticker}: ${currentShares.toFixed(4)} shares; Future - ${ticker}: ${targetShares.toFixed(4)} shares; ${action}`)
+        }
+      }
+
+      console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+
+      // ============================================================
+      // SECTION D: Log unallocated position changes (Current → Future → Action)
+      // ============================================================
+      console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+      console.log(`[TRADE] UNALLOCATED POSITIONS - PLANNED CHANGES`)
+      console.log(`[TRADE] (Positions in Alpaca not tracked in any bot ledger)`)
+      console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+      console.log(`[TRADE] Current Value: $${totalUnallocatedValue.toFixed(2)}`)
+      console.log(`[TRADE] Target Value: $0.00 (should be sold or allocated to bots)`)
+      console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+
+      if (unallocatedPositions.length === 0) {
+        console.log(`[TRADE]   (no unallocated positions - all shares attributed to bots)`)
+      } else {
+        for (const pos of unallocatedPositions) {
+          const currentShares = parseFloat(pos.qty)
+          const currentPrice = parseFloat(pos.currentPrice)
+          const futureShares = 0  // Unallocated should be sold or allocated
+          const action = `sell ${currentShares.toFixed(4)} shares at market (~$${(currentShares * currentPrice).toFixed(2)})`
+
+          console.log(`[TRADE]   Current - ${pos.symbol}: ${currentShares.toFixed(4)} shares; Future - ${pos.symbol}: ${futureShares.toFixed(4)} shares; ${action}`)
+        }
+      }
+
+      console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+
       try {
         // Use executeDryRun for simulation mode, executeLiveTrades for actual execution
         if (mode === 'simulate') {
@@ -1092,18 +1540,7 @@ router.post('/live/dry-run', async (req, res) => {
 
           console.log(`[live] [DEBUG] Fetched ${ledgerPositions.length} positions from bot ledger for bot ${botId}`)
 
-          // Get current prices from Alpaca for market value calculations
-          const alpacaPositions = await getPositions(client)
-          const priceMap = {}
-          for (const pos of alpacaPositions) {
-            priceMap[pos.symbol] = {
-              currentPrice: parseFloat(pos.currentPrice),
-              marketValue: parseFloat(pos.marketValue),
-              qty: parseFloat(pos.qty)
-            }
-          }
-
-          // Enrich ledger positions with current market data
+          // Enrich ledger positions with current market data (alpacaPositions and priceMap already fetched above)
           const botPositions = ledgerPositions.map(pos => ({
             symbol: pos.symbol,
             qty: pos.shares,
@@ -2016,11 +2453,11 @@ router.get('/trading/unallocated', async (req, res) => {
     const client = createAlpacaClient(credentials)
     const alpacaPositions = await getPositions(client)
 
-    // Get ledger totals by symbol
+    // Get ledger totals by symbol (exclude unallocated to avoid double-counting)
     const ledger = sqlite.prepare(`
       SELECT symbol, SUM(shares) as total_shares
       FROM bot_position_ledger
-      WHERE user_id = ? AND credential_type = ?
+      WHERE user_id = ? AND credential_type = ? AND bot_id != 'unallocated'
       GROUP BY symbol
     `).all(userId, credentialType)
 
@@ -2444,6 +2881,70 @@ router.post('/trading/execute', async (req, res) => {
     const account = await getAccountInfo(client)
     const totalEquity = account.equity
 
+    // P&L ROLLOVER: Calculate current market value for each bot
+    // Get current prices from Alpaca
+    const alpacaPositions = await getPositions(client)
+    const priceMap = {}
+    for (const pos of alpacaPositions) {
+      priceMap[pos.symbol] = parseFloat(pos.currentPrice)
+    }
+
+    // Calculate current market value for each bot and update investment amounts
+    let totalOriginalInvestment = 0
+    let totalCurrentValue = 0
+
+    for (const inv of investments) {
+      const originalAmount = inv.investmentAmount
+      totalOriginalInvestment += originalAmount
+
+      // Get ledger positions for this bot
+      const ledgerPositions = sqlite.prepare(`
+        SELECT symbol, shares, avg_price as avgPrice
+        FROM bot_position_ledger
+        WHERE user_id = ? AND credential_type = ? AND bot_id = ?
+          AND shares > 0.0001
+      `).all(userId, credentialType, inv.botId)
+
+      // Calculate current market value
+      let currentValue = 0
+      for (const pos of ledgerPositions) {
+        const currentPrice = priceMap[pos.symbol] || pos.avgPrice
+        currentValue += pos.shares * currentPrice
+      }
+
+      // If bot has positions, use current value; otherwise use original investment
+      if (currentValue > 0) {
+        inv.investmentAmount = currentValue
+        totalCurrentValue += currentValue
+      } else {
+        // First trade - no positions yet
+        totalCurrentValue += originalAmount
+      }
+    }
+
+    const totalPnl = totalCurrentValue - totalOriginalInvestment
+
+    console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+    console.log(`[TRADE] P&L ROLLOVER - ALL BOTS`)
+    console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+    console.log(`[TRADE]   Total Original Investment: $${totalOriginalInvestment.toFixed(2)}`)
+    console.log(`[TRADE]   Total Current Market Value: $${totalCurrentValue.toFixed(2)}`)
+    console.log(`[TRADE]   Total P&L: $${totalPnl.toFixed(2)} (${(totalPnl / totalOriginalInvestment * 100).toFixed(2)}%)`)
+    console.log(`[TRADE]   Rebalancing With: $${totalCurrentValue.toFixed(2)} (current value)`)
+    console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+    for (const inv of investments) {
+      const botName = inv.bot?.name || inv.botId
+      // Find original investment from investmentRows
+      const originalRow = investmentRows.find(r => r.bot_id === inv.botId)
+      const originalAmount = originalRow?.investment_amount || 0
+      const currentAmount = inv.investmentAmount
+      const botPnl = currentAmount - originalAmount
+      const botPnlPct = originalAmount > 0 ? (botPnl / originalAmount * 100) : 0
+      console.log(`[TRADE]   ${botName}:`)
+      console.log(`[TRADE]     Original: $${originalAmount.toFixed(2)} → Current: $${currentAmount.toFixed(2)} (P&L: $${botPnl.toFixed(2)}, ${botPnlPct.toFixed(2)}%)`)
+    }
+    console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+
     // Calculate cash reserve
     let reservedCash = 0
     if (settings.cash_reserve_amount) {
@@ -2476,6 +2977,85 @@ router.post('/trading/execute', async (req, res) => {
     const botIds = investmentRows.map(row => row.bot_id).filter(Boolean)
     console.log(`[live] [DEBUG] Executing for ${botIds.length} bots: ${botIds.join(', ')}`)
 
+    // STEP 1: Calculate unallocated position changes
+    // Get all Alpaca positions
+    const allAlpacaPositions = await getPositions(client)
+
+    // Get all bot ledger positions (across all bots)
+    const allBotLedgerPositions = sqlite.prepare(`
+      SELECT symbol, SUM(shares) as total_shares
+      FROM bot_position_ledger
+      WHERE user_id = ? AND credential_type = ?
+      GROUP BY symbol
+    `).all(userId, credentialType)
+
+    // Create map of bot-allocated symbols
+    const botAllocatedSymbols = new Set()
+    const botAllocatedMap = {}
+    for (const ledgerPos of allBotLedgerPositions) {
+      botAllocatedSymbols.add(ledgerPos.symbol)
+      botAllocatedMap[ledgerPos.symbol] = ledgerPos.total_shares
+    }
+
+    // Identify unallocated positions (in Alpaca but not in any bot ledger)
+    const unallocatedPositions = []
+    let totalUnallocatedValue = 0
+    for (const alpacaPos of allAlpacaPositions) {
+      if (!botAllocatedSymbols.has(alpacaPos.symbol)) {
+        const qty = parseFloat(alpacaPos.qty)
+        const price = parseFloat(alpacaPos.currentPrice)
+        const value = parseFloat(alpacaPos.marketValue)
+        unallocatedPositions.push({
+          symbol: alpacaPos.symbol,
+          qty,
+          price,
+          value
+        })
+        totalUnallocatedValue += value
+      }
+    }
+
+    // Calculate target for unallocated: total equity - bot targets
+    const totalBotTarget = totalCurrentValue
+    const unallocatedTarget = Math.max(0, totalEquity - totalBotTarget - reservedCash)
+    const unallocatedChange = unallocatedTarget - totalUnallocatedValue
+
+    // Log unallocated position plan
+    console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+    console.log(`[TRADE] STEP 1: UNALLOCATED POSITIONS - CURRENT STATE & TARGET`)
+    console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+    console.log(`[TRADE] Total Portfolio Value: $${totalEquity.toFixed(2)}`)
+    console.log(`[TRADE] Reserved Cash: $${reservedCash.toFixed(2)}`)
+    console.log(`[TRADE] All Bot Targets: $${totalBotTarget.toFixed(2)}`)
+    console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+    console.log(`[TRADE] UNALLOCATED POSITIONS (not attributed to any bot):`)
+    console.log(`[TRADE]   Current Value: $${totalUnallocatedValue.toFixed(2)}`)
+    console.log(`[TRADE]   Target Value: $${unallocatedTarget.toFixed(2)}`)
+    console.log(`[TRADE]   Change Needed: ${unallocatedChange >= 0 ? '+' : ''}$${unallocatedChange.toFixed(2)}`)
+    console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+
+    if (unallocatedPositions.length === 0) {
+      console.log(`[TRADE]   (no unallocated positions)`)
+    } else {
+      console.log(`[TRADE]   Current Unallocated Positions:`)
+      for (const pos of unallocatedPositions) {
+        console.log(`[TRADE]     ${pos.symbol}: ${pos.qty.toFixed(4)} shares @ $${pos.price.toFixed(2)} = $${pos.value.toFixed(2)}`)
+      }
+
+      // Show what will happen to unallocated positions
+      console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+      if (unallocatedChange < -1) {
+        console.log(`[TRADE]   ACTION: REDUCE unallocated positions by $${Math.abs(unallocatedChange).toFixed(2)}`)
+        console.log(`[TRADE]   (Sell unallocated positions to free up capital for bot rebalancing)`)
+      } else if (unallocatedChange > 1) {
+        console.log(`[TRADE]   ACTION: INCREASE unallocated positions by $${unallocatedChange.toFixed(2)}`)
+        console.log(`[TRADE]   (Bot rebalancing will free up capital that remains unallocated)`)
+      } else {
+        console.log(`[TRADE]   ACTION: No change needed (within $1 tolerance)`)
+      }
+    }
+    console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+
     if (dryRun) {
       // Dry run - calculate what would happen
       result = await executeDryRun(credentials, allocations, {
@@ -2487,7 +3067,89 @@ router.post('/trading/execute', async (req, res) => {
       })
       result.dryRun = true
     } else {
-      // Live execution
+      // Process pending manual sells FIRST (unallocated positions)
+      const pendingSells = sqlite.prepare(`
+        SELECT id, symbol, qty
+        FROM pending_manual_sells
+        WHERE user_id = ? AND credential_type = ? AND status = 'pending'
+      `).all(userId, credentialType)
+
+      if (pendingSells.length > 0) {
+        console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+        console.log(`[TRADE] STEP 2: EXECUTING UNALLOCATED SELLS (${credentialType})`)
+        console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+
+        // Enrich pending sells with current price info
+        let totalPendingSellValue = 0
+        const enrichedSells = []
+        for (const sell of pendingSells) {
+          const alpacaPos = allAlpacaPositions.find(p => p.symbol === sell.symbol)
+          const currentPrice = alpacaPos ? parseFloat(alpacaPos.currentPrice) : 0
+          const estimatedValue = sell.qty * currentPrice
+          totalPendingSellValue += estimatedValue
+          enrichedSells.push({
+            ...sell,
+            currentPrice,
+            estimatedValue
+          })
+          console.log(`[TRADE]   ${sell.symbol}: Sell ${sell.qty.toFixed(4)} shares @ ~$${currentPrice.toFixed(2)} = ~$${estimatedValue.toFixed(2)}`)
+        }
+        console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+        console.log(`[TRADE]   Total Estimated Sell Value: $${totalPendingSellValue.toFixed(2)}`)
+        console.log(`[TRADE]   Purpose: Liquidate unallocated positions to free capital for bot rebalancing`)
+        console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+
+        let successCount = 0
+        let failCount = 0
+
+        for (const sell of enrichedSells) {
+          try {
+            await submitMarketSell(client, sell.symbol, sell.qty)
+
+            sqlite.prepare(`
+              UPDATE pending_manual_sells
+              SET status = 'executed', executed_at = unixepoch()
+              WHERE id = ?
+            `).run(sell.id)
+
+            console.log(`[TRADE] ✓ SOLD ${sell.symbol}: ${sell.qty.toFixed(4)} shares (~$${sell.estimatedValue.toFixed(2)}) - SUCCESS`)
+            successCount++
+          } catch (error) {
+            console.log(`[TRADE] ✗ FAILED ${sell.symbol}: ${sell.qty.toFixed(4)} shares - ${error.message}`)
+            failCount++
+
+            sqlite.prepare(`
+              UPDATE pending_manual_sells
+              SET status = 'failed', executed_at = unixepoch(), error_message = ?
+              WHERE id = ?
+            `).run(error.message || 'Unknown error', sell.id)
+          }
+        }
+
+        console.log(`\n[TRADE] ────────────────────────────────────────────────────────────────`)
+        console.log(`[TRADE] UNALLOCATED SELLS COMPLETE: ${successCount} succeeded, ${failCount} failed`)
+        console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+      } else if (unallocatedPositions.length > 0) {
+        // No pending sells but have unallocated positions
+        console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+        console.log(`[TRADE] STEP 2: UNALLOCATED POSITIONS - NO SELLS SCHEDULED`)
+        console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+        console.log(`[TRADE]   Unallocated positions will remain untouched`)
+        console.log(`[TRADE]   Current unallocated value: $${totalUnallocatedValue.toFixed(2)}`)
+        console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+      }
+
+      // Live execution - rebalance bots
+      console.log(`\n[TRADE] ════════════════════════════════════════════════════════════════`)
+      console.log(`[TRADE] STEP 3: BOT REBALANCING`)
+      console.log(`[TRADE] ════════════════════════════════════════════════════════════════`)
+      console.log(`[TRADE] Bots to rebalance: ${botIds.length}`)
+      for (const inv of investments) {
+        const botName = inv.bot?.name || inv.botId
+        console.log(`[TRADE]   ${botName}: $${inv.investmentAmount.toFixed(2)} (current value with P&L)`)
+      }
+      console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
+
       result = await executeLiveTrades(credentials, allocations, {
         userId,
         credentialType,

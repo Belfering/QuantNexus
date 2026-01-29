@@ -382,8 +382,13 @@ async function executeForUser(userId, credentialType, settings) {
     const unallocatedValue = unallocatedPositions.reduce((sum, p) => sum + parseFloat(p.marketValue), 0)
     const botLedgerValue = botPositions.reduce((sum, p) => sum + p.marketValue, 0)
 
-    // Calculate total invested for this execution
-    const totalInvested = investments.reduce((sum, inv) => sum + inv.investmentAmount, 0)
+    // Calculate original investment and current market value
+    const originalInvestment = investments.reduce((sum, inv) => sum + inv.investmentAmount, 0)
+    const currentBotValue = botLedgerValue > 0 ? botLedgerValue : originalInvestment
+    const pnl = currentBotValue - originalInvestment
+
+    // Use current market value for rebalancing (P&L rollover)
+    const totalInvested = currentBotValue
 
     // Print clear trade summary with complete state
     const botName = investments[0].bot?.name || investments[0].botId
@@ -397,7 +402,12 @@ async function executeForUser(userId, credentialType, settings) {
     console.log(`[TRADE]   Total Equity: $${totalEquity.toFixed(2)}`)
     console.log(`[TRADE]   Reserved Cash: $${reservedCash.toFixed(2)}`)
     console.log(`[TRADE]   Adjusted Equity: $${adjustedEquity.toFixed(2)}`)
-    console.log(`[TRADE]   Bot Investment Amount: $${totalInvested.toFixed(2)}`)
+    console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+    console.log(`[TRADE] BOT INVESTMENT (P&L ROLLOVER):`)
+    console.log(`[TRADE]   Original Investment: $${originalInvestment.toFixed(2)}`)
+    console.log(`[TRADE]   Current Market Value: $${currentBotValue.toFixed(2)}`)
+    console.log(`[TRADE]   P&L: $${pnl.toFixed(2)} (${(pnl / originalInvestment * 100).toFixed(2)}%)`)
+    console.log(`[TRADE]   Rebalancing With: $${totalInvested.toFixed(2)} (current value)`)
     console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
     console.log(`[TRADE] ALL ALPACA POSITIONS:`)
     console.log(`[TRADE]   Total Positions: ${alpacaPositions.length}`)
@@ -422,18 +432,39 @@ async function executeForUser(userId, credentialType, settings) {
     }
     console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
     console.log(`[TRADE] UNALLOCATED POSITIONS (not attributed to any bot):`)
-    console.log(`[TRADE]   Count: ${unallocatedPositions.length}`)
-    console.log(`[TRADE]   Total Value: $${unallocatedValue.toFixed(2)}`)
+    console.log(`[TRADE]   Current Value: $${unallocatedValue.toFixed(2)}`)
+
+    // Calculate unallocated target: total equity - bot target - reserved cash
+    const unallocatedTarget = Math.max(0, totalEquity - totalInvested - reservedCash)
+    const unallocatedChange = unallocatedTarget - unallocatedValue
+
+    console.log(`[TRADE]   Target Value: $${unallocatedTarget.toFixed(2)}`)
+    console.log(`[TRADE]   Change Needed: ${unallocatedChange >= 0 ? '+' : ''}$${unallocatedChange.toFixed(2)}`)
+    console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+
     if (unallocatedPositions.length === 0) {
-      console.log(`[TRADE]   (none)`)
+      console.log(`[TRADE]   (no current unallocated positions)`)
     } else {
+      console.log(`[TRADE]   Current Unallocated Positions:`)
       for (const pos of unallocatedPositions) {
-        console.log(`[TRADE]   ${pos.symbol}: ${parseFloat(pos.qty).toFixed(4)} shares @ $${parseFloat(pos.currentPrice).toFixed(2)} = $${parseFloat(pos.marketValue).toFixed(2)}`)
+        console.log(`[TRADE]     ${pos.symbol}: ${parseFloat(pos.qty).toFixed(4)} shares @ $${parseFloat(pos.currentPrice).toFixed(2)} = $${parseFloat(pos.marketValue).toFixed(2)}`)
       }
     }
+
     console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
-    console.log(`[TRADE] TARGET ALLOCATIONS (from backtest):`)
-    console.log(`[TRADE]   Based on Investment: $${totalInvested.toFixed(2)}`)
+    if (unallocatedChange < -1) {
+      console.log(`[TRADE]   ACTION: REDUCE unallocated by $${Math.abs(unallocatedChange).toFixed(2)}`)
+      console.log(`[TRADE]   (Unallocated positions will be sold if scheduled via pending_manual_sells)`)
+    } else if (unallocatedChange > 1) {
+      console.log(`[TRADE]   ACTION: INCREASE unallocated by $${unallocatedChange.toFixed(2)}`)
+      console.log(`[TRADE]   (Bot rebalancing will free up capital that remains unallocated)`)
+    } else {
+      console.log(`[TRADE]   ACTION: No change needed (within $1 tolerance)`)
+    }
+
+    console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
+    console.log(`[TRADE] BOT TARGET ALLOCATIONS (from backtest):`)
+    console.log(`[TRADE]   ${botName} Investment: $${totalInvested.toFixed(2)} (current value with P&L)`)
     if (Object.keys(allocations).length === 0) {
       console.log(`[TRADE]   (none - bot returned no positions)`)
     } else {
@@ -441,16 +472,10 @@ async function executeForUser(userId, credentialType, settings) {
       for (const [ticker, pct] of Object.entries(allocations)) {
         const targetValue = totalInvested * (pct / 100)
         totalTargetValue += targetValue
-        console.log(`[TRADE]   ${ticker}: ${pct.toFixed(2)}% = $${targetValue.toFixed(2)}`)
+        console.log(`[TRADE]     ${ticker}: ${pct.toFixed(2)}% = $${targetValue.toFixed(2)}`)
       }
       console.log(`[TRADE]   Total Target Value: $${totalTargetValue.toFixed(2)}`)
     }
-    console.log(`[TRADE] ────────────────────────────────────────────────────────────────`)
-    console.log(`[TRADE] PROJECTED END STATE (after trades execute):`)
-    console.log(`[TRADE]   Unallocated positions: Will be SOLD (if scheduled)`)
-    console.log(`[TRADE]   Bot current positions: Will be SOLD`)
-    console.log(`[TRADE]   Bot target positions: Will be BOUGHT`)
-    console.log(`[TRADE]   Expected ${botName} value after trades: $${totalInvested.toFixed(2)}`)
     console.log(`[TRADE] ════════════════════════════════════════════════════════════════\n`)
 
     // Execute live trades

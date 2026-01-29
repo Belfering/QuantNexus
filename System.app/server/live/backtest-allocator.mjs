@@ -17,11 +17,15 @@ import { runBacktest } from '../backtest.mjs'
  * @returns {Promise<Object>} Allocation { ticker: percent } or null on failure
  */
 export async function getAllocationsForBot(bot, backtestParams = {}) {
-  // console.log(`[DEBUG] ─────────────────────────────────────────────────────────────`)
-  // console.log(`[DEBUG] GETTING ALLOCATIONS FOR BOT: ${bot?.id || 'unknown'} (${bot?.name || 'unnamed'})`)
+  console.log(`[backtest-allocator] Getting allocations for bot ${bot?.id || 'unknown'}`)
+  console.log(`[backtest-allocator] Payload type: ${typeof bot?.payload}`)
+  console.log(`[backtest-allocator] Payload is object: ${typeof bot?.payload === 'object'}`)
+  console.log(`[backtest-allocator] Payload keys: ${bot?.payload ? Object.keys(bot.payload).join(', ') : 'none'}`)
+  console.log(`[backtest-allocator] Payload kind: ${bot?.payload?.kind}`)
+  console.log(`[backtest-allocator] Payload has positions: ${!!bot?.payload?.positions}`)
+  console.log(`[backtest-allocator] Payload has children: ${!!bot?.payload?.children}`)
 
   if (!bot?.payload) {
-    // console.log(`[DEBUG] ✗ Bot has no payload - skipping`)
     console.warn(`[backtest-allocator] Bot ${bot?.id || 'unknown'} has no payload`)
     return null
   }
@@ -29,15 +33,13 @@ export async function getAllocationsForBot(bot, backtestParams = {}) {
   try {
     // Run backtest to get allocations up to today
     const today = new Date().toISOString().split('T')[0]
-    // console.log(`[DEBUG] → Running backtest to ${today}...`)
+    console.log(`[backtest-allocator] Running backtest to ${today}`)
 
-    const result = await runBacktest({
-      flowchart: bot.payload,
-      startDate: backtestParams.startDate || '2020-01-01',
-      endDate: today,
-      benchmark: backtestParams.benchmark || 'SPY',
-      startingCapital: backtestParams.startingCapital || 100000,
-      rebalanceFrequency: backtestParams.rebalanceFrequency || 'daily',
+    // Note: runBacktest signature is (payload, options)
+    // It does NOT support startDate/endDate/startingCapital/rebalanceFrequency - it runs on all available data
+    const result = await runBacktest(bot.payload, {
+      mode: 'CC',  // Close-to-close pricing
+      benchmarkTicker: backtestParams.benchmark || 'SPY',
     })
 
     // console.log(`[DEBUG] → Backtest complete, ${result?.allocations?.length || 0} allocation periods`)
@@ -50,21 +52,21 @@ export async function getAllocationsForBot(bot, backtestParams = {}) {
 
     // Get the LAST day's allocation (today's positions)
     const lastAllocation = result.allocations[result.allocations.length - 1]
-    // console.log(`[DEBUG] → Last allocation date: ${lastAllocation?.date || 'N/A'}`)
+    console.log(`[backtest-allocator] Last allocation date: ${lastAllocation?.date || 'N/A'}`)
+    console.log(`[backtest-allocator] Last allocation entries count: ${lastAllocation?.entries?.length || 0}`)
 
-    if (!lastAllocation) {
-      // console.log(`[DEBUG] ✗ Empty allocation array`)
-      console.warn(`[backtest-allocator] Empty allocation array for bot ${bot.id}`)
+    if (!lastAllocation || !lastAllocation.entries || lastAllocation.entries.length === 0) {
+      console.warn(`[backtest-allocator] Empty allocation for bot ${bot.id}`)
       return null
     }
 
     // Convert to { ticker: percent } format
+    // Note: backtest returns entries as [{ ticker, weight }] where weight is 0-1 range
     const allocations = {}
-    // console.log(`[DEBUG] → Bot allocations:`)
-    for (const [ticker, weight] of Object.entries(lastAllocation.positions || {})) {
-      if (weight > 0) {
-        allocations[ticker.toUpperCase()] = weight * 100  // Convert 0.5 -> 50%
-        // console.log(`[DEBUG]   ${ticker.toUpperCase()}: ${(weight * 100).toFixed(2)}%`)
+    for (const entry of lastAllocation.entries) {
+      if (entry.weight > 0) {
+        allocations[entry.ticker.toUpperCase()] = entry.weight * 100  // Convert 0.5 -> 50%
+        console.log(`[backtest-allocator]   ${entry.ticker.toUpperCase()}: ${(entry.weight * 100).toFixed(2)}%`)
       }
     }
 
