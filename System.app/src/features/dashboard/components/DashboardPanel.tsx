@@ -620,8 +620,8 @@ export function DashboardPanel(props: DashboardPanelProps) {
                         ? (unallocatedPnl / unallocatedCostBasis) * 100
                         : 0
 
-                      // Create synthetic unallocated "bot" investment
-                      const syntheticUnallocated = alpaca.unallocatedPositions.length > 0 ? {
+                      // Create synthetic unallocated "bot" investment (always show, even if empty)
+                      const syntheticUnallocated = {
                         id: -1,
                         botId: '__UNALLOCATED__',
                         botName: `Unallocated Positions (${alpaca.unallocatedPositions.length})`,
@@ -635,12 +635,10 @@ export function DashboardPanel(props: DashboardPanelProps) {
                         _currentValue: unallocatedValue,
                         _pnl: unallocatedPnl,
                         _pnlPct: unallocatedPnlPct,
-                      } : null
+                      }
 
-                      // Prepend to investments array
-                      const allInvestments = syntheticUnallocated
-                        ? [syntheticUnallocated, ...alpaca.investments]
-                        : alpaca.investments
+                      // Prepend to investments array (always include unallocated)
+                      const allInvestments = [syntheticUnallocated, ...alpaca.investments]
 
                       // Separate unallocated from regular investments
                       const unallocatedInvestment = allInvestments.find(inv => inv.botId === '__UNALLOCATED__')
@@ -877,11 +875,12 @@ export function DashboardPanel(props: DashboardPanelProps) {
                                   )}
 
                                   {isSyntheticUnallocated ? (
-                                    // Synthetic unallocated: Show only Sell button
+                                    // Synthetic unallocated: Show only Sell button (disabled when empty)
                                     <Button
                                       size="sm"
                                       variant="destructive"
                                       onClick={() => setIsBulkSellModalOpen(true)}
+                                      disabled={alpaca.unallocatedPositions.length === 0}
                                     >
                                       Sell
                                     </Button>
@@ -1021,13 +1020,19 @@ export function DashboardPanel(props: DashboardPanelProps) {
                               {/* Expanded view - different content for synthetic vs regular */}
                               {isExpanded && !isBuyingMore && (
                                 isSyntheticUnallocated ? (
-                                  // Synthetic unallocated expanded view: Show UnallocatedPositionsTable
+                                  // Synthetic unallocated expanded view: Show UnallocatedPositionsTable or empty state
                                   <div className="mt-3">
-                                    <UnallocatedPositionsTable
-                                      positions={alpaca.unallocatedPositions}
-                                      credentialType={portfolioMode === 'live' ? 'live' : 'paper'}
-                                      onSellComplete={() => alpaca.refetch()}
-                                    />
+                                    {alpaca.unallocatedPositions.length > 0 ? (
+                                      <UnallocatedPositionsTable
+                                        positions={alpaca.unallocatedPositions}
+                                        credentialType={portfolioMode === 'live' ? 'live' : 'paper'}
+                                        onSellComplete={() => alpaca.refetch()}
+                                      />
+                                    ) : (
+                                      <div className="text-muted text-sm py-2">
+                                        No unallocated positions
+                                      </div>
+                                    )}
 
                                     {/* Pending Scheduled Sells Section */}
                                     {pendingSells.length > 0 && (
